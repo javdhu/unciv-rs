@@ -113,6 +113,10 @@ pub enum TurnEvent {
     TechStolen { thief: CivId, victim: CivId, tech: Id<Technology>, identified: bool },
     /// A spy was caught in the act and killed.
     SpyCaught { civ: CivId, city: Id<City> },
+    /// A camp produced a unit. Reported because barbarians are the early
+    /// game's only pressure, and a game where they never appear looks like a
+    /// game where the AI is simply winning.
+    BarbarianSpawned { camp: crate::world::grid::TileId },
     /// A major civ's spy carried a city-state's election.
     ElectionRigged { city_state: CivId, winner: CivId },
     /// A city-state asked something of a major civ.
@@ -358,6 +362,17 @@ pub fn growth_modifier(world: &World, r: &Ruleset, civ: CivId, happiness: i32) -
 }
 
 /// Carry out a plan. Mutates.
+/// Does this plan still own the city it planned for?
+///
+/// Plans are all made against the same world and then applied one civ at a
+/// time, so a city can change hands *between* a plan being made and being
+/// applied. Without this check the previous owner still feeds it, still builds
+/// in it and still assigns its citizens — for the rest of the turn it was
+/// taken on.
+fn still_ours(world: &World, plan: &TurnPlan, city: Id<City>) -> bool {
+    world.cities.get(city).is_some_and(|c| c.owner == plan.civ)
+}
+
 pub fn apply_plan(
     world: &mut World,
     r: &Ruleset,
@@ -446,12 +461,18 @@ pub fn apply_plan(
     }
 
     for (city_id, worked) in &plan.assignments {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
         if let Some(city) = world.cities.get_mut(*city_id) {
             city.worked = worked.clone();
         }
     }
 
     for (city_id, food) in &plan.food {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
         let Some(city) = world.cities.get_mut(*city_id) else { continue };
         let before = city.population;
         let growth = apply_food(city, *food, m);
@@ -470,6 +491,9 @@ pub fn apply_plan(
     }
 
     for (city_id, production) in &plan.production {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
         let Some(city) = world.cities.get_mut(*city_id) else { continue };
         let (done, centre, owner) = {
             let event = apply_production(city, r, *production, costs);
@@ -695,6 +719,26 @@ pub fn advance_turn(
     let mut events = Vec::new();
     for plan in &plans {
         events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
+    }
+
+    // Barbarians spawn from their camps.
+    //
+    // This was written, tested, and never called — the fourth time in this
+    // project that a whole subsystem was correct and unreachable. Every camp
+    // on every map produced nothing, so the early game had no pressure on it
+    // at all and a civ could expand unopposed forever. The ruleset even ships
+    // units marked `uniqueTo: Barbarians` that could never appear.
+    //
+    // Note the barbarian civ is found by `is_barbarian` alone and not by
+    // `is_alive`: a civ with no cities and no units counts as out, and a
+    // barbarian civ starts with neither. Requiring it to be alive to spawn
+    // means it can never spawn anything, which is a deadlock rather than a
+    // rule.
+    if let Some(barbarians) = world.civs.iter().find(|c| c.is_barbarian).map(|c| c.id) {
+        let delay = difficulty.map_or(2, |d| d.barbarian_spawn_delay).max(1) as u32;
+        for camp in crate::world::barbarians::spawn(world, r, barbarians, delay) {
+            events.push(TurnEvent::BarbarianSpawned { camp });
+        }
     }
 
     // Spies. New eras grant them, idle ones are posted, and the posted ones
@@ -961,6 +1005,139 @@ mod tests {
             w.cities.get(rome).unwrap().faith.holy_city_of,
             Some(CivId(0)),
             "the city it was founded in is its holy city"
+        );
+    }
+
+    /// A city that changes hands mid-turn stops taking orders from its old
+    /// owner.
+    ///
+    /// Every civ plans against the same world and then applies one at a time,
+    /// so a city can be captured *between* a plan being made and that plan
+    /// being applied. The loser's plan still named it, and still fed it, built
+    /// in it and assigned its citizens for the rest of that turn.
+    #[test]
+    fn a_stale_plan_does_not_command_a_city_that_was_just_taken() {
+        let r = ruleset();
+        let mut w = two_civ_world(&r);
+        let theirs = w.found_city(City::found("Veii", CivId(1), w.grid.id_at(12, 12).unwrap()));
+        {
+            let c = w.cities.get_mut(theirs).unwrap();
+            c.population = 6;
+            c.food_stored = 0;
+            c.worked.clear();
+        }
+
+        // A plan civ 1 made while it still held the city.
+        let plan = TurnPlan {
+            civ: CivId(1),
+            food: vec![(theirs, 40)],
+            production: vec![(theirs, 60)],
+            assignments: vec![(theirs, vec![w.grid.id_at(11, 12).unwrap()])],
+            ..TurnPlan {
+                civ: CivId(1),
+                assignments: Vec::new(),
+                food: Vec::new(),
+                production: Vec::new(),
+                science: 0,
+                faith: 0,
+                culture: 0,
+                gold: 0,
+                happiness: 0,
+                research: None,
+                policy: None,
+                construction: Vec::new(),
+                orders: Vec::new(),
+                declare_war_on: Vec::new(),
+                make_peace_with: Vec::new(),
+                gift: None,
+            }
+        };
+
+        // Civ 0 takes it first.
+        crate::world::combat::capture_city(&mut w, &r, theirs, CivId(0));
+        assert_eq!(w.cities.get(theirs).unwrap().owner, CivId(0));
+
+        let before = w.cities.get(theirs).unwrap().clone();
+        apply_plan(
+            &mut w,
+            &r,
+            &plan,
+            GrowthModifiers::default(),
+            CostModifiers::default(),
+            ScienceModifiers::default(),
+            PolicyModifiers::default(),
+            None,
+        );
+        let after = w.cities.get(theirs).unwrap();
+        assert_eq!(after.food_stored, before.food_stored, "the old owner fed a city it had lost");
+        assert_eq!(after.production_stored, before.production_stored, "and built in it");
+        assert_eq!(after.worked, before.worked, "and told its citizens where to stand");
+    }
+
+    /// Barbarians, end to end: camps exist on a generated map, and units come
+    /// out of them during an ordinary turn loop.
+    ///
+    /// Both halves were missing. `barbarians::spawn` was written, tested and
+    /// never called; `barbarians::place_camp` was never called either, so
+    /// there was nothing to call it on. A spawner with no camps and camps with
+    /// no spawner are the same bug twice.
+    #[test]
+    fn barbarians_come_out_of_camps_during_a_real_turn_loop() {
+        use crate::world::mapgen::{generate, MapParameters};
+        let r = ruleset();
+        let map = generate(
+            &r,
+            MapParameters { width: 32, height: 22, seed: 0xBA48, ..Default::default() },
+            2,
+        );
+        let camps = crate::world::barbarians::camp_improvement(&r)
+            .map(|camp| {
+                map.grid.ids().filter(|t| map.grid.improvement[t.0 as usize] == Some(camp)).count()
+            })
+            .unwrap_or(0);
+        assert!(camps > 0, "a generated map should carry encampments; found {camps}");
+        for start in &map.starts {
+            let camp = crate::world::barbarians::camp_improvement(&r).unwrap();
+            assert!(
+                !map.grid
+                    .within(*start, 5)
+                    .iter()
+                    .any(|t| map.grid.improvement[t.0 as usize] == Some(camp)),
+                "a camp five tiles from a start is a coin flip, not pressure"
+            );
+        }
+
+        let nation = r.nations.ids().next().unwrap();
+        let mut civs = vec![
+            Civilization::new(CivId(0), nation, true),
+            Civilization::new(CivId(1), nation, true),
+        ];
+        civs[1].is_barbarian = true;
+        let mut w = World::new(map.grid, civs);
+        w.diplomacy.mark_hostile(CivId(1));
+        let settler = r
+            .units
+            .iter()
+            .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
+            .map(|(id, _)| id)
+            .unwrap();
+        w.place_unit(Unit::new(settler, CivId(0), map.starts[0], 2));
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let mut spawned = 0;
+        for _ in 1..=60 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                if matches!(e, TurnEvent::BarbarianSpawned { .. }) {
+                    spawned += 1;
+                }
+            }
+        }
+        println!("{camps} camps produced {spawned} barbarians in 60 turns");
+        assert!(spawned > 0, "{camps} camps produced nothing in sixty turns");
+        assert!(
+            w.civ(CivId(1)).unwrap().units.len() > 0,
+            "and the barbarian civ should actually hold them"
         );
     }
 

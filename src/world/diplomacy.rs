@@ -116,11 +116,14 @@ pub struct Pact {
 pub struct Attitude {
     /// Positive is warmth. Unciv sums named modifiers into the same figure.
     pub opinion: i32,
-    /// Whether the *holder* of this attitude lets the other civ pass.
-    pub grants_open_borders: bool,
-    /// Toward a city-state. Directed by nature.
-    pub influence: Fixed,
 }
+
+// `Attitude` used to carry `grants_open_borders` and `influence` as well.
+// Both were superseded — open borders by the directed slots on `Pact`, and
+// influence by the map keyed `(city_state, major)` — and neither was ever read
+// again. Two fields holding the same fact in two places is the one thing this
+// module exists to prevent, so the dead ones are gone rather than left as a
+// trap for whoever writes to them next.
 
 /// Every relationship in the game.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -380,9 +383,10 @@ mod tests {
     #[test]
     fn open_borders_are_granted_not_shared() {
         let mut d = Diplomacy::new();
-        d.attitude_mut(A, B).grants_open_borders = true;
-        assert!(d.attitude(A, B).grants_open_borders);
-        assert!(!d.attitude(B, A).grants_open_borders, "a one-way grant is normal");
+        d.meet(A, B); // you cannot open your borders to someone you have not met
+        d.set_open_borders(A, B, true);
+        assert!(d.may_enter_borders_of(B, A));
+        assert!(!d.may_enter_borders_of(A, B), "a one-way grant is normal");
     }
 
     #[test]

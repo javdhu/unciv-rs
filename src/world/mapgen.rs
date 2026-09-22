@@ -218,6 +218,7 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
     place_features(r, &mut grid, &p, &elevation);
     place_resources(r, &mut grid, &p);
     let starts = choose_starts(r, &grid, &p, civs);
+    place_camps(r, &mut grid, &p, &starts);
     GeneratedMap { grid, starts }
 }
 
@@ -350,6 +351,39 @@ fn place_resources(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters) {
         } else {
             1
         };
+    }
+}
+
+/// Scatter barbarian encampments over the empty parts of the map.
+///
+/// Camps have to exist before anything can come out of them, and nothing
+/// placed any: `barbarians::place_camp` was as unreachable as
+/// `barbarians::spawn` itself. A map with no camps and a spawner that is never
+/// called are two halves of the same missing system.
+///
+/// Kept away from the starting positions, because a camp two tiles from a
+/// capital on turn one is not pressure, it is a coin flip.
+fn place_camps(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, starts: &[TileId]) {
+    let Some(camp) = crate::world::barbarians::camp_improvement(r) else { return };
+    let clearance = 6;
+    for tile in grid.ids().collect::<Vec<_>>() {
+        let i = tile.0 as usize;
+        if grid.improvement[i].is_some() || grid.owner[i].is_some() {
+            continue;
+        }
+        let Some(t) = r.terrains.get(grid.terrain[i]) else { continue };
+        if t.r#type != "Land" || t.impassable == Some(true) {
+            continue;
+        }
+        if starts.iter().any(|s| grid.distance(*s, tile) < clearance) {
+            continue;
+        }
+        let mut rng = Rng::from_parts(&[p.seed, 0xCA_47, tile.0 as u64]);
+        // Roughly one tile in thirty-five, which on a standard map is a
+        // dozen-odd camps — enough to be a nuisance, not a siege.
+        if rng.range(1, 35) == 1 {
+            grid.improvement[i] = Some(camp);
+        }
     }
 }
 

@@ -348,6 +348,10 @@ pub fn capture_city(
     city.worked.clear();
     city.queue.clear();
     city.production_stored = 0;
+    // And the granary with it. Halving the population while keeping the food
+    // banked for the larger city means a captured city grows back on the turn
+    // after it falls, which is the opposite of what sacking one should do.
+    city.food_stored = 0;
     let centre = city.centre;
 
     if let Some(old) = world.civ_mut(old_owner) {
@@ -693,5 +697,49 @@ mod siege {
             &r,
             CivId(0)
         ) == crate::world::conditionals::Verdict::True);
+    }
+
+    /// A sacked city does not keep the granary of the city it was.
+    #[test]
+    fn capture_empties_the_granary() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        {
+            let c = w.cities.get_mut(city).unwrap();
+            c.population = 8;
+            c.food_stored = 900;
+            c.health = 1;
+        }
+        let result = attack_city(&mut w, &r, unit, city).expect("legal assault");
+        assert!(result.captured);
+        let c = w.cities.get(city).unwrap();
+        assert_eq!(c.food_stored, 0, "halved to size four and still holding a size-eight granary");
+        assert_eq!(c.population, 4);
+    }
+
+    /// The holy city of a religion stays its holy city whoever holds it.
+    ///
+    /// An audit suggested clearing this on capture. That is wrong for Civ V:
+    /// taking Rome does not make you the pope, and a captured holy city
+    /// remaining the religion's seat is exactly why taking one is worth doing.
+    /// The population does not change its faith because the walls changed
+    /// hands either, so the pressure stays too.
+    #[test]
+    fn capture_does_not_convert_the_conquered() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        {
+            let c = w.cities.get_mut(city).unwrap();
+            c.population = 6;
+            c.faith.holy_city_of = Some(CivId(1));
+            c.faith.add_pressure(Some(CivId(1)), 5000);
+            c.faith.recount(6);
+            c.health = 1;
+        }
+        assert!(attack_city(&mut w, &r, unit, city).expect("legal assault").captured);
+        let c = w.cities.get(city).unwrap();
+        assert_eq!(c.faith.holy_city_of, Some(CivId(1)), "the seat does not move with the flag");
+        assert!(c.faith.pressure_of(Some(CivId(1))) > 0, "nor does the congregation");
+        assert_eq!(c.owner, CivId(0), "but the city is ours");
     }
 }

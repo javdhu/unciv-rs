@@ -79,27 +79,51 @@ pub fn choose_construction(
             let value = match what {
                 // A settler is worth more than any building while the empire
                 // is small — land compounds and a granary does not.
-                Construction::Unit(id) if crate::world::settling::is_settler(r, id) && want_settler => {
-                    Fixed::whole(400)
-                }
-                // Worth less than a settler — land first, then make it
-                // productive — but more than any single building.
-                Construction::Unit(id) if is_worker(r, id) && want_worker => Fixed::whole(200),
-                // Something — anything — that can walk and look. Cheap and
-                // early: the point is eyes, not strength.
-                Construction::Unit(id) if want_scout && !crate::world::settling::is_settler(r, id) && !is_worker(r, id) => {
-                    let u = r.units.get(id)?;
-                    let fast = u.movement as i32;
-                    Fixed::whole(100 + fast * 10)
-                }
-                // Soldiers, scored by what they bring to a fight per hammer.
-                Construction::Unit(id) if want_military => {
+                // Every unit is scored, and the `want_*` flags scale that
+                // score rather than gating it.
+                //
+                // They used to be gates, with a catch-all of zero underneath —
+                // and a score of zero is filtered out, so any unit that fit no
+                // category could never be built at all. Work Boats are the
+                // real casualty: no strength, not a settler, not a worker, and
+                // once the civ owns a single unit `want_scout` goes false, so
+                // from that turn on they were unbuildable forever. Spaceship
+                // parts the same, which quietly removes a victory condition.
+                Construction::Unit(id) => {
                     let u = r.units.get(id)?;
                     let strength = u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0));
-                    if strength == 0 {
-                        return None;
+                    if crate::world::settling::is_settler(r, id) {
+                        // Land compounds and a granary does not — but only
+                        // while there is somewhere to put it.
+                        if want_settler { Fixed::whole(400) } else { Fixed::whole(20) }
+                    } else if is_worker(r, id) {
+                        if want_worker { Fixed::whole(200) } else { Fixed::whole(20) }
+                    } else if want_scout {
+                        // Something — anything — that can walk and look. The
+                        // point is eyes, not strength, so a warrior counts:
+                        // narrowing this to weak units cost the early game its
+                        // exploration and with it its first contacts.
+                        Fixed::whole(100 + u.movement as i32 * 10)
+                    } else if strength > 0 {
+                        // Soldiers, by what they bring to a fight per hammer.
+                        //
+                        // A civ that has enough of them scores the next one at
+                        // one, not at zero. The difference matters only at the
+                        // margin — one over a cost of forty loses to every
+                        // building in the ruleset — but zero is what made
+                        // whole unit classes unbuildable, and "we have enough"
+                        // is not the same fact as "this does not exist".
+                        // Scoring a surplus soldier at its full strength
+                        // instead produced a hundred and thirty-seven units
+                        // and eighteen thousand gold of debt.
+                        if want_military { Fixed::whole(strength * 3) } else { Fixed::ONE }
+                    } else {
+                        // Something with a job rather than a fight: a work
+                        // boat, a spaceship part, a missionary. Low enough to
+                        // lose to anything with a present use, never zero,
+                        // because zero means "does not exist".
+                        Fixed::whole(5)
                     }
-                    Fixed::whole(strength * 3)
                 }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
@@ -140,7 +164,6 @@ pub fn choose_construction(
                     }
                     flat
                 }
-                Construction::Unit(_) => Fixed::ZERO,
             };
             let score = value.div(Fixed::whole(cost.max(1)))?;
             Some((score, what))
