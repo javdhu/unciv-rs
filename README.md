@@ -405,12 +405,18 @@ integer whose meaning is fixed.
 
 ```
 ./tools/check_determinism.sh
-  native         0x039428dfa1150290
-  wasm32         0x039428dfa1150290
-  linux/arm64    0x039428dfa1150290
-  linux/amd64    0x039428dfa1150290
+  native         0xac1b1af105724588
+  wasm32         0xac1b1af105724588
+  linux/arm64    0xac1b1af105724588
+  linux/amd64    0xac1b1af105724588
 OK: bit-identical across 4 targets
 ```
+
+The scenario includes a whole generated map — every tile's terrain, features
+and resources, and the start positions. Map generation is the system with the
+least to fall back on: a map that differs by one tile between two clients is a
+game they cannot play together, and no differential test against Unciv can
+catch it, because Unciv generates a different map on purpose.
 
 Two architectures, three OS and libc combinations, two code generators. Each
 target breaks something different: `wasm32` changes the code generator, Linux

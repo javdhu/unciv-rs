@@ -193,6 +193,34 @@ pub fn fingerprint() -> u64 {
         d.add_fixed(rng.unit_interval());
     }
 
+    // --- map generation ---------------------------------------------------
+    //
+    // The system most at risk here, and the one with the least to fall back
+    // on: a map that differs by one tile between two clients is a game they
+    // cannot play together, and no differential test against Unciv can catch
+    // it because Unciv generates a different map on purpose. Folding a whole
+    // generated map in means the existing cross-target check covers it.
+    {
+        use crate::world::mapgen::{generate, MapParameters};
+        let map = generate(
+            &r,
+            MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() },
+            4,
+        );
+        for tile in map.grid.ids() {
+            let i = tile.0 as usize;
+            d.add(map.grid.terrain[i].index() as i64);
+            for f in &map.grid.features[i] {
+                d.add(f.index() as i64);
+            }
+            d.add(map.grid.resource[i].map_or(-1, |x| x.index() as i64));
+            d.add(map.grid.resource_amount[i] as i64);
+        }
+        for start in &map.starts {
+            d.add(start.0 as i64);
+        }
+    }
+
     d.0
 }
 
