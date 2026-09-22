@@ -52,6 +52,8 @@ pub struct TurnPlan {
     /// Culture each city banks toward its next border tile — the same culture
     /// that also goes to the civ's policies.
     pub border_culture: Vec<(Id<City>, i32)>,
+    /// What to buy outright with gold, city by city.
+    pub purchases: Vec<(Id<City>, Construction)>,
     /// Science the civ will bank, summed across its cities.
     pub science: i32,
     /// Faith the civ will bank, toward a pantheon and then a religion.
@@ -152,6 +154,12 @@ pub enum TurnEvent {
     CityCaptured {
         city: Id<City>,
         by: CivId,
+    },
+    /// Gold bought a city what it was building.
+    Purchased {
+        city: Id<City>,
+        what: Construction,
+        gold: i64,
     },
     /// A city's culture bought it another tile.
     BordersExpanded {
@@ -276,6 +284,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         food: Vec::new(),
         production: Vec::new(),
         border_culture: Vec::new(),
+        purchases: Vec::new(),
         science: 0,
         faith: 0,
         culture: 0,
@@ -393,6 +402,11 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         plan.faith += output.faith.round() as i32;
         plan.gold += output.gold.round() as i32 - upkeep;
     }
+    // Gold is spent on what the cities are already building, from what is
+    // left once the gift is set aside.
+    let gift_gold = plan.gift.map_or(0, |(_, g)| g);
+    plan.purchases = crate::world::ai::choose_purchases(world, r, civ, costs, gift_gold, &plan.production);
+
     // Flat yields the empire is owed that no tile produces: city-state
     // friendship, and any policy or belief that grants stats outright.
     let owed = crate::world::city_states::civ_wide_yields(world, r, civ);
@@ -634,6 +648,16 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             crate::world::city_states::gift_gold(world, plan.civ, cs, gold, costs.game_length, costs.gold_gift_modifier)
         {
             events.push(TurnEvent::GoldGifted { from: plan.civ, to: cs, gold, influence: gained });
+        }
+    }
+    // Purchases after the gift, as Unciv's AI spends: a purchase the
+    // treasury can no longer cover is simply not made.
+    for (city_id, what) in &plan.purchases {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
+        if let Ok(cost) = crate::world::purchase::purchase(world, r, *city_id, *what, crate::stats::Stat::Gold, costs) {
+            events.push(TurnEvent::Purchased { city: *city_id, what: *what, gold: cost });
         }
     }
 
@@ -1118,6 +1142,7 @@ mod tests {
                 food: Vec::new(),
                 production: Vec::new(),
                 border_culture: Vec::new(),
+                purchases: Vec::new(),
                 science: 0,
                 faith: 0,
                 culture: 0,
@@ -1866,6 +1891,7 @@ mod expansion {
                 food: Vec::new(),
                 production: Vec::new(),
                 border_culture: Vec::new(),
+                purchases: Vec::new(),
                 science: 0,
                 faith: 0,
                 culture: 0,

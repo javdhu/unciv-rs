@@ -26,6 +26,7 @@ pub mod improvements;
 pub mod mapgen;
 pub mod movement;
 pub mod policies;
+pub mod purchase;
 pub mod quests;
 pub mod religion;
 pub mod research;

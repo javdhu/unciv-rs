@@ -612,6 +612,57 @@ impl Priorities {
     }
 }
 
+/// What to buy outright with gold this turn (`UseGoldAutomation.useGold`).
+///
+/// Unciv's rule, kept as it is: after any city-state gift, go through the
+/// cities from the most productive down and buy each one's current build if
+/// the treasury covers it — unless work has already gone into it, which
+/// buying would throw away, or its `hurryCostModifier` is above a hundredth of
+/// the treasury. That last clause is how a civ that keeps saving starts
+/// accepting worse prices rather than hoarding forever.
+///
+/// `production` is the planned hammers per city, which is what orders them;
+/// ties by city id.
+pub fn choose_purchases(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    costs: CostModifiers,
+    gift: i32,
+    production: &[(Id<City>, i32)],
+) -> Vec<(Id<City>, Construction)> {
+    let Some(c) = world.civ(civ) else { return Vec::new() };
+    let mut gold = (c.gold - gift) as i64;
+    let acceptable_hurry = gold.max(0) / 100;
+    let mut order: Vec<(Id<City>, i32)> = production.to_vec();
+    order.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+
+    let mut out = Vec::new();
+    for (city_id, _) in order {
+        let Some(city) = world.cities.get(city_id) else { continue };
+        let Some(&what) = city.queue.first() else { continue };
+        if city.production_stored > 0 {
+            continue;
+        }
+        let hurry = match what {
+            Construction::Unit(id) => r.units.get(id).and_then(|u| u.hurry_cost_modifier),
+            Construction::Building(id) => r.buildings.get(id).and_then(|b| b.hurry_cost_modifier),
+        };
+        if hurry.unwrap_or(0) as i64 > acceptable_hurry {
+            continue;
+        }
+        let Ok(cost) = crate::world::purchase::can_purchase(world, r, city_id, what, Stat::Gold, costs) else {
+            continue;
+        };
+        if gold < cost {
+            continue;
+        }
+        gold -= cost;
+        out.push((city_id, what));
+    }
+    out
+}
+
 /// How much gold to send a city-state, and which one.
 ///
 /// A major civ with money and no ally buys one. The bar is deliberately high —

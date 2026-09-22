@@ -443,6 +443,8 @@ fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifie
             game_length: speed_obj.map_or(500, |s| s.total_turns),
             religious_pressure: speed_obj.map_or(6, |s| s.religious_pressure_adjacent_city),
             gold_gift_modifier: speed_obj.map_or(Fixed::ONE, |s| s.gold_gift_modifier),
+            gold_cost: speed_obj.map_or(Fixed::ONE, |s| s.gold_cost_modifier),
+            faith_cost: speed_obj.map_or(Fixed::ONE, |s| s.faith_cost_modifier),
         },
         ScienceModifiers {
             difficulty: d.map_or(Fixed::ONE, |d| d.research_cost_modifier),

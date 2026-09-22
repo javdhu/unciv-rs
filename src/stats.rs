@@ -727,6 +727,11 @@ impl Precise {
         Fixed::permille(rounded.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
     }
 
+    /// Round down to a whole number — toward negative infinity.
+    pub fn floor(self) -> i64 {
+        (self.0 >> 32).clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    }
+
     /// Round to a whole number, away from zero at the halfway point.
     pub fn round(self) -> i64 {
         let half = 1i128 << 31;

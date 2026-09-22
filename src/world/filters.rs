@@ -149,6 +149,28 @@ pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdi
     multi_filter(filter, &|term| category(r, b, term))
 }
 
+/// Does a building type match a building filter?
+///
+/// Names, "All", and the wonder categories — the terms the purchase uniques in
+/// the shipped rulesets use. A term that is none of these, and not some other
+/// building's name either, is [`Verdict::Unknown`]: a stat category like
+/// "Culture" needs knowing what the building yields, which this does not ask.
+pub fn building_matches(r: &Ruleset, id: Id<crate::ruleset::Building>, filter: &str) -> Verdict {
+    let Some(b) = r.buildings.get(id) else { return Verdict::Unknown };
+    let yes = |v: bool| if v { Verdict::True } else { Verdict::False };
+    let world_wonder = b.is_wonder == Some(true);
+    let national_wonder = b.is_national_wonder == Some(true);
+    multi_filter(filter, &|term| match term {
+        "All" | "all" | "Building" | "Buildings" => Verdict::True,
+        "Wonder" | "Wonders" => yes(world_wonder || national_wonder),
+        "World Wonder" | "World Wonders" => yes(world_wonder),
+        "National Wonder" | "National Wonders" => yes(national_wonder),
+        t if t == b.name => Verdict::True,
+        t if r.buildings.id(t).is_some() => Verdict::False,
+        _ => Verdict::Unknown,
+    })
+}
+
 /// Does a city match a city filter?
 ///
 /// The filters that appear in the shipped rulesets are few and blunt — "in all
