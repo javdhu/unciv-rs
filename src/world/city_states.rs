@@ -237,6 +237,7 @@ pub fn influence_from_gift(
     game_length: i32,
     gold_gift_modifier: Fixed,
     donor: CivId,
+    cs: CivId,
 ) -> Fixed {
     if gold <= 0 {
         return Fixed::ZERO;
@@ -267,6 +268,12 @@ pub fn influence_from_gift(
         }
     }
 
+    // An Invest quest running for the donor raises it by half again.
+    let invest = crate::world::quests::investment_multiplier(world, cs, donor);
+    if invest != Fixed::ONE {
+        gained = (Precise::from_fixed(gained) * Precise::from_fixed(invest)).to_fixed();
+    }
+
     // Down to a multiple of five, never below five. Civ does this so the
     // number on the button is a round one.
     let fives = (gained.floor() / 5).max(1);
@@ -295,7 +302,7 @@ pub fn gift_gold(
     if world.civ(major).map_or(0, |c| c.gold) < gold {
         return None;
     }
-    let gained = influence_from_gift(world, gold, game_length, gold_gift_modifier, major);
+    let gained = influence_from_gift(world, gold, game_length, gold_gift_modifier, major, cs);
     if let Some(c) = world.civ_mut(major) {
         c.gold -= gold;
     }
@@ -839,8 +846,8 @@ mod tests {
     fn a_bigger_gift_buys_more() {
         let r = ruleset();
         let w = world(&r);
-        let small = influence_from_gift(&w, 100, 500, Fixed::ONE, CivId(0));
-        let large = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0));
+        let small = influence_from_gift(&w, 100, 500, Fixed::ONE, CivId(0), CS);
+        let large = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS);
         assert!(large > small, "{large:?} should beat {small:?}");
     }
 
@@ -848,9 +855,9 @@ mod tests {
     fn gold_is_worth_less_late_in_the_game() {
         let r = ruleset();
         let mut w = world(&r);
-        let early = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0));
+        let early = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS);
         w.turn = 500;
-        let late = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0));
+        let late = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS);
         assert!(late < early, "a thousand gold late ({late:?}) should buy less than early ({early:?})");
     }
 

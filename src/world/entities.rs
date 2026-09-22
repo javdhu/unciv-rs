@@ -42,6 +42,9 @@ pub struct Civilization {
     /// How many of each item this civ has bought at a price that rises with
     /// each purchase — a faith-bought Great Prophet, say — by name.
     pub bought_with_increasing_price: std::collections::BTreeMap<String, u32>,
+    /// Turns since a city-state last paid tribute, counting down from twenty
+    /// (`CivFlags.RecentlyBullied`); see `tribute`.
+    pub recently_bullied: u32,
     /// Points toward the next great person of each kind, and what it costs.
     pub great_people: crate::world::great_people::GreatPeople,
     /// Spies, and which eras have already granted one.
@@ -81,6 +84,7 @@ impl Civilization {
             adopted_policies: Default::default(),
             faith: Default::default(),
             bought_with_increasing_price: Default::default(),
+            recently_bullied: 0,
             great_people: Default::default(),
             uniques: Default::default(),
             resources: Default::default(),

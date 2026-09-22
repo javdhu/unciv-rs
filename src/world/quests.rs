@@ -64,6 +64,9 @@ pub enum Target {
     Tile(TileId),
     /// A contest against the other contestants, judged on the baseline.
     Contest,
+    /// A bonus the quest grants while it runs, in percent — Invest's extra
+    /// influence on gifts. Nothing to achieve; it simply runs out.
+    Percent(i32),
 }
 
 /// What is being contested, for the three contest quests.
@@ -130,6 +133,10 @@ enum Kind {
     ContestCulture,
     ContestFaith,
     ContestTechnologies,
+    GiveGold,
+    Invest,
+    BullyCityState,
+    DenounceCivilization,
 }
 
 fn kind_of(name: &str) -> Option<Kind> {
@@ -148,9 +155,10 @@ fn kind_of(name: &str) -> Option<Kind> {
         "Contest Culture" => Kind::ContestCulture,
         "Contest Faith" => Kind::ContestFaith,
         "Contest Technologies" => Kind::ContestTechnologies,
-        // Give Gold, Invest, Bully City State, Denounce Civilization: these
-        // need tribute and denunciation, which are not modelled. Named here so
-        // the omission is deliberate rather than forgotten.
+        "Give Gold" => Kind::GiveGold,
+        "Invest" => Kind::Invest,
+        "Bully City State" => Kind::BullyCityState,
+        "Denounce Civilization" => Kind::DenounceCivilization,
         _ => return None,
     })
 }
@@ -179,6 +187,15 @@ pub fn judge(world: &World, r: &Ruleset, city_state: CivId, q: &Assigned) -> Ver
     let Some(who) = world.civ(q.assignee) else { return Verdict::Unknown };
 
     match kind {
+        // Completed when it happens — a gift, a tribute — by `on_gold_gift`
+        // and `on_bullied`; Invest never completes, it runs out.
+        Kind::GiveGold | Kind::BullyCityState | Kind::Invest => Verdict::False,
+        Kind::DenounceCivilization => match q.target {
+            Target::Civ(bully) => {
+                yes(world.diplomacy.has_flag(q.assignee, bully, crate::world::diplomacy::Flag::Denunciation))
+            }
+            _ => Verdict::Unknown,
+        },
         // The connection graph already answers this: is the city-state's city
         // reachable from our capital by road, rail or harbour?
         Kind::Route | Kind::TradeRoute => {
@@ -286,6 +303,46 @@ fn choose_target(
     };
 
     Some(match kind {
+        // Pay us, since that civ took from us.
+        Kind::GiveGold => (Target::Civ(crate::world::tribute::most_recent_bully(world, city_state)?), None),
+        Kind::DenounceCivilization => {
+            let bully = crate::world::tribute::most_recent_bully(world, city_state)?;
+            let human = |c: CivId| world.civ(c).is_some_and(|x| !x.is_ai);
+            if bully == assignee
+                || world.diplomacy.has_flag(assignee, bully, crate::world::diplomacy::Flag::Denunciation)
+                || world.diplomacy.at_war(assignee, bully)
+                || (human(assignee) && human(bully))
+            {
+                return None;
+            }
+            (Target::Civ(bully), None)
+        }
+        Kind::Invest => {
+            // "... any Gold donation will yield [50]% extra Influence."
+            let quest = r.quests.iter().find(|(_, q)| q.name == "Invest").map(|(_, q)| q)?;
+            let percent = quest.description.split('[').nth(1)?.split(']').next()?.parse::<i32>().ok()?;
+            (Target::Percent(percent), None)
+        }
+        // Bully our nearest rival — whichever city-states are nearest, if any
+        // is nearer than distant (`getCityStateTarget`).
+        Kind::BullyCityState => {
+            let others: Vec<(Proximity, CivId)> = crate::world::city_states::city_states(world)
+                .into_iter()
+                .filter(|c| *c != city_state)
+                .map(|c| (proximity(world, city_state, c), c))
+                .filter(|(p, _)| *p != Proximity::None)
+                .collect();
+            let nearest = others.iter().map(|(p, _)| *p).min().filter(|p| *p != Proximity::Distant)?;
+            let mut options: Vec<CivId> = others
+                .into_iter()
+                .filter(|(p, c)| {
+                    *p == nearest && world.diplomacy.have_met(city_state, *c) && world.diplomacy.have_met(assignee, *c)
+                })
+                .map(|(_, c)| c)
+                .collect();
+            options.sort();
+            (Target::Civ(*options.get(pick(rng, options.len())?)?), None)
+        }
         Kind::Route | Kind::TradeRoute | Kind::PledgeToProtect | Kind::SpreadReligion => (Target::Self_, None),
         Kind::AcquireGreatPerson => (Target::Contest, None),
         Kind::ConnectResource => {
@@ -398,6 +455,8 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<QuestEvent> {
             .filter(|c| world.civ(*c).is_some_and(|x| x.is_major() && x.is_alive()))
             .filter(|c| world.diplomacy.have_met(cs, *c))
             .filter(|c| !world.diplomacy.at_war(cs, *c))
+            // A city-state asks nothing of whoever just bullied it.
+            .filter(|c| !world.diplomacy.has_flag(cs, *c, crate::world::diplomacy::Flag::Bullied))
             .collect();
 
         for major in candidates {
@@ -444,6 +503,116 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<QuestEvent> {
         }
     }
     events
+}
+
+/// How near two civs are (`CivInfoTransientCache.getProximity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Proximity {
+    Neighbors,
+    Close,
+    Far,
+    Distant,
+    /// One of them has no cities.
+    None,
+}
+
+/// Neighbors within seven tiles; Close if their nearest cities are within
+/// eleven and their cities average within a quarter of the map; Far within
+/// forty-five percent; otherwise Distant. Unciv also counts civs on different
+/// continents one step further apart, which this map does not model.
+pub fn proximity(world: &World, a: CivId, b: CivId) -> Proximity {
+    let centres = |c: CivId| -> Vec<TileId> {
+        world
+            .civ(c)
+            .map(|x| x.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.centre).collect())
+            .unwrap_or_default()
+    };
+    let (ours, theirs) = (centres(a), centres(b));
+    if ours.is_empty() || theirs.is_empty() {
+        return Proximity::None;
+    }
+    let (mut min, mut total, mut n) = (u32::MAX, 0u32, 0u32);
+    for x in &ours {
+        for y in &theirs {
+            let d = world.grid.distance(*x, *y);
+            min = min.min(d);
+            total += d;
+            n += 1;
+        }
+    }
+    if min <= 7 {
+        return Proximity::Neighbors;
+    }
+    let average = total / n;
+    let map = (world.grid.width() as u32 + world.grid.height() as u32) / 2;
+    let close = (map * 25 / 100).clamp(10, 20);
+    let far = (map * 45 / 100).clamp(20, 50);
+    if min <= 11 && average <= close {
+        Proximity::Close
+    } else if average <= far {
+        Proximity::Far
+    } else {
+        Proximity::Distant
+    }
+}
+
+/// Pay out and remove every quest `matches` picks, at one city-state.
+fn complete(world: &mut World, r: &Ruleset, cs: CivId, matches: impl Fn(&Assigned, Kind) -> bool) -> Vec<QuestEvent> {
+    let active = world.civ(cs).map(|c| c.quests.active.clone()).unwrap_or_default();
+    let (done, keep): (Vec<_>, Vec<_>) = active
+        .into_iter()
+        .partition(|q| r.quests.get(q.quest).and_then(|x| kind_of(&x.name)).is_some_and(|k| matches(q, k)));
+    if let Some(c) = world.civ_mut(cs) {
+        c.quests.active = keep;
+    }
+    let mut events = Vec::new();
+    for q in done {
+        let influence = r.quests.get(q.quest).and_then(|x| x.influence).unwrap_or(DEFAULT_INFLUENCE);
+        world.diplomacy.add_influence(cs, q.assignee, Fixed::whole(influence));
+        events.push(QuestEvent::Completed { city_state: cs, quest: q.quest, by: q.assignee, influence });
+    }
+    events
+}
+
+/// A major gave this city-state gold (`QuestManager.receivedGoldGift`).
+pub fn on_gold_gift(world: &mut World, r: &Ruleset, cs: CivId, donor: CivId) -> Vec<QuestEvent> {
+    complete(world, r, cs, |q, k| k == Kind::GiveGold && q.assignee == donor)
+}
+
+/// A city-state paid tribute (`QuestManager.cityStateBullied`), as every
+/// city-state hears it: whoever asked for exactly that is paid, and the
+/// victim takes back every quest it had given the bully.
+pub fn on_bullied(world: &mut World, r: &Ruleset, victim: CivId, bully: CivId) -> Vec<QuestEvent> {
+    let mut events = Vec::new();
+    for cs in crate::world::city_states::city_states(world) {
+        events.extend(complete(world, r, cs, |q, k| {
+            k == Kind::BullyCityState && q.assignee == bully && q.target == Target::Civ(victim)
+        }));
+    }
+    let revoked: Vec<Assigned> = world
+        .civ(victim)
+        .map(|c| c.quests.active.iter().filter(|q| q.assignee == bully).cloned().collect())
+        .unwrap_or_default();
+    if let Some(c) = world.civ_mut(victim) {
+        c.quests.active.retain(|q| q.assignee != bully);
+    }
+    events.extend(revoked.into_iter().map(|q| QuestEvent::Expired { city_state: victim, quest: q.quest, on: bully }));
+    events
+}
+
+/// How much more influence a gift from `donor` buys here, while an Invest
+/// quest runs for it (`QuestManager.getInvestmentMultiplier`).
+pub fn investment_multiplier(world: &World, cs: CivId, donor: CivId) -> Fixed {
+    world
+        .civ(cs)
+        .and_then(|c| {
+            c.quests.active.iter().find_map(|q| match q.target {
+                Target::Percent(p) if q.assignee == donor => Some(Fixed::whole(100 + p).checked_div(Fixed::whole(100))),
+                _ => None,
+            })
+        })
+        .flatten()
+        .unwrap_or(Fixed::ONE)
 }
 
 #[cfg(test)]
@@ -496,31 +665,131 @@ mod tests {
         w.civ_mut(CS).unwrap().quests.active.push(a);
     }
 
+    /// Make civ 1 the city-state's most recent bully.
+    fn bullied_by_one(w: &mut World) {
+        w.diplomacy.set_flag(CS, CivId(1), crate::world::diplomacy::Flag::Bullied, 20);
+    }
+
+    #[test]
+    fn a_bullied_city_state_asks_for_gold_and_a_gift_pays_it() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let mut rng = Rng::from_parts(&[1]);
+        assert_eq!(choose_target(&w, &r, CS, CivId(0), Kind::GiveGold, &mut rng), None, "nobody has bullied it yet");
+        bullied_by_one(&mut w);
+        assert_eq!(choose_target(&w, &r, CS, CivId(0), Kind::GiveGold, &mut rng), Some((Target::Civ(CivId(1)), None)));
+
+        let q = quest_named(&r, "Give Gold");
+        assign(&mut w, q, CivId(0), Target::Civ(CivId(1)));
+        assert_eq!(judge(&w, &r, CS, &w.civ(CS).unwrap().quests.active[0]), Verdict::False, "waiting on a gift");
+        let events = on_gold_gift(&mut w, &r, CS, CivId(0));
+        assert!(matches!(events.as_slice(), [QuestEvent::Completed { by: CivId(0), .. }]), "{events:?}");
+        assert!(w.civ(CS).unwrap().quests.active.is_empty());
+    }
+
+    #[test]
+    fn an_invest_quest_makes_a_gift_worth_half_again() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.civ_mut(CivId(0)).unwrap().gold = 10_000;
+        let plain = crate::world::city_states::influence_from_gift(&w, 500, 500, Fixed::ONE, CivId(0), CS);
+        let mut rng = Rng::from_parts(&[1]);
+        let (target, _) = choose_target(&w, &r, CS, CivId(0), Kind::Invest, &mut rng).expect("always offerable");
+        assert_eq!(target, Target::Percent(50), "the percentage is the ruleset's");
+        assign(&mut w, quest_named(&r, "Invest"), CivId(0), target);
+        assert_eq!(investment_multiplier(&w, CS, CivId(0)), Fixed::permille(1_500));
+        assert_eq!(investment_multiplier(&w, CS, CivId(1)), Fixed::ONE, "only for whoever it was given to");
+        let boosted = crate::world::city_states::influence_from_gift(&w, 500, 500, Fixed::ONE, CivId(0), CS);
+        assert!(boosted > plain, "{boosted} should beat {plain}");
+    }
+
+    #[test]
+    fn denouncing_the_bully_completes_the_denounce_quest() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.meet(CivId(0), CivId(1));
+        bullied_by_one(&mut w);
+        let mut rng = Rng::from_parts(&[1]);
+        let (target, _) = choose_target(&w, &r, CS, CivId(0), Kind::DenounceCivilization, &mut rng).expect("offerable");
+        assert_eq!(target, Target::Civ(CivId(1)));
+        assert_eq!(choose_target(&w, &r, CS, CivId(1), Kind::DenounceCivilization, &mut rng), None, "not of itself");
+        assign(&mut w, quest_named(&r, "Denounce Civilization"), CivId(0), target);
+        let q = w.civ(CS).unwrap().quests.active[0].clone();
+        assert_eq!(judge(&w, &r, CS, &q), Verdict::False);
+        crate::world::opinion::denounce(&mut w, CivId(0), CivId(1));
+        assert_eq!(judge(&w, &r, CS, &q), Verdict::True);
+    }
+
+    #[test]
+    fn bullying_the_named_rival_pays_and_the_victim_revokes_its_quests() {
+        let r = ruleset();
+        let mut w = world(&r);
+        // A second city-state, near the first, that civ 0 has asked to be bullied.
+        let nation = r.nations.ids().next().unwrap();
+        let mut other = Civilization::new(CivId(3), nation, true);
+        other.city_state_type = r.city_state_types.ids().next();
+        w.civs.push(other);
+        w.found_city_in(&r, City::found("Rival", CivId(3), w.grid.id_at(12, 12).unwrap()));
+        w.diplomacy.meet(CivId(0), CivId(3));
+        w.diplomacy.meet(CS, CivId(3));
+        let mut rng = Rng::from_parts(&[1]);
+        let (target, _) = choose_target(&w, &r, CS, CivId(0), Kind::BullyCityState, &mut rng).expect("a neighbour");
+        assert_eq!(target, Target::Civ(CivId(3)));
+        assign(&mut w, quest_named(&r, "Bully City State"), CivId(0), target);
+        // The rival had given civ 0 a quest of its own.
+        let route = quest_named(&r, "Route");
+        let a = Assigned {
+            quest: route,
+            assignee: CivId(0),
+            target: Target::Self_,
+            contest: None,
+            assigned_on: 0,
+            expires_on: 99,
+            baseline: 0,
+        };
+        w.civ_mut(CivId(3)).unwrap().quests.active.push(a);
+
+        let events = on_bullied(&mut w, &r, CivId(3), CivId(0));
+        assert!(
+            events.iter().any(|e| matches!(e, QuestEvent::Completed { city_state: CS, by: CivId(0), .. })),
+            "{events:?}"
+        );
+        assert!(events.iter().any(|e| matches!(e, QuestEvent::Expired { city_state: CivId(3), on: CivId(0), .. })));
+        assert!(w.civ(CivId(3)).unwrap().quests.active.is_empty(), "the victim takes its quests back");
+    }
+
+    #[test]
+    fn a_bully_is_offered_nothing() {
+        let r = ruleset();
+        let mut w = world(&r);
+        bullied_by_one(&mut w);
+        w.turn = 40;
+        let events = tick(&mut w, &r);
+        let offered_to: Vec<_> = events
+            .iter()
+            .filter_map(|e| if let QuestEvent::Offered { to, .. } = e { Some(*to) } else { None })
+            .collect();
+        assert!(!offered_to.contains(&CivId(1)), "{offered_to:?}");
+    }
+
     #[test]
     fn the_ruleset_quests_load_and_most_are_judgeable() {
         let r = ruleset();
         assert!(r.quests.len() >= 15, "only {} quests loaded", r.quests.len());
         let (can, cannot) = judgeable(&r);
         println!("judgeable: {}, not: {cannot:?}", can.len());
-        assert!(can.len() >= 12, "only {} of {} quests are judgeable", can.len(), r.quests.len());
-        // The gap is named, not hidden: these need tribute and denunciations.
-        for name in &cannot {
-            assert!(
-                matches!(name.as_str(), "Give Gold" | "Invest" | "Bully City State" | "Denounce Civilization"),
-                "unexpected unjudgeable quest {name} — either implement it or add it here"
-            );
-        }
+        assert!(cannot.is_empty(), "every quest in the ruleset should be judgeable, not {cannot:?}");
+        assert_eq!(can.len(), r.quests.len());
     }
 
     #[test]
-    fn an_unjudgeable_quest_is_never_offered() {
+    fn the_quests_tribute_and_denunciation_made_possible_are_in_the_pool() {
         let r = ruleset();
         let (can, _) = judgeable(&r);
         let pool: std::collections::BTreeSet<_> = can.into_iter().collect();
-        for name in ["Give Gold", "Bully City State", "Denounce Civilization"] {
-            if let Some(id) = r.quests.id(name) {
-                assert!(!pool.contains(&id), "{name} should not be in the pool");
-            }
+        for name in ["Give Gold", "Invest", "Bully City State", "Denounce Civilization"] {
+            let id = r.quests.id(name).unwrap_or_else(|| panic!("the ruleset has {name}"));
+            assert!(pool.contains(&id), "{name} should be offered now");
         }
     }
 

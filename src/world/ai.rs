@@ -612,6 +612,39 @@ impl Priorities {
     }
 }
 
+/// Which city-states to squeeze for tribute this turn, and whether for a
+/// worker (`NextTurnAutomation.bullyCityStates`).
+///
+/// Unciv's rule: any city-state we know, are at peace with and are not yet
+/// friends with, if it would pay — a worker when it would pay even that,
+/// otherwise gold. Unciv also spares a city-state whose alliance it values
+/// (`valueCityStateAlliance`, which weighs what each type of city-state
+/// gives); here a city-state whose favour we already hold above nothing is
+/// taken to be one we are courting, not robbing.
+pub fn choose_tribute(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, bool)> {
+    use crate::world::city_states::Relationship;
+    if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for cs in crate::world::city_states::city_states(world) {
+        if !world.diplomacy.have_met(civ, cs) || world.diplomacy.at_war(civ, cs) {
+            continue;
+        }
+        if crate::world::city_states::relationship(world, cs, civ) >= Relationship::Friend {
+            continue;
+        }
+        if world.diplomacy.influence(cs, civ) > Fixed::ZERO {
+            continue;
+        }
+        if crate::world::tribute::willingness(world, r, cs, civ, false) < 0 {
+            continue;
+        }
+        out.push((cs, crate::world::tribute::willingness(world, r, cs, civ, true) > 0));
+    }
+    out
+}
+
 /// Whom to denounce this turn (`DiplomacyAutomation.denounce`).
 ///
 /// Unciv's rule: denounce a civ whose standing with us has fallen fast — the
@@ -767,7 +800,8 @@ pub fn city_state_gift(
     // that falls short is worse than none — it decays away.
     let mut gold = 50;
     while gold < spare {
-        let gained = crate::world::city_states::influence_from_gift(world, gold, game_length, gold_gift_modifier, civ);
+        let gained =
+            crate::world::city_states::influence_from_gift(world, gold, game_length, gold_gift_modifier, civ, cs);
         if gained >= gap {
             return Some((cs, gold));
         }

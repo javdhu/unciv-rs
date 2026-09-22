@@ -82,6 +82,8 @@ pub struct TurnPlan {
     pub make_peace_with: Vec<CivId>,
     /// Civs to denounce publicly.
     pub denounce: Vec<CivId>,
+    /// City-states to demand tribute of, and whether a worker rather than gold.
+    pub tribute: Vec<(CivId, bool)>,
 }
 
 /// Something that happened, in the order it happened.
@@ -169,6 +171,13 @@ pub enum TurnEvent {
     },
     WeLoveTheKingDayEnded {
         city: Id<City>,
+    },
+    /// A city-state paid tribute: gold, or a worker when `worker` is set.
+    TributePaid {
+        city_state: CivId,
+        to: CivId,
+        gold: i32,
+        worker: bool,
     },
     /// One civ publicly denounced another.
     Denounced {
@@ -331,6 +340,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         declare_war_on: Vec::new(),
         make_peace_with: Vec::new(),
         denounce: Vec::new(),
+        tribute: Vec::new(),
         gift: None,
     };
     let Some(c) = world.civ(civ) else { return plan };
@@ -362,6 +372,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         }
     }
     plan.denounce = crate::world::ai::choose_denunciations(world, r, civ);
+    plan.tribute = crate::world::ai::choose_tribute(world, r, civ);
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
@@ -522,6 +533,18 @@ pub fn growth_modifier(world: &World, r: &Ruleset, civ: CivId, happiness: i32) -
     stack
 }
 
+/// A quest book's events, as turn events.
+fn quest_events(events: Vec<crate::world::quests::QuestEvent>) -> impl Iterator<Item = TurnEvent> {
+    use crate::world::quests::QuestEvent as Q;
+    events.into_iter().map(|e| match e {
+        Q::Offered { city_state, quest, to } => TurnEvent::QuestOffered { city_state, quest, to },
+        Q::Completed { city_state, quest, by, influence } => {
+            TurnEvent::QuestCompleted { city_state, quest, by, influence }
+        }
+        Q::Expired { city_state, quest, on } => TurnEvent::QuestExpired { city_state, quest, on },
+    })
+}
+
 /// Carry out a plan. Mutates.
 /// Does this plan still own the city it planned for?
 ///
@@ -559,6 +582,25 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
     for target in &plan.denounce {
         crate::world::opinion::denounce(world, plan.civ, *target);
         events.push(TurnEvent::Denounced { by: plan.civ, target: *target });
+    }
+
+    for (cs, worker) in &plan.tribute {
+        let paid = if *worker {
+            crate::world::tribute::demand_worker(world, r, *cs, plan.civ).map(|_| 0)
+        } else {
+            crate::world::tribute::demand_gold(
+                world,
+                r,
+                *cs,
+                plan.civ,
+                costs.gold_gift_modifier,
+                costs.tribute_interval,
+            )
+        };
+        if let Ok(gold) = paid {
+            events.push(TurnEvent::TributePaid { city_state: *cs, to: plan.civ, gold, worker: *worker });
+            events.extend(quest_events(crate::world::quests::on_bullied(world, r, *cs, plan.civ)));
+        }
     }
 
     // Orders first: a settler that founds this turn should be counted as a
@@ -729,6 +771,7 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             crate::world::city_states::gift_gold(world, plan.civ, cs, gold, costs.game_length, costs.gold_gift_modifier)
         {
             events.push(TurnEvent::GoldGifted { from: plan.civ, to: cs, gold, influence: gained });
+            events.extend(quest_events(crate::world::quests::on_gold_gift(world, r, cs, plan.civ)));
         }
     }
     // Purchases after the gift, as Unciv's AI spends: a purchase the
@@ -973,19 +1016,7 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
 
     // Quests are judged and paid before favour decays, so a quest completed
     // this turn is paid at its full value rather than at one point less.
-    for e in crate::world::quests::tick(world, r) {
-        match e {
-            crate::world::quests::QuestEvent::Offered { city_state, quest, to } => {
-                events.push(TurnEvent::QuestOffered { city_state, quest, to });
-            }
-            crate::world::quests::QuestEvent::Completed { city_state, quest, by, influence } => {
-                events.push(TurnEvent::QuestCompleted { city_state, quest, by, influence });
-            }
-            crate::world::quests::QuestEvent::Expired { city_state, quest, on } => {
-                events.push(TurnEvent::QuestExpired { city_state, quest, on });
-            }
-        }
-    }
+    events.extend(quest_events(crate::world::quests::tick(world, r)));
 
     // City-state favour slides back toward where it belongs, and the bonuses
     // it buys are rebuilt from the new numbers. A friendship that lapsed this
@@ -1037,6 +1068,7 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     update_visibility(world);
     events.extend(detect_first_contact(world));
     crate::world::opinion::tick(world, mods.growth.speed);
+    crate::world::tribute::tick(world);
     world.diplomacy.tick();
     world.turn += 1;
 
@@ -1237,6 +1269,7 @@ mod tests {
                 declare_war_on: Vec::new(),
                 make_peace_with: Vec::new(),
                 denounce: Vec::new(),
+                tribute: Vec::new(),
                 gift: None,
             }
         };
@@ -1987,6 +2020,7 @@ mod expansion {
                 declare_war_on: Vec::new(),
                 make_peace_with: Vec::new(),
                 denounce: Vec::new(),
+                tribute: Vec::new(),
                 gift: None,
             }
         };

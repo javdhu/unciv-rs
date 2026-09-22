@@ -90,6 +90,9 @@ pub struct CostModifiers {
     pub gold_cost: Fixed,
     /// Speed's `faithCostModifier`, for anything bought with faith.
     pub faith_cost: Fixed,
+    /// Speed's `cityStateTributeScalingInterval`: turns between each five
+    /// gold more that a tribute yields.
+    pub tribute_interval: Fixed,
     /// Base religious pressure one city puts on its neighbours each turn.
     /// Nine on Quick, six on Standard, two on Marathon — a shorter game
     /// converts faster so religion still resolves inside it.
@@ -115,6 +118,7 @@ impl Default for CostModifiers {
             gold_gift_modifier: Fixed::ONE,
             gold_cost: Fixed::ONE,
             faith_cost: Fixed::ONE,
+            tribute_interval: Fixed::permille(6_500),
         }
     }
 }

@@ -445,6 +445,7 @@ fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifie
             gold_gift_modifier: speed_obj.map_or(Fixed::ONE, |s| s.gold_gift_modifier),
             gold_cost: speed_obj.map_or(Fixed::ONE, |s| s.gold_cost_modifier),
             faith_cost: speed_obj.map_or(Fixed::ONE, |s| s.faith_cost_modifier),
+            tribute_interval: speed_obj.map_or(Fixed::permille(6_500), |s| s.city_state_tribute_scaling_interval),
         },
         ScienceModifiers {
             difficulty: d.map_or(Fixed::ONE, |d| d.research_cost_modifier),

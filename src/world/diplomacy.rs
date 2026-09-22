@@ -121,6 +121,7 @@ pub enum Sentiment {
     CapturedOurCities,
     Denunciation,
     DenouncedOurAllies,
+    BulliedProtectedMinor,
     // Warmth.
     DenouncedOurEnemies,
     YearsOfPeace,
@@ -229,6 +230,11 @@ pub struct Diplomacy {
 pub enum Flag {
     /// The holder has publicly denounced the subject.
     Denunciation,
+    /// The holder, a city-state, paid the subject tribute — remembered for
+    /// quests, and to hand the subject none.
+    Bullied,
+    /// The holder protects a city-state the subject bullied.
+    RememberBulliedProtectedMinor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

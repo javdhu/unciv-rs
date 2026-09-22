@@ -53,6 +53,8 @@ fn fade_rate(s: Sentiment) -> Option<Fixed> {
         // Personal, so slow to fade.
         Sentiment::Denunciation => Fixed::permille(125),
         Sentiment::DenouncedOurAllies | Sentiment::DenouncedOurEnemies => Fixed::permille(250),
+        // As fast as warmongering.
+        Sentiment::BulliedProtectedMinor => Fixed::permille(500),
         // Handled with peace and open borders below; shared enemies are not
         // forgotten at all in Unciv.
         Sentiment::YearsOfPeace | Sentiment::OpenBorders | Sentiment::SharedEnemy => return None,
