@@ -1,0 +1,21 @@
+[package]
+name = "civ-core"
+version = "0.1.0"
+edition = "2021"
+
+# The core is deliberately dependency-free: rules must be deterministic and
+# portable to wasm32 without dragging a runtime along.
+[lib]
+# rlib for tests and downstream crates; cdylib so the wasm build exports
+# civ_core_fingerprint for the determinism check.
+crate-type = ["rlib", "cdylib"]
+
+[features]
+# Off by default: the rules core must stay dependency-free and wasm-portable.
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", optional = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
