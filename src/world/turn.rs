@@ -43,6 +43,8 @@ pub struct TurnPlan {
     pub civ: CivId,
     /// Which tiles each city's citizens should work.
     pub assignments: Vec<(Id<City>, Vec<TileId>)>,
+    /// Which specialist slots each city's other citizens fill.
+    pub specialists: Vec<(Id<City>, crate::world::specialists::Allocation)>,
     /// Food each city will bank, computed against the planned assignment.
     pub food: Vec<(Id<City>, i32)>,
     /// Production each city will bank.
@@ -270,6 +272,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     let mut plan = TurnPlan {
         civ,
         assignments: Vec::new(),
+        specialists: Vec::new(),
         food: Vec::new(),
         production: Vec::new(),
         border_culture: Vec::new(),
@@ -338,9 +341,14 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         // Work on a copy: planning must not disturb the world the other civs
         // are reading at the same time.
         let mut hypothetical = city.clone();
-        assign_idle_citizens(&world.grid, r, &mut hypothetical, focus);
+        let bonus = crate::world::specialists::bonus_per_specialist(world, r, city_id);
+        crate::world::assignment::release_extra_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
+        assign_idle_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         let surplus = food_surplus(&world.grid, r, &hypothetical);
         let mut output = city_yield(&world.grid, r, &hypothetical) + trade_gold(city_id);
+        for _ in 0..crate::world::specialists::count(&hypothetical) {
+            output += bonus;
+        }
         // A railroad to the capital is worth a quarter more hammers. The
         // capital gets it for being the capital.
         let rail = crate::world::connections::railroad_production_bonus(world, r, civ, &connections, city_id);
@@ -375,6 +383,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         }
         let upkeep = crate::world::city::city_maintenance(r, &hypothetical);
         plan.assignments.push((city_id, std::mem::take(&mut hypothetical.worked)));
+        plan.specialists.push((city_id, std::mem::take(&mut hypothetical.specialists)));
         plan.food.push((city_id, effective));
         plan.production.push((city_id, output.production.round() as i32));
         // Truncated, not rounded: `cultureStored += culture.toInt()`.
@@ -545,6 +554,14 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         }
         if let Some(city) = world.cities.get_mut(*city_id) {
             city.worked = worked.clone();
+        }
+    }
+    for (city_id, specialists) in &plan.specialists {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
+        if let Some(city) = world.cities.get_mut(*city_id) {
+            city.specialists = specialists.clone();
         }
     }
 
@@ -1097,6 +1114,7 @@ mod tests {
             ..TurnPlan {
                 civ: CivId(1),
                 assignments: Vec::new(),
+                specialists: Vec::new(),
                 food: Vec::new(),
                 production: Vec::new(),
                 border_culture: Vec::new(),
@@ -1844,6 +1862,7 @@ mod expansion {
             ..TurnPlan {
                 civ: CivId(0),
                 assignments: Vec::new(),
+                specialists: Vec::new(),
                 food: Vec::new(),
                 production: Vec::new(),
                 border_culture: Vec::new(),

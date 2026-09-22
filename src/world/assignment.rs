@@ -163,11 +163,73 @@ pub fn best_tile_for_new_citizen(grid: &TileGrid, r: &Ruleset, city: &City, focu
 ///
 /// Re-ranking after each assignment matters: taking a food tile can stop a city
 /// starving, which changes what the next citizen should want.
-pub fn assign_idle_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus) {
+///
+/// Each citizen goes to the best open tile or the best open specialist slot,
+/// whichever ranks higher; a tile must rank *above* the slot to win, and with
+/// no slot open it must rank above nothing (`autoAssignPopulation`). One that
+/// fits neither stays unemployed. `bonus` is what every specialist here gets
+/// from uniques, which a city alone cannot see.
+pub fn assign_idle_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
+    let slots = crate::world::specialists::slots(r, city);
     while city.idle_population() > 0 {
-        match best_tile_for_new_citizen(grid, r, city, focus) {
-            Some(t) => city.worked.push(t),
-            None => break, // nothing left to work; they become specialists
+        let surplus = crate::world::city::food_surplus(grid, r, city);
+        let tile = rank_available_tiles(grid, r, city, focus).into_iter().next();
+        let job = slots
+            .iter()
+            .filter(|(id, max)| city.specialists.get(id).copied().unwrap_or(0) < **max)
+            .map(|(id, _)| (crate::world::specialists::rank(r, city, *id, bonus, focus, surplus), *id))
+            // Best rank, then the lower id.
+            .max_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        let tile_value = tile.as_ref().map_or(Fixed::ZERO, |(_, rk)| rk.score);
+        let job_value = job.map_or(Fixed::ZERO, |(v, _)| v);
+        match (tile, job) {
+            (Some((t, _)), _) if tile_value > job_value => city.worked.push(t),
+            (_, Some((_, id))) => *city.specialists.entry(id).or_insert(0) += 1,
+            _ => break,
+        }
+    }
+}
+
+/// Let go of citizens the city no longer has, worst first
+/// (`unassignExtraPopulation`).
+///
+/// A tile outside the city's reach is dropped outright, and so is a slot whose
+/// building is gone. Then, while more are assigned than exist — after a
+/// famine, say — the worst tile and the worst specialist are compared and the
+/// weaker let go. Without this a city that starved kept working the tile of
+/// the citizen it lost.
+pub fn release_extra_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
+    let workable = workable_tiles(grid, city);
+    city.worked.retain(|t| workable.contains(t));
+
+    let slots = crate::world::specialists::slots(r, city);
+    for (id, n) in city.specialists.iter_mut() {
+        *n = (*n).min(slots.get(id).copied().unwrap_or(0));
+    }
+    city.specialists.retain(|_, n| *n > 0);
+
+    while city.worked.len() as u32 + crate::world::specialists::count(city) > city.population {
+        let surplus = crate::world::city::food_surplus(grid, r, city);
+        let worst_tile = city
+            .worked
+            .iter()
+            .map(|t| (rank_for_city_work(tile_yield(grid, r, *t), city, focus, surplus).score, *t))
+            .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        let worst_job = city
+            .specialists
+            .keys()
+            .map(|id| (crate::world::specialists::rank(r, city, *id, bonus, focus, surplus), *id))
+            .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        match (worst_tile, worst_job) {
+            (Some((tv, t)), Some((jv, _))) if tv < jv => city.worked.retain(|w| *w != t),
+            (_, Some((_, id))) => {
+                if let Some(n) = city.specialists.get_mut(&id) {
+                    *n -= 1;
+                }
+                city.specialists.retain(|_, n| *n > 0);
+            }
+            (Some((_, t)), None) => city.worked.retain(|w| *w != t),
+            (None, None) => break,
         }
     }
 }
@@ -304,7 +366,7 @@ mod tests {
         assert_eq!(best_tile_for_new_citizen(&g, &r, &c, CityFocus::None), Some(prize));
 
         c.population = 3;
-        assign_idle_citizens(&g, &r, &mut c, CityFocus::None);
+        assign_idle_citizens(&g, &r, &mut c, CityFocus::None, Stats::ZERO);
         assert_eq!(c.worked.len(), 3);
         assert_eq!(c.worked[0], prize, "the best tile went first");
         assert_eq!(c.idle_population(), 0);
@@ -317,7 +379,7 @@ mod tests {
         let run = || {
             let mut c = city(&g);
             c.population = 5;
-            assign_idle_citizens(&g, &r, &mut c, CityFocus::None);
+            assign_idle_citizens(&g, &r, &mut c, CityFocus::None, Stats::ZERO);
             c.worked
         };
         // Every tile is identical, so only the tie-break decides. It must not
@@ -337,7 +399,7 @@ mod tests {
             g.owner[t.0 as usize] = Some(CivId(0));
         }
         c.population = 10;
-        assign_idle_citizens(&g, &r, &mut c, CityFocus::None);
+        assign_idle_citizens(&g, &r, &mut c, CityFocus::None, Stats::ZERO);
         assert_eq!(c.worked.len(), 3, "the rest become specialists");
         assert_eq!(c.idle_population(), 7);
     }

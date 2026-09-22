@@ -66,6 +66,8 @@ pub struct City {
     /// Culture banked toward the next border tile. Separate from the civ's
     /// policy pool: the same culture fills both.
     pub culture_stored: i32,
+    /// Citizens working in buildings rather than on tiles, by kind.
+    pub specialists: crate::world::specialists::Allocation,
 }
 
 impl City {
@@ -88,12 +90,13 @@ impl City {
             faith: crate::world::religion::CityFaith::new(),
             tiles: Vec::new(),
             culture_stored: 0,
+            specialists: Default::default(),
         }
     }
 
     /// Citizens not assigned to a tile or a specialist slot.
     pub fn idle_population(&self) -> u32 {
-        self.population.saturating_sub(self.worked.len() as u32)
+        self.population.saturating_sub(self.worked.len() as u32 + crate::world::specialists::count(self))
     }
 }
 
@@ -186,6 +189,11 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
     };
     if !population.is_zero() {
         out.push((Source::new(SourceKind::Other, "Population"), population));
+    }
+    // Specialists yield as a building's flat stats do, before percentages.
+    let specialists = crate::world::specialists::yields(r, city);
+    if !specialists.is_zero() {
+        out.push((Source::new(SourceKind::Other, "Specialists"), specialists));
     }
 
     // Buildings contribute their flat yields before any percentage applies.

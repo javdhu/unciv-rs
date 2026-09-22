@@ -45,9 +45,7 @@ pub enum GreatPersonEvent {
 
 /// Points a civ's cities generate this turn, by kind.
 ///
-/// From buildings' `greatPersonPoints`. Specialists also produce them in Civ;
-/// specialist slots are loaded but nobody is assigned to them yet, so that
-/// source is missing rather than wrong.
+/// From buildings' `greatPersonPoints`, and from the specialists at work.
 pub fn points_per_turn(world: &World, r: &Ruleset, civ: CivId) -> BTreeMap<String, i32> {
     let mut out: BTreeMap<String, i32> = BTreeMap::new();
     let Some(c) = world.civ(civ) else { return out };
@@ -56,6 +54,9 @@ pub fn points_per_turn(world: &World, r: &Ruleset, civ: CivId) -> BTreeMap<Strin
             for (kind, amount) in &building.great_person_points {
                 *out.entry(kind.clone()).or_insert(0) += amount;
             }
+        }
+        for (kind, amount) in crate::world::specialists::points(r, city) {
+            *out.entry(kind).or_insert(0) += amount;
         }
     }
     out

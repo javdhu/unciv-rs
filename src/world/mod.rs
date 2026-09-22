@@ -31,6 +31,7 @@ pub mod religion;
 pub mod research;
 pub mod resources;
 pub mod settling;
+pub mod specialists;
 pub mod turn;
 pub mod unique_index;
 pub mod victory;
