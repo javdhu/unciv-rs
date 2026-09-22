@@ -335,6 +335,20 @@ pub enum MoveRejection {
     TileOccupied,
 }
 
+impl std::fmt::Display for MoveRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MoveRejection::NoSuchUnit => "no such unit",
+            MoveRejection::Impassable => "the unit cannot enter that terrain",
+            MoveRejection::OutOfRange => "further than this turn's movement allows",
+            MoveRejection::NoMovement => "no movement to spend",
+            MoveRejection::TileOccupied => "the tile is occupied",
+        })
+    }
+}
+
+impl std::error::Error for MoveRejection {}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MoveEvent {
     pub unit: Id<Unit>,

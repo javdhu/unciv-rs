@@ -84,7 +84,7 @@ pub fn fingerprint() -> u64 {
         .add(r.terrains.len() as i64);
 
     // Number parsing has to be exact, not merely close.
-    if let Some(v) = Json::parse(r#"{"a": 0.95, "b": 1.4813, "c": -2.5}"#).ok() {
+    if let Ok(v) = Json::parse(r#"{"a": 0.95, "b": 1.4813, "c": -2.5}"#) {
         for k in ["a", "b", "c"] {
             d.add_fixed(v.get(k).and_then(|x| x.as_fixed()).unwrap_or(Fixed::ZERO));
         }
@@ -174,7 +174,7 @@ pub fn fingerprint() -> u64 {
     // --- combat -----------------------------------------------------------
     for att in 1..12i32 {
         for def in 1..12i32 {
-            let ratio = Fixed::whole(att).div(Fixed::whole(def)).unwrap_or(Fixed::ONE);
+            let ratio = Fixed::whole(att).checked_div(Fixed::whole(def)).unwrap_or(Fixed::ONE);
             for roll in [0i64, 250, 500, 750, 999] {
                 let rnd = Fixed::permille(roll);
                 d.add_fixed(damage_modifier(ratio, false, rnd));
@@ -241,13 +241,9 @@ pub fn fingerprint() -> u64 {
     // an arithmetic edge case.
     {
         use crate::world::assignment::CityFocus;
-        use crate::world::construction::CostModifiers;
         use crate::world::entities::{Civilization, Unit};
         use crate::world::mapgen::{generate, MapParameters};
-        use crate::world::city::GrowthModifiers;
-        use crate::world::policies::PolicyModifiers;
-        use crate::world::research::ScienceModifiers;
-        use crate::world::turn::advance_turn;
+        use crate::world::turn::{advance_turn, TurnModifiers};
         use crate::world::world::World;
 
         let map = generate(
@@ -291,11 +287,7 @@ pub fn fingerprint() -> u64 {
                     &mut w,
                     &r,
                     CityFocus::None,
-                    GrowthModifiers::default(),
-                    CostModifiers::default(),
-                    ScienceModifiers::default(),
-                    None,
-                    PolicyModifiers::default(),
+                    TurnModifiers::default(),
                 );
             }
 

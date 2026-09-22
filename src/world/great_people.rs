@@ -33,7 +33,7 @@ pub struct GreatPeople {
 impl GreatPeople {
     pub fn threshold(&self, kind: &str, speed: Fixed) -> i32 {
         let base = self.thresholds.get(kind).copied().unwrap_or(FIRST_THRESHOLD);
-        Fixed::whole(base).mul(speed).floor().max(1) as i32
+        (Fixed::whole(base) * speed).floor().max(1) as i32
     }
 }
 

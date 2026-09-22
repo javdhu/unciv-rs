@@ -282,7 +282,7 @@ mod tests {
         w.found_city(City::found("Rome", CivId(0), centre));
 
         // Still needs the revealing tech.
-        assert!(recompute_stock(&w, &r, CivId(0)).get(&iron).is_none());
+        assert!(!recompute_stock(&w, &r, CivId(0)).contains_key(&iron));
 
         let res = &r.resources[iron];
         for tech in [res.revealed_by.as_deref()].into_iter().flatten() {

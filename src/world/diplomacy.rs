@@ -412,7 +412,9 @@ mod tests {
     fn war_dissolves_a_defensive_pact_between_the_two() {
         let mut d = Diplomacy::new();
         d.meet(A, B);
-        Pair::of(A, B).map(|p| d.pacts.get_mut(&p).unwrap().defensive_pact = true);
+        if let Some(p) = Pair::of(A, B) {
+            d.pacts.get_mut(&p).unwrap().defensive_pact = true;
+        }
         assert!(d.pact(A, B).unwrap().defensive_pact);
 
         d.declare_war(A, B);

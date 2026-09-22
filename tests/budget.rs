@@ -30,13 +30,9 @@
 
 use civ_core::ruleset::Ruleset;
 use civ_core::world::assignment::CityFocus;
-use civ_core::world::city::GrowthModifiers;
-use civ_core::world::construction::CostModifiers;
 use civ_core::world::entities::{Civilization, Unit};
 use civ_core::world::mapgen::{generate, MapParameters};
-use civ_core::world::policies::PolicyModifiers;
-use civ_core::world::research::ScienceModifiers;
-use civ_core::world::turn::advance_turn;
+use civ_core::world::turn::{advance_turn, TurnModifiers};
 use civ_core::world::world::World;
 use civ_core::world::grid::CivId;
 use std::time::Instant;
@@ -72,11 +68,7 @@ fn play(w: &mut World, r: &Ruleset, turns: u32) {
             w,
             r,
             CityFocus::None,
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            None,
-            PolicyModifiers::default(),
+            TurnModifiers::default(),
         );
     }
 }

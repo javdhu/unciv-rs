@@ -9,7 +9,7 @@
 //! the tens of thousands, modifiers to three decimals) with room to spare.
 
 use std::fmt;
-use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 /// Thousandths per whole unit.
 pub const SCALE: i64 = 1_000;
@@ -96,14 +96,8 @@ impl Fixed {
         self.0 == 0
     }
 
-    /// Saturating on overflow rather than wrapping: a silently wrapped yield
-    /// would be far harder to notice than a pinned one.
-    pub fn mul(self, other: Fixed) -> Fixed {
-        let product = (self.0 as i128) * (other.0 as i128) / SCALE as i128;
-        Fixed(product.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
-    }
-
-    pub fn div(self, other: Fixed) -> Option<Fixed> {
+    /// `None` on a zero divisor, like the integer `checked_div`.
+    pub fn checked_div(self, other: Fixed) -> Option<Fixed> {
         if other.0 == 0 {
             return None;
         }
@@ -119,6 +113,15 @@ impl Add for Fixed {
 impl Sub for Fixed {
     type Output = Fixed;
     fn sub(self, o: Fixed) -> Fixed { Fixed(self.0.saturating_sub(o.0)) }
+}
+/// Saturating on overflow rather than wrapping: a silently wrapped yield
+/// would be far harder to notice than a pinned one.
+impl Mul for Fixed {
+    type Output = Fixed;
+    fn mul(self, o: Fixed) -> Fixed {
+        let product = (self.0 as i128) * (o.0 as i128) / SCALE as i128;
+        Fixed(product.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
+    }
 }
 impl Neg for Fixed {
     type Output = Fixed;
@@ -325,14 +328,14 @@ mod tests {
     #[test]
     fn tenths_sum_exactly() {
         // The canonical float failure: 0.1 ten times should be exactly 1.
-        let sum: Fixed = std::iter::repeat(Fixed::permille(100)).take(10).sum();
+        let sum: Fixed = std::iter::repeat_n(Fixed::permille(100), 10).sum();
         assert_eq!(sum, Fixed::ONE);
     }
 
     #[test]
     fn multiplication_is_exact_and_saturates() {
-        assert_eq!(Fixed::whole(3).mul(Fixed::permille(1_500)), Fixed::permille(4_500));
-        assert_eq!(Fixed::permille(i64::MAX).mul(Fixed::whole(1000)), Fixed::permille(i64::MAX));
+        assert_eq!(Fixed::whole(3) * Fixed::permille(1_500), Fixed::permille(4_500));
+        assert_eq!(Fixed::permille(i64::MAX) * Fixed::whole(1000), Fixed::permille(i64::MAX));
     }
 
     #[test]
@@ -436,9 +439,9 @@ fn exp2_q32(y: i128) -> u128 {
     let frac = (y - (int_part << 32)) as u128; // always in [0, 1)
     let table = exp2_bit_table();
     let mut acc = Q32;
-    for k in 1..=32 {
+    for (k, &factor) in table.iter().enumerate().skip(1) {
         if frac & (1 << (32 - k)) != 0 {
-            acc = (acc * table[k]) >> 32;
+            acc = (acc * factor) >> 32;
         }
     }
     // Shift last, so the mantissa keeps its precision through the multiplies.
@@ -521,7 +524,7 @@ mod pow_tests {
 
     #[test]
     fn log2_matches_reference() {
-        for (x, want) in [(1.0, 0.0), (2.0, 1.0), (8.0, 3.0), (0.5, -1.0), (10.0, 3.321928)] {
+        for (x, want) in [(1.0, 0.0), (2.0, 1.0), (8.0, 3.0), (0.5, -1.0), (10.0, std::f64::consts::LOG2_10)] {
             let got = Fixed::parse(&x.to_string()).unwrap().log2().unwrap();
             assert!(err(got, want) <= 1, "log2({x}) = {got}, want {want}");
         }
@@ -531,7 +534,7 @@ mod pow_tests {
 
     #[test]
     fn exp2_matches_reference() {
-        for (x, want) in [(0.0, 1.0), (1.0, 2.0), (3.0, 8.0), (0.5, 1.414214), (-2.0, 0.25)] {
+        for (x, want) in [(0.0, 1.0), (1.0, 2.0), (3.0, 8.0), (0.5, std::f64::consts::SQRT_2), (-2.0, 0.25)] {
             let got = Fixed::parse(&x.to_string()).unwrap().exp2();
             assert!(err(got, want) <= 1, "exp2({x}) = {got}, want {want}");
         }
@@ -568,7 +571,7 @@ mod pow_tests {
 
     #[test]
     fn sqrt_matches_reference() {
-        for (x, want) in [(4.0, 2.0), (2.0, 1.414214), (100.0, 10.0), (0.25, 0.5)] {
+        for (x, want) in [(4.0, 2.0), (2.0, std::f64::consts::SQRT_2), (100.0, 10.0), (0.25, 0.5)] {
             let got = Fixed::parse(&x.to_string()).unwrap().sqrt().unwrap();
             assert!(err(got, want) <= 1, "sqrt({x}) = {got}, want {want}");
         }
@@ -590,7 +593,7 @@ mod pow_tests {
         // CityExpansionManager.kt:46 — culture for the next tile: 6(n + 1.4813)^1.3
         let culture = |claimed: i32| -> i64 {
             let base = Fixed::whole(claimed) + Fixed::parse("1.4813").unwrap();
-            (Fixed::whole(6).mul(base.pow(Fixed::permille(1_300)).unwrap())).floor()
+            (Fixed::whole(6) * base.pow(Fixed::permille(1_300)).unwrap()).floor()
         };
         // Reference values computed from the same expression in f64.
         //
@@ -637,6 +640,19 @@ mod pow_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Precise(i128);
 
+impl Add for Precise {
+    type Output = Precise;
+    fn add(self, o: Precise) -> Precise {
+        Precise(self.0 + o.0)
+    }
+}
+impl Mul for Precise {
+    type Output = Precise;
+    fn mul(self, o: Precise) -> Precise {
+        Precise((self.0 * o.0) >> 32)
+    }
+}
+
 impl Precise {
     const ONE: Precise = Precise(1 << 32);
 
@@ -648,16 +664,8 @@ impl Precise {
         Precise((n as i128) << 32)
     }
 
-    pub fn mul(self, o: Precise) -> Precise {
-        Precise((self.0 * o.0) >> 32)
-    }
-
-    pub fn div(self, o: Precise) -> Option<Precise> {
+    pub fn checked_div(self, o: Precise) -> Option<Precise> {
         (o.0 != 0).then(|| Precise((self.0 << 32) / o.0))
-    }
-
-    pub fn add(self, o: Precise) -> Precise {
-        Precise(self.0 + o.0)
     }
 
     /// Integer powers by repeated squaring.
@@ -670,9 +678,9 @@ impl Precise {
         let mut base = self;
         while exp > 0 {
             if exp & 1 == 1 {
-                acc = acc.mul(base);
+                acc = acc * base;
             }
-            base = base.mul(base);
+            base = base * base;
             exp >>= 1;
         }
         acc

@@ -59,7 +59,7 @@ pub fn ruleset_files(root: &str) -> Vec<PathBuf> {
                 if p.file_name().is_some_and(|n| n == "translations") { continue }
                 walk(&p, acc);
             } else if p.extension().is_some_and(|x| x == "json")
-                && !p.file_name().is_some_and(|n| n == "Tutorials.json") {
+                && p.file_name().is_none_or(|n| n != "Tutorials.json") {
                 acc.push(p);
             }
         }

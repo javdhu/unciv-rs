@@ -113,7 +113,7 @@ pub fn choose_construction(
                         // point is eyes, not strength, so a warrior counts:
                         // narrowing this to weak units cost the early game its
                         // exploration and with it its first contacts.
-                        Fixed::whole(100 + u.movement as i32 * 10)
+                        Fixed::whole(100 + u.movement * 10)
                     } else if strength > 0 {
                         // Soldiers, by what they bring to a fight per hammer.
                         //
@@ -139,11 +139,11 @@ pub fn choose_construction(
                     let b = r.buildings.get(id)?;
                     let stats = crate::ruleset::queries::HasStats::stats(b);
                     let mut flat: Fixed =
-                        Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
+                        Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
                     // A percentage is worth something even with nothing to
                     // multiply yet, or nothing would ever build a Library.
                     let pct: i32 = b.percent_stat_bonus.values().sum();
-                    flat = flat + Fixed::whole(pct);
+                    flat += Fixed::whole(pct);
 
                     // Upkeep is priced, not gated.
                     //
@@ -162,8 +162,8 @@ pub fn choose_construction(
                     // debt, which is the old deadlock wearing a new hat.
                     let pressure = if net_gold < 0 { Fixed::whole(2) } else { Fixed::ONE };
                     let upkeep =
-                        Fixed::whole(b.maintenance.unwrap_or(0)).mul(weights.gold).mul(pressure);
-                    flat = flat - upkeep;
+                        (Fixed::whole(b.maintenance.unwrap_or(0)) * weights.gold) * pressure;
+                    flat -= upkeep;
 
                     // A building that wins the game is worth building even
                     // when it yields nothing at all — but only if this city
@@ -184,7 +184,7 @@ pub fn choose_construction(
                     if wins_the_game.contains(&id) && production > 0 {
                         let turns = cost / production;
                         if turns <= VICTORY_BUILD_HORIZON {
-                            flat = flat + victory_urgency(world, r, civ, id);
+                            flat += victory_urgency(world, r, civ, id);
                         }
                     }
 
@@ -193,12 +193,12 @@ pub fn choose_construction(
                     // colosseum beats a library exactly when it should.
                     if happiness < 0 && stats.happiness > Fixed::ZERO {
                         let urgency = Fixed::whole((-happiness).min(20));
-                        flat = flat + stats.happiness.mul(urgency);
+                        flat += stats.happiness * urgency;
                     }
                     flat
                 }
             };
-            let score = value.div(Fixed::whole(cost.max(1)))?;
+            let score = value.checked_div(Fixed::whole(cost.max(1)))?;
             Some((score, what))
         })
         .filter(|(score, _)| *score > Fixed::ZERO)
@@ -353,9 +353,9 @@ fn victory_urgency(
         // 50 at no progress, 1050 for the one that finishes it.
         let after = (met + 1).min(judgeable);
         let share = Fixed::whole(after as i32)
-            .div(Fixed::whole(judgeable as i32))
+            .checked_div(Fixed::whole(judgeable as i32))
             .unwrap_or(Fixed::ZERO);
-        let value = Fixed::whole(50) + share.mul(Fixed::whole(1000));
+        let value = Fixed::whole(50) + (share * Fixed::whole(1000));
         best = best.max(value);
     }
     best
@@ -442,8 +442,8 @@ pub fn improvable_tiles(
                 .map(|i| {
                     let stats = crate::ruleset::queries::HasStats::stats(&r.improvements[i]);
                     let mut worth: Fixed =
-                        Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
-                    worth = worth + resource_worth(world, r, civ_ref, *t, i);
+                        Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    worth += resource_worth(world, r, civ_ref, *t, i);
                     (worth, i)
                 })
                 .filter(|(worth, _)| *worth > Fixed::ZERO)
@@ -760,7 +760,7 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
         return false;
     }
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
-    if mine < theirs.mul(Fixed::permille(1_500)) || mine.is_zero() {
+    if mine < (theirs * Fixed::permille(1_500)) || mine.is_zero() {
         return false;
     }
     // Something of theirs must be within reach, or the war is a gesture.
@@ -801,11 +801,11 @@ pub fn wants_peace(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool
 
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
     // Losing badly: sue for peace.
-    if mine.mul(Fixed::whole(2)) < theirs {
+    if (mine * Fixed::whole(2)) < theirs {
         return true;
     }
     // Winning clearly: press on.
-    if mine > theirs.mul(Fixed::whole(2)) {
+    if mine > (theirs * Fixed::whole(2)) {
         return false;
     }
     // A grinding stalemate is worth ending.

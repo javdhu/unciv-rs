@@ -73,12 +73,8 @@ pub fn policy_cost(adopted: usize, cities: usize, m: PolicyModifiers) -> i32 {
         .unwrap_or(Fixed::ZERO);
     let base = Precise::from_fixed(Fixed::whole(BASE_POLICY_COST) + curve);
 
-    let city_modifier = Precise::whole(cities.saturating_sub(1) as i32)
-        .mul(Precise::from_fixed(m.map.policy_cost_per_city));
-    let scaled = base
-        .mul(Precise::from_fixed(m.difficulty))
-        .mul(Precise::from_fixed(m.speed))
-        .mul(Precise::whole(1).add(city_modifier));
+    let city_modifier = Precise::whole(cities.saturating_sub(1) as i32) * Precise::from_fixed(m.map.policy_cost_per_city);
+    let scaled = ((base * Precise::from_fixed(m.difficulty)) * Precise::from_fixed(m.speed)) * (Precise::whole(1) + city_modifier);
 
     // Rounds, unlike tech and production, then drops to a multiple of five.
     let cost = scaled.round().max(1) as i32;
@@ -97,6 +93,23 @@ pub enum PolicyRejection {
     NotEnoughCulture { needed: i32, stored: i32 },
     Unknown,
 }
+
+impl std::fmt::Display for PolicyRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PolicyRejection::AlreadyAdopted => write!(f, "already adopted"),
+            PolicyRejection::MissingPrerequisite(p) => write!(f, "needs {p} first"),
+            PolicyRejection::EraTooEarly { needs } => write!(f, "needs the {needs}"),
+            PolicyRejection::NotAvailable => write!(f, "not available to this civ now"),
+            PolicyRejection::NotEnoughCulture { needed, stored } => {
+                write!(f, "needs {needed} culture, has {stored}")
+            }
+            PolicyRejection::Unknown => write!(f, "not in this ruleset"),
+        }
+    }
+}
+
+impl std::error::Error for PolicyRejection {}
 
 /// The highest era this civ has reached, by researched techs.
 pub fn era_number(world: &World, r: &Ruleset, civ: CivId) -> i32 {
@@ -364,7 +377,7 @@ mod tests {
         let civ = w.civ(CivId(0)).unwrap();
         assert!(civ.adopted_policies.contains(&id));
         assert!(civ.uniques.has(kind), "the policy's unique should now be in force");
-        assert!(civ.uniques.len() > 0);
+        assert!(!civ.uniques.is_empty());
         println!(
             "{}: {:?} live, index holds {} uniques (before: {before})",
             r.policies[id].name, kind, civ.uniques.len()

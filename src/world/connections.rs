@@ -239,6 +239,10 @@ fn has_harbour(city: &City) -> bool {
     city.uniques.has(crate::UniqueType::ConnectTradeRoutes)
 }
 
+/// One search: the medium it grants, which tiles it may cross, and which
+/// cities it may land at.
+type Search<'a> = (Mediums, Box<dyn Fn(TileId) -> bool + 'a>, bool);
+
 /// Work out what this civ's cities are joined to its capital by.
 pub fn find(world: &World, r: &Ruleset, civ: CivId) -> Connections {
     let Some(capital) = capital_of(world, r, civ) else { return Connections::none() };
@@ -275,7 +279,7 @@ pub fn find(world: &World, r: &Ruleset, civ: CivId) -> Connections {
         // Each search is (medium it grants, which tiles it may cross, which
         // cities it may land at). Ordered so the better mediums are found
         // first; the fixpoint does not depend on it, but the queue stays short.
-        let mut searches: Vec<(Mediums, Box<dyn Fn(TileId) -> bool + '_>, bool)> = Vec::new();
+        let mut searches: Vec<Search<'_>> = Vec::new();
 
         if has_harbour(city) && city.owner == civ && !city_is_blockaded(world, r, city) {
             // Only an actual railroad arriving here promotes the hop. The
@@ -409,8 +413,8 @@ pub fn trade_route_stats(
     let Some(city) = world.cities.get(city_id) else { return Stats::ZERO };
 
     let mut stats = Stats {
-        gold: Fixed::permille(150).mul(Fixed::whole(capital.population as i32))
-            + Fixed::permille(1100).mul(Fixed::whole(city.population as i32))
+        gold: (Fixed::permille(150) * Fixed::whole(capital.population as i32))
+            + (Fixed::permille(1100) * Fixed::whole(city.population as i32))
             - Fixed::whole(1),
         ..Stats::ZERO
     };
@@ -436,7 +440,7 @@ pub fn trade_route_stats(
         .filter(|u| holds(u));
     for u in sources {
         if let Some(extra) = u.params.first().and_then(|p| Stats::parse(p)) {
-            stats = stats + extra;
+            stats += extra;
         }
     }
 
@@ -458,14 +462,14 @@ pub fn trade_route_stats(
         ) else {
             continue;
         };
-        percent[stat] = percent[stat] + amount;
+        percent[stat] += amount;
     }
     if !percent.is_zero() {
         for stat in Stat::ALL {
             let pct = percent[stat];
             if !pct.is_zero() {
                 if let Some(scaled) =
-                    stats[stat].mul(Fixed::whole(100) + pct).div(Fixed::whole(100))
+                    (stats[stat] * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100))
                 {
                     stats[stat] = scaled;
                 }
@@ -545,7 +549,7 @@ pub fn transportation_upkeep(world: &World, r: &Ruleset, civ: CivId) -> Stats {
             ) else {
                 continue;
             };
-            total[stat] = total[stat] + amount;
+            total[stat] += amount;
         }
     }
 
@@ -556,7 +560,7 @@ pub fn transportation_upkeep(world: &World, r: &Ruleset, civ: CivId) -> Stats {
             for stat in Stat::ALL {
                 let v = total[stat];
                 if !v.is_zero() {
-                    if let Some(scaled) = v.mul(pct).div(Fixed::whole(100)) {
+                    if let Some(scaled) = (v * pct).checked_div(Fixed::whole(100)) {
                         total[stat] = scaled;
                     }
                 }
@@ -654,8 +658,8 @@ fn link_pays(
         return false;
     };
     let Some(city) = world.cities.get(city_id) else { return false };
-    let worth = Fixed::permille(150).mul(Fixed::whole(capital.population as i32))
-        + Fixed::permille(1100).mul(Fixed::whole(city.population as i32))
+    let worth = Fixed::permille(150) * Fixed::whole(capital.population as i32)
+        + (Fixed::permille(1100) * Fixed::whole(city.population as i32))
         - Fixed::whole(1);
 
     // Only our own ground is charged, and a city we are about to grow into
@@ -680,7 +684,7 @@ fn link_pays(
         .filter_map(|u| u.params.first().and_then(|p| Fixed::parse(p)))
         .sum();
 
-    worth > per_tile.mul(Fixed::whole(charged))
+    worth > (per_tile * Fixed::whole(charged))
 }
 
 /// Dijkstra from a city to the nearest tile of the network, where a tile that

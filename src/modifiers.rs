@@ -153,7 +153,7 @@ impl ModifierStack {
             .filter(|m| m.layer == Layer::Additive)
             .map(|m| m.amount)
             .sum();
-        let after_additive = base + base.mul(Fixed::permille(additive.raw()).div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
+        let after_additive = base + (base * Fixed::permille(additive.raw()).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
 
         // Multiplicative factors accumulate as one exact rational and round
         // once, which is what makes them order-independent.

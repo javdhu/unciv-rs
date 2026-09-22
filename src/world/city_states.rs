@@ -109,12 +109,12 @@ pub fn resting_point(world: &World, cs: CivId, major: CivId) -> Fixed {
     if let Some(c) = world.civ(major) {
         for u in c.uniques.matching(crate::UniqueType::CityStateRestingPoint) {
             if let Some(v) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                point = point + v;
+                point += v;
             }
         }
     }
     if world.diplomacy.is_protector(major, cs) {
-        point = point + PROTECTOR_RESTING_BONUS;
+        point += PROTECTOR_RESTING_BONUS;
     }
     point
 }
@@ -136,13 +136,12 @@ pub fn drift(world: &World, cs: CivId, major: CivId) -> Fixed {
         if let Some(c) = world.civ(major) {
             for u in c.uniques.matching(crate::UniqueType::CityStateInfluenceDegradation) {
                 if let Some(v) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                    percent = percent + v;
+                    percent += v;
                 }
             }
         }
-        let scaled = step
-            .mul(Fixed::whole(100) + percent)
-            .div(Fixed::whole(100))
+        let scaled = (step * (Fixed::whole(100) + percent))
+            .checked_div(Fixed::whole(100))
             .unwrap_or(step)
             .max(Fixed::ZERO);
         -(scaled.min(influence - resting))
@@ -152,11 +151,10 @@ pub fn drift(world: &World, cs: CivId, major: CivId) -> Fixed {
             .civ(major)
             .is_some_and(|c| c.uniques.has(crate::UniqueType::CityStateInfluenceRecoversTwiceNormalRate))
         {
-            percent = percent + Fixed::whole(100);
+            percent += Fixed::whole(100);
         }
-        let scaled = step
-            .mul(Fixed::whole(100) + percent)
-            .div(Fixed::whole(100))
+        let scaled = (step * (Fixed::whole(100) + percent))
+            .checked_div(Fixed::whole(100))
             .unwrap_or(step)
             .max(Fixed::ZERO);
         scaled.min(resting - influence)
@@ -257,23 +255,21 @@ pub fn influence_from_gift(
     let base = Fixed::whole(gold)
         .pow(Fixed::permille(1_010))
         .unwrap_or(Fixed::whole(gold))
-        .div(Fixed::permille(9_800))
+        .checked_div(Fixed::permille(9_800))
         .unwrap_or(Fixed::ZERO);
 
     // Gifts are worth less as the game goes on: a third as much by the end.
     let progress = if game_length > 0 {
         Fixed::whole(world.turn as i32)
-            .div(Fixed::whole(game_length))
+            .checked_div(Fixed::whole(game_length))
             .unwrap_or(Fixed::ONE)
             .min(Fixed::ONE)
     } else {
         Fixed::ONE
     };
-    let decay = Fixed::ONE - Fixed::permille(667).mul(progress);
+    let decay = Fixed::ONE - (Fixed::permille(667) * progress);
 
-    let mut gained = Precise::from_fixed(base)
-        .mul(Precise::from_fixed(decay))
-        .mul(Precise::from_fixed(if gold_gift_modifier.is_zero() {
+    let mut gained = ((Precise::from_fixed(base) * Precise::from_fixed(decay)) * Precise::from_fixed(if gold_gift_modifier.is_zero() {
             Fixed::ONE
         } else {
             gold_gift_modifier
@@ -283,7 +279,7 @@ pub fn influence_from_gift(
     if let Some(c) = world.civ(donor) {
         for u in c.uniques.matching(crate::UniqueType::CityStateGoldGiftsProvideMoreInfluence) {
             if let Some(pct) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                gained = gained.mul(Fixed::whole(100) + pct).div(Fixed::whole(100)).unwrap_or(gained);
+                gained = (gained * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100)).unwrap_or(gained);
             }
         }
     }
@@ -371,7 +367,7 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
 
     for u in c.uniques.matching(crate::UniqueType::Stats).filter(|u| holds(u)) {
         if let Some(s) = u.params.first().and_then(|p| Stats::parse(p)) {
-            total = total + s;
+            total += s;
         }
     }
 
@@ -393,7 +389,7 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
                     == crate::world::conditionals::Verdict::True
             };
             if matched {
-                total = total + stats;
+                total += stats;
             }
         }
     }
@@ -446,7 +442,7 @@ pub enum ElectionResult {
 /// the same game elects the same government everywhere.
 pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
     let mut results = Vec::new();
-    if world.turn == 0 || world.turn % ELECTION_TURNS != 0 {
+    if world.turn == 0 || !world.turn.is_multiple_of(ELECTION_TURNS) {
         return results;
     }
 

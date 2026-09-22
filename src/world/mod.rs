@@ -41,6 +41,6 @@ pub use city::{apply_food, City, GrowthEvent, GrowthModifiers};
 pub use fog::{TileMemory, Visibility};
 pub use grid::{CivId, Direction, TileGrid, TileId};
 pub use entities::{Civilization, Unit};
-pub use turn::{advance_turn, TurnEvent, TurnPlan};
+pub use turn::{advance_turn, TurnEvent, TurnModifiers, TurnPlan};
 pub use world::World;
 pub use yields::{tile_yield, tile_yield_breakdown};

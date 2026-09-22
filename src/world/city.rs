@@ -144,7 +144,7 @@ pub fn food_to_next_population(population: u32, m: GrowthModifiers) -> i32 {
     // with `foodRequired.toInt()`, so a city-state's 82.5 is 82, not 83. The
     // requirement is always positive, so `floor` is that truncation. Rounding
     // here would cost one food per growth and compound over a whole game.
-    base.mul(m.speed).mul(m.civ).floor().max(1) as i32
+    (base * m.speed * m.civ).floor().max(1) as i32
 }
 
 /// What the citizens eat.
@@ -218,7 +218,7 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
                 if times > 0 {
                     let mut scaled = Stats::ZERO;
                     for st in Stat::ALL {
-                        scaled[st] = stats[st].mul(Fixed::whole(times));
+                        scaled[st] = stats[st] * Fixed::whole(times);
                     }
                     out.push((Source::new(SourceKind::Building, u.text.clone()), scaled));
                 }
@@ -242,7 +242,7 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
                 if matching > 0 {
                     let mut scaled = Stats::ZERO;
                     for st in Stat::ALL {
-                        scaled[st] = stats[st].mul(Fixed::whole(matching));
+                        scaled[st] = stats[st] * Fixed::whole(matching);
                     }
                     out.push((Source::new(SourceKind::Building, u.text.clone()), scaled));
                 }
@@ -318,7 +318,7 @@ pub fn city_strength(r: &Ruleset, city: &City) -> Fixed {
         .filter_map(|b| b.city_strength)
         .sum();
     Fixed::permille(CITY_STRENGTH_BASE)
-        + Fixed::permille(CITY_STRENGTH_PER_POP).mul(Fixed::whole(city.population as i32))
+        + (Fixed::permille(CITY_STRENGTH_PER_POP) * Fixed::whole(city.population as i32))
         + from_buildings
 }
 

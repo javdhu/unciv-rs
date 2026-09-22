@@ -197,9 +197,7 @@ pub fn steal_cost(
         .max()
         .unwrap_or(0);
     let modifier = if science_cost_modifier.is_zero() { Fixed::ONE } else { science_cost_modifier };
-    Fixed::whole(dearest)
-        .mul(STEAL_COST_MODIFIER)
-        .mul(modifier)
+    ((Fixed::whole(dearest) * STEAL_COST_MODIFIER) * modifier)
         .floor()
         .max(1) as i32
 }
@@ -329,9 +327,8 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // Progress is the city's own science, turned against it.
                     let science = crate::world::city::city_yield(&world.grid, r, city).science;
                     let rate = Fixed::whole(spy.rank as i32 * RANK_STEAL_PERCENT + 75);
-                    let gained = science
-                        .mul(rate)
-                        .div(Fixed::whole(100))
+                    let gained = (science * rate)
+                        .checked_div(Fixed::whole(100))
                         .unwrap_or(Fixed::ZERO)
                         .floor()
                         .max(0) as i32;

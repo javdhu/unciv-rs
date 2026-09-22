@@ -49,6 +49,22 @@ pub enum Rejection {
     Unknown,
 }
 
+impl std::fmt::Display for Rejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rejection::NotUnlocked(tech) => write!(f, "needs {tech}"),
+            Rejection::AlreadyBuilt => write!(f, "already built in this city"),
+            Rejection::MissingBuilding(b) => write!(f, "needs a {b} in this city"),
+            Rejection::UniqueToAnother(civ) => write!(f, "unique to {civ}"),
+            Rejection::NotProducible => write!(f, "cannot be produced"),
+            Rejection::NeedsPopulation(n) => write!(f, "needs a city of size {n}"),
+            Rejection::Unknown => write!(f, "not in this ruleset"),
+        }
+    }
+}
+
+impl std::error::Error for Rejection {}
+
 /// Scaling applied on top of a base cost.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CostModifiers {
@@ -123,7 +139,7 @@ pub fn production_cost(r: &Ruleset, what: Construction, m: CostModifiers) -> Opt
         .sum();
     let base = base + per_city * m.cities as i32;
 
-    Some(Fixed::whole(base).mul(m.speed).mul(m.civ).floor().max(1) as i32)
+    Some(((Fixed::whole(base) * m.speed) * m.civ).floor().max(1) as i32)
 }
 
 /// Whether this city may start on something now.

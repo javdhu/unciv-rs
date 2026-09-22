@@ -77,7 +77,7 @@ pub fn unit_maintenance(
             // The parameter is a change, not a factor: -25 means three
             // quarters of the price.
             if let Some(pct) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                if let Some(next) = share.mul(Fixed::whole(100) + pct).div(Fixed::whole(100)) {
+                if let Some(next) = (share * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100)) {
                     share = next;
                 }
             }
@@ -95,7 +95,7 @@ pub fn unit_maintenance(
     // past its nominal length does not keep getting dearer.
     let progress = if game_length > 0 {
         Fixed::whole(world.turn as i32)
-            .div(Fixed::whole(game_length))
+            .checked_div(Fixed::whole(game_length))
             .unwrap_or(Fixed::ONE)
             .min(Fixed::ONE)
     } else {
@@ -104,19 +104,16 @@ pub fn unit_maintenance(
 
     // 0.5 * units * (1 + progress), then raised to (1 + progress/3). Kept in
     // Precise so the chain rounds once at the end rather than at each step.
-    let linear = Precise::from_fixed(BASE_UNIT_COST)
-        .mul(Precise::from_fixed(billed))
-        .mul(Precise::from_fixed(Fixed::ONE + progress))
+    let linear = ((Precise::from_fixed(BASE_UNIT_COST) * Precise::from_fixed(billed)) * Precise::from_fixed(Fixed::ONE + progress))
         .to_fixed();
     let exponent = Fixed::ONE
-        + progress.div(Fixed::whole(3)).unwrap_or(Fixed::ZERO);
+        + progress.checked_div(Fixed::whole(3)).unwrap_or(Fixed::ZERO);
     let mut cost = linear.pow(exponent).unwrap_or(linear);
 
     if c.is_ai {
         if let Some(d) = difficulty {
             if !d.ai_unit_maintenance_modifier.is_zero() {
-                cost = Precise::from_fixed(cost)
-                    .mul(Precise::from_fixed(d.ai_unit_maintenance_modifier))
+                cost = (Precise::from_fixed(cost) * Precise::from_fixed(d.ai_unit_maintenance_modifier))
                     .to_fixed();
             }
         }
@@ -159,8 +156,7 @@ pub fn disband_for_debt(
     // Only unit upkeep changes as we disband, so the rest of the income is
     // held fixed rather than replanning the whole turn after each loss.
     let before = unit_maintenance(world, r, civ, game_length, difficulty);
-    loop {
-        let Some(c) = world.civ(civ) else { break };
+    while let Some(c) = world.civ(civ) {
         if c.gold > DEBT_LIMIT {
             break;
         }

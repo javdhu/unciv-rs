@@ -55,8 +55,7 @@ impl Faith {
 /// Dearer the more civs already have one, so waiting is paid for.
 pub fn pantheon_cost(world: &World, speed: Fixed) -> i32 {
     let taken = world.civs.iter().filter(|c| c.faith.has_pantheon()).count() as i32;
-    Fixed::whole(PANTHEON_BASE + taken * PANTHEON_GROWTH)
-        .mul(speed)
+    (Fixed::whole(PANTHEON_BASE + taken * PANTHEON_GROWTH) * speed)
         .round()
         .max(1) as i32
 }
@@ -67,7 +66,7 @@ pub fn pantheon_cost(world: &World, speed: Fixed) -> i32 {
 pub fn prophet_cost(earned: i32, speed: Fixed) -> i32 {
     let n = earned.max(0);
     let triangular = PROPHET_STEP * n * (n + 1) / 2;
-    Fixed::whole(PROPHET_BASE + triangular).mul(speed).round().max(1) as i32
+    (Fixed::whole(PROPHET_BASE + triangular) * speed).round().max(1) as i32
 }
 
 /// Beliefs of a kind that nobody has taken.
@@ -371,7 +370,7 @@ fn pressure_toward(
                 continue;
             }
             if let Some(pct) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                if let Some(next) = pressure.mul(Fixed::whole(100) + pct).div(Fixed::whole(100)) {
+                if let Some(next) = (pressure * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100)) {
                     pressure = next;
                 }
             }

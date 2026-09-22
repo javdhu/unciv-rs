@@ -121,7 +121,7 @@ pub fn rank_for_city_work(
         if stat == Stat::Food {
             continue; // handled below
         }
-        let v = amount.mul(weights[stat]).mul(focus.multiplier(stat));
+        let v = (amount * weights[stat]) * focus.multiplier(stat);
         if !v.is_zero() {
             parts.push((stat, v));
         }
@@ -137,11 +137,8 @@ pub fn rank_for_city_work(
     };
     let growth = if city.avoid_growth { Fixed::ZERO } else { yields.food - feed };
 
-    let food_value = feed.mul(weights.food).mul(Fixed::whole(STARVATION_URGENCY))
-        + growth
-            .mul(weights.food)
-            .mul(growth_weight(city, surplus_food, focus))
-            .mul(focus.multiplier(Stat::Food));
+    let food_value = (feed * weights.food) * Fixed::whole(STARVATION_URGENCY)
+        + (((growth * weights.food) * growth_weight(city, surplus_food, focus)) * focus.multiplier(Stat::Food));
 
     if !food_value.is_zero() {
         parts.push((Stat::Food, food_value));
@@ -232,14 +229,14 @@ mod tests {
         // production win that tie rather than draw it. 2 gold is 12.000
         // against production's 12.010, so the two are worth the same to within
         // a hundredth and production takes it.
-        let two_gold = w.gold.mul(Fixed::whole(2));
+        let two_gold = w.gold * Fixed::whole(2);
         assert!(two_gold < w.production, "production wins the tie");
         assert_eq!(w.production - two_gold, Fixed::permille(10), "by exactly 0.01");
 
         // "4 Science better than 3 Production" — 36.04 against 36.03, again by
         // a hundredth, and again on purpose.
-        let four_science = w.science.mul(Fixed::whole(4));
-        let three_production = w.production.mul(Fixed::whole(3));
+        let four_science = w.science * Fixed::whole(4);
+        let three_production = w.production * Fixed::whole(3);
         assert!(four_science > three_production, "science takes it");
         assert_eq!(four_science - three_production, Fixed::permille(10));
     }
@@ -251,7 +248,7 @@ mod tests {
         let plain = rank_for_city_work(yields, &c, CityFocus::None, 5).score;
         let focused =
             rank_for_city_work(yields, &c, CityFocus::Single(Stat::Production), 5).score;
-        assert_eq!(focused, plain.mul(Fixed::whole(3)));
+        assert_eq!(focused, plain * Fixed::whole(3));
     }
 
     /// The behaviour the food split exists for: a starving city should not

@@ -81,12 +81,8 @@ pub fn tech_cost(
         return None;
     }
     let city_modifier =
-        Fixed::whole(cities.saturating_sub(1) as i32).mul(m.map.tech_cost_per_city);
-    let cost = Fixed::whole(base)
-        .mul(m.difficulty)
-        .mul(m.speed)
-        .mul(m.map.tech_cost_multiplier)
-        .mul(Fixed::ONE + city_modifier);
+        Fixed::whole(cities.saturating_sub(1) as i32) * m.map.tech_cost_per_city;
+    let cost = (((Fixed::whole(base) * m.difficulty) * m.speed) * m.map.tech_cost_multiplier) * (Fixed::ONE + city_modifier);
     Some(cost.floor().max(1) as i32)
 }
 
@@ -97,6 +93,18 @@ pub enum ResearchRejection {
     MissingPrerequisite(String),
     Unknown,
 }
+
+impl std::fmt::Display for ResearchRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResearchRejection::AlreadyKnown => write!(f, "already researched"),
+            ResearchRejection::MissingPrerequisite(tech) => write!(f, "needs {tech} first"),
+            ResearchRejection::Unknown => write!(f, "not in this ruleset"),
+        }
+    }
+}
+
+impl std::error::Error for ResearchRejection {}
 
 pub fn can_research(
     r: &Ruleset,

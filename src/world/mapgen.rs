@@ -89,11 +89,11 @@ fn lattice(seed: u64, octave: u32, x: i64, y: i64) -> Fixed {
 /// `t*t*(3 - 2t)`: an interpolation curve with zero slope at both ends, so
 /// neighbouring lattice cells meet without a visible crease.
 fn smoothstep(t: Fixed) -> Fixed {
-    t.mul(t).mul(Fixed::whole(3) - Fixed::whole(2).mul(t))
+    (t * t) * (Fixed::whole(3) - (Fixed::whole(2) * t))
 }
 
 fn lerp(a: Fixed, b: Fixed, t: Fixed) -> Fixed {
-    a + (b - a).mul(t)
+    a + ((b - a) * t)
 }
 
 /// Value noise at one frequency: interpolate the four lattice corners around
@@ -102,8 +102,8 @@ fn value_noise(seed: u64, octave: u32, x: i64, y: i64, period: i64) -> Fixed {
     let period = period.max(1);
     let (cx, cy) = (x.div_euclid(period), y.div_euclid(period));
     let (fx, fy) = (x.rem_euclid(period), y.rem_euclid(period));
-    let tx = smoothstep(Fixed::whole(fx as i32).div(Fixed::whole(period as i32)).unwrap_or(Fixed::ZERO));
-    let ty = smoothstep(Fixed::whole(fy as i32).div(Fixed::whole(period as i32)).unwrap_or(Fixed::ZERO));
+    let tx = smoothstep(Fixed::whole(fx as i32).checked_div(Fixed::whole(period as i32)).unwrap_or(Fixed::ZERO));
+    let ty = smoothstep(Fixed::whole(fy as i32).checked_div(Fixed::whole(period as i32)).unwrap_or(Fixed::ZERO));
 
     let top = lerp(lattice(seed, octave, cx, cy), lattice(seed, octave, cx + 1, cy), tx);
     let bottom =
@@ -119,12 +119,12 @@ fn fractal(seed: u64, x: i64, y: i64, base_period: i64) -> Fixed {
     let mut sum = Fixed::ZERO;
     let mut period = base_period.max(1);
     for octave in 0..4u32 {
-        total = total + value_noise(seed, octave, x, y, period).mul(amplitude);
-        sum = sum + amplitude;
-        amplitude = amplitude.div(Fixed::whole(2)).unwrap_or(Fixed::ZERO);
+        total += value_noise(seed, octave, x, y, period) * amplitude;
+        sum += amplitude;
+        amplitude = amplitude.checked_div(Fixed::whole(2)).unwrap_or(Fixed::ZERO);
         period = (period / 2).max(1);
     }
-    total.div(sum).unwrap_or(Fixed::ZERO)
+    total.checked_div(sum).unwrap_or(Fixed::ZERO)
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
 /// Where mountains start, as a band above sea level rather than an absolute
 /// height — sea level moves with the seed, and mountains should follow it.
 fn high_ground(sea_level: Fixed) -> Fixed {
-    sea_level + (Fixed::ONE - sea_level).mul(Fixed::permille(780))
+    sea_level + ((Fixed::ONE - sea_level) * Fixed::permille(780))
 }
 
 /// Elevation, pulled down towards the east and west edges so land does not run
@@ -240,8 +240,8 @@ fn shaped_elevation(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed
     let margin = x.min(grid.width() as i64 - 1 - x);
     let reach = (grid.width() as i64 / 6).max(1);
     let near = margin.min(reach);
-    let falloff = Fixed::whole(near as i32).div(Fixed::whole(reach as i32)).unwrap_or(Fixed::ONE);
-    raw.mul(falloff)
+    let falloff = Fixed::whole(near as i32).checked_div(Fixed::whole(reach as i32)).unwrap_or(Fixed::ONE);
+    raw * falloff
 }
 
 /// Warm at the equator, cold at the poles, with noise so the bands are not
@@ -250,11 +250,11 @@ fn temperature_at(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed {
     let half = (grid.height() as i64).max(2) / 2;
     let from_equator = (y - half).abs().min(half);
     let latitude = Fixed::ONE
-        - Fixed::whole(from_equator as i32).div(Fixed::whole(half as i32)).unwrap_or(Fixed::ZERO);
+        - Fixed::whole(from_equator as i32).checked_div(Fixed::whole(half as i32)).unwrap_or(Fixed::ZERO);
     // Three parts latitude to one part noise: enough to bend the bands without
     // putting a desert at the pole.
     let noise = fractal(p.seed ^ 0x54454d50, x, y, p.landmass_scale.max(2) / 2);
-    (latitude.mul(Fixed::whole(3)) + noise).div(Fixed::whole(4)).unwrap_or(latitude)
+    (latitude * Fixed::whole(3) + noise).checked_div(Fixed::whole(4)).unwrap_or(latitude)
 }
 
 /// Hills, forest and jungle, each where its own ruleset says it can go.
@@ -337,7 +337,6 @@ fn place_resources(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters) {
             .filter(|(_, res)| {
                 res.terrains_can_be_found_on.iter().any(|t| names.iter().any(|n| n == t))
             })
-            .map(|(id, res)| (id, res))
             .collect();
         if candidates.is_empty() {
             continue;
@@ -416,7 +415,7 @@ fn choose_starts(r: &Ruleset, grid: &TileGrid, p: &MapParameters, civs: usize) -
                 .sum();
             // Food and hammers only: a start is about whether the city lives,
             // not whether it is rich.
-            let score = (here.food + here.production).mul(Fixed::whole(2)) + ring;
+            let score = (here.food + here.production) * Fixed::whole(2) + ring;
             (score.raw(), t)
         })
         .collect();

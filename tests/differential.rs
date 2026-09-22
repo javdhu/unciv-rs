@@ -598,12 +598,10 @@ fn combat_damage_matches_across_the_matchup_grid() {
         let ratio = strength_ratio(a, d);
         // Kept wide until the last step, matching how Unciv holds a float
         // through the whole expression and rounds once.
-        let to_defender = damage_modifier_precise(ratio, false, rnd)
-            .mul(Precise::from_fixed(health_ratio(health)))
+        let to_defender = (damage_modifier_precise(ratio, false, rnd) * Precise::from_fixed(health_ratio(health)))
             .round();
         // The defender is at full health throughout, so its output is unscaled.
-        let to_attacker = damage_modifier_precise(ratio, true, rnd)
-            .mul(Precise::from_fixed(health_ratio(100)))
+        let to_attacker = (damage_modifier_precise(ratio, true, rnd) * Precise::from_fixed(health_ratio(100)))
             .round();
 
         let theirs = (

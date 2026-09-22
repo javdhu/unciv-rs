@@ -80,6 +80,23 @@ pub enum CombatRejection {
     TargetBlockedByLOS,
 }
 
+impl std::fmt::Display for CombatRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            CombatRejection::NoSuchUnit => "no such unit",
+            CombatRejection::NotAtWar => "not at war",
+            CombatRejection::SameOwner => "both belong to the same civilization",
+            CombatRejection::NotAdjacent => "a melee attack needs an adjacent target",
+            CombatRejection::OutOfRange => "the target is out of range",
+            CombatRejection::NoMovement => "no movement or attacks left",
+            CombatRejection::NoRangedAttack => "the unit has no ranged attack",
+            CombatRejection::TargetBlockedByLOS => "line of sight to the target is blocked",
+        })
+    }
+}
+
+impl std::error::Error for CombatRejection {}
+
 /// A unit's strength, and where each part of it came from against a specific target.
 pub fn strength_breakdown_against(
     world: &World,
@@ -111,7 +128,7 @@ pub fn strength_breakdown_against(
                 continue;
             }
             stack.add(Modifier::additive_percent(
-                bonus.mul(Fixed::whole(100)),
+                bonus * Fixed::whole(100),
                 Source::new(SourceKind::Terrain, t.name.clone()),
             ));
         }
@@ -250,7 +267,7 @@ pub fn defending_strength(world: &World, r: &Ruleset, unit: Id<Unit>) -> Option<
 /// How much less a wounded unit hits for.
 pub fn health_ratio(health: u8) -> Fixed {
     let missing = Fixed::whole(100 - health.min(100) as i32);
-    Fixed::ONE - missing.div(Fixed::whole(WOUNDED_DAMAGE_DIVISOR)).unwrap_or(Fixed::ZERO)
+    Fixed::ONE - missing.checked_div(Fixed::whole(WOUNDED_DAMAGE_DIVISOR)).unwrap_or(Fixed::ZERO)
 }
 
 /// The ratio curve. `to_attacker` asks for the damage flowing back.
@@ -266,7 +283,7 @@ pub fn damage_modifier(ratio: Fixed, to_attacker: bool, randomness: Fixed) -> Fi
 /// division onward.
 pub fn strength_ratio(attack: Fixed, defend: Fixed) -> Precise {
     Precise::from_fixed(attack)
-        .div(Precise::from_fixed(defend))
+        .checked_div(Precise::from_fixed(defend))
         .unwrap_or(Precise::whole(1))
 }
 
@@ -280,25 +297,23 @@ pub fn damage_modifier_precise(ratio: Precise, to_attacker: bool, randomness: Fi
     if ratio == Precise::whole(0) {
         return Precise::whole(0);
     }
-    let inverse = one.div(ratio).unwrap_or(one);
+    let inverse = one.checked_div(ratio).unwrap_or(one);
     let stronger = if ratio < one { inverse } else { ratio };
 
-    let quarter = stronger.add(Precise::whole(3)).div(Precise::whole(4)).unwrap_or(one);
-    let mut modifier = quarter
-        .powi(4)
-        .add(one)
-        .div(Precise::whole(2))
+    let quarter = (stronger + Precise::whole(3)).checked_div(Precise::whole(4)).unwrap_or(one);
+    let mut modifier = (quarter
+        .powi(4) + one)
+        .checked_div(Precise::whole(2))
         .unwrap_or(one);
 
     // The weaker party's damage is the reciprocal.
     let invert = (to_attacker && ratio > one) || (!to_attacker && ratio < one);
     if invert {
-        modifier = one.div(modifier).unwrap_or(one);
+        modifier = one.checked_div(modifier).unwrap_or(one);
     }
 
-    let base = Precise::whole(BASE_DAMAGE_LOW)
-        .add(Precise::from_fixed(randomness).mul(Precise::whole(BASE_DAMAGE_SPREAD)));
-    base.mul(modifier)
+    let base = Precise::whole(BASE_DAMAGE_LOW) + (Precise::from_fixed(randomness) * Precise::whole(BASE_DAMAGE_SPREAD));
+    base * modifier
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -377,10 +392,8 @@ pub fn resolve_attack(
     let randomness = combat_seed(world, a_position, d_position).unit_interval();
 
     // One rounding each, at the very end.
-    let to_defender = damage_modifier_precise(ratio, false, randomness)
-        .mul(Precise::from_fixed(health_ratio(a_health)));
-    let to_attacker = damage_modifier_precise(ratio, true, randomness)
-        .mul(Precise::from_fixed(health_ratio(d_health)));
+    let to_defender = damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a_health));
+    let to_attacker = damage_modifier_precise(ratio, true, randomness) * Precise::from_fixed(health_ratio(d_health));
 
     let (dmg_d, dmg_a) = (to_defender.round().max(0) as i32, to_attacker.round().max(0) as i32);
 
@@ -461,8 +474,7 @@ pub fn attack_city(
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a_tile, centre).unit_interval();
 
-    let to_city = damage_modifier_precise(ratio, false, randomness)
-        .mul(Precise::from_fixed(health_ratio(a_health)))
+    let to_city = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a_health)))
         .round()
         .max(0) as i32;
     let to_attacker = damage_modifier_precise(ratio, true, randomness).round().max(0) as i32;
@@ -673,8 +685,7 @@ pub fn resolve_ranged_attack(
     let ratio = strength_ratio(att, def);
 
     let randomness = combat_seed(world, a.position, target_tile).unit_interval();
-    let to_defender = damage_modifier_precise(ratio, false, randomness)
-        .mul(Precise::from_fixed(health_ratio(a.health)))
+    let to_defender = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a.health)))
         .round()
         .max(0) as i32;
 
@@ -744,8 +755,7 @@ pub fn attack_city_ranged(
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a.position, city.centre).unit_interval();
 
-    let to_city = damage_modifier_precise(ratio, false, randomness)
-        .mul(Precise::from_fixed(health_ratio(a.health)))
+    let to_city = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a.health)))
         .round()
         .max(0) as i32;
 
@@ -780,7 +790,7 @@ pub fn city_defense_strength(
         .iter()
         .any(|(_, u)| u.position == city.centre && u.owner == city.owner && u.is_military(r));
     if has_garrison {
-        base.mul(Fixed::from_fraction(6, 5))
+        base * Fixed::from_fraction(6, 5)
     } else {
         base
     }
@@ -944,8 +954,7 @@ pub fn air_strike(
         let def = city_defense_strength(world, r, city_id);
         let ratio = strength_ratio(att, def);
         let roll = combat_seed(world, a_position, target_tile).unit_interval();
-        let dmg = damage_modifier_precise(ratio, false, roll)
-            .mul(Precise::from_fixed(health_ratio(a_health)))
+        let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
             .round().max(0) as i32;
         if let Some(c) = world.cities.get_mut(city_id) {
             c.health = (c.health - dmg).max(1);
@@ -960,8 +969,7 @@ pub fn air_strike(
         let def = defending_strength(world, r, def_id).ok_or(CombatRejection::NoSuchUnit)?;
         let ratio = strength_ratio(att, def);
         let roll = combat_seed(world, a_position, target_tile).unit_interval();
-        let dmg = damage_modifier_precise(ratio, false, roll)
-            .mul(Precise::from_fixed(health_ratio(a_health)))
+        let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
             .round().max(0) as i32;
         let died = dmg >= d.health as i32;
         if died {
@@ -1185,6 +1193,21 @@ pub enum UpgradeRejection {
     NotEnoughGold,
 }
 
+impl std::fmt::Display for UpgradeRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UpgradeRejection::NoSuchUnit => "no such unit",
+            UpgradeRejection::CannotUpgrade => "the unit has nothing to upgrade to",
+            UpgradeRejection::TechNotResearched => "the upgrade's tech is not researched",
+            UpgradeRejection::MissingResources => "the upgrade needs resources the civ lacks",
+            UpgradeRejection::NotInFriendlyTerritory => "units upgrade only in friendly territory",
+            UpgradeRejection::NotEnoughGold => "not enough gold",
+        })
+    }
+}
+
+impl std::error::Error for UpgradeRejection {}
+
 /// Gold cost to upgrade from `current` to `target`.
 pub fn upgrade_cost(r: &Ruleset, current: Id<BaseUnit>, target: Id<BaseUnit>) -> Option<i32> {
     let old_cost = r.units.get(current)?.cost.unwrap_or(0);
@@ -1300,7 +1323,7 @@ mod tests {
         // ((2+3)/4)^4 = 2.4414; (2.4414+1)/2 = 1.7207 → about 51.6 dealt, 17.4 taken.
         assert!(dealt > Fixed::whole(51) && dealt < Fixed::whole(52));
         assert!(taken > Fixed::whole(17) && taken < Fixed::whole(18));
-        assert!(dealt.div(taken).unwrap() > Fixed::whole(2), "the curve is steeper than linear");
+        assert!(dealt.checked_div(taken).unwrap() > Fixed::whole(2), "the curve is steeper than linear");
     }
 
     #[test]
@@ -1333,12 +1356,12 @@ mod tests {
         // Hills give 25%.
         w.grid.features[flat.0 as usize].push(r.terrain("Hill").unwrap());
         let on_hill = defending_strength(&w, &r, id).unwrap();
-        assert_eq!(on_hill, open.mul(Fixed::permille(1_250)));
+        assert_eq!(on_hill, open * Fixed::permille(1_250));
 
         // Fortifying adds another 20, additively — 45% total, not 50%.
         w.units.get_mut(id).unwrap().fortified = true;
         let dug_in = defending_strength(&w, &r, id).unwrap();
-        assert_eq!(dug_in, open.mul(Fixed::permille(1_450)), "additive, not compounding");
+        assert_eq!(dug_in, open * Fixed::permille(1_450), "additive, not compounding");
     }
 
     #[test]
@@ -1350,7 +1373,7 @@ mod tests {
         w.grid.features[tile.0 as usize].push(r.terrain("Marsh").unwrap());
         let id = unit(&mut w, &r, "Warrior", CivId(0), tile);
         let base = attacking_strength(&w, &r, id).unwrap();
-        assert_eq!(defending_strength(&w, &r, id).unwrap(), base.mul(Fixed::permille(850)));
+        assert_eq!(defending_strength(&w, &r, id).unwrap(), base * Fixed::permille(850));
     }
 
     #[test]
@@ -1514,7 +1537,7 @@ mod siege {
 
         // Hammer it, refreshing the attacker each turn.
         let mut rounds = 0;
-        while w.cities.get(city).map_or(false, |c| c.health > 1) && rounds < 100 {
+        while w.cities.get(city).is_some_and(|c| c.health > 1) && rounds < 100 {
             w.units.get_mut(unit).unwrap().refresh(2);
             w.units.get_mut(unit).unwrap().health = 100;
             let before = w.cities.get(city).unwrap().health;
@@ -1741,7 +1764,7 @@ mod military_tests {
 
         let _warrior = unit(&mut w, &r, "Warrior", CivId(0), centre);
         let garr_def = city_defense_strength(&w, &r, city);
-        assert_eq!(garr_def, base_def.mul(Fixed::from_fraction(6, 5)), "garrison adds +20%");
+        assert_eq!(garr_def, base_def * Fixed::from_fraction(6, 5), "garrison adds +20%");
 
         let before_hp = w.units.get(enemy_unit).unwrap().health;
         let bombard_res = city_bombard(&mut w, &r, city, enemy_unit).expect("bombard succeeds");

@@ -71,7 +71,7 @@ pub fn breakdown(
 
     // Difficulty scales the unhappiness, not the happiness.
     let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
-    let scale = |n: i32| Fixed::whole(n).mul(modifier).floor() as i32;
+    let scale = |n: i32| (Fixed::whole(n) * modifier).floor() as i32;
 
     let cities = civ.cities.len() as i32;
     if cities > 0 {

@@ -69,6 +69,21 @@ pub enum SettleRejection {
     NoSuchUnit,
 }
 
+impl std::fmt::Display for SettleRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SettleRejection::Impassable => write!(f, "nothing can be founded on that terrain"),
+            SettleRejection::ForeignTerritory(civ) => write!(f, "inside civ {}'s borders", civ.0),
+            SettleRejection::TooClose { city, distance } => {
+                write!(f, "{distance} tiles from city {city:?}, which is too close")
+            }
+            SettleRejection::NoSuchUnit => write!(f, "no such unit"),
+        }
+    }
+}
+
+impl std::error::Error for SettleRejection {}
+
 /// Whether a city may be founded here.
 pub fn can_settle(
     world: &World,
@@ -101,7 +116,7 @@ pub fn can_settle(
 pub fn tile_worth(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
     let y = tile_yield(&world.grid, r, tile);
     let w = ranking_weights();
-    Stat::ALL.into_iter().map(|s| y[s].mul(w[s])).sum::<Fixed>().div(Fixed::whole(10)).unwrap_or(Fixed::ZERO)
+    Stat::ALL.into_iter().map(|s| y[s] * w[s]).sum::<Fixed>().checked_div(Fixed::whole(10)).unwrap_or(Fixed::ZERO)
 }
 
 /// Flat bonuses for the site tile itself (`CityLocationTileRanker.kt:107`).
@@ -134,16 +149,16 @@ pub fn rank_site(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
 
     for ring in 0..=2u32 {
         // 3, then 1.5, then 1 — the centre matters most.
-        let weight = Fixed::whole(3).div(Fixed::whole(ring as i32 + 1)).unwrap_or(Fixed::ONE);
+        let weight = Fixed::whole(3).checked_div(Fixed::whole(ring as i32 + 1)).unwrap_or(Fixed::ONE);
         for t in world.grid.ring(tile, ring) {
             counted += 1;
-            value += tile_worth(world, r, t).mul(weight);
+            value += tile_worth(world, r, t) * weight;
         }
     }
 
     // A site missing part of its hexagon — coastline, map edge — is worth less.
     let missing = SITE_HEXAGON.saturating_sub(counted);
-    value - Fixed::whole(missing as i32).mul(MISSING_TILE_PENALTY)
+    value - (Fixed::whole(missing as i32) * MISSING_TILE_PENALTY)
 }
 
 /// The best legal site within `radius` of `from`, best first.
@@ -303,7 +318,7 @@ mod tests {
         let after_worth = tile_worth(&w, &r, site);
 
         // The centre sits in ring zero, weighted three.
-        let yield_gain = (after_worth - before_worth).mul(Fixed::whole(3));
+        let yield_gain = (after_worth - before_worth) * Fixed::whole(3);
         assert_eq!(
             after_score - before_score,
             yield_gain - Fixed::whole(4),

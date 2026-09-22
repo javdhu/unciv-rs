@@ -19,3 +19,8 @@ serde = { version = "1", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1"
+
+[lints.clippy]
+# `world::world` holds the `World` type itself. Renaming either to dodge the
+# lint would make the module layout worse, not better.
+module_inception = "allow"

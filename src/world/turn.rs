@@ -153,16 +153,22 @@ pub enum TurnEvent {
 }
 
 /// Decide what a civ will do. Reads only.
-pub fn plan_civ_turn(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    focus: CityFocus,
-    difficulty: Option<&crate::ruleset::Difficulty>,
-    costs: CostModifiers,
-    science: ScienceModifiers,
-    policies: PolicyModifiers,
-) -> TurnPlan {
+/// Everything a turn runs under that is not part of the world: game speed and
+/// the civ-wide modifiers, and the difficulty.
+///
+/// One value rather than five parameters, because every caller threads all
+/// five through together and most want the defaults.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TurnModifiers<'a> {
+    pub growth: GrowthModifiers,
+    pub costs: CostModifiers,
+    pub science: ScienceModifiers,
+    pub policies: PolicyModifiers,
+    pub difficulty: Option<&'a crate::ruleset::Difficulty>,
+}
+
+pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, mods: TurnModifiers) -> TurnPlan {
+    let TurnModifiers { costs, science, policies, difficulty, .. } = mods;
     let mut plan = TurnPlan {
         civ,
         assignments: Vec::new(),
@@ -248,7 +254,7 @@ pub fn plan_civ_turn(
         );
         if !rail.is_zero() {
             if let Some(boosted) =
-                output.production.mul(Fixed::whole(100) + rail).div(Fixed::whole(100))
+                (output.production * (Fixed::whole(100) + rail)).checked_div(Fixed::whole(100))
             {
                 output.production = boosted;
             }
@@ -373,16 +379,8 @@ fn still_ours(world: &World, plan: &TurnPlan, city: Id<City>) -> bool {
     world.cities.get(city).is_some_and(|c| c.owner == plan.civ)
 }
 
-pub fn apply_plan(
-    world: &mut World,
-    r: &Ruleset,
-    plan: &TurnPlan,
-    m: GrowthModifiers,
-    costs: CostModifiers,
-    science: ScienceModifiers,
-    policies: PolicyModifiers,
-    difficulty: Option<&crate::ruleset::Difficulty>,
-) -> Vec<TurnEvent> {
+pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnModifiers) -> Vec<TurnEvent> {
+    let TurnModifiers { growth: m, costs, science, policies, difficulty } = mods;
     let mut events = Vec::new();
 
     for other in &plan.declare_war_on {
@@ -696,16 +694,8 @@ pub fn update_visibility(world: &mut World) {
 }
 
 /// One full turn: plan for every living civ, then apply in id order.
-pub fn advance_turn(
-    world: &mut World,
-    r: &Ruleset,
-    focus: CityFocus,
-    m: GrowthModifiers,
-    costs: CostModifiers,
-    science: ScienceModifiers,
-    difficulty: Option<&crate::ruleset::Difficulty>,
-    policies: PolicyModifiers,
-) -> Vec<TurnEvent> {
+pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: TurnModifiers) -> Vec<TurnEvent> {
+    let TurnModifiers { costs, science, difficulty, .. } = mods;
     let standings_before = crate::world::city_states::standings(world);
 
     // Phase 1 — pure. Every plan sees the same world; none of them change it.
@@ -714,13 +704,13 @@ pub fn advance_turn(
         .living_civs()
         .collect::<Vec<_>>()
         .into_iter()
-        .map(|civ| plan_civ_turn(world, r, civ, focus, difficulty, costs, science, policies))
+        .map(|civ| plan_civ_turn(world, r, civ, focus, mods))
         .collect();
 
     // Phase 2 — sequential, in id order, which is what makes it reproducible.
     let mut events = Vec::new();
     for plan in &plans {
-        events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
+        events.extend(apply_plan(world, r, plan, mods));
     }
 
     // Barbarians spawn from their camps.
@@ -929,11 +919,9 @@ mod tests {
         let plan = connections::road_plan(&w, &r, CivId(0));
         assert!(!plan.is_empty(), "the civ should want a road");
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let mut connected_on = None;
         for turn in 1..=120 {
-            advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default());
+            advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
             if connections::find(&w, &r, CivId(0)).has_trade_route(ostia) {
                 connected_on = Some(turn);
                 break;
@@ -987,13 +975,11 @@ mod tests {
             w.found_city(City::found("Veii", CivId(1), w.grid.id_at(col + 4, row).unwrap()));
         w.cities.get_mut(neighbour).unwrap().population = 4;
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let (mut founded, mut converted) = (None, None);
         for turn in 1..=200 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 match e {
-                    TurnEvent::ReligionFounded { civ } if civ == CivId(0) => {
+                    TurnEvent::ReligionFounded { civ: CivId(0) } => {
                         founded.get_or_insert(turn);
                     }
                     TurnEvent::CityConverted { city, to, .. } if city == neighbour => {
@@ -1069,11 +1055,7 @@ mod tests {
             &mut w,
             &r,
             &plan,
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            PolicyModifiers::default(),
-            None,
+            TurnModifiers::default(),
         );
         let after = w.cities.get(theirs).unwrap();
         assert_eq!(after.food_stored, before.food_stored, "the old owner fed a city it had lost");
@@ -1130,11 +1112,9 @@ mod tests {
             .unwrap();
         w.place_unit(Unit::new(settler, CivId(0), map.starts[0], 2));
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let mut spawned = 0;
         for _ in 1..=60 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 if matches!(e, TurnEvent::BarbarianSpawned { .. }) {
                     spawned += 1;
                 }
@@ -1143,7 +1123,7 @@ mod tests {
         println!("{camps} camps produced {spawned} barbarians in 60 turns");
         assert!(spawned > 0, "{camps} camps produced nothing in sixty turns");
         assert!(
-            w.civ(CivId(1)).unwrap().units.len() > 0,
+            !w.civ(CivId(1)).unwrap().units.is_empty(),
             "and the barbarian civ should actually hold them"
         );
     }
@@ -1188,11 +1168,9 @@ mod tests {
             }
         }
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let (mut offered, mut completed, mut gifts, mut ranks) = (0, 0, 0, 0);
         for _ in 1..=250 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 match e {
                     TurnEvent::QuestOffered { .. } => offered += 1,
                     TurnEvent::QuestCompleted { .. } => completed += 1,
@@ -1251,20 +1229,17 @@ mod tests {
             w.place_unit(Unit::new(worker, CivId(i as u8), *start, 2));
         }
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let (mut founded, mut wars, mut converted, mut roads_built) = (0, 0, 0, 0);
         for _ in 1..=250 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
                     TurnEvent::WarDeclared { .. } => wars += 1,
                     TurnEvent::CityConverted { .. } => converted += 1,
-                    TurnEvent::TileImproved { improvement, .. } => {
-                        if r.improvements.name_of(improvement) == Some("Road") {
+                    TurnEvent::TileImproved { improvement, .. }
+                        if r.improvements.name_of(improvement) == Some("Road") => {
                             roads_built += 1;
                         }
-                    }
                     _ => {}
                 }
             }
@@ -1327,11 +1302,9 @@ mod tests {
         w.diplomacy.meet(CivId(0), CivId(1));
         w.civ_mut(CivId(0)).unwrap().gold = 4000;
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let mut became = None;
         for turn in 1..=120 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 if let TurnEvent::CityStateRelationship { to, major, .. } = e {
                     if major == CivId(0) && to >= Relationship::Friend {
                         became.get_or_insert((turn, to));
@@ -1358,7 +1331,7 @@ mod tests {
         let held = w.diplomacy.influence(CivId(1), CivId(0));
         w.civ_mut(CivId(0)).unwrap().gold = 0; // no more gifts
         for _ in 0..200 {
-            advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default());
+            advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
         }
         assert!(
             w.diplomacy.influence(CivId(1), CivId(0)) < held,
@@ -1405,8 +1378,6 @@ mod tests {
         }
         assert_eq!(w.civ(CivId(0)).unwrap().espionage.spies.len(), 1);
 
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
         let before = w.civ(CivId(0)).unwrap().techs.len();
         // Eighty turns: a few to travel and set up, then the theft. Kept
         // short deliberately — a rival handed twenty technologies also has
@@ -1414,7 +1385,7 @@ mod tests {
         // conquers the spy's owner and the test stops being about espionage.
         let mut stolen = None;
         for turn in 1..=80 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 if let TurnEvent::TechStolen { thief, tech, .. } = e {
                     if thief == CivId(0) {
                         stolen.get_or_insert((turn, tech));
@@ -1442,7 +1413,7 @@ mod tests {
         let w = two_civ_world(&r);
         let before = w.clone();
         for civ in w.living_civs().collect::<Vec<_>>() {
-            let _ = plan_civ_turn(&w, &r, civ, CityFocus::None, None, CostModifiers::default(), ScienceModifiers::default(), PolicyModifiers::default());
+            let _ = plan_civ_turn(&w, &r, civ, CityFocus::None, TurnModifiers::default());
         }
         assert_eq!(w, before, "the read phase must be pure or it cannot be parallelised");
     }
@@ -1451,9 +1422,8 @@ mod tests {
     fn a_turn_advances_and_reports_what_happened() {
         let r = ruleset();
         let mut w = two_civ_world(&r);
-        let m = GrowthModifiers::default();
 
-        let events = advance_turn(&mut w, &r, CityFocus::None, m, CostModifiers::default(), ScienceModifiers::default(), None, PolicyModifiers::default());
+        let events = advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
         assert_eq!(w.turn, 1);
         assert!(matches!(events.last(), Some(TurnEvent::TurnEnded { turn: 1 })));
         assert!(events.iter().any(|e| matches!(e, TurnEvent::CityStored { .. })));
@@ -1463,11 +1433,10 @@ mod tests {
     fn a_city_grows_over_several_turns() {
         let r = ruleset();
         let mut w = two_civ_world(&r);
-        let m = GrowthModifiers::default();
 
         let mut grew_on = None;
         for turn in 1..=20 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, CostModifiers::default(), ScienceModifiers::default(), None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 if let TurnEvent::CityGrew { population, .. } = e {
                     grew_on.get_or_insert((turn, population));
                 }
@@ -1482,12 +1451,11 @@ mod tests {
     #[test]
     fn the_same_world_advances_the_same_way_twice() {
         let r = ruleset();
-        let m = GrowthModifiers::default();
         let run = || {
             let mut w = two_civ_world(&r);
             let mut log = Vec::new();
             for _ in 0..12 {
-                log.extend(advance_turn(&mut w, &r, CityFocus::None, m, CostModifiers::default(), ScienceModifiers::default(), None, PolicyModifiers::default()));
+                log.extend(advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()));
             }
             (w, log)
         };
@@ -1503,7 +1471,7 @@ mod tests {
         let mut w = two_civ_world(&r);
         w.found_city(City::found("Antium", CivId(1), w.grid.id_at(16, 16).unwrap()));
 
-        let events = advance_turn(&mut w, &r, CityFocus::None, GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default(), None, PolicyModifiers::default());
+        let events = advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
         let cities: Vec<_> = events
             .iter()
             .filter_map(|e| match e {
@@ -1542,8 +1510,6 @@ mod tests {
     fn a_game_runs_and_everything_completes() {
         let r = ruleset();
         let mut w = two_civ_world(&r);
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
 
         // Grassland alone yields no production, so nothing could ever be
         // built on it — give Rome a realistic site with hills in reach.
@@ -1562,7 +1528,7 @@ mod tests {
         let mut built = None;
         let mut learned = None;
         for turn in 1..=120 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
                 match e {
                     TurnEvent::CityCompleted { what, .. } => {
                         built.get_or_insert((turn, what));
@@ -1594,7 +1560,7 @@ mod tests {
         let id = w.place_unit(Unit::new(base, CivId(0), w.grid.id_at(4, 4).unwrap(), movement));
 
         w.units.get_mut(id).unwrap().movement_left = crate::stats::Fixed::ZERO;
-        advance_turn(&mut w, &r, CityFocus::None, GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default(), None, PolicyModifiers::default());
+        advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
         assert_eq!(
             w.units.get(id).unwrap().movement_left,
             crate::stats::Fixed::whole(movement),
@@ -1641,11 +1607,9 @@ mod tests {
     fn gold_and_culture_accumulate_over_a_turn() {
         let r = ruleset();
         let mut w = two_civ_world(&r);
-        let (m, costs, science) =
-            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
 
         let before = w.civ(CivId(0)).unwrap().culture_stored;
-        let events = advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default());
+        let events = advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
         let civ = w.civ(CivId(0)).unwrap();
         println!("after a turn: {} gold, {} culture", civ.gold, civ.culture_stored);
         assert!(civ.culture_stored >= before);
@@ -1701,16 +1665,10 @@ mod self_play {
         w.found_city_in(&r, City::found("Rome", CivId(0), centre));
 
         let prince = r.difficulties.by_name("Prince");
-        let (m, costs, science, policies) = (
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            PolicyModifiers::default(),
-        );
 
         let (mut techs, mut builds, mut growths, mut improved) = (0, 0, 0, 0);
         for _ in 0..100 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
                 match e {
                     TurnEvent::TechLearned { .. } => techs += 1,
                     TurnEvent::CityCompleted { .. } => builds += 1,
@@ -1778,11 +1736,7 @@ mod self_play {
             &mut w,
             &r,
             CityFocus::None,
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            r.difficulties.by_name("Prince"),
-            PolicyModifiers::default(),
+            TurnModifiers { difficulty: r.difficulties.by_name("Prince"), ..Default::default() },
         );
 
         let won = events.iter().find_map(|e| match e {
@@ -1812,11 +1766,7 @@ mod self_play {
                     &mut w,
                     &r,
                     CityFocus::None,
-                    GrowthModifiers::default(),
-                    CostModifiers::default(),
-                    ScienceModifiers::default(),
-                    r.difficulties.by_name("Prince"),
-                    PolicyModifiers::default(),
+                    TurnModifiers { difficulty: r.difficulties.by_name("Prince"), ..Default::default() },
                 ));
             }
             (w, log)
@@ -1886,11 +1836,7 @@ mod expansion {
             &mut w,
             &r,
             &plan,
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            PolicyModifiers::default(),
-            None,
+            TurnModifiers::default(),
         );
 
         assert!(events.iter().any(|e| matches!(e, TurnEvent::CityCompleted { .. })));
@@ -1937,12 +1883,6 @@ mod multi_civ {
         }
 
         let prince = r.difficulties.by_name("Prince");
-        let (m, costs, science, policies) = (
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            PolicyModifiers::default(),
-        );
 
         let mut founded = 0;
         let mut victories = 0;
@@ -1953,7 +1893,7 @@ mod multi_civ {
         let mut battles = 0;
         let mut losses = 0;
         for _ in 0..500 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
                     TurnEvent::Victory { .. } => victories += 1,
@@ -2133,17 +2073,11 @@ mod warfare {
         w.diplomacy.declare_war(CivId(0), CivId(1));
 
         let prince = r.difficulties.by_name("Prince");
-        let (m, costs, science, policies) = (
-            GrowthModifiers::default(),
-            CostModifiers::default(),
-            ScienceModifiers::default(),
-            PolicyModifiers::default(),
-        );
 
         let mut battles = 0;
         let mut deaths = 0;
         for _ in 0..30 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
+            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
                 if let TurnEvent::Battle { attacker_died, defender_died } = e {
                     battles += 1;
                     deaths += attacker_died as u32 + defender_died as u32;

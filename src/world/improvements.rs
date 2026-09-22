@@ -31,6 +31,21 @@ pub enum ImprovementRejection {
     Unknown,
 }
 
+impl std::fmt::Display for ImprovementRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImprovementRejection::WrongTerrain => write!(f, "the terrain does not accept it"),
+            ImprovementRejection::NotUnlocked(tech) => write!(f, "needs {tech}"),
+            ImprovementRejection::AlreadyImproved => write!(f, "the tile is already improved"),
+            ImprovementRejection::AlreadyPaved => write!(f, "the tile already has this road or a better one"),
+            ImprovementRejection::NotBuildable => write!(f, "not something a worker can build"),
+            ImprovementRejection::Unknown => write!(f, "not in this ruleset"),
+        }
+    }
+}
+
+impl std::error::Error for ImprovementRejection {}
+
 /// Is this improvement a road? Asked by name, because a road is a road in the
 /// ruleset's vocabulary and an axis of its own in the world's.
 fn road_level_of(r: &Ruleset, improvement: Id<TileImprovement>) -> Option<crate::world::grid::RoadLevel> {
