@@ -246,11 +246,24 @@ pub fn fingerprint() -> u64 {
         let map = generate(
             &r,
             MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() },
-            4,
+            6,
         );
         if let Some(nation) = r.nations.ids().next() {
-            let civs: Vec<_> =
-                (0..4u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
+            // Four majors and two city-states. The city-states are what make
+            // quests, influence, elections and coups reachable at all, and
+            // those are the systems that actually roll dice — an election is a
+            // weighted draw and a coup is a percentage. A scenario without
+            // them leaves the engine's randomness untested across targets.
+            let cs_types: Vec<_> = r.city_state_types.ids().collect();
+            let civs: Vec<_> = (0..6u8)
+                .map(|i| {
+                    let mut c = Civilization::new(CivId(i), nation, true);
+                    if i >= 4 && !cs_types.is_empty() {
+                        c.city_state_type = Some(cs_types[(i as usize - 4) % cs_types.len()]);
+                    }
+                    c
+                })
+                .collect();
             let mut w = World::new(map.grid, civs);
             let settler = r
                 .units
@@ -263,7 +276,10 @@ pub fn fingerprint() -> u64 {
                     w.place_unit(Unit::new(base, CivId(i as u8), *start, 2));
                 }
             }
-            for _ in 0..40 {
+            // Sixty turns rather than forty: quests are not offered before
+            // turn thirty and elections are held every fifteen, so a shorter
+            // game would fold in nothing from either.
+            for _ in 0..60 {
                 advance_turn(
                     &mut w,
                     &r,
@@ -287,7 +303,21 @@ pub fn fingerprint() -> u64 {
                     .add(civ.cities.len() as i64)
                     .add(civ.units.len() as i64)
                     .add(civ.espionage.spies.len() as i64)
+                    .add(civ.quests.active.len() as i64)
+                    .add(civ.quests.next_turn as i64)
                     .add(civ.defeated as i64);
+                // Influence is directed and lives outside the civ, so it has
+                // to be folded in by hand or the whole city-state layer is
+                // invisible to this check.
+                for other in 0..6u8 {
+                    d.add_fixed(w.diplomacy.influence(civ.id, CivId(other)));
+                }
+                for q in &civ.quests.active {
+                    d.add(q.assignee.0 as i64)
+                        .add(q.assigned_on as i64)
+                        .add(q.expires_on as i64)
+                        .add(q.baseline as i64);
+                }
             }
             for (_, city) in w.cities.iter() {
                 d.add(city.population as i64)

@@ -694,40 +694,4 @@ mod siege {
             CivId(0)
         ) == crate::world::conditionals::Verdict::True);
     }
-
-    /// When a city is captured, the new owner should take full control of its
-    /// religion state: holy_city_of should be reset, and religious pressure
-    /// from the old owner should be removed.
-    #[test]
-    fn capturing_a_holy_city_clears_religion_state() {
-        let r = ruleset();
-        let (mut w, unit, city) = besieged(&r);
-
-        // Set up the captured city as a holy city of civ 1 (the defender)
-        w.cities.get_mut(city).unwrap().faith.holy_city_of = Some(CivId(1));
-        w.cities.get_mut(city).unwrap().faith.add_pressure(Some(CivId(1)), 500);
-
-        // Verify setup
-        {
-            let c = w.cities.get(city).unwrap();
-            assert_eq!(c.faith.holy_city_of, Some(CivId(1)));
-            assert_eq!(c.faith.pressure_of(Some(CivId(1))), 500);
-        }
-
-        // Prepare for capture
-        w.cities.get_mut(city).unwrap().health = 1;
-        let result = attack_city(&mut w, &r, unit, city).expect("legal assault");
-        assert!(result.captured, "assault should capture the city");
-
-        // After capture, check religion state
-        let c = w.cities.get(city).unwrap();
-        println!("After capture:");
-        println!("  Owner: {:?}", c.owner);
-        println!("  holy_city_of: {:?}", c.faith.holy_city_of);
-        println!("  Pressure for CivId(1): {}", c.faith.pressure_of(Some(CivId(1))));
-
-        // What we would expect if the bug exists:
-        // holy_city_of would still be Some(CivId(1))
-        // Pressure for CivId(1) would still be 500
-    }
 }

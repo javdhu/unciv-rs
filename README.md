@@ -405,16 +405,22 @@ integer whose meaning is fixed.
 
 ```
 ./tools/check_determinism.sh
-  native         0x3fb0af0348570b0a
-  wasm32         0x3fb0af0348570b0a
-  linux/arm64    0x3fb0af0348570b0a
-  linux/amd64    0x3fb0af0348570b0a
+  native         0xd881463324b81ea3
+  wasm32         0xd881463324b81ea3
+  linux/arm64    0xd881463324b81ea3
+  linux/amd64    0xd881463324b81ea3
 OK: bit-identical across 4 targets
 ```
 
-The scenario ends by playing a game: forty turns of four civs on a map
-generated from a fixed seed, folding in every civ's holdings and every city's
-and unit's state at the end.
+The scenario ends by playing a game: sixty turns of four civs and two
+city-states on a map generated from a fixed seed, folding in every civ's
+holdings, every city's and unit's state, and every directed influence value at
+the end.
+
+The city-states are there because they are what make quests, elections and
+coups reachable, and those are the parts of the engine that actually roll
+dice — an election is a weighted draw and a coup is a percentage. Sixty turns
+rather than forty because no quest is offered before turn thirty.
 
 That is the only check that covers the systems whose behaviour depends on state
 rather than on the ruleset — combat, religious spread, city-state influence,
