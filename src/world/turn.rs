@@ -84,6 +84,7 @@ pub enum TurnEvent {
     TechLearned { civ: CivId, tech: Id<Technology> },
     CivDefeated { civ: CivId },
     CityFounded { city: Id<City>, by: CivId },
+    CivsMet { a: CivId, b: CivId },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
@@ -346,6 +347,44 @@ pub fn apply_plan(
     events
 }
 
+/// First contact: any civ that can see another's city or unit has met them.
+///
+/// Nothing was calling this, so three civs on one map ran as three separate
+/// games — identical outcomes, no diplomacy, no possibility of war. Meeting is
+/// what turns neighbours into a relationship.
+pub fn detect_first_contact(world: &mut World) -> Vec<TurnEvent> {
+    // Who is standing where, gathered first so the borrow ends.
+    let mut occupants: Vec<(crate::world::grid::TileId, CivId)> = Vec::new();
+    for (_, unit) in world.units.iter() {
+        occupants.push((unit.position, unit.owner));
+    }
+    for (_, city) in world.cities.iter() {
+        occupants.push((city.centre, city.owner));
+    }
+
+    let civs: Vec<CivId> = world.civ_ids().collect();
+    let mut meetings = Vec::new();
+    for observer in &civs {
+        for (tile, owner) in &occupants {
+            if owner == observer || !world.visibility.can_see(*observer, *tile) {
+                continue;
+            }
+            meetings.push((*observer, *owner));
+        }
+    }
+
+    let mut events = Vec::new();
+    for (a, b) in meetings {
+        if let Some(crate::world::diplomacy::DiplomacyEvent::Met { pair }) =
+            world.diplomacy.meet(a, b)
+        {
+            let (x, y) = pair.civs();
+            events.push(TurnEvent::CivsMet { a: x, b: y });
+        }
+    }
+    events
+}
+
 /// Recompute what each civ can see. Exploration is permanent, sight is not.
 pub fn update_visibility(world: &mut World) {
     let civ_ids: Vec<CivId> = world.civ_ids().collect();
@@ -399,6 +438,8 @@ pub fn advance_turn(
     // Units get their movement back for the turn that is starting.
     crate::world::movement::refresh_movement(world, r);
     update_visibility(world);
+    events.extend(detect_first_contact(world));
+    world.diplomacy.tick();
     world.turn += 1;
 
     // Checked after everything has settled, so a turn that completes the last
@@ -893,5 +934,150 @@ mod expansion {
         let units = &w.civ(CivId(0)).unwrap().units;
         assert_eq!(units.len(), 1, "the warrior should exist");
         assert_eq!(w.units.get(units[0]).unwrap().position, centre, "and stand in the city");
+    }
+}
+
+#[cfg(test)]
+mod multi_civ {
+    use super::*;
+    use crate::world::entities::Civilization;
+    use crate::world::grid::TileGrid;
+
+    fn ruleset() -> Ruleset {
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+            .expect("readable")
+            .expect("loads")
+    }
+
+    /// Three civs on one map, left to themselves. Everything up to now has
+    /// been one civ alone, so contention for land, meeting each other and the
+    /// turn order across civs are all untested in a running game.
+    #[test]
+    fn three_civs_share_a_map() {
+        let r = ruleset();
+        let mut g = TileGrid::new(20, 20, r.terrain("Grassland").unwrap());
+        let hill = r.terrain("Hill").unwrap();
+        for t in g.ids().filter(|t| t.0 % 4 == 0) {
+            g.features[t.0 as usize].push(hill);
+        }
+        let nation = r.nations.ids().next().unwrap();
+        let civs: Vec<_> = (0..3u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
+        let mut w = World::new(g, civs);
+
+        // Spread them out, each owning its own starting ring.
+        for (i, (x, y)) in [(4u16, 4u16), (15, 4), (9, 15)].into_iter().enumerate() {
+            let centre = w.grid.id_at(x, y).unwrap();
+            for t in w.grid.within(centre, 3) {
+                w.grid.owner[t.0 as usize] = Some(CivId(i as u8));
+            }
+            w.found_city_in(&r, City::found(format!("Capital {i}"), CivId(i as u8), centre));
+        }
+
+        let prince = r.difficulties.by_name("Prince");
+        let (m, costs, science, policies) = (
+            GrowthModifiers::default(),
+            CostModifiers::default(),
+            ScienceModifiers::default(),
+            PolicyModifiers::default(),
+        );
+
+        let mut founded = 0;
+        let mut victories = 0;
+        let mut meetings = 0;
+        for _ in 0..100 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
+                match e {
+                    TurnEvent::CityFounded { .. } => founded += 1,
+                    TurnEvent::Victory { .. } => victories += 1,
+                    TurnEvent::CivsMet { .. } => meetings += 1,
+                    _ => {}
+                }
+            }
+        }
+
+        for civ in w.civs.iter() {
+            println!(
+                "civ {:?}: {} cities, {} techs, {} policies, {} gold, {} units",
+                civ.id,
+                civ.cities.len(),
+                civ.techs.len(),
+                civ.adopted_policies.len(),
+                civ.gold,
+                civ.units.len()
+            );
+        }
+        println!("cities founded: {founded}, first contacts: {meetings}, victories: {victories}");
+        for a in 0..3u8 {
+            for b in (a + 1)..3u8 {
+                println!(
+                    "  {a} and {b}: met={} at war={}",
+                    w.diplomacy.have_met(CivId(a), CivId(b)),
+                    w.diplomacy.at_war(CivId(a), CivId(b))
+                );
+            }
+        }
+        println!("total cities on the map: {}", w.cities.len());
+
+        assert_eq!(w.civs.len(), 3, "everyone is still in the list");
+        assert!(w.cities.len() > 3, "someone should have expanded");
+        assert_eq!(
+            victories, 0,
+            "nobody holds every capital, so Domination must not fire"
+        );
+
+        // Nobody meets anybody, and that is the finding rather than a bug in
+        // first contact — `seeing_a_neighbour_is_meeting_them` shows the
+        // mechanism works. Nothing *explores*: settlers and workers stay near
+        // home, so sight never reaches a neighbour and the map stays dark.
+        // Until something wanders, three civs on one map are three separate
+        // games, which is why their results here are identical.
+        assert_eq!(meetings, 0, "no exploration yet, so no contact");
+    }
+}
+
+#[cfg(test)]
+mod contact {
+    use super::*;
+    use crate::world::entities::{Civilization, Unit};
+    use crate::world::grid::TileGrid;
+
+    #[test]
+    fn seeing_a_neighbour_is_meeting_them() {
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+            .unwrap()
+            .unwrap();
+        let g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(
+            g,
+            vec![
+                Civilization::new(CivId(0), nation, true),
+                Civilization::new(CivId(1), nation, true),
+            ],
+        );
+        let base = r.unit("Warrior").unwrap();
+        let here = w.grid.id_at(8, 8).unwrap();
+        let far = w.grid.id_at(1, 1).unwrap();
+        w.place_unit(Unit::new(base, CivId(0), here, 2));
+        let theirs = w.place_unit(Unit::new(base, CivId(1), far, 2));
+
+        update_visibility(&mut w);
+        assert!(detect_first_contact(&mut w).is_empty(), "too far apart to see");
+        assert!(!w.diplomacy.have_met(CivId(0), CivId(1)));
+
+        // Walk the stranger into view.
+        let next_door = w.grid.neighbours(here).next().unwrap();
+        w.units.get_mut(theirs).unwrap().position = next_door;
+        update_visibility(&mut w);
+
+        let events = detect_first_contact(&mut w);
+        assert_eq!(events.len(), 1, "one meeting, reported once");
+        assert!(matches!(events[0], TurnEvent::CivsMet { .. }));
+        assert!(w.diplomacy.have_met(CivId(0), CivId(1)));
+        assert!(!w.diplomacy.at_war(CivId(0), CivId(1)), "meeting is not war");
+
+        // And it does not keep firing.
+        update_visibility(&mut w);
+        assert!(detect_first_contact(&mut w).is_empty(), "already acquainted");
     }
 }
