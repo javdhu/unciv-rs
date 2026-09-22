@@ -37,6 +37,8 @@ pub struct Ruleset {
     pub specialists: Registry<Specialist>,
     pub victories: Registry<Victory>,
     pub city_state_types: Registry<CityStateType>,
+    /// What city-states ask of major civs. See `world::quests`.
+    pub quests: Registry<Quest>,
     /// Rules that apply to everyone, from `GlobalUniques.json`.
     ///
     /// This is where Civ keeps the consequences of unhappiness — the growth and
@@ -137,6 +139,7 @@ impl Ruleset {
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
                 "VictoryTypes.json" => flat(&mut r.victories, &doc, Victory::from_json),
                 "CityStateTypes.json" => flat(&mut r.city_state_types, &doc, CityStateType::from_json),
+                "Quests.json" => flat(&mut r.quests, &doc, Quest::from_json),
                 "GlobalUniques.json" => {
                     r.global_uniques = doc
                         .get("uniques")
@@ -290,6 +293,7 @@ impl Ruleset {
             + self.nations.len() + self.beliefs.len() + self.difficulties.len() + self.eras.len()
             + self.speeds.len() + self.specialists.len() + self.victories.len()
             + self.city_state_types.len()
+            + self.quests.len()
     }
 
     /// Every name referenced by one object that no object answers to.

@@ -113,6 +113,19 @@ pub enum TurnEvent {
     TechStolen { thief: CivId, victim: CivId, tech: Id<Technology>, identified: bool },
     /// A spy was caught in the act and killed.
     SpyCaught { civ: CivId, city: Id<City> },
+    /// A major civ's spy carried a city-state's election.
+    ElectionRigged { city_state: CivId, winner: CivId },
+    /// A city-state asked something of a major civ.
+    QuestOffered { city_state: CivId, quest: Id<crate::ruleset::Quest>, to: CivId },
+    /// And was given it, and paid for it.
+    QuestCompleted {
+        city_state: CivId,
+        quest: Id<crate::ruleset::Quest>,
+        by: CivId,
+        influence: i32,
+    },
+    /// Or was not, in time.
+    QuestExpired { city_state: CivId, quest: Id<crate::ruleset::Quest>, on: CivId },
     /// A major civ bought favour.
     GoldGifted { from: CivId, to: CivId, gold: i32, influence: Fixed },
     /// A city-state's opinion of a major civ crossed a threshold — gained an
@@ -711,6 +724,33 @@ pub fn advance_turn(
         }
     }
 
+    // Elections are held on the city-state's own clock, before quests are
+    // judged — winning one can complete a quest that asked for influence.
+    for e in crate::world::city_states::hold_elections(world, r) {
+        match e {
+            crate::world::city_states::ElectionResult::Rigged { city_state, winner } => {
+                events.push(TurnEvent::ElectionRigged { city_state, winner });
+            }
+            crate::world::city_states::ElectionResult::Neutral { .. } => {}
+        }
+    }
+
+    // Quests are judged and paid before favour decays, so a quest completed
+    // this turn is paid at its full value rather than at one point less.
+    for e in crate::world::quests::tick(world, r) {
+        match e {
+            crate::world::quests::QuestEvent::Offered { city_state, quest, to } => {
+                events.push(TurnEvent::QuestOffered { city_state, quest, to });
+            }
+            crate::world::quests::QuestEvent::Completed { city_state, quest, by, influence } => {
+                events.push(TurnEvent::QuestCompleted { city_state, quest, by, influence });
+            }
+            crate::world::quests::QuestEvent::Expired { city_state, quest, on } => {
+                events.push(TurnEvent::QuestExpired { city_state, quest, on });
+            }
+        }
+    }
+
     // City-state favour slides back toward where it belongs, and the bonuses
     // it buys are rebuilt from the new numbers. A friendship that lapsed this
     // turn has to stop paying this turn.
@@ -922,6 +962,78 @@ mod tests {
             Some(CivId(0)),
             "the city it was founded in is its holy city"
         );
+    }
+
+    /// A whole game on a generated map with city-states in it.
+    ///
+    /// The other generated-map test has four majors and nothing else. This one
+    /// adds city-states, which is what quests, influence and elections need to
+    /// exist at all — and asks whether any of it actually happens rather than
+    /// merely compiles.
+    #[test]
+    fn city_states_ask_for_things_and_get_them() {
+        use crate::world::mapgen::{generate, MapParameters};
+        let r = ruleset();
+        let p = MapParameters { width: 40, height: 26, seed: 0xC157A7E, ..Default::default() };
+        let map = generate(&r, p, 6);
+        assert_eq!(map.starts.len(), 6);
+
+        let nation = r.nations.ids().next().unwrap();
+        let cs_types: Vec<_> = r.city_state_types.ids().collect();
+        let mut civs = Vec::new();
+        for i in 0..6u8 {
+            let mut c = Civilization::new(CivId(i), nation, true);
+            // The last two are city-states.
+            if i >= 4 {
+                c.city_state_type = Some(cs_types[(i as usize - 4) % cs_types.len()]);
+            }
+            civs.push(c);
+        }
+        let mut w = World::new(map.grid, civs);
+        let settler = r
+            .units
+            .iter()
+            .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
+            .map(|(id, _)| id)
+            .unwrap();
+        let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id).unwrap();
+        for (i, start) in map.starts.iter().enumerate() {
+            w.place_unit(Unit::new(settler, CivId(i as u8), *start, 2));
+            if i < 4 {
+                w.place_unit(Unit::new(worker, CivId(i as u8), *start, 2));
+            }
+        }
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let (mut offered, mut completed, mut gifts, mut ranks) = (0, 0, 0, 0);
+        for _ in 1..=250 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                match e {
+                    TurnEvent::QuestOffered { .. } => offered += 1,
+                    TurnEvent::QuestCompleted { .. } => completed += 1,
+                    TurnEvent::GoldGifted { .. } => gifts += 1,
+                    TurnEvent::CityStateRelationship { .. } => ranks += 1,
+                    _ => {}
+                }
+            }
+        }
+        println!("quests offered {offered}, completed {completed}, gifts {gifts}, rank changes {ranks}");
+
+        assert!(offered > 0, "a city-state that never asks for anything is a decoration");
+        assert!(
+            ranks > 0,
+            "nobody's standing with a city-state ever changed in 250 turns"
+        );
+        // Every quest handed out must be one the engine can judge, or it would
+        // stand until it expired and teach nobody anything.
+        let (_, unjudgeable) = crate::world::quests::judgeable(&r);
+        for cs in crate::world::city_states::city_states(&w) {
+            for q in &w.civ(cs).unwrap().quests.active {
+                let name = r.quests.name_of(q.quest).unwrap_or("?");
+                assert!(!unjudgeable.iter().any(|u| u == name), "offered unjudgeable {name}");
+            }
+        }
     }
 
     /// A whole game on a generated map, which is the only test that asks

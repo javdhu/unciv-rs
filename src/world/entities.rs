@@ -42,6 +42,9 @@ pub struct Civilization {
     pub great_people: crate::world::great_people::GreatPeople,
     /// Spies, and which eras have already granted one.
     pub espionage: crate::world::espionage::Espionage,
+    /// What this city-state is asking of the major civs. Empty for everyone
+    /// else — a major civ sets no quests.
+    pub quests: crate::world::quests::QuestBook,
     /// Every unique currently in force for this civ, indexed for lookup.
     /// Rebuilt whenever policies or techs change — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
@@ -65,6 +68,7 @@ impl Civilization {
             is_barbarian: false,
             city_state_type: None,
             espionage: Default::default(),
+            quests: Default::default(),
             gold: 0,
             science_stored: 0,
             techs: BTreeSet::new(),

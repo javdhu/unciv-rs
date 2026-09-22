@@ -24,6 +24,7 @@
 //! from.
 
 use crate::arena::Id;
+use crate::rng::Rng;
 use crate::ruleset::{CityStateType, Ruleset};
 use crate::stats::{Fixed, Precise};
 use crate::unique::Unique;
@@ -367,6 +368,256 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
     total
 }
 
+// ---------------------------------------------------------------------------
+// Elections and coups — the two spy actions that are really city-state systems
+// ---------------------------------------------------------------------------
+
+/// Turns between elections in a city-state.
+pub const ELECTION_TURNS: u32 = 15;
+/// The election's own candidate: the outcome where nobody's bribe carried.
+pub const NEUTRAL_VOTES: i32 = 20;
+/// Influence the winner of a rigged election gains.
+pub const ELECTION_WIN_INFLUENCE: Fixed = Fixed::permille(20_000);
+/// And what everyone else loses by it.
+pub const ELECTION_LOSS_INFLUENCE: Fixed = Fixed::permille(-5_000);
+
+/// Influence a successful coup hands the plotter when there was no ally to
+/// depose — you cannot inherit a position nobody held.
+pub const COUP_UNOPPOSED_INFLUENCE: Fixed = Fixed::permille(80_000);
+/// What the deposed ally loses.
+pub const COUP_ALLY_PENALTY: Fixed = Fixed::permille(-20_000);
+/// And what every other onlooker loses, for having watched it happen.
+pub const COUP_ONLOOKER_PENALTY: Fixed = Fixed::permille(-10_000);
+/// What a failed coup costs the plotter.
+pub const COUP_FAILURE_PENALTY: Fixed = Fixed::permille(-20_000);
+/// A coup is never a certainty, however far ahead you are.
+pub const COUP_MAX_CHANCE: i32 = 85;
+
+/// What an election did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElectionResult {
+    /// A major civ's spy carried it.
+    Rigged { city_state: CivId, winner: CivId },
+    /// Nobody's did, and everyone who tried paid for trying.
+    Neutral { city_state: CivId },
+}
+
+/// Hold the elections that are due this turn.
+///
+/// Every spy stationed in a city-state and set to rig buys votes in proportion
+/// to the influence its civ already holds and to its own skill. The election
+/// itself is a candidate too, weighted at twenty — which is what makes rigging
+/// a gamble rather than a purchase, and what makes a *second* rigger worth
+/// having even when you are behind.
+///
+/// Picked by weighted draw from a seed made of the turn and the city-state, so
+/// the same game elects the same government everywhere.
+pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
+    let mut results = Vec::new();
+    if world.turn == 0 || world.turn % ELECTION_TURNS != 0 {
+        return results;
+    }
+
+    for cs in city_states(world) {
+        let Some(capital) = crate::world::connections::capital_of(world, r, cs)
+            .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()))
+        else {
+            continue;
+        };
+
+        // Who is rigging, in civ-id order so the draw is reproducible.
+        let mut riggers: Vec<(CivId, i32)> = Vec::new();
+        for major in world.civ_ids().collect::<Vec<_>>() {
+            if !world.civ(major).is_some_and(|c| c.is_major() && c.is_alive()) {
+                continue;
+            }
+            let Some(spy) = world.civ(major).and_then(|c| {
+                c.espionage.spies.iter().find(|s| {
+                    s.station == Some(capital)
+                        && s.action == crate::world::espionage::SpyAction::RiggingElections
+                })
+            }) else {
+                continue;
+            };
+            // Half the influence already held, plus the spy's own skill. A civ
+            // the city-state already likes finds rigging easy, which is how
+            // an ally stays an ally.
+            let votes = world.diplomacy.influence(cs, major).floor() as i32 / 2 + spy.skill();
+            riggers.push((major, votes.max(0)));
+        }
+        if riggers.is_empty() {
+            continue;
+        }
+
+        let total: i32 = riggers.iter().map(|(_, v)| v).sum::<i32>() + NEUTRAL_VOTES;
+        let mut rng = Rng::from_parts(&[0xE1EC, world.turn as u64, cs.0 as u64]);
+        let mut draw = rng.range(0, total as i64 - 1) as i32;
+        let mut winner = None;
+        for (civ, votes) in &riggers {
+            if draw < *votes {
+                winner = Some(*civ);
+                break;
+            }
+            draw -= *votes;
+        }
+
+        match winner {
+            Some(w) => {
+                // Everyone the city-state knows is moved by the result, not
+                // only those who took part — a rigged election is a public fact.
+                for major in world.civ_ids().collect::<Vec<_>>() {
+                    if !world.civ(major).is_some_and(|c| c.is_major() && c.is_alive()) {
+                        continue;
+                    }
+                    if !world.diplomacy.have_met(cs, major) {
+                        continue;
+                    }
+                    let delta =
+                        if major == w { ELECTION_WIN_INFLUENCE } else { ELECTION_LOSS_INFLUENCE };
+                    world.diplomacy.add_influence(cs, major, delta);
+                }
+                results.push(ElectionResult::Rigged { city_state: cs, winner: w });
+            }
+            None => {
+                for (civ, _) in &riggers {
+                    world.diplomacy.add_influence(cs, *civ, ELECTION_LOSS_INFLUENCE);
+                }
+                results.push(ElectionResult::Neutral { city_state: cs });
+            }
+        }
+    }
+    results
+}
+
+/// Chance a coup succeeds, as a percentage.
+///
+/// Even odds, less half the influence gap to the sitting ally, plus half the
+/// skill gap between the plotting spy and whatever guards the place. Capped at
+/// 85: however far ahead you are, a coup can fail.
+pub fn coup_chance(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> i32 {
+    let ally = ally_of(world, cs);
+    // With no ally there is no incumbent to beat, so the bar is the ally
+    // threshold itself.
+    let ally_influence =
+        ally.map_or(ALLY_THRESHOLD, |a| world.diplomacy.influence(cs, a));
+    let gap = (ally_influence - world.diplomacy.influence(cs, plotter)).floor() as i32;
+
+    let Some(capital) = crate::world::connections::capital_of(world, r, cs)
+        .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()))
+    else {
+        return 0;
+    };
+    let mine = world
+        .civ(plotter)
+        .and_then(|c| c.espionage.spies.iter().find(|s| s.station == Some(capital)))
+        .map_or(0, |s| s.skill());
+    // The incumbent's own spy defends what it bought.
+    let theirs = ally
+        .and_then(|a| world.civ(a))
+        .and_then(|c| c.espionage.spies.iter().find(|s| s.station == Some(capital)))
+        .map_or(0, |s| s.skill());
+
+    (50 - gap / 2 + (mine - theirs) / 2).clamp(0, COUP_MAX_CHANCE)
+}
+
+/// Can this civ even attempt a coup here?
+///
+/// It needs a spy in place, and a reason: you do not depose yourself.
+pub fn can_coup(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> bool {
+    if !world.civ(cs).is_some_and(|c| c.is_city_state() && c.is_alive()) {
+        return false;
+    }
+    if ally_of(world, cs) == Some(plotter) {
+        return false;
+    }
+    let Some(capital) = crate::world::connections::capital_of(world, r, cs)
+        .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()))
+    else {
+        return false;
+    };
+    world.civ(plotter).is_some_and(|c| {
+        c.espionage
+            .spies
+            .iter()
+            .any(|s| s.station == Some(capital) && s.is_established())
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoupResult {
+    /// The plotter inherits the deposed ally's standing.
+    Succeeded { city_state: CivId, plotter: CivId, deposed: Option<CivId> },
+    /// The spy is dead and the plotter is worse off than before.
+    Failed { city_state: CivId, plotter: CivId },
+    /// No spy in place, or nothing to overthrow.
+    Impossible,
+}
+
+/// Try to overthrow a city-state's government.
+///
+/// Succeed and you take the deposed ally's influence outright — not a gift of
+/// gold's worth, the whole position. Fail and the spy is dead and you are
+/// twenty worse off than when you started. That asymmetry is the point: a coup
+/// is what you do when you cannot outbid someone, and it is supposed to be
+/// frightening.
+pub fn attempt_coup(world: &mut World, r: &Ruleset, plotter: CivId, cs: CivId) -> CoupResult {
+    if !can_coup(world, r, plotter, cs) {
+        return CoupResult::Impossible;
+    }
+    let chance = coup_chance(world, r, plotter, cs);
+    let mut rng = Rng::from_parts(&[0xC0_11, world.turn as u64, cs.0 as u64, plotter.0 as u64]);
+    let roll = rng.range(0, 99) as i32;
+
+    let ally = ally_of(world, cs);
+    let capital = crate::world::connections::capital_of(world, r, cs)
+        .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()));
+
+    if roll < chance {
+        // The plotter inherits exactly what the incumbent had.
+        let inherited = ally
+            .map(|a| world.diplomacy.influence(cs, a))
+            .unwrap_or(COUP_UNOPPOSED_INFLUENCE);
+        world.diplomacy.set_influence(cs, plotter, inherited);
+        if let Some(a) = ally {
+            world.diplomacy.add_influence(cs, a, COUP_ALLY_PENALTY);
+        }
+        for other in world.civ_ids().collect::<Vec<_>>() {
+            if other == plotter || Some(other) == ally {
+                continue;
+            }
+            if !world.civ(other).is_some_and(|c| c.is_major() && c.is_alive()) {
+                continue;
+            }
+            if world.diplomacy.have_met(cs, other) {
+                world.diplomacy.add_influence(cs, other, COUP_ONLOOKER_PENALTY);
+            }
+        }
+        // The spy stays and goes back to buying votes for its new government.
+        if let (Some(capital), Some(c)) = (capital, world.civ_mut(plotter)) {
+            if let Some(s) = c.espionage.spies.iter_mut().find(|s| s.station == Some(capital)) {
+                s.action = crate::world::espionage::SpyAction::RiggingElections;
+            }
+        }
+        CoupResult::Succeeded { city_state: cs, plotter, deposed: ally }
+    } else {
+        world.diplomacy.add_influence(cs, plotter, COUP_FAILURE_PENALTY);
+        if let (Some(capital), Some(c)) = (capital, world.civ_mut(plotter)) {
+            if let Some(s) = c.espionage.spies.iter_mut().find(|s| s.station == Some(capital)) {
+                *s = crate::world::espionage::Spy::new();
+            }
+        }
+        // Whoever was guarding the place learns from it.
+        if let Some(a) = ally {
+            if let (Some(capital), Some(c)) = (capital, world.civ_mut(a)) {
+                if let Some(s) = c.espionage.spies.iter_mut().find(|s| s.station == Some(capital)) {
+                    s.rank = s.rank.saturating_add(1).min(3);
+                }
+            }
+        }
+        CoupResult::Failed { city_state: cs, plotter }
+    }
+}
+
 /// A city-state's type, by name, for setting one up.
 pub fn type_named(r: &Ruleset, name: &str) -> Option<Id<CityStateType>> {
     r.city_state_types.id(name)
@@ -630,6 +881,256 @@ mod tests {
         let kind = r.city_state_types.get(w.civ(CS).unwrap().city_state_type.unwrap()).unwrap();
         assert_eq!(ally.len(), kind.ally_bonus_uniques.len());
         assert_eq!(friend.len(), kind.friend_bonus_uniques.len());
+    }
+
+    // --- elections and coups ---
+
+    /// Put a rigging spy from `major` in the city-state's city.
+    fn rig(w: &mut World, r: &Ruleset, major: CivId, rank: u8) {
+        let capital = crate::world::connections::capital_of(w, r, CS)
+            .or_else(|| w.civ(CS).and_then(|c| c.cities.first().copied()))
+            .expect("the city-state has a city");
+        let mut spy = crate::world::espionage::Spy::new();
+        spy.rank = rank;
+        spy.station = Some(capital);
+        spy.action = crate::world::espionage::SpyAction::RiggingElections;
+        w.civ_mut(major).unwrap().espionage.spies.push(spy);
+    }
+
+    #[test]
+    fn elections_are_held_on_a_clock_and_only_when_someone_is_rigging() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.turn = ELECTION_TURNS;
+        assert!(hold_elections(&mut w, &r).is_empty(), "nobody is rigging anything");
+
+        rig(&mut w, &r, CivId(0), 1);
+        w.turn = ELECTION_TURNS - 1;
+        assert!(hold_elections(&mut w, &r).is_empty(), "not election day");
+        w.turn = ELECTION_TURNS;
+        assert!(!hold_elections(&mut w, &r).is_empty(), "election day");
+    }
+
+    #[test]
+    fn rigging_an_election_moves_influence_for_and_against() {
+        let r = ruleset();
+        let mut w = world(&r);
+        rig(&mut w, &r, CivId(0), 3);
+        w.turn = ELECTION_TURNS;
+
+        let results = hold_elections(&mut w, &r);
+        match results.first() {
+            Some(ElectionResult::Rigged { winner, .. }) => {
+                assert_eq!(*winner, CivId(0));
+                assert_eq!(w.diplomacy.influence(CS, CivId(0)), ELECTION_WIN_INFLUENCE);
+                assert_eq!(
+                    w.diplomacy.influence(CS, CivId(1)),
+                    ELECTION_LOSS_INFLUENCE,
+                    "a rigged election is a public fact — the bystander loses too"
+                );
+            }
+            Some(ElectionResult::Neutral { .. }) => {
+                // The neutral party is a real candidate; losing to it costs.
+                assert!(w.diplomacy.influence(CS, CivId(0)) < Fixed::ZERO);
+            }
+            None => panic!("an election should have been held"),
+        }
+    }
+
+    #[test]
+    fn the_neutral_party_is_a_real_candidate() {
+        // Over many city-states with one weak rigger each, the election should
+        // sometimes go to nobody — otherwise rigging is a purchase and not a
+        // gamble, and a single cheap spy would own every city-state.
+        let r = ruleset();
+        let mut neutral = 0;
+        for seed in 0..40u8 {
+            let mut w = world(&r);
+            rig(&mut w, &r, CivId(0), 1);
+            w.turn = ELECTION_TURNS * (1 + seed as u32);
+            if matches!(hold_elections(&mut w, &r).first(), Some(ElectionResult::Neutral { .. })) {
+                neutral += 1;
+            }
+        }
+        assert!(neutral > 0, "the neutral party never won in forty elections");
+        assert!(neutral < 40, "and never lost either");
+    }
+
+    #[test]
+    fn influence_already_held_makes_rigging_easier() {
+        // The whole reason an ally stays an ally: half their influence counts
+        // as votes, so the incumbent is hard to unseat by spycraft alone.
+        let r = ruleset();
+        let mut w = world(&r);
+        rig(&mut w, &r, CivId(0), 1);
+        rig(&mut w, &r, CivId(1), 1);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(100));
+
+        let mut wins = [0, 0];
+        for round in 1..=40u32 {
+            let mut t = w.clone();
+            t.turn = ELECTION_TURNS * round;
+            if let Some(ElectionResult::Rigged { winner, .. }) = hold_elections(&mut t, &r).first() {
+                wins[winner.0 as usize] += 1;
+            }
+        }
+        assert!(
+            wins[1] > wins[0],
+            "the incumbent with a hundred influence lost {}-{} to a newcomer",
+            wins[1],
+            wins[0]
+        );
+    }
+
+    #[test]
+    fn the_same_turn_elects_the_same_government() {
+        let r = ruleset();
+        let mut a = world(&r);
+        rig(&mut a, &r, CivId(0), 2);
+        rig(&mut a, &r, CivId(1), 2);
+        a.turn = ELECTION_TURNS * 3;
+        let mut b = a.clone();
+        assert_eq!(hold_elections(&mut a, &r), hold_elections(&mut b, &r));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn a_coup_needs_a_spy_in_place_and_someone_to_depose() {
+        let r = ruleset();
+        let mut w = world(&r);
+        assert!(!can_coup(&w, &r, CivId(0), CS), "no spy, no coup");
+
+        rig(&mut w, &r, CivId(0), 1);
+        assert!(can_coup(&w, &r, CivId(0), CS));
+
+        // You do not overthrow your own government.
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(90));
+        assert_eq!(ally_of(&w, CS), Some(CivId(0)));
+        assert!(!can_coup(&w, &r, CivId(0), CS));
+
+        assert_eq!(attempt_coup(&mut w, &r, CivId(1), CS), CoupResult::Impossible, "and civ 1 has no spy");
+    }
+
+    #[test]
+    fn the_coup_chance_narrows_as_the_gap_widens() {
+        let r = ruleset();
+        let mut w = world(&r);
+        rig(&mut w, &r, CivId(0), 1);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(60));
+
+        let far_behind = coup_chance(&w, &r, CivId(0), CS);
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(50));
+        let close = coup_chance(&w, &r, CivId(0), CS);
+        assert!(close > far_behind, "{close} should beat {far_behind}");
+
+        // Never a certainty, however close and however good the spy.
+        //
+        // The plotter has to stay *below* the incumbent for any of this to
+        // mean anything: the ally is derived from whoever holds the most
+        // influence, so a plotter who overtakes the ally has already won and
+        // has nothing left to overthrow. Setting the plotter to 500 does not
+        // make a coup certain — it makes them the government.
+        w.civ_mut(CivId(0)).unwrap().espionage.spies[0].rank = 3;
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(59));
+        assert_eq!(ally_of(&w, CS), Some(CivId(1)), "civ 1 still holds it at 60");
+        assert_eq!(coup_chance(&w, &r, CivId(0), CS), COUP_MAX_CHANCE);
+
+        // And never worse than hopeless.
+        w.civ_mut(CivId(0)).unwrap().espionage.spies[0].rank = 1;
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(500));
+        w.diplomacy
+            .set_influence(CS, CivId(0), crate::world::diplomacy::MINIMUM_INFLUENCE);
+        assert_eq!(coup_chance(&w, &r, CivId(0), CS), 0);
+    }
+
+    #[test]
+    fn a_veteran_spy_makes_a_coup_likelier_and_a_guard_makes_it_harder() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(60));
+        rig(&mut w, &r, CivId(0), 1);
+        let raw = coup_chance(&w, &r, CivId(0), CS);
+
+        w.civ_mut(CivId(0)).unwrap().espionage.spies[0].rank = 3;
+        let veteran = coup_chance(&w, &r, CivId(0), CS);
+        assert!(veteran > raw, "{veteran} should beat {raw}");
+
+        // The incumbent's own spy defends what it bought.
+        rig(&mut w, &r, CivId(1), 3);
+        let guarded = coup_chance(&w, &r, CivId(0), CS);
+        assert!(guarded < veteran, "{guarded} should be under {veteran}");
+    }
+
+    #[test]
+    fn a_successful_coup_inherits_the_deposed_allys_standing() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(70));
+        assert_eq!(ally_of(&w, CS), Some(CivId(1)));
+        rig(&mut w, &r, CivId(0), 3);
+        // Stack the odds so the outcome is near-certain and the test is about
+        // the consequences rather than about the roll. The plotter stays just
+        // *below* the incumbent — overtake them and you are the ally already.
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(65));
+        assert_eq!(ally_of(&w, CS), Some(CivId(1)), "civ 1 is still in charge");
+        assert_eq!(coup_chance(&w, &r, CivId(0), CS), COUP_MAX_CHANCE);
+
+        let mut succeeded = false;
+        for turn in 1..=40u32 {
+            let mut t = w.clone();
+            t.turn = turn;
+            if let CoupResult::Succeeded { deposed, .. } = attempt_coup(&mut t, &r, CivId(0), CS) {
+                assert_eq!(deposed, Some(CivId(1)));
+                assert_eq!(
+                    t.diplomacy.influence(CS, CivId(0)),
+                    Fixed::whole(70),
+                    "the plotter takes the position outright, not a share of it"
+                );
+                assert_eq!(t.diplomacy.influence(CS, CivId(1)), Fixed::whole(50), "70 less 20");
+                assert_eq!(ally_of(&t, CS), Some(CivId(0)));
+                succeeded = true;
+                break;
+            }
+        }
+        assert!(succeeded, "at 85% a coup should land inside forty attempts");
+    }
+
+    #[test]
+    fn a_failed_coup_kills_the_spy_and_costs_influence() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(100));
+        rig(&mut w, &r, CivId(0), 1);
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(10));
+        assert!(coup_chance(&w, &r, CivId(0), CS) < 50, "the odds are against us");
+
+        let mut failed = false;
+        for turn in 1..=60u32 {
+            let mut t = w.clone();
+            t.turn = turn;
+            if let CoupResult::Failed { .. } = attempt_coup(&mut t, &r, CivId(0), CS) {
+                assert_eq!(t.diplomacy.influence(CS, CivId(0)), Fixed::whole(-10), "10 less 20");
+                let spy = &t.civ(CivId(0)).unwrap().espionage.spies[0];
+                assert_eq!(spy.station, None, "the spy is dead");
+                assert_eq!(spy.rank, 1);
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "a coup against the odds should fail at least once in sixty");
+    }
+
+    #[test]
+    fn the_same_coup_resolves_the_same_way_twice() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(60));
+        rig(&mut w, &r, CivId(0), 2);
+        w.turn = 77;
+        let mut a = w.clone();
+        let mut b = w.clone();
+        assert_eq!(attempt_coup(&mut a, &r, CivId(0), CS), attempt_coup(&mut b, &r, CivId(0), CS));
+        assert_eq!(a, b);
     }
 
     #[test]

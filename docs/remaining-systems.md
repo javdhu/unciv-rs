@@ -11,19 +11,25 @@ matters more than its line count.
 | AI / automation | 206 | no reference obligation | `ai.rs` |
 | map generation | 189 | aesthetic, not rules | `mapgen.rs` |
 | diplomacy | 167 | the hardest state shape | `diplomacy.rs` |
-| quests / city-states | 158 | directed pair matrix, like diplomacy | `city_states.rs`, **no quests** |
+| quests / city-states | 158 | directed pair matrix, like diplomacy | `city_states.rs`, `quests.rs` |
 | religion | 104 | sparse matrix + diffusion | `religion.rs` |
 | trade & connectivity | 57 | a graph problem | `connections.rs` |
-| espionage | 56 | hidden state, per-player views | `espionage.rs`, **no coups** |
+| espionage | 56 | hidden state, per-player views | `espionage.rs` |
 | policies | 34 | mostly already generated | `policies.rs` |
 | victory | 31 | predicates, not state | `victory.rs` |
 | barbarians | 22 | seeded spawning | `barbarians.rs` |
 | great people | 15 | reuses the growth pattern | `great_people.rs` |
 
-Every system on this list now exists. What is deliberately *not* built is named
-in the sections below: city-state **quests**, and the two espionage actions
-that are really city-state systems — rigging elections and staging coups. Those
-three belong together and are the honest remainder.
+Every system on this list now exists, and so do the three pieces that were
+named as the remainder: quests, rigging elections and coups.
+
+What is still deliberately *not* built is four of the ruleset's eighteen
+quests — Give Gold, Invest, Bully City State and Denounce Civilization — which
+need tribute and denunciations, neither of which is modelled. Rather than hand
+out a quest that can never be completed, `quests::judgeable` reports exactly
+which of a ruleset's quests this engine can decide, and the rest are never
+offered. A test asserts that list, so adding a quest without an evaluator fails
+the build rather than producing a silent dead errand.
 
 Two further gaps are worth stating plainly, because both are cases of a system
 being correct and the AI not reaching for it:
@@ -334,6 +340,61 @@ The gap is named rather than half-filled.
 civs at permanent war reach the Classical era in 250 turns. That is Civ's own
 pacing, not a fault; the end-to-end test grants the era rather than waiting for
 it.
+
+---
+
+## Quests — a quest is only real if the engine can judge it — **done**
+
+Implemented in `src/world/quests.rs`.
+
+A quest is the only way a city-state *initiates* anything. Everything else
+about the relationship is done to it: gold pushed at it, armies marched past
+it. A quest is the city-state naming a thing it wants, which is what turns a
+row of numbers into something that behaves like a neighbour.
+
+**The design constraint is judgeability.** Fourteen of the ruleset's eighteen
+quests can be decided from state this engine already has — and could only be
+decided *because* the earlier systems landed. "Connect this resource" is a
+lookup in the resource stock, which was empty in every game until the stock
+started being recomputed. "Build a road to our city" is a question the
+connection graph answers. "Spread your religion to us" needs majority religion.
+"Acquire a great person" needs great people. Quests are where the rest of the
+engine gets used.
+
+The other four need tribute and denunciations. `judgeable` returns both lists,
+and an undecidable quest is never offered — the same `Verdict::Unknown`
+discipline as conditionals, applied to a whole subsystem.
+
+**A contest carries a baseline**, and it is the one piece of state here that is
+not derivable. "Gain more culture than anyone else by turn N" cannot be judged
+from the world alone; it needs the snapshot from when the clock started. A
+contest is also not decided until the clock runs out — leading on turn three is
+not winning.
+
+---
+
+## Elections and coups — the spy actions that are city-state systems — **done**
+
+In `src/world/city_states.rs`, not in `espionage.rs`, because that is what they
+are. A spy sent to a city-state does not steal — there is no technology there
+worth the trip — it buys votes.
+
+**An election is a weighted draw, and the draw includes nobody.** Each rigging
+spy's weight is half the influence its civ already holds plus the spy's own
+skill; the neutral outcome is weighted at twenty. That last candidate is the
+whole design: without it, one cheap spy would own every city-state
+permanently. With it, rigging is a gamble, and a civ that is already liked
+finds it easy — which is how an ally stays an ally.
+
+**A coup is asymmetric on purpose.** Succeed and you take the deposed ally's
+influence outright, not a share of it. Fail and the spy is dead and you are
+twenty worse off than when you started. It is what you do when you cannot
+outbid someone, and it is supposed to be frightening.
+
+Writing the tests surfaced something the design got right by accident: because
+the ally is *derived* from whoever holds the most influence, a plotter who
+overtakes the incumbent has already won and has nothing left to overthrow.
+Two tests were written against the wrong premise before that became clear.
 
 ---
 

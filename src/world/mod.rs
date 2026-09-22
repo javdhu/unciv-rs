@@ -25,6 +25,7 @@ pub mod espionage;
 pub mod mapgen;
 pub mod movement;
 pub mod policies;
+pub mod quests;
 pub mod religion;
 pub mod research;
 pub mod resources;

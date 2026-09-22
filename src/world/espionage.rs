@@ -63,6 +63,9 @@ pub enum SpyAction {
     StealingTech,
     /// In place in one of our own cities, watching for others.
     CounterIntelligence,
+    /// In place in a city-state, buying votes. A city-state has no technology
+    /// worth the trip, so a spy sent to one does this instead.
+    RiggingElections,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +91,10 @@ impl Spy {
 
     /// Is the spy in place and working, rather than travelling or settling in?
     pub fn is_established(&self) -> bool {
-        matches!(self.action, SpyAction::StealingTech | SpyAction::CounterIntelligence)
+        matches!(
+            self.action,
+            SpyAction::StealingTech | SpyAction::CounterIntelligence | SpyAction::RiggingElections
+        )
     }
 }
 
@@ -158,10 +164,18 @@ pub fn assign(world: &mut World, civ: CivId, index: usize, city: Id<City>) -> bo
 
 /// What a spy does once its network is up: watch at home, steal abroad.
 fn settled_action(world: &World, civ: CivId, city: Id<City>) -> SpyAction {
-    match world.cities.get(city).map(|c| c.owner) {
-        Some(owner) if owner == civ => SpyAction::CounterIntelligence,
-        _ => SpyAction::StealingTech,
+    let Some(owner) = world.cities.get(city).map(|c| c.owner) else {
+        return SpyAction::CounterIntelligence;
+    };
+    if owner == civ {
+        return SpyAction::CounterIntelligence;
     }
+    // A city-state has no technology worth crossing a map for, but it has an
+    // election. Sending a spy to one to steal would waste it.
+    if world.civ(owner).is_some_and(|c| c.is_city_state()) {
+        return SpyAction::RiggingElections;
+    }
+    SpyAction::StealingTech
 }
 
 /// Technologies `target` knows and `thief` does not, in id order.
@@ -253,6 +267,21 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                         *s = next;
                     }
                 }
+                SpyAction::RiggingElections => {
+                    // The election itself is a city-state event, held on its
+                    // own schedule; the spy only has to be standing there.
+                    // But if the city stopped being a city-state's — captured
+                    // by someone — there is nothing left to rig.
+                    if !world.civ(victim).is_some_and(|c| c.is_city_state()) {
+                        let next = settled_action(world, civ, city_id);
+                        if let Some(s) =
+                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
+                        {
+                            s.action = next;
+                            s.progress = 0;
+                        }
+                    }
+                }
                 SpyAction::CounterIntelligence => {
                     // A city we were watching that is no longer ours is a
                     // city to rob, not to guard.
@@ -274,11 +303,12 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // forever and never went anywhere else. Found by a spy
                     // whose progress froze at 86 for two hundred and fifty
                     // turns.
-                    if victim == civ {
+                    if victim == civ || world.civ(victim).is_some_and(|c| c.is_city_state()) {
+                        let next = settled_action(world, civ, city_id);
                         if let Some(s) =
                             world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
                         {
-                            s.action = SpyAction::CounterIntelligence;
+                            s.action = next;
                             s.progress = 0;
                         }
                         continue;
