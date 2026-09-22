@@ -150,6 +150,11 @@ pub enum TurnEvent {
         a: CivId,
         b: CivId,
     },
+    /// A great person was spent.
+    GreatPersonActed {
+        civ: CivId,
+        outcome: crate::world::great_person_actions::Outcome,
+    },
     GreatPersonBorn {
         civ: CivId,
         kind: String,
@@ -436,7 +441,9 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
+        let scaling = crate::world::great_person_actions::Scaling { costs, science };
         let order = crate::world::ai::settler_order(world, r, civ, *unit)
+            .or_else(|| crate::world::ai::great_person_order(world, r, civ, *unit, scaling))
             .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit, &worker_jobs))
             .or_else(|| crate::world::ai::military_order(world, r, civ, *unit))
             .or_else(|| crate::world::ai::explore_order(world, r, civ, *unit));
@@ -742,6 +749,22 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
                     }
                 }
             }
+            UnitOrder::GreatPerson(action) => {
+                let scaling = crate::world::great_person_actions::Scaling { costs, science };
+                if let Ok(outcome) = crate::world::great_person_actions::perform(world, r, *unit, *action, scaling) {
+                    use crate::world::great_person_actions::Outcome;
+                    match outcome {
+                        Outcome::GoldenAge { turns } => {
+                            events.push(TurnEvent::GoldenAgeStarted { civ: plan.civ, turns })
+                        }
+                        Outcome::Science { learned: Some(tech), .. } => {
+                            events.push(TurnEvent::TechLearned { civ: plan.civ, tech })
+                        }
+                        _ => {}
+                    }
+                    events.push(TurnEvent::GreatPersonActed { civ: plan.civ, outcome });
+                }
+            }
             UnitOrder::FoundCity => {
                 let name = format!("City {}", world.cities.len() + 1);
                 if let Ok(city) = crate::world::settling::found_city_with(world, r, *unit, name) {
@@ -976,7 +999,9 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         }
     }
 
+    let turn = world.turn;
     if let Some(civ) = world.civ_mut(plan.civ) {
+        civ.recent_science[(turn % 8) as usize] = science_after_debt;
         if let ResearchEvent::Completed { tech, .. } = apply_science(civ, r, science_after_debt, science) {
             events.push(TurnEvent::TechLearned { civ: plan.civ, tech });
         }

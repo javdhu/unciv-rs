@@ -22,6 +22,7 @@ pub mod filters;
 pub mod fog;
 pub mod golden_age;
 pub mod great_people;
+pub mod great_person_actions;
 pub mod grid;
 pub mod happiness;
 pub mod improvements;

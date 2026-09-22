@@ -49,6 +49,9 @@ pub struct Civilization {
     pub great_people: crate::world::great_people::GreatPeople,
     /// Happiness banked toward the next golden age, and the one running.
     pub golden_age: crate::world::golden_age::GoldenAge,
+    /// Science banked in each of the last eight turns, indexed by turn mod
+    /// eight (`scienceOfLast8Turns`). What a Great Scientist is worth.
+    pub recent_science: [i32; 8],
     /// Spies, and which eras have already granted one.
     pub espionage: crate::world::espionage::Espionage,
     /// What this city-state is asking of the major civs. Empty for everyone
@@ -89,6 +92,7 @@ impl Civilization {
             recently_bullied: 0,
             great_people: Default::default(),
             golden_age: Default::default(),
+            recent_science: [0; 8],
             uniques: Default::default(),
             resources: Default::default(),
             cities: Vec::new(),

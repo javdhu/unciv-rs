@@ -25,6 +25,7 @@ use crate::world::grid::{CivId, TileId};
 use crate::world::policies::{is_adoptable, policy_cost, PolicyModifiers};
 use crate::world::research::{available_techs, tech_cost, ScienceModifiers};
 use crate::world::world::World;
+use crate::UniqueType;
 
 /// What to research next.
 ///
@@ -868,6 +869,162 @@ pub fn answer_demands(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, cra
         .collect()
 }
 
+/// What a great person does this turn (`CivilianUnitAutomation`, the
+/// great-person half).
+///
+/// Unciv's order: late in the game — past 55% of the tech tree — a
+/// Scientist hurries research and a Merchant walks to a city-state to trade;
+/// an Engineer walks to a city building a wonder and hurries it; failing
+/// those, it builds its landmark on the best tile it can find
+/// (`automateImprovementPlacer`); and an Artist with nowhere to put a
+/// Landmark starts a golden age. Prophets and generals have work of their
+/// own and are not handled here.
+pub fn great_person_order(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<Unit>,
+    s: crate::world::great_person_actions::Scaling,
+) -> Option<UnitOrder> {
+    use crate::world::great_person_actions::{abilities, can, Action};
+    let u = world.units.get(unit)?;
+    let b = r.units.get(u.base)?;
+    let has = |t: UniqueType| b.uniques.iter().any(|x| x.unique_type() == Some(t));
+    if !has(UniqueType::GreatPerson)
+        || has(UniqueType::CanSpreadReligion)
+        || has(UniqueType::MayFoundReligion)
+        || has(UniqueType::StrengthBonusInRadius)
+    {
+        return None;
+    }
+    let c = world.civ(civ)?;
+    let able = abilities(r, u);
+    let here = |a: Action| able.contains(&a) && can(world, r, unit, a, s).is_ok();
+    let act = |a: Action| Some(UnitOrder::GreatPerson(a));
+    let late = c.techs.len() * 100 >= 55 * r.technologies.len();
+
+    if late && here(Action::HurryResearch) {
+        return act(Action::HurryResearch);
+    }
+    if late && able.contains(&Action::TradeMission) {
+        if here(Action::TradeMission) {
+            return act(Action::TradeMission);
+        }
+        let target = (0..world.grid.len())
+            .map(|t| TileId(t as u16))
+            .filter(|t| {
+                world.grid.owner[t.0 as usize].is_some_and(|o| {
+                    world.civ(o).is_some_and(|x| x.is_city_state())
+                        && world.diplomacy.have_met(civ, o)
+                        && !world.diplomacy.at_war(civ, o)
+                })
+            })
+            .filter(|t| !world.cities.iter().any(|(_, city)| city.centre == *t))
+            .min_by_key(|t| (world.grid.distance(u.position, *t), t.0));
+        if let Some(t) = target {
+            return Some(UnitOrder::MoveTo(t));
+        }
+    }
+    if able.contains(&Action::HurryProduction) {
+        let wonder = c
+            .cities
+            .iter()
+            .filter_map(|id| world.cities.get(*id).map(|city| (*id, city)))
+            .filter(|(_, city)| {
+                matches!(city.queue.first(), Some(Construction::Building(b))
+                    if r.buildings.get(*b).is_some_and(|b| b.is_wonder == Some(true)))
+            })
+            .min_by_key(|(id, city)| (world.grid.distance(u.position, city.centre), id.index()));
+        if let Some((_, city)) = wonder {
+            if u.position == city.centre && here(Action::HurryProduction) {
+                return act(Action::HurryProduction);
+            }
+            if u.position != city.centre {
+                return Some(UnitOrder::MoveTo(city.centre));
+            }
+        }
+    }
+    if let Some(&Action::Construct(imp)) = able.iter().find(|a| matches!(a, Action::Construct(_))) {
+        if let Some(tile) = landmark_site(world, r, civ, imp) {
+            if u.position == tile {
+                if here(Action::Construct(imp)) {
+                    return act(Action::Construct(imp));
+                }
+            } else {
+                return Some(UnitOrder::MoveTo(tile));
+            }
+        }
+    }
+    if able.contains(&Action::GoldenAge) {
+        return act(Action::GoldenAge);
+    }
+    None
+}
+
+/// Where a great improvement would do most (`automateImprovementPlacer`).
+///
+/// Cities in order of how much they multiply the stat it yields most; within
+/// the first that has room, the best tile it could work, inside its borders,
+/// not already holding a great improvement, and on better ground than the
+/// average land terrain — a landmark on tundra wastes the person.
+pub fn landmark_site(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    improvement: Id<crate::ruleset::TileImprovement>,
+) -> Option<TileId> {
+    use crate::ruleset::queries::HasStats;
+    let imp = r.improvements.get(improvement)?;
+    let stats = imp.stats();
+    let stat = Stat::ALL.into_iter().max_by_key(|s| (stats[*s], std::cmp::Reverse(*s as u8))).unwrap_or(Stat::Culture);
+    let weights = ranking_weights();
+    let value = |st: crate::stats::Stats| Stat::ALL.into_iter().map(|s| st[s] * weights[s]).sum::<Fixed>();
+    let land: Vec<Fixed> =
+        r.terrains.iter().filter(|(_, t)| t.r#type == "Land").map(|(_, t)| value(t.stats())).collect();
+    let average = if land.is_empty() {
+        Fixed::ZERO
+    } else {
+        land.iter().copied().sum::<Fixed>().checked_div(Fixed::whole(land.len() as i32)).unwrap_or(Fixed::ZERO)
+    };
+    let great = |t: TileId| {
+        world.grid.improvement[t.0 as usize]
+            .and_then(|i| r.improvements.get(i))
+            .is_some_and(|i| i.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::GreatImprovement)))
+    };
+    let mut cities: Vec<(Fixed, Id<City>)> = world
+        .civ(civ)?
+        .cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id).map(|c| (*id, c)))
+        .map(|(id, c)| {
+            let bonus = crate::world::city::city_percent_bonuses(r, c)
+                .get(&stat)
+                .map_or(Fixed::whole(100), |s| s.evaluate(Fixed::whole(100)));
+            (bonus, id)
+        })
+        .collect();
+    cities.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.index().cmp(&b.1.index())));
+    for (_, id) in cities {
+        let Some(city) = world.cities.get(id) else { continue };
+        let mut tiles: Vec<(Fixed, TileId)> = world
+            .grid
+            .within(city.centre, 3)
+            .into_iter()
+            .filter(|t| world.grid.owner[t.0 as usize] == Some(civ) && !great(*t))
+            .filter(|t| crate::world::great_person_actions::can_place(world, r, civ, *t, improvement).is_ok())
+            .filter(|t| {
+                r.terrains.get(world.grid.terrain[t.0 as usize]).is_some_and(|base| value(base.stats()) > average)
+            })
+            .map(|t| (crate::world::settling::tile_worth(world, r, t), t))
+            .collect();
+        tiles.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        if let Some((_, t)) = tiles.first() {
+            return Some(*t);
+        }
+    }
+    None
+}
+
 /// Whether to burn a city just taken (`Battle.automateCityConquer`).
 ///
 /// Unciv's rule: a small one — under four citizens — or any city at all if
@@ -1197,6 +1354,8 @@ pub enum UnitOrder {
     Improve(Id<crate::ruleset::TileImprovement>),
     Attack(Id<crate::world::entities::Unit>),
     Assault(Id<crate::world::city::City>),
+    /// A great person's one act, where it stands.
+    GreatPerson(crate::world::great_person_actions::Action),
 }
 
 /// Which policy to adopt, if one is affordable.
