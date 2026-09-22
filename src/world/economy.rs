@@ -94,27 +94,23 @@ pub fn unit_maintenance(
     // How far through the game we are, capped at the end — a game that runs
     // past its nominal length does not keep getting dearer.
     let progress = if game_length > 0 {
-        Fixed::whole(world.turn as i32)
-            .checked_div(Fixed::whole(game_length))
-            .unwrap_or(Fixed::ONE)
-            .min(Fixed::ONE)
+        Fixed::whole(world.turn as i32).checked_div(Fixed::whole(game_length)).unwrap_or(Fixed::ONE).min(Fixed::ONE)
     } else {
         Fixed::ONE
     };
 
     // 0.5 * units * (1 + progress), then raised to (1 + progress/3). Kept in
     // Precise so the chain rounds once at the end rather than at each step.
-    let linear = ((Precise::from_fixed(BASE_UNIT_COST) * Precise::from_fixed(billed)) * Precise::from_fixed(Fixed::ONE + progress))
-        .to_fixed();
-    let exponent = Fixed::ONE
-        + progress.checked_div(Fixed::whole(3)).unwrap_or(Fixed::ZERO);
+    let linear = ((Precise::from_fixed(BASE_UNIT_COST) * Precise::from_fixed(billed))
+        * Precise::from_fixed(Fixed::ONE + progress))
+    .to_fixed();
+    let exponent = Fixed::ONE + progress.checked_div(Fixed::whole(3)).unwrap_or(Fixed::ZERO);
     let mut cost = linear.pow(exponent).unwrap_or(linear);
 
     if c.is_ai {
         if let Some(d) = difficulty {
             if !d.ai_unit_maintenance_modifier.is_zero() {
-                cost = (Precise::from_fixed(cost) * Precise::from_fixed(d.ai_unit_maintenance_modifier))
-                    .to_fixed();
+                cost = (Precise::from_fixed(cost) * Precise::from_fixed(d.ai_unit_maintenance_modifier)).to_fixed();
             }
         }
     }
@@ -177,28 +173,20 @@ const DEBT_LIMIT: i32 = -200;
 /// The soldier to let go of first: one standing on our own ground, and the
 /// least experienced of those. Ties break on unit id so two identical armies
 /// disband identically.
-fn cheapest_soldier(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-) -> Option<crate::arena::Id<crate::world::entities::Unit>> {
+fn cheapest_soldier(world: &World, r: &Ruleset, civ: CivId) -> Option<crate::arena::Id<crate::world::entities::Unit>> {
     let c = world.civ(civ)?;
     c.units
         .iter()
         .copied()
         .filter_map(|id| world.units.get(id).map(|u| (id, u)))
         .filter(|(_, u)| {
-            r.units.get(u.base).is_some_and(|b| {
-                b.strength.unwrap_or(0) > 0 || b.ranged_strength.unwrap_or(0) > 0
-            })
+            r.units.get(u.base).is_some_and(|b| b.strength.unwrap_or(0) > 0 || b.ranged_strength.unwrap_or(0) > 0)
         })
         .min_by_key(|(id, u)| {
             let at_home = world.grid.owner[u.position.0 as usize] == Some(civ);
             // At home first, then the weakest, then by id.
-            let strength = r
-                .units
-                .get(u.base)
-                .map_or(0, |b| b.strength.unwrap_or(0).max(b.ranged_strength.unwrap_or(0)));
+            let strength =
+                r.units.get(u.base).map_or(0, |b| b.strength.unwrap_or(0).max(b.ranged_strength.unwrap_or(0)));
             (!at_home, strength, id.index())
         })
         .map(|(id, _)| id)
@@ -212,9 +200,7 @@ mod tests {
     use crate::world::grid::{TileGrid, TileId};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -274,10 +260,7 @@ mod tests {
         w2.turn = 500;
         raise(&mut w2, &r, 23); // twenty billed
         let twenty = unit_maintenance(&w2, &r, CivId(0), 500, None);
-        assert!(
-            twenty > ten * 2,
-            "doubling the army should more than double the bill: {ten} then {twenty}"
-        );
+        assert!(twenty > ten * 2, "doubling the army should more than double the bill: {ten} then {twenty}");
     }
 
     #[test]
@@ -302,9 +285,7 @@ mod tests {
             .units
             .iter()
             .find(|(_, u)| {
-                u.uniques
-                    .iter()
-                    .any(|x| x.unique_type() == Some(crate::UniqueType::UnitMaintenanceDiscount))
+                u.uniques.iter().any(|x| x.unique_type() == Some(crate::UniqueType::UnitMaintenanceDiscount))
             })
             .map(|(id, _)| id);
         let Some(discounted) = discounted else {

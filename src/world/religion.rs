@@ -17,8 +17,8 @@
 use crate::arena::Id;
 use crate::ruleset::{Belief, Ruleset};
 use crate::stats::Fixed;
-use crate::world::grid::CivId;
 use crate::world::conditionals::Verdict;
+use crate::world::grid::CivId;
 use crate::world::world::World;
 
 /// A pantheon's price before other civs have one (`ModConstants.kt:100`).
@@ -55,9 +55,7 @@ impl Faith {
 /// Dearer the more civs already have one, so waiting is paid for.
 pub fn pantheon_cost(world: &World, speed: Fixed) -> i32 {
     let taken = world.civs.iter().filter(|c| c.faith.has_pantheon()).count() as i32;
-    (Fixed::whole(PANTHEON_BASE + taken * PANTHEON_GROWTH) * speed)
-        .round()
-        .max(1) as i32
+    (Fixed::whole(PANTHEON_BASE + taken * PANTHEON_GROWTH) * speed).round().max(1) as i32
 }
 
 /// What the next great prophet costs.
@@ -73,11 +71,7 @@ pub fn prophet_cost(earned: i32, speed: Fixed) -> i32 {
 pub fn available_beliefs(world: &World, r: &Ruleset, kind: &str) -> Vec<Id<Belief>> {
     let taken: std::collections::BTreeSet<_> =
         world.civs.iter().flat_map(|c| c.faith.beliefs.iter().copied()).collect();
-    r.beliefs
-        .iter()
-        .filter(|(id, b)| b.r#type == kind && !taken.contains(id))
-        .map(|(id, _)| id)
-        .collect()
+    r.beliefs.iter().filter(|(id, b)| b.r#type == kind && !taken.contains(id)).map(|(id, _)| id).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,13 +86,7 @@ pub enum FaithEvent {
 /// Returns what happened so the caller can record it; the civ's unique index
 /// is rebuilt by the caller, since beliefs are uniques and have to reach it to
 /// do anything.
-pub fn apply_faith(
-    world: &mut World,
-    r: &Ruleset,
-    civ_id: CivId,
-    gained: i32,
-    speed: Fixed,
-) -> FaithEvent {
+pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, speed: Fixed) -> FaithEvent {
     if let Some(c) = world.civ_mut(civ_id) {
         c.faith.stored += gained.max(0);
     }
@@ -146,7 +134,6 @@ pub fn apply_faith(
     }
     FaithEvent::Stored { faith: stored }
 }
-
 
 // ---------------------------------------------------------------------------
 // Pressure and spread
@@ -297,9 +284,7 @@ impl CityFaith {
 
         // Largest remainder first, ties to the lower civ id, atheism last of
         // all so a citizen goes to a religion before going to nobody.
-        remainders.sort_by_key(|(creed, rem)| {
-            (std::cmp::Reverse(*rem), creed.is_none(), creed.map(|c| c.0))
-        });
+        remainders.sort_by_key(|(creed, rem)| (std::cmp::Reverse(*rem), creed.is_none(), creed.map(|c| c.0)));
         let mut unallocated = population.saturating_sub(allocated);
         for (creed, _) in &remainders {
             if unallocated == 0 {
@@ -361,10 +346,7 @@ fn pressure_toward(
             let matches = u
                 .params
                 .get(1)
-                .map(|f| {
-                    crate::world::filters::city_matches(world, r, onto, Some(from), f)
-                        == Verdict::True
-                })
+                .map(|f| crate::world::filters::city_matches(world, r, onto, Some(from), f) == Verdict::True)
                 .unwrap_or(false);
             if !matches {
                 continue;
@@ -405,11 +387,8 @@ pub struct Conversion {
 /// intermediate state, and a city pushed by three religions at once would
 /// report converting three times in one turn.
 pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Conversion> {
-    let before: std::collections::BTreeMap<_, _> = world
-        .cities
-        .iter()
-        .map(|(id, c)| (id, c.faith.majority(c.population)))
-        .collect();
+    let before: std::collections::BTreeMap<_, _> =
+        world.cities.iter().map(|(id, c)| (id, c.faith.majority(c.population))).collect();
 
     // Plan every push before applying any, so no city's contribution depends
     // on whether it was visited before or after another.
@@ -462,12 +441,7 @@ pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Con
 
 /// Every unique a civ's beliefs grant, for the index.
 pub fn belief_uniques<'a>(r: &'a Ruleset, faith: &Faith) -> Vec<&'a crate::Unique> {
-    faith
-        .beliefs
-        .iter()
-        .filter_map(|id| r.beliefs.get(*id))
-        .flat_map(|b| b.uniques.iter())
-        .collect()
+    faith.beliefs.iter().filter_map(|id| r.beliefs.get(*id)).flat_map(|b| b.uniques.iter()).collect()
 }
 
 #[cfg(test)]
@@ -477,21 +451,13 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)])
     }
 
     #[test]
@@ -518,10 +484,7 @@ mod tests {
         let r = ruleset();
         let mut w = world(&r);
 
-        assert!(matches!(
-            apply_faith(&mut w, &r, CivId(0), 5, Fixed::ONE),
-            FaithEvent::Stored { .. }
-        ));
+        assert!(matches!(apply_faith(&mut w, &r, CivId(0), 5, Fixed::ONE), FaithEvent::Stored { .. }));
         assert!(!w.civ(CivId(0)).unwrap().faith.has_pantheon());
 
         let e = apply_faith(&mut w, &r, CivId(0), 10, Fixed::ONE);
@@ -564,7 +527,15 @@ mod tests {
 
     // --- pressure and spread ---
 
-    fn city_at(w: &mut World, r: &Ruleset, name: &str, owner: CivId, col: u16, row: u16, pop: u32) -> Id<crate::world::city::City> {
+    fn city_at(
+        w: &mut World,
+        r: &Ruleset,
+        name: &str,
+        owner: CivId,
+        col: u16,
+        row: u16,
+        pop: u32,
+    ) -> Id<crate::world::city::City> {
         let t = w.grid.id_at(col, row).unwrap();
         let id = w.found_city(crate::world::city::City::found(name, owner, t));
         let c = w.cities.get_mut(id).unwrap();
@@ -693,11 +664,7 @@ mod tests {
             spread(&mut w, &r, 6);
         }
         assert!(w.cities.get(near).unwrap().faith.pressure_of(Some(CivId(0))) > 0, "five tiles is within reach");
-        assert_eq!(
-            w.cities.get(far).unwrap().faith.pressure_of(Some(CivId(0))),
-            0,
-            "thirty-four tiles is not"
-        );
+        assert_eq!(w.cities.get(far).unwrap().faith.pressure_of(Some(CivId(0))), 0, "thirty-four tiles is not");
     }
 
     #[test]
@@ -830,9 +797,6 @@ mod tests {
             Some(CivId(0)),
             "the congregation does not disband because the founder did"
         );
-        assert!(
-            w.cities.get(neighbour).unwrap().faith.pressure_of(Some(CivId(0))) > 0,
-            "and it keeps spreading"
-        );
+        assert!(w.cities.get(neighbour).unwrap().faith.pressure_of(Some(CivId(0))) > 0, "and it keeps spreading");
     }
 }

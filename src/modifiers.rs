@@ -137,23 +137,13 @@ impl ModifierStack {
 
     /// Resolve against a starting value.
     pub fn evaluate(&self, start: Fixed) -> Fixed {
-        let base = start
-            + self
-                .modifiers
-                .iter()
-                .filter(|m| m.layer == Layer::Base)
-                .map(|m| m.amount)
-                .sum::<Fixed>();
+        let base = start + self.modifiers.iter().filter(|m| m.layer == Layer::Base).map(|m| m.amount).sum::<Fixed>();
 
         // Additive percentages sum first, then apply once — so +25% +25% is
         // exactly +50%, not two roundings of +25%.
-        let additive: Fixed = self
-            .modifiers
-            .iter()
-            .filter(|m| m.layer == Layer::Additive)
-            .map(|m| m.amount)
-            .sum();
-        let after_additive = base + (base * Fixed::permille(additive.raw()).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
+        let additive: Fixed = self.modifiers.iter().filter(|m| m.layer == Layer::Additive).map(|m| m.amount).sum();
+        let after_additive =
+            base + (base * Fixed::permille(additive.raw()).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
 
         // Multiplicative factors accumulate as one exact rational and round
         // once, which is what makes them order-independent.
@@ -187,12 +177,7 @@ impl ModifierStack {
         let mut out: Vec<(Source, Fixed)> = Vec::new();
         for m in &self.modifiers {
             let without = ModifierStack {
-                modifiers: self
-                    .modifiers
-                    .iter()
-                    .filter(|o| o.source != m.source)
-                    .cloned()
-                    .collect(),
+                modifiers: self.modifiers.iter().filter(|o| o.source != m.source).cloned().collect(),
                 floor: self.floor,
                 ceiling: self.ceiling,
             };

@@ -56,10 +56,7 @@ fn field<'a>(doc: &'a Json, section: &str, key: &str) -> Vec<(String, Option<&'a
 
 /// Report every disagreement, not just the first — one mismatch usually means
 /// a whole category is wrong, and seeing all of them says which.
-fn compare<T: std::fmt::Debug + PartialEq>(
-    what: &str,
-    rows: Vec<(String, Option<T>, Option<T>)>,
-) {
+fn compare<T: std::fmt::Debug + PartialEq>(what: &str, rows: Vec<(String, Option<T>, Option<T>)>) {
     compare_at_least(what, rows, 8)
 }
 
@@ -124,11 +121,7 @@ fn every_tech_lands_in_the_same_era() {
     let rows = field(&doc, "technologies", "era")
         .into_iter()
         .map(|(name, theirs)| {
-            let mine = r
-                .technologies
-                .by_name(&name)
-                .and_then(|t| t.era_name(&r))
-                .map(String::from);
+            let mine = r.technologies.by_name(&name).and_then(|t| t.era_name(&r)).map(String::from);
             (name, theirs.and_then(|v| v.as_str()).map(String::from), mine)
         })
         .collect();
@@ -157,11 +150,7 @@ fn policies_land_in_the_same_branch() {
     let rows = field(&doc, "policies", "branch")
         .into_iter()
         .map(|(name, theirs)| {
-            let mine = r
-                .policies
-                .by_name(&name)
-                .and_then(|p| p.branch_name(&r))
-                .map(String::from);
+            let mine = r.policies.by_name(&name).and_then(|p| p.branch_name(&r)).map(String::from);
             (name, theirs.and_then(|v| v.as_str()).map(String::from), mine)
         })
         .collect();
@@ -189,12 +178,7 @@ fn terrain_movement_and_defence_match() {
     let defence = field(&doc, "terrains", "defenceBonus")
         .into_iter()
         .map(|(name, theirs)| {
-            let mine = r
-                .terrains
-                .by_name(&name)
-                .and_then(|t| t.defence_bonus)
-                .map(|f| f.raw())
-                .unwrap_or(0);
+            let mine = r.terrains.by_name(&name).and_then(|t| t.defence_bonus).map(|f| f.raw()).unwrap_or(0);
             let t = theirs.and_then(|v| v.as_fixed()).map(|f| f.raw()).unwrap_or(0);
             (name, Some(t), Some(mine))
         })
@@ -263,12 +247,7 @@ fn unit_sort_groups_match() {
         .and_then(|s| s.as_array())
         .map(|rows| {
             rows.iter()
-                .filter_map(|row| {
-                    Some((
-                        row.get("name")?.as_str()?.to_string(),
-                        row.get("eraNumber")?.as_i32()?,
-                    ))
-                })
+                .filter_map(|row| Some((row.get("name")?.as_str()?.to_string(), row.get("eraNumber")?.as_i32()?)))
                 .collect()
         })
         .unwrap_or_default();
@@ -276,10 +255,7 @@ fn unit_sort_groups_match() {
     let rows = field(&doc, "units", "requiredTech")
         .into_iter()
         .map(|(name, tech)| {
-            let expected = tech
-                .and_then(|v| v.as_str())
-                .and_then(|t| by_tech.get(t).copied())
-                .unwrap_or(100);
+            let expected = tech.and_then(|v| v.as_str()).and_then(|t| by_tech.get(t).copied()).unwrap_or(100);
             let mine = r.units.by_name(&name).map(|u| u.sort_group(&r)).unwrap_or(100);
             (name, Some(expected), Some(mine))
         })
@@ -345,8 +321,12 @@ fn tile_yields_match_for_every_terrain_combination() {
 
         let mut theirs = Stats::ZERO;
         for (stat, key) in [
-            (Stat::Food, "food"), (Stat::Production, "production"), (Stat::Gold, "gold"),
-            (Stat::Science, "science"), (Stat::Culture, "culture"), (Stat::Faith, "faith"),
+            (Stat::Food, "food"),
+            (Stat::Production, "production"),
+            (Stat::Gold, "gold"),
+            (Stat::Science, "science"),
+            (Stat::Culture, "culture"),
+            (Stat::Faith, "faith"),
         ] {
             theirs[stat] = entry.get(key).and_then(|v| v.as_fixed()).unwrap_or(Fixed::ZERO);
         }
@@ -388,10 +368,9 @@ fn the_growth_trace_matches_turn_by_turn() {
     let mut rows = Vec::new();
 
     for entry in doc.get("growthTrace").and_then(|v| v.as_array()).unwrap_or_default() {
-        let (Some(turn), Some(food)) = (
-            entry.get("turn").and_then(|v| v.as_i32()),
-            entry.get("food").and_then(|v| v.as_i32()),
-        ) else {
+        let (Some(turn), Some(food)) =
+            (entry.get("turn").and_then(|v| v.as_i32()), entry.get("food").and_then(|v| v.as_i32()))
+        else {
             continue;
         };
         let theirs = (
@@ -403,12 +382,15 @@ fn the_growth_trace_matches_turn_by_turn() {
         let mine = (city.population as i32, city.food_stored);
 
         rows.push((
-            format!("turn {turn} (food {food:+}, {})", match event {
-                GrowthEvent::Grew { .. } => "grew",
-                GrowthEvent::Starved { .. } => "starved",
-                GrowthEvent::Held { .. } => "held",
-                GrowthEvent::Stored { .. } => "stored",
-            }),
+            format!(
+                "turn {turn} (food {food:+}, {})",
+                match event {
+                    GrowthEvent::Grew { .. } => "grew",
+                    GrowthEvent::Starved { .. } => "starved",
+                    GrowthEvent::Held { .. } => "held",
+                    GrowthEvent::Stored { .. } => "stored",
+                }
+            ),
             Some(theirs),
             Some(mine),
         ));
@@ -423,11 +405,11 @@ use civ_core::stats::Precise;
 use civ_core::world::combat::{
     attacking_strength, damage_modifier_precise, defending_strength, health_ratio, strength_ratio,
 };
+use civ_core::world::construction::{production_cost, Construction, CostModifiers};
 use civ_core::world::entities::{Civilization, Unit};
+use civ_core::world::research::{tech_cost, MapScaling, ScienceModifiers};
 use civ_core::world::resources::recompute_stock;
 use civ_core::world::world::World;
-use civ_core::world::construction::{production_cost, Construction, CostModifiers};
-use civ_core::world::research::{tech_cost, MapScaling, ScienceModifiers};
 
 const COMBAT: &str = "tests/data/unciv_combat.json";
 
@@ -481,9 +463,7 @@ fn building_production_costs_match() {
     let rows = field(&doc, "buildingProductionCosts", "cost")
         .into_iter()
         .map(|(name, theirs)| {
-            let mine = r
-                .building(&name)
-                .and_then(|id| production_cost(&r, Construction::Building(id), costs));
+            let mine = r.building(&name).and_then(|id| production_cost(&r, Construction::Building(id), costs));
             (name, theirs.and_then(|v| v.as_i32()).filter(|c| *c > 0), mine)
         })
         .collect();
@@ -544,10 +524,9 @@ fn combat_damage_matches_across_the_matchup_grid() {
 
     let mut rows = Vec::new();
     for e in doc.get("combat").and_then(|v| v.as_array()).unwrap_or_default() {
-        let (Some(att), Some(def)) = (
-            e.get("attacker").and_then(|v| v.as_str()),
-            e.get("defender").and_then(|v| v.as_str()),
-        ) else {
+        let (Some(att), Some(def)) =
+            (e.get("attacker").and_then(|v| v.as_str()), e.get("defender").and_then(|v| v.as_str()))
+        else {
             continue;
         };
         let health = e.get("attackerHealth").and_then(|v| v.as_i32()).unwrap_or(100) as u8;
@@ -560,10 +539,7 @@ fn combat_damage_matches_across_the_matchup_grid() {
         let nation = r.nations.ids().next().unwrap();
         let mut w = World::new(
             grid,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, false),
-            ],
+            vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, false)],
         );
         let ua = w.place_unit(Unit::new(base_a, CivId(0), TileId(0), 2));
         let ud = w.place_unit(Unit::new(base_d, CivId(1), TileId(1), 2));
@@ -574,18 +550,13 @@ fn combat_damage_matches_across_the_matchup_grid() {
             }
         }
 
-        let (Some(a), Some(d)) = (
-            attacking_strength(&w, &r, ua),
-            defending_strength(&w, &r, ud),
-        ) else {
+        let (Some(a), Some(d)) = (attacking_strength(&w, &r, ua), defending_strength(&w, &r, ud)) else {
             continue;
         };
 
         // Check the strengths themselves, not only what they produce.
-        let (their_a, their_d) = (
-            e.get("attackStrength").and_then(|v| v.as_fixed()),
-            e.get("defendStrength").and_then(|v| v.as_fixed()),
-        );
+        let (their_a, their_d) =
+            (e.get("attackStrength").and_then(|v| v.as_fixed()), e.get("defendStrength").and_then(|v| v.as_fixed()));
         if their_a != Some(a) || their_d != Some(d) {
             rows.push((
                 format!("{att} vs {def} STRENGTH"),
@@ -598,21 +569,16 @@ fn combat_damage_matches_across_the_matchup_grid() {
         let ratio = strength_ratio(a, d);
         // Kept wide until the last step, matching how Unciv holds a float
         // through the whole expression and rounds once.
-        let to_defender = (damage_modifier_precise(ratio, false, rnd) * Precise::from_fixed(health_ratio(health)))
-            .round();
+        let to_defender =
+            (damage_modifier_precise(ratio, false, rnd) * Precise::from_fixed(health_ratio(health))).round();
         // The defender is at full health throughout, so its output is unscaled.
-        let to_attacker = (damage_modifier_precise(ratio, true, rnd) * Precise::from_fixed(health_ratio(100)))
-            .round();
+        let to_attacker = (damage_modifier_precise(ratio, true, rnd) * Precise::from_fixed(health_ratio(100))).round();
 
         let theirs = (
             e.get("toDefender").and_then(|v| v.as_i64()).unwrap_or(-1),
             e.get("toAttacker").and_then(|v| v.as_i64()).unwrap_or(-1),
         );
-        rows.push((
-            format!("{att}({health}hp) vs {def} @ {rnd}"),
-            Some(theirs),
-            Some((to_defender, to_attacker)),
-        ));
+        rows.push((format!("{att}({health}hp) vs {def} @ {rnd}"), Some(theirs), Some((to_defender, to_attacker))));
     }
     compare("combat damage", rows);
 }
@@ -628,10 +594,9 @@ fn combat_strengths_match() {
 
     let mut seen: std::collections::BTreeMap<String, (Fixed, Fixed)> = Default::default();
     for e in doc.get("combat").and_then(|v| v.as_array()).unwrap_or_default() {
-        let (Some(def), Some(theirs)) = (
-            e.get("defender").and_then(|v| v.as_str()),
-            e.get("defendStrength").and_then(|v| v.as_fixed()),
-        ) else {
+        let (Some(def), Some(theirs)) =
+            (e.get("defender").and_then(|v| v.as_str()), e.get("defendStrength").and_then(|v| v.as_fixed()))
+        else {
             continue;
         };
         let Some(base) = r.units.by_name(def).and_then(|u| u.strength).map(Fixed::whole) else {
@@ -685,10 +650,7 @@ fn uncivs_map_has_the_geometry_a_hex_grid_must_have() {
     let mut by_distance: BTreeMap<i32, usize> = BTreeMap::new();
     let mut ids = std::collections::BTreeSet::new();
     for t in tiles {
-        let (Some(x), Some(y)) = (
-            t.get("x").and_then(|v| v.as_i32()),
-            t.get("y").and_then(|v| v.as_i32()),
-        ) else {
+        let (Some(x), Some(y)) = (t.get("x").and_then(|v| v.as_i32()), t.get("y").and_then(|v| v.as_i32())) else {
             continue;
         };
         ids.insert((x, y));
@@ -728,11 +690,7 @@ fn our_grid_matches_that_geometry() {
 
     let mut rows = Vec::new();
     for (distance, count) in &reference {
-        rows.push((
-            format!("ring {distance}"),
-            Some(*count),
-            Some(grid.ring(centre, *distance as u32).len()),
-        ));
+        rows.push((format!("ring {distance}"), Some(*count), Some(grid.ring(centre, *distance as u32).len())));
     }
     compare_at_least("hex ring sizes", rows, 5);
 
@@ -742,9 +700,7 @@ fn our_grid_matches_that_geometry() {
         .and_then(|v| v.as_array())
         .unwrap_or_default()
         .iter()
-        .filter(|t| {
-            t.get("neighbours").and_then(|v| v.as_array()).map(|n| n.len()) == Some(6)
-        })
+        .filter(|t| t.get("neighbours").and_then(|v| v.as_array()).map(|n| n.len()) == Some(6))
         .count();
     assert_eq!(their_interior, 37, "a radius-4 hexagon has 37 interior tiles");
     assert!(

@@ -110,10 +110,7 @@ pub fn strength_breakdown_against(
     let mut stack = ModifierStack::new();
 
     // A unit whose resource has run out still stands; it just fights badly.
-    if world
-        .civ(unit.owner)
-        .is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base))
-    {
+    if world.civ(unit.owner).is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base)) {
         stack.add(Modifier::additive_percent(
             Fixed::whole(crate::world::resources::MISSING_RESOURCE_MALUS),
             Source::new(SourceKind::Other, "Missing resource"),
@@ -144,9 +141,7 @@ pub fn strength_breakdown_against(
             let has_bridge = world.civ(unit.owner).is_some_and(|c| {
                 c.techs.iter().any(|t| {
                     r.technologies.get(*t).is_some_and(|tech| {
-                        tech.uniques
-                            .iter()
-                            .any(|u| u.unique_type() == Some(UniqueType::RoadsConnectAcrossRivers))
+                        tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::RoadsConnectAcrossRivers))
                     })
                 })
             }) && world.grid.unpillaged_road(unit.position) >= RoadLevel::Road
@@ -181,12 +176,7 @@ pub fn strength_breakdown_against(
             .neighbours(target)
             .filter(|&n| n != unit.position)
             .flat_map(|n| world.units_at(n))
-            .filter(|&other_id| {
-                world
-                    .units
-                    .get(other_id)
-                    .is_some_and(|o| o.owner == unit.owner && o.is_military(r))
-            })
+            .filter(|&other_id| world.units.get(other_id).is_some_and(|o| o.owner == unit.owner && o.is_military(r)))
             .count() as i32;
 
         if flanking_units > 0 {
@@ -282,9 +272,7 @@ pub fn damage_modifier(ratio: Fixed, to_attacker: bool, randomness: Fixed) -> Fi
 /// in the curve magnifies the difference. The ratio has to stay wide from the
 /// division onward.
 pub fn strength_ratio(attack: Fixed, defend: Fixed) -> Precise {
-    Precise::from_fixed(attack)
-        .checked_div(Precise::from_fixed(defend))
-        .unwrap_or(Precise::whole(1))
+    Precise::from_fixed(attack).checked_div(Precise::from_fixed(defend)).unwrap_or(Precise::whole(1))
 }
 
 /// The curve, kept in [`Precise`] so the six steps round only at the end.
@@ -301,10 +289,7 @@ pub fn damage_modifier_precise(ratio: Precise, to_attacker: bool, randomness: Fi
     let stronger = if ratio < one { inverse } else { ratio };
 
     let quarter = (stronger + Precise::whole(3)).checked_div(Precise::whole(4)).unwrap_or(one);
-    let mut modifier = (quarter
-        .powi(4) + one)
-        .checked_div(Precise::whole(2))
-        .unwrap_or(one);
+    let mut modifier = (quarter.powi(4) + one).checked_div(Precise::whole(2)).unwrap_or(one);
 
     // The weaker party's damage is the reciprocal.
     let invert = (to_attacker && ratio > one) || (!to_attacker && ratio < one);
@@ -400,8 +385,8 @@ pub fn resolve_attack(
     let defender_died = dmg_d >= d_health as i32;
     let attacker_died = dmg_a >= a_health as i32;
 
-    let is_barbarian_fight = world.civ(d_owner).is_some_and(|c| c.is_barbarian)
-        || world.civ(a_owner).is_some_and(|c| c.is_barbarian);
+    let is_barbarian_fight =
+        world.civ(d_owner).is_some_and(|c| c.is_barbarian) || world.civ(a_owner).is_some_and(|c| c.is_barbarian);
 
     if defender_died {
         world.remove_unit(defender);
@@ -424,12 +409,7 @@ pub fn resolve_attack(
         }
     }
 
-    Ok(CombatResult {
-        damage_to_defender: dmg_d,
-        damage_to_attacker: dmg_a,
-        defender_died,
-        attacker_died,
-    })
+    Ok(CombatResult { damage_to_defender: dmg_d, damage_to_attacker: dmg_a, defender_died, attacker_died })
 }
 
 /// What an attack on a city did.
@@ -549,11 +529,7 @@ pub fn capture_city(
 }
 
 /// Breakdown of ranged strength for a unit.
-pub fn ranged_strength_breakdown(
-    world: &World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-) -> Option<(Fixed, ModifierStack)> {
+pub fn ranged_strength_breakdown(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Option<(Fixed, ModifierStack)> {
     let unit = world.units.get(unit_id)?;
     let base = r.units.get(unit.base)?.ranged_strength.unwrap_or(0);
     if base == 0 {
@@ -561,10 +537,7 @@ pub fn ranged_strength_breakdown(
     }
     let mut stack = ModifierStack::new();
 
-    if world
-        .civ(unit.owner)
-        .is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base))
-    {
+    if world.civ(unit.owner).is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base)) {
         stack.add(Modifier::additive_percent(
             Fixed::whole(crate::world::resources::MISSING_RESOURCE_MALUS),
             Source::new(SourceKind::Other, "Missing resource"),
@@ -612,13 +585,7 @@ pub fn ranged_strength(world: &World, r: &Ruleset, unit: Id<Unit>) -> Option<Fix
 }
 
 /// Line of sight check between `from` and `to`.
-pub fn has_line_of_sight(
-    grid: &TileGrid,
-    r: &Ruleset,
-    from: TileId,
-    to: TileId,
-    indirect_fire: bool,
-) -> bool {
+pub fn has_line_of_sight(grid: &TileGrid, r: &Ruleset, from: TileId, to: TileId, indirect_fire: bool) -> bool {
     if indirect_fire {
         return true;
     }
@@ -626,16 +593,17 @@ pub fn has_line_of_sight(
     if dist <= 1 {
         return true;
     }
-    let shooter_on_hill = grid.terrains(from).any(|t| {
-        r.terrains.get(t).is_some_and(|terrain| terrain.r#type == "Hill" || terrain.name == "Hill")
-    });
+    let shooter_on_hill = grid
+        .terrains(from)
+        .any(|t| r.terrains.get(t).is_some_and(|terrain| terrain.r#type == "Hill" || terrain.name == "Hill"));
 
     for n in grid.neighbours(from) {
         if grid.distance(n, to) < dist {
             let blocks = grid.terrains(n).any(|t| {
                 r.terrains.get(t).is_some_and(|terrain| {
                     terrain.impassable == Some(true)
-                        || (!shooter_on_hill && (terrain.name == "Hill" || terrain.name == "Forest" || terrain.name == "Jungle"))
+                        || (!shooter_on_hill
+                            && (terrain.name == "Hill" || terrain.name == "Forest" || terrain.name == "Jungle"))
                 })
             });
             if blocks {
@@ -670,7 +638,8 @@ pub fn resolve_ranged_attack(
         return Err(CombatRejection::TargetBlockedByLOS);
     }
 
-    let defender_id = world.units.iter().find(|(_, u)| u.position == target_tile && u.owner != a.owner).map(|(id, _)| id);
+    let defender_id =
+        world.units.iter().find(|(_, u)| u.position == target_tile && u.owner != a.owner).map(|(id, _)| id);
     let Some(defender) = defender_id else {
         return Err(CombatRejection::NoSuchUnit);
     };
@@ -711,12 +680,7 @@ pub fn resolve_ranged_attack(
         }
     }
 
-    Ok(CombatResult {
-        damage_to_defender: to_defender,
-        damage_to_attacker: 0,
-        defender_died,
-        attacker_died: false,
-    })
+    Ok(CombatResult { damage_to_defender: to_defender, damage_to_attacker: 0, defender_died, attacker_died: false })
 }
 
 /// Execute a ranged attack on a city.
@@ -778,17 +742,11 @@ pub fn attack_city_ranged(
 }
 
 /// Effective defensive combat strength of a city including garrison bonuses.
-pub fn city_defense_strength(
-    world: &World,
-    r: &Ruleset,
-    city_id: Id<crate::world::city::City>,
-) -> Fixed {
+pub fn city_defense_strength(world: &World, r: &Ruleset, city_id: Id<crate::world::city::City>) -> Fixed {
     let Some(city) = world.cities.get(city_id) else { return Fixed::ONE };
     let base = crate::world::city::city_strength(r, city);
-    let has_garrison = world
-        .units
-        .iter()
-        .any(|(_, u)| u.position == city.centre && u.owner == city.owner && u.is_military(r));
+    let has_garrison =
+        world.units.iter().any(|(_, u)| u.position == city.centre && u.owner == city.owner && u.is_military(r));
     if has_garrison {
         base * Fixed::from_fraction(6, 5)
     } else {
@@ -824,9 +782,7 @@ pub fn city_bombard(
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, city.centre, target.position).unit_interval();
 
-    let to_target = damage_modifier_precise(ratio, false, randomness)
-        .round()
-        .max(0) as i32;
+    let to_target = damage_modifier_precise(ratio, false, randomness).round().max(0) as i32;
 
     let target_died = to_target >= target.health as i32;
     if target_died {
@@ -872,7 +828,9 @@ pub fn rebase_air_unit(
     }
     let is_friendly_city = world.cities.iter().any(|(_, c)| c.centre == target_tile && c.owner == unit.owner);
     let is_friendly_carrier = world.units.iter().any(|(_, u)| {
-        u.position == target_tile && u.owner == unit.owner && r.units.get(u.base).is_some_and(|b| b.unit_type == "Aircraft Carrier")
+        u.position == target_tile
+            && u.owner == unit.owner
+            && r.units.get(u.base).is_some_and(|b| b.unit_type == "Aircraft Carrier")
     });
     if !is_friendly_city && !is_friendly_carrier {
         return Err(CombatRejection::NotAdjacent);
@@ -916,7 +874,10 @@ pub fn air_strike(
             if let Some(enemy_base) = r.units.get(enemy_u.base) {
                 let int_range = enemy_base.intercept_range.unwrap_or(enemy_base.range.unwrap_or(0));
                 if int_range > 0 && world.grid.distance(enemy_u.position, target_tile) as i32 <= int_range {
-                    let ratio = strength_ratio(Fixed::whole(enemy_base.strength.unwrap_or(45)), Fixed::whole(base.strength.unwrap_or(45)));
+                    let ratio = strength_ratio(
+                        Fixed::whole(enemy_base.strength.unwrap_or(45)),
+                        Fixed::whole(base.strength.unwrap_or(45)),
+                    );
                     let roll = combat_seed(world, enemy_u.position, a_position).unit_interval();
                     interception_damage = damage_modifier_precise(ratio, false, roll).round().max(0) as i32;
                     interceptor_id = Some(enemy_id);
@@ -942,8 +903,10 @@ pub fn air_strike(
         });
     }
 
-    let target_city = world.cities.iter().find(|(_, c)| c.centre == target_tile && c.owner != a_owner).map(|(id, _)| id);
-    let target_unit = world.units.iter().find(|(_, u)| u.position == target_tile && u.owner != a_owner).map(|(id, _)| id);
+    let target_city =
+        world.cities.iter().find(|(_, c)| c.centre == target_tile && c.owner != a_owner).map(|(id, _)| id);
+    let target_unit =
+        world.units.iter().find(|(_, u)| u.position == target_tile && u.owner != a_owner).map(|(id, _)| id);
 
     let (dmg_def, def_died) = if let Some(city_id) = target_city {
         let city = world.cities.get(city_id).ok_or(CombatRejection::NoSuchUnit)?;
@@ -955,7 +918,8 @@ pub fn air_strike(
         let ratio = strength_ratio(att, def);
         let roll = combat_seed(world, a_position, target_tile).unit_interval();
         let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
-            .round().max(0) as i32;
+            .round()
+            .max(0) as i32;
         if let Some(c) = world.cities.get_mut(city_id) {
             c.health = (c.health - dmg).max(1);
         }
@@ -970,7 +934,8 @@ pub fn air_strike(
         let ratio = strength_ratio(att, def);
         let roll = combat_seed(world, a_position, target_tile).unit_interval();
         let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
-            .round().max(0) as i32;
+            .round()
+            .max(0) as i32;
         let died = dmg >= d.health as i32;
         if died {
             world.remove_unit(def_id);
@@ -1014,13 +979,17 @@ pub fn nuclear_strike(
         return Err(CombatRejection::OutOfRange);
     }
 
-    let blast_radius = base.uniques.iter().find_map(|u| {
-        if u.text.starts_with("Blast radius [") {
-            u.params.first().and_then(|p| p.parse::<u32>().ok())
-        } else {
-            None
-        }
-    }).unwrap_or(2);
+    let blast_radius = base
+        .uniques
+        .iter()
+        .find_map(|u| {
+            if u.text.starts_with("Blast radius [") {
+                u.params.first().and_then(|p| p.parse::<u32>().ok())
+            } else {
+                None
+            }
+        })
+        .unwrap_or(2);
 
     let fallout_terrain = r.terrain("Fallout");
 
@@ -1028,11 +997,13 @@ pub fn nuclear_strike(
     let mut units_destroyed = Vec::new();
     let mut cities_damaged = Vec::new();
 
-    let candidates: Vec<TileId> = world.grid.ids().filter(|&t| world.grid.distance(target_tile, t) <= blast_radius).collect();
+    let candidates: Vec<TileId> =
+        world.grid.ids().filter(|&t| world.grid.distance(target_tile, t) <= blast_radius).collect();
 
     for t in candidates {
         tiles_affected.push(t);
-        let tile_units: Vec<Id<Unit>> = world.units.iter().filter(|(id, u)| *id != nuke_unit_id && u.position == t).map(|(id, _)| id).collect();
+        let tile_units: Vec<Id<Unit>> =
+            world.units.iter().filter(|(id, u)| *id != nuke_unit_id && u.position == t).map(|(id, _)| id).collect();
         for u_id in tile_units {
             units_destroyed.push(u_id);
             world.remove_unit(u_id);
@@ -1063,11 +1034,7 @@ pub fn nuclear_strike(
 
     world.remove_unit(nuke_unit_id);
 
-    Ok(NuclearStrikeResult {
-        tiles_affected,
-        units_destroyed,
-        cities_damaged,
-    })
+    Ok(NuclearStrikeResult { tiles_affected, units_destroyed, cities_damaged })
 }
 
 /// Experience required to reach the given promotion level.
@@ -1095,9 +1062,7 @@ pub fn available_promotions(r: &Ruleset, unit: &Unit) -> Vec<Id<Promotion>> {
                 return None;
             }
             let prereqs_met = promo.prerequisites.iter().all(|prereq_name| {
-                r.promotions
-                    .id(prereq_name)
-                    .is_some_and(|req_id| unit.promotions.contains(&req_id))
+                r.promotions.id(prereq_name).is_some_and(|req_id| unit.promotions.contains(&req_id))
             });
             if !prereqs_met {
                 return None;
@@ -1108,11 +1073,7 @@ pub fn available_promotions(r: &Ruleset, unit: &Unit) -> Vec<Id<Promotion>> {
 }
 
 /// Choose and apply a promotion to a unit.
-pub fn choose_promotion(
-    unit: &mut Unit,
-    r: &Ruleset,
-    promo_id: Id<Promotion>,
-) -> Result<(), &'static str> {
+pub fn choose_promotion(unit: &mut Unit, r: &Ruleset, promo_id: Id<Promotion>) -> Result<(), &'static str> {
     if !can_promote(unit) {
         return Err("Not enough XP for promotion");
     }
@@ -1135,19 +1096,19 @@ pub struct PillageEvent {
 /// Whether the unit can pillage the tile it currently stands on.
 pub fn can_pillage(world: &World, unit_id: Id<Unit>) -> bool {
     let Some(unit) = world.units.get(unit_id) else { return false };
-    if !unit.can_move() { return false; }
+    if !unit.can_move() {
+        return false;
+    }
     let pos = unit.position;
     world.grid.unpillaged_improvement(pos).is_some() || (world.grid.unpillaged_road(pos) != RoadLevel::None)
 }
 
 /// Pillage the tile the unit stands on, restoring HP and pillaging gold.
-pub fn pillage(
-    world: &mut World,
-    _r: &Ruleset,
-    unit_id: Id<Unit>,
-) -> Option<PillageEvent> {
+pub fn pillage(world: &mut World, _r: &Ruleset, unit_id: Id<Unit>) -> Option<PillageEvent> {
     let unit = world.units.get(unit_id)?;
-    if !unit.can_move() { return None; }
+    if !unit.can_move() {
+        return None;
+    }
     let pos = unit.position;
     let owner = unit.owner;
 
@@ -1175,12 +1136,7 @@ pub fn pillage(
         c.gold += gold_pillaged;
     }
 
-    Some(PillageEvent {
-        unit: unit_id,
-        tile: pos,
-        healed,
-        gold_pillaged,
-    })
+    Some(PillageEvent { unit: unit_id, tile: pos, healed, gold_pillaged })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1216,11 +1172,7 @@ pub fn upgrade_cost(r: &Ruleset, current: Id<BaseUnit>, target: Id<BaseUnit>) ->
 }
 
 /// Check if a unit is eligible for an upgrade.
-pub fn can_upgrade(
-    world: &World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-) -> Result<(Id<BaseUnit>, i32), UpgradeRejection> {
+pub fn can_upgrade(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Result<(Id<BaseUnit>, i32), UpgradeRejection> {
     let unit = world.units.get(unit_id).ok_or(UpgradeRejection::NoSuchUnit)?;
     let base = r.units.get(unit.base).ok_or(UpgradeRejection::NoSuchUnit)?;
     let target_name = base.upgrades_to.as_ref().ok_or(UpgradeRejection::CannotUpgrade)?;
@@ -1251,11 +1203,7 @@ pub fn can_upgrade(
 }
 
 /// Upgrade a unit in-place to its modern equivalent.
-pub fn upgrade_unit(
-    world: &mut World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-) -> Result<Id<BaseUnit>, UpgradeRejection> {
+pub fn upgrade_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>) -> Result<Id<BaseUnit>, UpgradeRejection> {
     let (target_id, cost) = can_upgrade(world, r, unit_id)?;
     let unit = world.units.get(unit_id).ok_or(UpgradeRejection::NoSuchUnit)?;
     let owner = unit.owner;
@@ -1277,21 +1225,13 @@ mod tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, true)])
     }
 
     fn unit(w: &mut World, r: &Ruleset, name: &str, civ: CivId, at: TileId) -> Id<Unit> {
@@ -1306,10 +1246,7 @@ mod tests {
     fn equal_strength_trades_about_thirty() {
         for roll in [Fixed::ZERO, Fixed::permille(500), Fixed::permille(999)] {
             let d = damage_modifier(Fixed::ONE, false, roll);
-            assert!(
-                d >= Fixed::whole(24) && d <= Fixed::whole(36),
-                "even fight rolled {d}, expected 24..36"
-            );
+            assert!(d >= Fixed::whole(24) && d <= Fixed::whole(36), "even fight rolled {d}, expected 24..36");
         }
         assert_eq!(damage_modifier(Fixed::ONE, false, Fixed::permille(500)), Fixed::whole(30));
     }
@@ -1452,9 +1389,7 @@ mod peace_tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     /// Meeting someone makes peace the default, and peace forbids attacking.
@@ -1465,13 +1400,8 @@ mod peace_tests {
         let r = ruleset();
         let g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        let mut w = World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, false),
-            ],
-        );
+        let mut w =
+            World::new(g, vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, false)]);
         let base = r.unit("Warrior").unwrap();
         let movement = r.units.get(base).unwrap().movement;
         let here = w.grid.id_at(4, 4).unwrap();
@@ -1501,21 +1431,14 @@ mod siege {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn besieged(r: &Ruleset) -> (World, Id<Unit>, Id<City>) {
         let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        let mut w = World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        );
+        let mut w =
+            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
         let centre = w.grid.id_at(6, 6).unwrap();
         let city = w.found_city_in(r, City::found("Carthage", CivId(1), centre));
         let outside = w.grid.neighbours(centre).next().unwrap();
@@ -1593,12 +1516,10 @@ mod siege {
 
         attack_city(&mut w, &r, unit, city).expect("legal");
         assert!(!w.civ(CivId(1)).unwrap().is_alive(), "no cities and no units left");
-        assert!(crate::world::victory::evaluate(
-            &crate::world::victory::Milestone::CaptureAllCapitals,
-            &w,
-            &r,
-            CivId(0)
-        ) == crate::world::conditionals::Verdict::True);
+        assert!(
+            crate::world::victory::evaluate(&crate::world::victory::Milestone::CaptureAllCapitals, &w, &r, CivId(0))
+                == crate::world::conditionals::Verdict::True
+        );
     }
 
     /// A sacked city does not keep the granary of the city it was.
@@ -1654,21 +1575,13 @@ mod military_tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, false),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, false)])
     }
 
     fn unit(w: &mut World, r: &Ruleset, name: &str, civ: CivId, at: TileId) -> Id<Unit> {
@@ -1704,10 +1617,7 @@ mod military_tests {
         w.units.get_mut(archer).unwrap().refresh(2);
         let far_tile = w.grid.id_at(4, 7).unwrap();
         w.units.get_mut(defender).unwrap().position = far_tile;
-        assert_eq!(
-            resolve_ranged_attack(&mut w, &r, archer, far_tile),
-            Err(CombatRejection::OutOfRange)
-        );
+        assert_eq!(resolve_ranged_attack(&mut w, &r, archer, far_tile), Err(CombatRejection::OutOfRange));
     }
 
     #[test]
@@ -1727,10 +1637,7 @@ mod military_tests {
         let mountain = r.terrain("Mountain").unwrap();
         w.grid.terrain[mid_tile.0 as usize] = mountain;
 
-        assert_eq!(
-            resolve_ranged_attack(&mut w, &r, archer, target_tile),
-            Err(CombatRejection::TargetBlockedByLOS)
-        );
+        assert_eq!(resolve_ranged_attack(&mut w, &r, archer, target_tile), Err(CombatRejection::TargetBlockedByLOS));
 
         // Shooter on hill can fire over a hill/forest, but not over impassable mountain
         let hill = r.terrain("Hill").unwrap();
@@ -1738,10 +1645,7 @@ mod military_tests {
         w.grid.features[mid_tile.0 as usize].push(hill);
 
         // Archer on flat land cannot fire over hill
-        assert_eq!(
-            resolve_ranged_attack(&mut w, &r, archer, target_tile),
-            Err(CombatRejection::TargetBlockedByLOS)
-        );
+        assert_eq!(resolve_ranged_attack(&mut w, &r, archer, target_tile), Err(CombatRejection::TargetBlockedByLOS));
 
         // Place archer on hill -> now has LOS!
         w.grid.features[a_tile.0 as usize].push(hill);
@@ -1958,4 +1862,3 @@ mod military_tests {
         let _ = defender;
     }
 }
-

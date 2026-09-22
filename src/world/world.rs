@@ -92,11 +92,7 @@ impl World {
             let palace = r
                 .buildings
                 .iter()
-                .find(|(_, b)| {
-                    b.uniques
-                        .iter()
-                        .any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital))
-                })
+                .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital)))
                 .map(|(id, _)| id);
             if let (Some(palace), Some(city)) = (palace, self.cities.get_mut(id)) {
                 city.built.insert(palace);

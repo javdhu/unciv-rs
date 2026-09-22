@@ -21,21 +21,21 @@
 //! unique-lookup path.
 
 use crate::arena::Id;
-use crate::ruleset::Ruleset;
-use crate::world::assignment::{assign_idle_citizens, CityFocus};
 use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind};
+use crate::ruleset::Ruleset;
 use crate::ruleset::Technology;
 use crate::stats::{Fixed, Stats};
-use crate::world::conditionals::{applies, GameContext, Verdict};
-use crate::UniqueType;
 use crate::world::ai::UnitOrder;
-use crate::world::entities::Unit;
+use crate::world::assignment::{assign_idle_citizens, CityFocus};
 use crate::world::city::{apply_food, city_yield, food_surplus, City, GrowthEvent, GrowthModifiers};
-use crate::world::construction::{apply_production, ConstructionEvent, Construction, CostModifiers};
+use crate::world::conditionals::{applies, GameContext, Verdict};
+use crate::world::construction::{apply_production, Construction, ConstructionEvent, CostModifiers};
+use crate::world::entities::Unit;
+use crate::world::grid::{CivId, TileId};
 use crate::world::policies::PolicyModifiers;
 use crate::world::research::{apply_science, ResearchEvent, ScienceModifiers};
-use crate::world::grid::{CivId, TileId};
 use crate::world::world::World;
+use crate::UniqueType;
 
 /// What one civ intends to do, computed without touching the world.
 #[derive(Debug, Clone, PartialEq)]
@@ -84,43 +84,115 @@ pub struct TurnPlan {
 // declares. Forcing an id there would drop the ones that are not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnEvent {
-    CityGrew { city: Id<City>, population: u32 },
-    CityStarved { city: Id<City>, population: u32 },
-    CityStored { city: Id<City>, food: i32 },
-    CityHeld { city: Id<City>, food: i32 },
-    CityCompleted { city: Id<City>, what: Construction },
+    CityGrew {
+        city: Id<City>,
+        population: u32,
+    },
+    CityStarved {
+        city: Id<City>,
+        population: u32,
+    },
+    CityStored {
+        city: Id<City>,
+        food: i32,
+    },
+    CityHeld {
+        city: Id<City>,
+        food: i32,
+    },
+    CityCompleted {
+        city: Id<City>,
+        what: Construction,
+    },
     /// Reported every turn, because an empire sliding toward revolt should be
     /// visible before it revolts.
-    Happiness { civ: CivId, value: i32 },
-    TechLearned { civ: CivId, tech: Id<Technology> },
-    CivDefeated { civ: CivId },
-    CityFounded { city: Id<City>, by: CivId },
-    CivsMet { a: CivId, b: CivId },
-    WarDeclared { aggressor: CivId, against: CivId },
-    PeaceMade { a: CivId, b: CivId },
-    GreatPersonBorn { civ: CivId, kind: String },
-    PantheonFounded { civ: CivId, belief: Id<crate::ruleset::Belief> },
-    ReligionFounded { civ: CivId },
-    CityCaptured { city: Id<City>, by: CivId },
-    Battle { attacker_died: bool, defender_died: bool },
-    TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
+    Happiness {
+        civ: CivId,
+        value: i32,
+    },
+    TechLearned {
+        civ: CivId,
+        tech: Id<Technology>,
+    },
+    CivDefeated {
+        civ: CivId,
+    },
+    CityFounded {
+        city: Id<City>,
+        by: CivId,
+    },
+    CivsMet {
+        a: CivId,
+        b: CivId,
+    },
+    WarDeclared {
+        aggressor: CivId,
+        against: CivId,
+    },
+    PeaceMade {
+        a: CivId,
+        b: CivId,
+    },
+    GreatPersonBorn {
+        civ: CivId,
+        kind: String,
+    },
+    PantheonFounded {
+        civ: CivId,
+        belief: Id<crate::ruleset::Belief>,
+    },
+    ReligionFounded {
+        civ: CivId,
+    },
+    CityCaptured {
+        city: Id<City>,
+        by: CivId,
+    },
+    Battle {
+        attacker_died: bool,
+        defender_died: bool,
+    },
+    TileImproved {
+        tile: crate::world::grid::TileId,
+        improvement: Id<crate::ruleset::TileImprovement>,
+    },
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
-    Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
+    Victory {
+        civ: CivId,
+        condition: Id<crate::ruleset::Victory>,
+    },
     /// A technology changed hands without being researched. `identified` is
     /// whether the victim learned whose spy took it, which is what turns a
     /// theft into a grievance rather than a mystery.
-    TechStolen { thief: CivId, victim: CivId, tech: Id<Technology>, identified: bool },
+    TechStolen {
+        thief: CivId,
+        victim: CivId,
+        tech: Id<Technology>,
+        identified: bool,
+    },
     /// A spy was caught in the act and killed.
-    SpyCaught { civ: CivId, city: Id<City> },
+    SpyCaught {
+        civ: CivId,
+        city: Id<City>,
+    },
     /// A camp produced a unit. Reported because barbarians are the early
     /// game's only pressure, and a game where they never appear looks like a
     /// game where the AI is simply winning.
-    BarbarianSpawned { camp: crate::world::grid::TileId },
+    BarbarianSpawned {
+        camp: crate::world::grid::TileId,
+    },
     /// A major civ's spy carried a city-state's election.
-    ElectionRigged { city_state: CivId, winner: CivId },
+    ElectionRigged {
+        city_state: CivId,
+        winner: CivId,
+    },
     /// A city-state asked something of a major civ.
-    QuestOffered { city_state: CivId, quest: Id<crate::ruleset::Quest>, to: CivId },
+    QuestOffered {
+        city_state: CivId,
+        quest: Id<crate::ruleset::Quest>,
+        to: CivId,
+    },
     /// And was given it, and paid for it.
     QuestCompleted {
         city_state: CivId,
@@ -129,9 +201,18 @@ pub enum TurnEvent {
         influence: i32,
     },
     /// Or was not, in time.
-    QuestExpired { city_state: CivId, quest: Id<crate::ruleset::Quest>, on: CivId },
+    QuestExpired {
+        city_state: CivId,
+        quest: Id<crate::ruleset::Quest>,
+        on: CivId,
+    },
     /// A major civ bought favour.
-    GoldGifted { from: CivId, to: CivId, gold: i32, influence: Fixed },
+    GoldGifted {
+        from: CivId,
+        to: CivId,
+        gold: i32,
+        influence: Fixed,
+    },
     /// A city-state's opinion of a major civ crossed a threshold — gained an
     /// ally, lost a friend. Reported on the change, not every turn, because
     /// the influence number itself moves constantly and the *rank* is what
@@ -145,11 +226,20 @@ pub enum TurnEvent {
     /// A city changed its majority religion. `from` is `None` when it had no
     /// majority before, which is the common case — most conversions are of
     /// the uncommitted, not of the faithful.
-    CityConverted { city: Id<City>, from: Option<CivId>, to: CivId },
+    CityConverted {
+        city: Id<City>,
+        from: Option<CivId>,
+        to: CivId,
+    },
     /// A soldier the treasury could not pay for. Not a battle loss — a
     /// bookkeeping one, which is why it is a separate event.
-    UnitDisbanded { civ: CivId, unit: Id<crate::world::entities::Unit> },
-    TurnEnded { turn: u32 },
+    UnitDisbanded {
+        civ: CivId,
+        unit: Id<crate::world::entities::Unit>,
+    },
+    TurnEnded {
+        turn: u32,
+    },
 }
 
 /// Decide what a civ will do. Reads only.
@@ -197,13 +287,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     plan.policy = crate::world::ai::choose_policy(world, r, civ, policies);
 
     let wants = crate::world::ai::Priorities::assess(world, r, civ);
-    plan.gift = crate::world::ai::city_state_gift(
-        world,
-        r,
-        civ,
-        costs.game_length,
-        costs.gold_gift_modifier,
-    );
+    plan.gift = crate::world::ai::city_state_gift(world, r, civ, costs.game_length, costs.gold_gift_modifier);
 
     // War and peace are decided before orders, so soldiers act on this turn's
     // stance rather than last turn's.
@@ -235,9 +319,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     // map, the treaties and the tech tree, so it is recomputed rather than
     // cached — see `connections` for why.
     let connections = crate::world::connections::find(world, r, civ);
-    let trade_gold = |id: Id<City>| -> Stats {
-        crate::world::connections::trade_route_stats(world, r, civ, &connections, id)
-    };
+    let trade_gold =
+        |id: Id<City>| -> Stats { crate::world::connections::trade_route_stats(world, r, civ, &connections, id) };
 
     for &city_id in &c.cities {
         let Some(city) = world.cities.get(city_id) else { continue };
@@ -249,13 +332,9 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         let mut output = city_yield(&world.grid, r, &hypothetical) + trade_gold(city_id);
         // A railroad to the capital is worth a quarter more hammers. The
         // capital gets it for being the capital.
-        let rail = crate::world::connections::railroad_production_bonus(
-            world, r, civ, &connections, city_id,
-        );
+        let rail = crate::world::connections::railroad_production_bonus(world, r, civ, &connections, city_id);
         if !rail.is_zero() {
-            if let Some(boosted) =
-                (output.production * (Fixed::whole(100) + rail)).checked_div(Fixed::whole(100))
-            {
+            if let Some(boosted) = (output.production * (Fixed::whole(100) + rail)).checked_div(Fixed::whole(100)) {
                 output.production = boosted;
             }
         }
@@ -263,11 +342,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         // An unhappy empire grows slowly or not at all, and the thresholds for
         // that are the ruleset's, not this engine's.
         let growth = growth_modifier(world, r, civ, plan.happiness);
-        let effective = if growth.is_empty() {
-            surplus
-        } else {
-            growth.evaluate(Fixed::whole(surplus)).floor() as i32
-        };
+        let effective = if growth.is_empty() { surplus } else { growth.evaluate(Fixed::whole(surplus)).floor() as i32 };
 
         if hypothetical.queue.is_empty() {
             // What the civ nets now, so it does not commit to upkeep it
@@ -277,20 +352,13 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
                 .iter()
                 .filter_map(|id| world.cities.get(*id))
                 .map(|city| {
-                    city_yield(&world.grid, r, city).gold.round() as i32
-                        - crate::world::city::city_maintenance(r, city)
+                    city_yield(&world.grid, r, city).gold.round() as i32 - crate::world::city::city_maintenance(r, city)
                 })
                 .sum::<i32>()
                 + c.cities.iter().map(|id| trade_gold(*id).gold.round() as i32).sum::<i32>()
-                - crate::world::connections::transportation_upkeep(world, r, civ)
-                    .gold
-                    .round() as i32
-                - crate::world::economy::unit_maintenance(
-                    world, r, civ, costs.game_length, difficulty,
-                );
-            if let Some(what) =
-                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants)
-            {
+                - crate::world::connections::transportation_upkeep(world, r, civ).gold.round() as i32
+                - crate::world::economy::unit_maintenance(world, r, civ, costs.game_length, difficulty);
+            if let Some(what) = crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants) {
                 plan.construction.push((city_id, what));
             }
         }
@@ -522,28 +590,16 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
     // else, and before the debt check, so a civ cannot gift itself into
     // disbanding its own army.
     if let Some((cs, gold)) = plan.gift {
-        if let Some(gained) = crate::world::city_states::gift_gold(
-            world,
-            plan.civ,
-            cs,
-            gold,
-            costs.game_length,
-            costs.gold_gift_modifier,
-        ) {
+        if let Some(gained) =
+            crate::world::city_states::gift_gold(world, plan.civ, cs, gold, costs.game_length, costs.gold_gift_modifier)
+        {
             events.push(TurnEvent::GoldGifted { from: plan.civ, to: cs, gold, influence: gained });
         }
     }
 
     // Debt has to bite, or gold is a number that only falls. This is the one
     // place the army shrinks without a battle.
-    for unit in crate::world::economy::disband_for_debt(
-        world,
-        r,
-        plan.civ,
-        costs.game_length,
-        difficulty,
-        plan.gold,
-    ) {
+    for unit in crate::world::economy::disband_for_debt(world, r, plan.civ, costs.game_length, difficulty, plan.gold) {
         events.push(TurnEvent::UnitDisbanded { civ: plan.civ, unit });
     }
     events.push(TurnEvent::Happiness { civ: plan.civ, value: plan.happiness });
@@ -563,15 +619,16 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
                 // holy city: it pushes five times as hard and converts to the
                 // new faith outright. Without this a religion is founded and
                 // has not one follower anywhere.
-                if let Some(home) =
-                    crate::world::connections::capital_of(world, r, plan.civ)
-                        .or_else(|| world.civ(plan.civ).and_then(|c| c.cities.first().copied()))
+                if let Some(home) = crate::world::connections::capital_of(world, r, plan.civ)
+                    .or_else(|| world.civ(plan.civ).and_then(|c| c.cities.first().copied()))
                 {
                     if let Some(city) = world.cities.get_mut(home) {
                         city.faith.holy_city_of = Some(plan.civ);
                         let pop = city.population;
-                        city.faith
-                            .add_pressure(Some(plan.civ), crate::world::religion::PRESSURE_PER_CITIZEN * pop.max(1) as i32);
+                        city.faith.add_pressure(
+                            Some(plan.civ),
+                            crate::world::religion::PRESSURE_PER_CITIZEN * pop.max(1) as i32,
+                        );
                         city.faith.recount(pop);
                     }
                 }
@@ -659,9 +716,7 @@ pub fn detect_first_contact(world: &mut World) -> Vec<TurnEvent> {
 
     let mut events = Vec::new();
     for (a, b) in meetings {
-        if let Some(crate::world::diplomacy::DiplomacyEvent::Met { pair }) =
-            world.diplomacy.meet(a, b)
-        {
+        if let Some(crate::world::diplomacy::DiplomacyEvent::Met { pair }) = world.diplomacy.meet(a, b) {
             let (x, y) = pair.civs();
             events.push(TurnEvent::CivsMet { a: x, b: y });
         }
@@ -859,19 +914,14 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn two_civ_world(r: &Ruleset) -> World {
         let mut g = TileGrid::new(24, 24, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let rome = r.nations.id("Rome").or_else(|| r.nations.ids().next()).unwrap();
-        let civs = vec![
-            Civilization::new(CivId(0), rome, false),
-            Civilization::new(CivId(1), rome, true),
-        ];
+        let civs = vec![Civilization::new(CivId(0), rome, false), Civilization::new(CivId(1), rome, true)];
         let mut w = World::new(g, civs);
         w.found_city(City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap()));
         w
@@ -907,12 +957,8 @@ mod tests {
         w.cities.get_mut(rome).unwrap().population = 8;
         w.cities.get_mut(ostia).unwrap().population = 4;
 
-        let worker = r
-            .units
-            .iter()
-            .find(|(_, u)| u.name == "Worker")
-            .map(|(id, _)| id)
-            .expect("the ruleset has a worker");
+        let worker =
+            r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id).expect("the ruleset has a worker");
         w.place_unit(Unit::new(worker, CivId(0), w.grid.id_at(9, 8).unwrap(), 2));
 
         assert!(!connections::find(&w, &r, CivId(0)).has_trade_route(ostia), "not yet");
@@ -971,8 +1017,7 @@ mod tests {
         }
         // A neighbour four tiles off, inside the spread range.
         let (col, row) = w.grid.coords(centre);
-        let neighbour =
-            w.found_city(City::found("Veii", CivId(1), w.grid.id_at(col + 4, row).unwrap()));
+        let neighbour = w.found_city(City::found("Veii", CivId(1), w.grid.id_at(col + 4, row).unwrap()));
         w.cities.get_mut(neighbour).unwrap().population = 4;
 
         let (mut founded, mut converted) = (None, None);
@@ -1051,12 +1096,7 @@ mod tests {
         assert_eq!(w.cities.get(theirs).unwrap().owner, CivId(0));
 
         let before = w.cities.get(theirs).unwrap().clone();
-        apply_plan(
-            &mut w,
-            &r,
-            &plan,
-            TurnModifiers::default(),
-        );
+        apply_plan(&mut w, &r, &plan, TurnModifiers::default());
         let after = w.cities.get(theirs).unwrap();
         assert_eq!(after.food_stored, before.food_stored, "the old owner fed a city it had lost");
         assert_eq!(after.production_stored, before.production_stored, "and built in it");
@@ -1074,42 +1114,26 @@ mod tests {
     fn barbarians_come_out_of_camps_during_a_real_turn_loop() {
         use crate::world::mapgen::{generate, MapParameters};
         let r = ruleset();
-        let map = generate(
-            &r,
-            MapParameters { width: 32, height: 22, seed: 0xBA48, ..Default::default() },
-            2,
-        );
+        let map = generate(&r, MapParameters { width: 32, height: 22, seed: 0xBA48, ..Default::default() }, 2);
         let camps = crate::world::barbarians::camp_improvement(&r)
-            .map(|camp| {
-                map.grid.ids().filter(|t| map.grid.improvement[t.0 as usize] == Some(camp)).count()
-            })
+            .map(|camp| map.grid.ids().filter(|t| map.grid.improvement[t.0 as usize] == Some(camp)).count())
             .unwrap_or(0);
         assert!(camps > 0, "a generated map should carry encampments; found {camps}");
         for start in &map.starts {
             let camp = crate::world::barbarians::camp_improvement(&r).unwrap();
             assert!(
-                !map.grid
-                    .within(*start, 5)
-                    .iter()
-                    .any(|t| map.grid.improvement[t.0 as usize] == Some(camp)),
+                !map.grid.within(*start, 5).iter().any(|t| map.grid.improvement[t.0 as usize] == Some(camp)),
                 "a camp five tiles from a start is a coin flip, not pressure"
             );
         }
 
         let nation = r.nations.ids().next().unwrap();
-        let mut civs = vec![
-            Civilization::new(CivId(0), nation, true),
-            Civilization::new(CivId(1), nation, true),
-        ];
+        let mut civs = vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)];
         civs[1].is_barbarian = true;
         let mut w = World::new(map.grid, civs);
         w.diplomacy.mark_hostile(CivId(1));
-        let settler = r
-            .units
-            .iter()
-            .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
-            .map(|(id, _)| id)
-            .unwrap();
+        let settler =
+            r.units.iter().find(|(id, _)| crate::world::settling::is_settler(&r, *id)).map(|(id, _)| id).unwrap();
         w.place_unit(Unit::new(settler, CivId(0), map.starts[0], 2));
 
         let mut spawned = 0;
@@ -1122,10 +1146,7 @@ mod tests {
         }
         println!("{camps} camps produced {spawned} barbarians in 60 turns");
         assert!(spawned > 0, "{camps} camps produced nothing in sixty turns");
-        assert!(
-            !w.civ(CivId(1)).unwrap().units.is_empty(),
-            "and the barbarian civ should actually hold them"
-        );
+        assert!(!w.civ(CivId(1)).unwrap().units.is_empty(), "and the barbarian civ should actually hold them");
     }
 
     /// A whole game on a generated map with city-states in it.
@@ -1154,12 +1175,8 @@ mod tests {
             civs.push(c);
         }
         let mut w = World::new(map.grid, civs);
-        let settler = r
-            .units
-            .iter()
-            .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
-            .map(|(id, _)| id)
-            .unwrap();
+        let settler =
+            r.units.iter().find(|(id, _)| crate::world::settling::is_settler(&r, *id)).map(|(id, _)| id).unwrap();
         let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id).unwrap();
         for (i, start) in map.starts.iter().enumerate() {
             w.place_unit(Unit::new(settler, CivId(i as u8), *start, 2));
@@ -1183,10 +1200,7 @@ mod tests {
         println!("quests offered {offered}, completed {completed}, gifts {gifts}, rank changes {ranks}");
 
         assert!(offered > 0, "a city-state that never asks for anything is a decoration");
-        assert!(
-            ranks > 0,
-            "nobody's standing with a city-state ever changed in 250 turns"
-        );
+        assert!(ranks > 0, "nobody's standing with a city-state ever changed in 250 turns");
         // Every quest handed out must be one the engine can judge, or it would
         // stand until it expired and teach nobody anything.
         let (_, unjudgeable) = crate::world::quests::judgeable(&r);
@@ -1214,8 +1228,7 @@ mod tests {
         assert_eq!(map.starts.len(), 4);
 
         let nation = r.nations.ids().next().unwrap();
-        let civs: Vec<_> =
-            (0..4u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
+        let civs: Vec<_> = (0..4u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
         let mut w = World::new(map.grid, civs);
         let settler = r
             .units
@@ -1237,9 +1250,10 @@ mod tests {
                     TurnEvent::WarDeclared { .. } => wars += 1,
                     TurnEvent::CityConverted { .. } => converted += 1,
                     TurnEvent::TileImproved { improvement, .. }
-                        if r.improvements.name_of(improvement) == Some("Road") => {
-                            roads_built += 1;
-                        }
+                        if r.improvements.name_of(improvement) == Some("Road") =>
+                    {
+                        roads_built += 1;
+                    }
                     _ => {}
                 }
             }
@@ -1322,10 +1336,7 @@ mod tests {
 
         // And the friendship pays. Cultured city-states grant culture.
         let owed = crate::world::city_states::civ_wide_yields(&w, &r, CivId(0));
-        assert!(
-            owed.culture > Fixed::ZERO,
-            "a Cultured ally that grants no culture is a unique nothing reads"
-        );
+        assert!(owed.culture > Fixed::ZERO, "a Cultured ally that grants no culture is a unique nothing reads");
 
         // Left alone, it lapses — influence is rent.
         let held = w.diplomacy.influence(CivId(1), CivId(0));
@@ -1372,9 +1383,7 @@ mod tests {
             w.civ_mut(CivId(1)).unwrap().techs.insert(t);
         }
         for civ in [CivId(0), CivId(1)] {
-            w.civ_mut(civ).unwrap().espionage.grant_for_era(
-                crate::world::espionage::FIRST_SPY_ERA,
-            );
+            w.civ_mut(civ).unwrap().espionage.grant_for_era(crate::world::espionage::FIRST_SPY_ERA);
         }
         assert_eq!(w.civ(CivId(0)).unwrap().espionage.spies.len(), 1);
 
@@ -1640,9 +1649,7 @@ mod self_play {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     /// A civilization left alone should get on with it: research, build, grow
@@ -1668,7 +1675,9 @@ mod self_play {
 
         let (mut techs, mut builds, mut growths, mut improved) = (0, 0, 0, 0);
         for _ in 0..100 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
+            for e in
+                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
+            {
                 match e {
                     TurnEvent::TechLearned { .. } => techs += 1,
                     TurnEvent::CityCompleted { .. } => builds += 1,
@@ -1790,9 +1799,7 @@ mod expansion {
     /// existed. Self-play found it; no unit test would have.
     #[test]
     fn a_finished_unit_is_placed_on_the_map() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .unwrap()
-            .unwrap();
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
         let mut g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let nation = r.nations.ids().next().unwrap();
@@ -1801,12 +1808,9 @@ mod expansion {
         let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), centre));
 
         let warrior = r.unit("Warrior").unwrap();
-        let cost = crate::world::construction::production_cost(
-            &r,
-            Construction::Unit(warrior),
-            CostModifiers::default(),
-        )
-        .unwrap();
+        let cost =
+            crate::world::construction::production_cost(&r, Construction::Unit(warrior), CostModifiers::default())
+                .unwrap();
         w.cities.get_mut(city_id).unwrap().queue.push(Construction::Unit(warrior));
 
         assert!(w.civ(CivId(0)).unwrap().units.is_empty());
@@ -1832,12 +1836,7 @@ mod expansion {
                 gift: None,
             }
         };
-        let events = apply_plan(
-            &mut w,
-            &r,
-            &plan,
-            TurnModifiers::default(),
-        );
+        let events = apply_plan(&mut w, &r, &plan, TurnModifiers::default());
 
         assert!(events.iter().any(|e| matches!(e, TurnEvent::CityCompleted { .. })));
         let units = &w.civ(CivId(0)).unwrap().units;
@@ -1853,9 +1852,7 @@ mod multi_civ {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     /// Three civs on one map, left to themselves. Everything up to now has
@@ -1893,7 +1890,9 @@ mod multi_civ {
         let mut battles = 0;
         let mut losses = 0;
         for _ in 0..500 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
+            for e in
+                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
+            {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
                     TurnEvent::Victory { .. } => victories += 1,
@@ -1937,7 +1936,6 @@ mod multi_civ {
             }
         }
         println!("total cities on the map: {}", w.cities.len());
-
 
         assert_eq!(w.civs.len(), 3, "everyone is still in the list, alive or not");
         assert!(w.cities.len() > 3, "someone should have expanded");
@@ -1997,18 +1995,11 @@ mod contact {
 
     #[test]
     fn seeing_a_neighbour_is_meeting_them() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .unwrap()
-            .unwrap();
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
         let g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        let mut w = World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        );
+        let mut w =
+            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
         let base = r.unit("Warrior").unwrap();
         let here = w.grid.id_at(8, 8).unwrap();
         let far = w.grid.id_at(1, 1).unwrap();
@@ -2046,19 +2037,12 @@ mod warfare {
     /// loop rather than by calling combat directly.
     #[test]
     fn armies_at_war_actually_fight() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .unwrap()
-            .unwrap();
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
         let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let nation = r.nations.ids().next().unwrap();
-        let mut w = World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        );
+        let mut w =
+            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
         w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
         w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
 
@@ -2077,7 +2061,9 @@ mod warfare {
         let mut battles = 0;
         let mut deaths = 0;
         for _ in 0..30 {
-            for e in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() }) {
+            for e in
+                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
+            {
                 if let TurnEvent::Battle { attacker_died, defender_died } = e {
                     battles += 1;
                     deaths += attacker_died as u32 + defender_died as u32;

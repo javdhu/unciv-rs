@@ -45,8 +45,12 @@ pub enum Direction {
 
 impl Direction {
     pub const ALL: [Direction; 6] = [
-        Direction::East, Direction::NorthEast, Direction::NorthWest,
-        Direction::West, Direction::SouthWest, Direction::SouthEast,
+        Direction::East,
+        Direction::NorthEast,
+        Direction::NorthWest,
+        Direction::West,
+        Direction::SouthWest,
+        Direction::SouthEast,
     ];
 
     #[inline]
@@ -186,7 +190,11 @@ impl TileGrid {
     /// connection, upkeep. A pillaged road carries nothing.
     pub fn unpillaged_road(&self, t: TileId) -> RoadLevel {
         let i = t.0 as usize;
-        if self.road_pillaged[i] { RoadLevel::None } else { self.road[i] }
+        if self.road_pillaged[i] {
+            RoadLevel::None
+        } else {
+            self.road[i]
+        }
     }
 
     /// Lay a road. Building over a pillaged road repairs it, which is why this
@@ -210,9 +218,7 @@ impl TileGrid {
     /// The direction from `from` to adjacent tile `to`, if they are neighbours.
     pub fn direction_to(&self, from: TileId, to: TileId) -> Option<Direction> {
         let i = from.0 as usize;
-        Direction::ALL
-            .into_iter()
-            .find(|&d| self.neighbours[i][d as usize] == Some(to))
+        Direction::ALL.into_iter().find(|&d| self.neighbours[i][d as usize] == Some(to))
     }
 
     /// Whether there is a river along the shared edge between two adjacent tiles.
@@ -274,9 +280,7 @@ impl TileGrid {
 
     /// Whether this tile is open water.
     pub fn is_water(&self, r: &Ruleset, tile: TileId) -> bool {
-        r.terrains
-            .get(self.terrain[tile.0 as usize])
-            .is_some_and(|t| t.r#type == "Water")
+        r.terrains.get(self.terrain[tile.0 as usize]).is_some_and(|t| t.r#type == "Water")
     }
 
     /// Whether this tile has access to fresh water (river border, or adjacent fresh water lake/oasis).
@@ -296,14 +300,21 @@ impl TileGrid {
         false
     }
 
-    pub fn width(&self) -> u16 { self.width }
-    pub fn height(&self) -> u16 { self.height }
-    pub fn len(&self) -> usize { self.terrain.len() }
-    pub fn is_empty(&self) -> bool { self.terrain.is_empty() }
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+    pub fn len(&self) -> usize {
+        self.terrain.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.terrain.is_empty()
+    }
 
     pub fn id_at(&self, col: u16, row: u16) -> Option<TileId> {
-        (col < self.width && row < self.height)
-            .then(|| TileId(row * self.width + col))
+        (col < self.width && row < self.height).then(|| TileId(row * self.width + col))
     }
 
     pub fn coords(&self, t: TileId) -> (u16, u16) {
@@ -342,9 +353,7 @@ impl TileGrid {
     /// whatever came before it.
     pub fn terrains(&self, t: TileId) -> impl Iterator<Item = Id<Terrain>> + '_ {
         let i = t.0 as usize;
-        std::iter::once(self.terrain[i])
-            .chain(self.natural_wonder[i])
-            .chain(self.features[i].iter().copied())
+        std::iter::once(self.terrain[i]).chain(self.natural_wonder[i]).chain(self.features[i].iter().copied())
     }
 
     pub fn ids(&self) -> impl Iterator<Item = TileId> {
@@ -433,10 +442,7 @@ mod tests {
         let g = grid(12, 12);
         for a in g.ids() {
             for b in g.neighbours(a) {
-                assert!(
-                    g.neighbours(b).any(|x| x == a),
-                    "{a:?} -> {b:?} but not back; row parity is wrong"
-                );
+                assert!(g.neighbours(b).any(|x| x == a), "{a:?} -> {b:?} but not back; row parity is wrong");
             }
         }
     }

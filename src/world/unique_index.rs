@@ -57,9 +57,7 @@ impl UniqueIndex {
     /// Every unique of this type. Iterates only when `has` already said yes.
     pub fn matching(&self, t: UniqueType) -> impl Iterator<Item = &Unique> {
         let present = self.has(t);
-        self.entries
-            .iter()
-            .filter(move |u| present && u.unique_type() == Some(t))
+        self.entries.iter().filter(move |u| present && u.unique_type() == Some(t))
     }
 
     pub fn all(&self) -> impl Iterator<Item = &Unique> {

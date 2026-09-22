@@ -44,21 +44,13 @@ pub struct PolicyModifiers {
 
 impl Default for PolicyModifiers {
     fn default() -> Self {
-        PolicyModifiers {
-            difficulty: Fixed::ONE,
-            speed: Fixed::ONE,
-            map: MapScaling::default(),
-        }
+        PolicyModifiers { difficulty: Fixed::ONE, speed: Fixed::ONE, map: MapScaling::default() }
     }
 }
 
 impl PolicyModifiers {
     pub fn from_difficulty(d: Option<&Difficulty>, speed: Fixed, map: MapScaling) -> PolicyModifiers {
-        PolicyModifiers {
-            difficulty: d.map_or(Fixed::ONE, |d| d.policy_cost_modifier),
-            speed,
-            map,
-        }
+        PolicyModifiers { difficulty: d.map_or(Fixed::ONE, |d| d.policy_cost_modifier), speed, map }
     }
 }
 
@@ -68,13 +60,13 @@ impl PolicyModifiers {
 /// quantising the intermediate moves the answer across the five-culture
 /// granularity often enough to matter.
 pub fn policy_cost(adopted: usize, cities: usize, m: PolicyModifiers) -> i32 {
-    let curve = Fixed::whole(adopted as i32 * 3)
-        .pow(Fixed::permille(2_010))
-        .unwrap_or(Fixed::ZERO);
+    let curve = Fixed::whole(adopted as i32 * 3).pow(Fixed::permille(2_010)).unwrap_or(Fixed::ZERO);
     let base = Precise::from_fixed(Fixed::whole(BASE_POLICY_COST) + curve);
 
-    let city_modifier = Precise::whole(cities.saturating_sub(1) as i32) * Precise::from_fixed(m.map.policy_cost_per_city);
-    let scaled = ((base * Precise::from_fixed(m.difficulty)) * Precise::from_fixed(m.speed)) * (Precise::whole(1) + city_modifier);
+    let city_modifier =
+        Precise::whole(cities.saturating_sub(1) as i32) * Precise::from_fixed(m.map.policy_cost_per_city);
+    let scaled = ((base * Precise::from_fixed(m.difficulty)) * Precise::from_fixed(m.speed))
+        * (Precise::whole(1) + city_modifier);
 
     // Rounds, unlike tech and production, then drops to a multiple of five.
     let cost = scaled.round().max(1) as i32;
@@ -87,10 +79,15 @@ pub enum PolicyRejection {
     /// A prerequisite policy has not been adopted.
     MissingPrerequisite(String),
     /// The branch belongs to a later era.
-    EraTooEarly { needs: String },
+    EraTooEarly {
+        needs: String,
+    },
     /// An `Only available <…>` conditional does not hold.
     NotAvailable,
-    NotEnoughCulture { needed: i32, stored: i32 },
+    NotEnoughCulture {
+        needed: i32,
+        stored: i32,
+    },
     Unknown,
 }
 
@@ -126,12 +123,7 @@ pub fn era_number(world: &World, r: &Ruleset, civ: CivId) -> i32 {
 }
 
 /// Whether this policy may be adopted, ignoring whether the culture is there.
-pub fn is_adoptable(
-    world: &World,
-    r: &Ruleset,
-    civ_id: CivId,
-    policy: Id<Policy>,
-) -> Result<(), PolicyRejection> {
+pub fn is_adoptable(world: &World, r: &Ruleset, civ_id: CivId, policy: Id<Policy>) -> Result<(), PolicyRejection> {
     let Some(civ) = world.civ(civ_id) else { return Err(PolicyRejection::Unknown) };
     let Some(p) = r.policies.get(policy) else { return Err(PolicyRejection::Unknown) };
 
@@ -164,9 +156,14 @@ pub fn is_adoptable(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyEvent {
-    Adopted { policy: Id<Policy>, culture_left: i32 },
+    Adopted {
+        policy: Id<Policy>,
+        culture_left: i32,
+    },
     /// Culture banked toward the next one.
-    Stored { culture: i32 },
+    Stored {
+        culture: i32,
+    },
 }
 
 /// Bank culture, and adopt `choice` if it is affordable and legal.
@@ -230,11 +227,7 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     }
     // Beliefs are uniques too, so a pantheon has to reach the index or it
     // grants nothing.
-    uniques.extend(
-        crate::world::religion::belief_uniques(r, &civ.faith)
-            .into_iter()
-            .cloned(),
-    );
+    uniques.extend(crate::world::religion::belief_uniques(r, &civ.faith).into_iter().cloned());
     // So are the bonuses a city-state owes its friends. They come and go as
     // influence rises and falls, which is why this index is rebuilt every
     // turn for a major civ rather than only when something is adopted.
@@ -256,9 +249,7 @@ mod tests {
     use crate::world::grid::{TileGrid, TileId};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -296,20 +287,14 @@ mod tests {
         let mut w = world(&r);
         let aristocracy = r.policies.id("Aristocracy").expect("Aristocracy exists");
 
-        assert!(matches!(
-            is_adoptable(&w, &r, CivId(0), aristocracy),
-            Err(PolicyRejection::MissingPrerequisite(_))
-        ));
+        assert!(matches!(is_adoptable(&w, &r, CivId(0), aristocracy), Err(PolicyRejection::MissingPrerequisite(_))));
 
         let tradition = r.policies.id("Tradition").expect("the branch is a policy too");
         assert_eq!(is_adoptable(&w, &r, CivId(0), tradition), Ok(()));
 
         w.civ_mut(CivId(0)).unwrap().adopted_policies.insert(tradition);
         assert_eq!(is_adoptable(&w, &r, CivId(0), aristocracy), Ok(()));
-        assert_eq!(
-            is_adoptable(&w, &r, CivId(0), tradition),
-            Err(PolicyRejection::AlreadyAdopted)
-        );
+        assert_eq!(is_adoptable(&w, &r, CivId(0), tradition), Err(PolicyRejection::AlreadyAdopted));
     }
 
     #[test]
@@ -326,10 +311,7 @@ mod tests {
             .expect("some branch is gated on a later era");
         let id = r.policies.id(&late).expect("the branch is a policy");
         println!("gated branch: {late}");
-        assert!(matches!(
-            is_adoptable(&w, &r, CivId(0), id),
-            Err(PolicyRejection::EraTooEarly { .. })
-        ));
+        assert!(matches!(is_adoptable(&w, &r, CivId(0), id), Err(PolicyRejection::EraTooEarly { .. })));
     }
 
     #[test]
@@ -365,9 +347,7 @@ mod tests {
                     && is_adoptable(&w, &r, CivId(0), *id).is_ok()
                     && p.uniques.iter().any(|u| u.unique_type().is_some())
             })
-            .find_map(|(id, p)| {
-                p.uniques.iter().find_map(|u| u.unique_type()).map(|t| (id, t))
-            })
+            .find_map(|(id, p)| p.uniques.iter().find_map(|u| u.unique_type()).map(|t| (id, t)))
             .expect("some adoptable branch carries a unique");
 
         rebuild_uniques(&mut w, &r, CivId(0));
@@ -380,7 +360,9 @@ mod tests {
         assert!(!civ.uniques.is_empty());
         println!(
             "{}: {:?} live, index holds {} uniques (before: {before})",
-            r.policies[id].name, kind, civ.uniques.len()
+            r.policies[id].name,
+            kind,
+            civ.uniques.len()
         );
     }
 

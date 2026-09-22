@@ -122,10 +122,7 @@ impl Default for GrowthModifiers {
 impl GrowthModifiers {
     /// Reads the speed's own modifier, falling back to unmodified.
     pub fn for_speed(r: &Ruleset, speed: Id<Speed>) -> GrowthModifiers {
-        GrowthModifiers {
-            speed: r.speeds.get(speed).map_or(Fixed::ONE, |s| s.modifier),
-            civ: Fixed::ONE,
-        }
+        GrowthModifiers { speed: r.speeds.get(speed).map_or(Fixed::ONE, |s| s.modifier), civ: Fixed::ONE }
     }
 }
 
@@ -136,9 +133,7 @@ impl GrowthModifiers {
 /// does in Unciv.
 pub fn food_to_next_population(population: u32, m: GrowthModifiers) -> i32 {
     let p = population.saturating_sub(1) as i32;
-    let curve = Fixed::whole(p)
-        .pow(Fixed::permille(1_500))
-        .map_or(0, |v| v.floor() as i32);
+    let curve = Fixed::whole(p).pow(Fixed::permille(1_500)).map_or(0, |v| v.floor() as i32);
     let base = Fixed::whole(15 + 8 * p + curve);
     // Kotlin's `Double.toInt()` truncates toward zero; Unciv ends the function
     // with `foodRequired.toInt()`, so a city-state's 82.5 is 82, not 83. The
@@ -165,16 +160,10 @@ pub fn workable_tiles(grid: &TileGrid, city: &City) -> Vec<TileId> {
 /// Everything the city produces, attributed by tile.
 pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Contribution> {
     let centre = tile_yield(grid, r, city.centre);
-    let mut out = vec![(
-        Source::new(SourceKind::Terrain, format!("{} centre", city.name)),
-        centre,
-    )];
+    let mut out = vec![(Source::new(SourceKind::Terrain, format!("{} centre", city.name)), centre)];
     // A city centre is topped up to a floor whatever it sits on, so founding
     // on poor terrain is survivable.
-    if let Some(gap) = crate::world::yields::missing_from_minimum(
-        centre,
-        crate::world::yields::CITY_CENTRE_MINIMUM,
-    ) {
+    if let Some(gap) = crate::world::yields::missing_from_minimum(centre, crate::world::yields::CITY_CENTRE_MINIMUM) {
         out.push((Source::new(SourceKind::Terrain, "city centre minimum"), gap));
     }
     // Citizens produce regardless of what they stand on: one science each,
@@ -224,10 +213,8 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
                 }
             }
             Some(UniqueType::StatsFromTiles) => {
-                let (Some(stats), Some(filter)) = (
-                    u.params.first().and_then(|p| Stats::parse(p)),
-                    u.params.get(1),
-                ) else {
+                let (Some(stats), Some(filter)) = (u.params.first().and_then(|p| Stats::parse(p)), u.params.get(1))
+                else {
                     continue;
                 };
                 let matching = city
@@ -253,10 +240,7 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
 
     for t in &city.worked {
         let (col, row) = grid.coords(*t);
-        out.push((
-            Source::new(SourceKind::Terrain, format!("({col}, {row})")),
-            tile_yield(grid, r, *t),
-        ));
+        out.push((Source::new(SourceKind::Terrain, format!("({col}, {row})")), tile_yield(grid, r, *t)));
     }
     out
 }
@@ -297,12 +281,7 @@ pub fn city_yield(grid: &TileGrid, r: &Ruleset, city: &City) -> Stats {
 /// The most damage a city can absorb.
 pub fn max_health(r: &Ruleset, city: &City) -> i32 {
     BASE_CITY_HEALTH
-        + city
-            .built
-            .iter()
-            .filter_map(|id| r.buildings.get(*id))
-            .filter_map(|b| b.city_health)
-            .sum::<i32>()
+        + city.built.iter().filter_map(|id| r.buildings.get(*id)).filter_map(|b| b.city_health).sum::<i32>()
 }
 
 /// How hard a city is to take.
@@ -311,12 +290,8 @@ pub fn max_health(r: &Ruleset, city: &City) -> i32 {
 /// curve over technology known; that needs a global view of research and is
 /// left out here, so a late-game city is easier to storm than it should be.
 pub fn city_strength(r: &Ruleset, city: &City) -> Fixed {
-    let from_buildings: Fixed = city
-        .built
-        .iter()
-        .filter_map(|id| r.buildings.get(*id))
-        .filter_map(|b| b.city_strength)
-        .sum();
+    let from_buildings: Fixed =
+        city.built.iter().filter_map(|id| r.buildings.get(*id)).filter_map(|b| b.city_strength).sum();
     Fixed::permille(CITY_STRENGTH_BASE)
         + (Fixed::permille(CITY_STRENGTH_PER_POP) * Fixed::whole(city.population as i32))
         + from_buildings
@@ -324,21 +299,13 @@ pub fn city_strength(r: &Ruleset, city: &City) -> Fixed {
 
 /// Gold a city's buildings cost to keep, per turn.
 pub fn city_maintenance(r: &Ruleset, city: &City) -> i32 {
-    city.built
-        .iter()
-        .filter_map(|id| r.buildings.get(*id))
-        .filter_map(|b| b.maintenance)
-        .sum()
+    city.built.iter().filter_map(|id| r.buildings.get(*id)).filter_map(|b| b.maintenance).sum()
 }
 
 /// Rebuild the city's unique index from what it has built.
 pub fn rebuild_city_uniques(r: &Ruleset, city: &mut City) {
-    let uniques: Vec<_> = city
-        .built
-        .iter()
-        .filter_map(|id| r.buildings.get(*id))
-        .flat_map(|b| b.uniques.iter().cloned())
-        .collect();
+    let uniques: Vec<_> =
+        city.built.iter().filter_map(|id| r.buildings.get(*id)).flat_map(|b| b.uniques.iter().cloned()).collect();
     city.uniques = crate::world::unique_index::UniqueIndex::build(&uniques);
 }
 
@@ -380,9 +347,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn owned_grid(r: &Ruleset, terrain: &str, owner: CivId) -> TileGrid {
@@ -403,14 +368,8 @@ mod tests {
     #[test]
     fn speed_and_difficulty_scale_the_curve() {
         let base = food_to_next_population(5, GrowthModifiers::default());
-        let slow = food_to_next_population(
-            5,
-            GrowthModifiers { speed: Fixed::whole(3), civ: Fixed::ONE },
-        );
-        let city_state = food_to_next_population(
-            5,
-            GrowthModifiers { speed: Fixed::ONE, civ: Fixed::permille(1_500) },
-        );
+        let slow = food_to_next_population(5, GrowthModifiers { speed: Fixed::whole(3), civ: Fixed::ONE });
+        let city_state = food_to_next_population(5, GrowthModifiers { speed: Fixed::ONE, civ: Fixed::permille(1_500) });
         assert_eq!(slow, base * 3, "marathon triples the requirement");
         // 55 × 1.5 = 82.5, truncated to 82 — matching Kotlin's `toInt()`.
         assert_eq!(city_state, 82, "city-states need half again, truncated");
@@ -527,13 +486,13 @@ mod tests {
 mod building_tests {
     use super::*;
     use crate::ruleset::queries::HasStats;
-    use crate::world::construction::{apply_production, production_cost, Construction, ConstructionEvent, CostModifiers};
+    use crate::world::construction::{
+        apply_production, production_cost, Construction, ConstructionEvent, CostModifiers,
+    };
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn grid(r: &Ruleset) -> TileGrid {
@@ -550,11 +509,7 @@ mod building_tests {
         let before = city_yield(&g, &r, &c);
 
         // Any building with flat output of its own.
-        let (id, b) = r
-            .buildings
-            .iter()
-            .find(|(_, b)| !b.stats().is_zero())
-            .expect("some building yields something");
+        let (id, b) = r.buildings.iter().find(|(_, b)| !b.stats().is_zero()).expect("some building yields something");
         c.built.insert(id);
         let after = city_yield(&g, &r, &c);
         println!("{}: {} -> {}", b.name, before, after);
@@ -644,11 +599,8 @@ mod building_tests {
         let mut c = City::found("Rome", CivId(0), TileId(0));
         assert_eq!(city_maintenance(&r, &c), 0);
 
-        let (id, b) = r
-            .buildings
-            .iter()
-            .find(|(_, b)| b.maintenance.unwrap_or(0) > 0)
-            .expect("some building has upkeep");
+        let (id, b) =
+            r.buildings.iter().find(|(_, b)| b.maintenance.unwrap_or(0) > 0).expect("some building has upkeep");
         c.built.insert(id);
         assert_eq!(city_maintenance(&r, &c), b.maintenance.unwrap());
     }
@@ -664,9 +616,7 @@ mod library_test {
     /// all unless that unique is evaluated.
     #[test]
     fn a_library_gives_science_per_two_citizens() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads");
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads");
         let mut g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
 

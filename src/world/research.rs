@@ -58,11 +58,7 @@ pub struct ScienceModifiers {
 
 impl Default for ScienceModifiers {
     fn default() -> Self {
-        ScienceModifiers {
-            difficulty: Fixed::ONE,
-            speed: Fixed::ONE,
-            map: MapScaling::default(),
-        }
+        ScienceModifiers { difficulty: Fixed::ONE, speed: Fixed::ONE, map: MapScaling::default() }
     }
 }
 
@@ -70,19 +66,14 @@ impl Default for ScienceModifiers {
 ///
 /// `cities` counts the researching civ's cities; each one beyond the first
 /// raises the price.
-pub fn tech_cost(
-    r: &Ruleset,
-    tech: Id<Technology>,
-    cities: usize,
-    m: ScienceModifiers,
-) -> Option<i32> {
+pub fn tech_cost(r: &Ruleset, tech: Id<Technology>, cities: usize, m: ScienceModifiers) -> Option<i32> {
     let base = r.technologies.get(tech)?.cost?;
     if base <= 0 {
         return None;
     }
-    let city_modifier =
-        Fixed::whole(cities.saturating_sub(1) as i32) * m.map.tech_cost_per_city;
-    let cost = (((Fixed::whole(base) * m.difficulty) * m.speed) * m.map.tech_cost_multiplier) * (Fixed::ONE + city_modifier);
+    let city_modifier = Fixed::whole(cities.saturating_sub(1) as i32) * m.map.tech_cost_per_city;
+    let cost =
+        (((Fixed::whole(base) * m.difficulty) * m.speed) * m.map.tech_cost_multiplier) * (Fixed::ONE + city_modifier);
     Some(cost.floor().max(1) as i32)
 }
 
@@ -106,11 +97,7 @@ impl std::fmt::Display for ResearchRejection {
 
 impl std::error::Error for ResearchRejection {}
 
-pub fn can_research(
-    r: &Ruleset,
-    civ: &Civilization,
-    tech: Id<Technology>,
-) -> Result<(), ResearchRejection> {
+pub fn can_research(r: &Ruleset, civ: &Civilization, tech: Id<Technology>) -> Result<(), ResearchRejection> {
     let t = r.technologies.get(tech).ok_or(ResearchRejection::Unknown)?;
     if civ.has_tech(tech) {
         return Err(ResearchRejection::AlreadyKnown);
@@ -131,19 +118,21 @@ pub fn available_techs(r: &Ruleset, civ: &Civilization) -> Vec<Id<Technology>> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResearchEvent {
-    Progressed { stored: i32 },
-    Completed { tech: Id<Technology>, carried_over: i32 },
+    Progressed {
+        stored: i32,
+    },
+    Completed {
+        tech: Id<Technology>,
+        carried_over: i32,
+    },
     /// Nothing selected; the science is banked toward whatever comes next.
-    Idle { stored: i32 },
+    Idle {
+        stored: i32,
+    },
 }
 
 /// Bank a turn's science and finish the current research if it is paid for.
-pub fn apply_science(
-    civ: &mut Civilization,
-    r: &Ruleset,
-    science: i32,
-    m: ScienceModifiers,
-) -> ResearchEvent {
+pub fn apply_science(civ: &mut Civilization, r: &Ruleset, science: i32, m: ScienceModifiers) -> ResearchEvent {
     civ.science_stored += science.max(0);
 
     let Some(tech) = civ.researching else {
@@ -168,9 +157,7 @@ mod tests {
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn civ(r: &Ruleset) -> Civilization {
@@ -191,10 +178,7 @@ mod tests {
 
         // Pottery needs Agriculture and is not offered before it.
         let pottery = r.technologies.id("Pottery").unwrap();
-        assert_eq!(
-            can_research(&r, &c, pottery),
-            Err(ResearchRejection::MissingPrerequisite("Agriculture".into()))
-        );
+        assert_eq!(can_research(&r, &c, pottery), Err(ResearchRejection::MissingPrerequisite("Agriculture".into())));
 
         c.techs.insert(agriculture);
         assert_eq!(can_research(&r, &c, pottery), Ok(()));
@@ -259,16 +243,10 @@ mod tests {
         c.researching = Some(agriculture);
         let cost = tech_cost(&r, agriculture, 0, m).unwrap();
 
-        assert_eq!(
-            apply_science(&mut c, &r, cost - 1, m),
-            ResearchEvent::Progressed { stored: cost - 1 }
-        );
+        assert_eq!(apply_science(&mut c, &r, cost - 1, m), ResearchEvent::Progressed { stored: cost - 1 });
         assert!(!c.has_tech(agriculture));
 
-        assert_eq!(
-            apply_science(&mut c, &r, 3, m),
-            ResearchEvent::Completed { tech: agriculture, carried_over: 2 }
-        );
+        assert_eq!(apply_science(&mut c, &r, 3, m), ResearchEvent::Completed { tech: agriculture, carried_over: 2 });
         assert!(c.has_tech(agriculture));
         assert_eq!(c.researching, None, "and needs a new selection");
         assert_eq!(c.science_stored, 2, "the excess carries over");
@@ -278,10 +256,7 @@ mod tests {
     fn science_with_nothing_selected_is_banked() {
         let r = ruleset();
         let mut c = civ(&r);
-        assert_eq!(
-            apply_science(&mut c, &r, 12, ScienceModifiers::default()),
-            ResearchEvent::Idle { stored: 12 }
-        );
+        assert_eq!(apply_science(&mut c, &r, 12, ScienceModifiers::default()), ResearchEvent::Idle { stored: 12 });
     }
 
     /// The whole tree is reachable from a standing start.

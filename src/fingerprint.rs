@@ -131,9 +131,7 @@ pub fn fingerprint() -> u64 {
     // --- the map, yields and movement -------------------------------------
     let Some(grassland) = r.terrain("Grassland") else { return d.0 };
     let mut grid = TileGrid::new(40, 40, grassland);
-    if let (Some(forest), Some(hill), Some(marsh)) =
-        (r.terrain("Forest"), r.terrain("Hill"), r.terrain("Marsh"))
-    {
+    if let (Some(forest), Some(hill), Some(marsh)) = (r.terrain("Forest"), r.terrain("Hill"), r.terrain("Marsh")) {
         for t in grid.ids() {
             match t.0 % 4 {
                 1 => grid.features[t.0 as usize].push(forest),
@@ -202,11 +200,7 @@ pub fn fingerprint() -> u64 {
     // generated map in means the existing cross-target check covers it.
     {
         use crate::world::mapgen::{generate, MapParameters};
-        let map = generate(
-            &r,
-            MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() },
-            4,
-        );
+        let map = generate(&r, MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() }, 4);
         for tile in map.grid.ids() {
             let i = tile.0 as usize;
             d.add(map.grid.terrain[i].index() as i64);
@@ -246,11 +240,7 @@ pub fn fingerprint() -> u64 {
         use crate::world::turn::{advance_turn, TurnModifiers};
         use crate::world::world::World;
 
-        let map = generate(
-            &r,
-            MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() },
-            6,
-        );
+        let map = generate(&r, MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() }, 6);
         if let Some(nation) = r.nations.ids().next() {
             // Four majors and two city-states. The city-states are what make
             // quests, influence, elections and coups reachable at all, and
@@ -268,11 +258,7 @@ pub fn fingerprint() -> u64 {
                 })
                 .collect();
             let mut w = World::new(map.grid, civs);
-            let settler = r
-                .units
-                .iter()
-                .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
-                .map(|(id, _)| id);
+            let settler = r.units.iter().find(|(id, _)| crate::world::settling::is_settler(&r, *id)).map(|(id, _)| id);
             let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id);
             for (i, start) in map.starts.iter().enumerate() {
                 for base in [settler, worker].into_iter().flatten() {
@@ -283,12 +269,7 @@ pub fn fingerprint() -> u64 {
             // turn thirty and elections are held every fifteen, so a shorter
             // game would fold in nothing from either.
             for _ in 0..60 {
-                advance_turn(
-                    &mut w,
-                    &r,
-                    CityFocus::None,
-                    TurnModifiers::default(),
-                );
+                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
             }
 
             d.add(w.turn as i64).add(w.cities.len() as i64).add(w.units.len() as i64);

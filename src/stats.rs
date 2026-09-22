@@ -108,11 +108,15 @@ impl Fixed {
 
 impl Add for Fixed {
     type Output = Fixed;
-    fn add(self, o: Fixed) -> Fixed { Fixed(self.0.saturating_add(o.0)) }
+    fn add(self, o: Fixed) -> Fixed {
+        Fixed(self.0.saturating_add(o.0))
+    }
 }
 impl Sub for Fixed {
     type Output = Fixed;
-    fn sub(self, o: Fixed) -> Fixed { Fixed(self.0.saturating_sub(o.0)) }
+    fn sub(self, o: Fixed) -> Fixed {
+        Fixed(self.0.saturating_sub(o.0))
+    }
 }
 /// Saturating on overflow rather than wrapping: a silently wrapped yield
 /// would be far harder to notice than a pinned one.
@@ -125,16 +129,24 @@ impl Mul for Fixed {
 }
 impl Neg for Fixed {
     type Output = Fixed;
-    fn neg(self) -> Fixed { Fixed(-self.0) }
+    fn neg(self) -> Fixed {
+        Fixed(-self.0)
+    }
 }
 impl AddAssign for Fixed {
-    fn add_assign(&mut self, o: Fixed) { *self = *self + o }
+    fn add_assign(&mut self, o: Fixed) {
+        *self = *self + o
+    }
 }
 impl SubAssign for Fixed {
-    fn sub_assign(&mut self, o: Fixed) { *self = *self - o }
+    fn sub_assign(&mut self, o: Fixed) {
+        *self = *self - o
+    }
 }
 impl std::iter::Sum for Fixed {
-    fn sum<I: Iterator<Item = Fixed>>(it: I) -> Fixed { it.fold(Fixed::ZERO, |a, b| a + b) }
+    fn sum<I: Iterator<Item = Fixed>>(it: I) -> Fixed {
+        it.fold(Fixed::ZERO, |a, b| a + b)
+    }
 }
 
 impl fmt::Display for Fixed {
@@ -175,10 +187,8 @@ pub enum Stat {
 }
 
 impl Stat {
-    pub const ALL: [Stat; 7] = [
-        Stat::Food, Stat::Production, Stat::Gold, Stat::Science,
-        Stat::Culture, Stat::Faith, Stat::Happiness,
-    ];
+    pub const ALL: [Stat; 7] =
+        [Stat::Food, Stat::Production, Stat::Gold, Stat::Science, Stat::Culture, Stat::Faith, Stat::Happiness];
 
     /// Case-insensitive, because the ruleset writes stat names both ways:
     /// `[+1 Science]` inside a unique, `"science"` as a `percentStatBonus` key.
@@ -232,8 +242,12 @@ impl std::ops::IndexMut<Stat> for Stats {
 
 impl Stats {
     pub const ZERO: Stats = Stats {
-        food: Fixed::ZERO, production: Fixed::ZERO, gold: Fixed::ZERO,
-        science: Fixed::ZERO, culture: Fixed::ZERO, faith: Fixed::ZERO,
+        food: Fixed::ZERO,
+        production: Fixed::ZERO,
+        gold: Fixed::ZERO,
+        science: Fixed::ZERO,
+        culture: Fixed::ZERO,
+        faith: Fixed::ZERO,
         happiness: Fixed::ZERO,
     };
 
@@ -280,11 +294,15 @@ impl Add for Stats {
 }
 
 impl AddAssign for Stats {
-    fn add_assign(&mut self, o: Stats) { *self = *self + o }
+    fn add_assign(&mut self, o: Stats) {
+        *self = *self + o
+    }
 }
 
 impl std::iter::Sum for Stats {
-    fn sum<I: Iterator<Item = Stats>>(it: I) -> Stats { it.fold(Stats::ZERO, |a, b| a + b) }
+    fn sum<I: Iterator<Item = Stats>>(it: I) -> Stats {
+        it.fold(Stats::ZERO, |a, b| a + b)
+    }
 }
 
 impl fmt::Display for Stats {
@@ -471,11 +489,7 @@ impl Fixed {
     /// Base-2 logarithm. `None` for zero and negatives.
     pub fn log2(self) -> Option<Fixed> {
         let l = log2_q32(self.to_q32()?)?;
-        Some(if l >= 0 {
-            Fixed::from_q32(l as u128)
-        } else {
-            -Fixed::from_q32((-l) as u128)
-        })
+        Some(if l >= 0 { Fixed::from_q32(l as u128) } else { -Fixed::from_q32((-l) as u128) })
     }
 
     /// `2^self`.
@@ -720,8 +734,7 @@ mod precise_tests {
         let via_fixed = Fixed::permille(1_187).pow(Fixed::whole(4)).unwrap();
         let truth = Fixed::permille(1_987);
         assert!(
-            (precise.to_fixed().raw() - truth.raw()).abs()
-                <= (via_fixed.raw() - truth.raw()).abs(),
+            (precise.to_fixed().raw() - truth.raw()).abs() <= (via_fixed.raw() - truth.raw()).abs(),
             "precise {} should be no worse than fixed {}",
             precise.to_fixed(),
             via_fixed

@@ -5,17 +5,17 @@
 //! the clock, or floating point.
 
 pub mod arena;
+pub mod fingerprint;
 pub mod generated;
+pub mod icons;
 pub mod json;
 pub mod modifiers;
 pub mod rng;
 pub mod ruleset;
 pub mod stats;
-pub mod world;
-pub mod fingerprint;
-pub mod icons;
-mod unique_type;
 mod unique;
+mod unique_type;
+pub mod world;
 
-pub use unique_type::{UniqueTarget, UniqueType};
 pub use unique::{Unique, UniqueKind};
+pub use unique_type::{UniqueTarget, UniqueType};

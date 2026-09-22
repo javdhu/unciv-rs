@@ -27,7 +27,6 @@ fn collect(v: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
-
 #[test]
 fn shipped_rulesets_close_over_the_algebra() {
     let files = ruleset_files(JSONS);
@@ -50,7 +49,9 @@ fn shipped_rulesets_close_over_the_algebra() {
             }
             for c in &u.conditionals {
                 cond_total += 1;
-                if matches!(c.kind, UniqueKind::Known(_)) { cond_known += 1 }
+                if matches!(c.kind, UniqueKind::Known(_)) {
+                    cond_known += 1
+                }
             }
         }
     }

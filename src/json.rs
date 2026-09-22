@@ -107,15 +107,11 @@ impl Json {
     }
 
     pub fn strings(&self) -> Vec<String> {
-        self.as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_default()
+        self.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default()
     }
 
     pub fn ints(&self) -> Vec<i32> {
-        self.as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_i32()).collect())
-            .unwrap_or_default()
+        self.as_array().map(|a| a.iter().filter_map(|v| v.as_i32()).collect()).unwrap_or_default()
     }
 
     /// `{"Gold": 2}` style tables, which the ruleset uses for specialist slots,
@@ -169,9 +165,11 @@ impl<'a> Parser<'a> {
                     self.bump();
                 }
                 Some(b'/') => match self.b.get(self.i + 1) {
-                    Some(b'/') => while !matches!(self.peek(), None | Some(b'\n')) {
-                        self.bump();
-                    },
+                    Some(b'/') => {
+                        while !matches!(self.peek(), None | Some(b'\n')) {
+                            self.bump();
+                        }
+                    }
                     Some(b'*') => {
                         self.bump();
                         self.bump();
@@ -208,11 +206,9 @@ impl<'a> Parser<'a> {
     }
 
     fn literal(&mut self) -> Result<Json, Error> {
-        for (word, out) in [
-            (&b"true"[..], Json::Bool(true)),
-            (&b"false"[..], Json::Bool(false)),
-            (&b"null"[..], Json::Null),
-        ] {
+        for (word, out) in
+            [(&b"true"[..], Json::Bool(true)), (&b"false"[..], Json::Bool(false)), (&b"null"[..], Json::Null)]
+        {
             if self.b[self.i..].starts_with(word) {
                 for _ in 0..word.len() {
                     self.bump();
@@ -270,7 +266,13 @@ impl<'a> Parser<'a> {
                 c if c < 0x80 => out.push(c as char),
                 c => {
                     // Multi-byte utf-8: copy the remaining continuation bytes.
-                    let len = if c >= 0xF0 { 4 } else if c >= 0xE0 { 3 } else { 2 };
+                    let len = if c >= 0xF0 {
+                        4
+                    } else if c >= 0xE0 {
+                        3
+                    } else {
+                        2
+                    };
                     let start = self.i - 1;
                     for _ in 1..len {
                         self.bump();

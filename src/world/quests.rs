@@ -28,8 +28,8 @@
 //! state here that is not derivable, and it is stored for exactly that reason.
 
 use crate::arena::Id;
-use crate::ruleset::{Quest, Ruleset};
 use crate::rng::Rng;
+use crate::ruleset::{Quest, Ruleset};
 use crate::stats::Fixed;
 use crate::world::conditionals::Verdict;
 use crate::world::grid::{CivId, TileId};
@@ -189,23 +189,16 @@ pub fn judge(world: &World, r: &Ruleset, city_state: CivId, q: &Assigned) -> Ver
             yes(conn.has_trade_route(city))
         }
         Kind::ConnectResource => match q.target {
-            Target::Resource(res) => {
-                yes(who.resources.get(&res).copied().unwrap_or(0) > 0)
-            }
+            Target::Resource(res) => yes(who.resources.get(&res).copied().unwrap_or(0) > 0),
             _ => Verdict::Unknown,
         },
         Kind::ConstructWonder => match q.target {
-            Target::Building(b) => yes(world
-                .cities
-                .iter()
-                .any(|(_, c)| c.owner == q.assignee && c.built.contains(&b))),
+            Target::Building(b) => yes(world.cities.iter().any(|(_, c)| c.owner == q.assignee && c.built.contains(&b))),
             _ => Verdict::Unknown,
         },
         // Any great person at all, measured against what they had. Points are
         // spent when one is born, so the count is the honest measure.
-        Kind::AcquireGreatPerson => {
-            yes(great_person_count(world, q.assignee) > q.baseline)
-        }
+        Kind::AcquireGreatPerson => yes(great_person_count(world, q.assignee) > q.baseline),
         Kind::ConquerCityState => match q.target {
             Target::Civ(other) => yes(world.civ(other).is_some_and(|c| !c.is_alive())),
             _ => Verdict::Unknown,
@@ -229,10 +222,8 @@ pub fn judge(world: &World, r: &Ruleset, city_state: CivId, q: &Assigned) -> Ver
             _ => Verdict::Unknown,
         },
         Kind::SpreadReligion => {
-            let Some(city) = world
-                .civ(city_state)
-                .and_then(|c| c.cities.first().copied())
-                .and_then(|id| world.cities.get(id))
+            let Some(city) =
+                world.civ(city_state).and_then(|c| c.cities.first().copied()).and_then(|id| world.cities.get(id))
             else {
                 return Verdict::Unknown;
             };
@@ -250,25 +241,17 @@ pub fn judge(world: &World, r: &Ruleset, city_state: CivId, q: &Assigned) -> Ver
                 return Verdict::Unknown;
             };
             let mine = contest_score(world, q.assignee, what) - q.baseline;
-            let beaten = book
-                .active
-                .iter()
-                .filter(|o| o.quest == q.quest && o.assignee != q.assignee)
-                .any(|o| {
-                    let theirs = contest_score(world, o.assignee, what) - o.baseline;
-                    theirs > mine || (theirs == mine && o.assignee.0 < q.assignee.0)
-                });
+            let beaten = book.active.iter().filter(|o| o.quest == q.quest && o.assignee != q.assignee).any(|o| {
+                let theirs = contest_score(world, o.assignee, what) - o.baseline;
+                theirs > mine || (theirs == mine && o.assignee.0 < q.assignee.0)
+            });
             yes(!beaten)
         }
     }
 }
 
 fn great_person_count(world: &World, civ: CivId) -> i32 {
-    world
-        .units
-        .iter()
-        .filter(|(_, u)| u.owner == civ)
-        .count() as i32
+    world.units.iter().filter(|(_, u)| u.owner == civ).count() as i32
 }
 
 /// What happened to a quest.
@@ -295,13 +278,15 @@ fn choose_target(
     // Everything here picks from a sorted list by index, never by iteration
     // order, so two machines choose the same target.
     let pick = |rng: &mut Rng, n: usize| -> Option<usize> {
-        if n == 0 { None } else { Some(rng.range(0, n as i64 - 1) as usize) }
+        if n == 0 {
+            None
+        } else {
+            Some(rng.range(0, n as i64 - 1) as usize)
+        }
     };
 
     Some(match kind {
-        Kind::Route | Kind::TradeRoute | Kind::PledgeToProtect | Kind::SpreadReligion => {
-            (Target::Self_, None)
-        }
+        Kind::Route | Kind::TradeRoute | Kind::PledgeToProtect | Kind::SpreadReligion => (Target::Self_, None),
         Kind::AcquireGreatPerson => (Target::Contest, None),
         Kind::ConnectResource => {
             // Something they do not already have, or the quest is already done.
@@ -310,9 +295,7 @@ fn choose_target(
                 .iter()
                 .filter(|(_, res)| res.resource_type == "Luxury" || res.resource_type == "Strategic")
                 .map(|(id, _)| id)
-                .filter(|id| {
-                    world.civ(assignee).is_some_and(|c| c.resources.get(id).copied().unwrap_or(0) == 0)
-                })
+                .filter(|id| world.civ(assignee).is_some_and(|c| c.resources.get(id).copied().unwrap_or(0) == 0))
                 .collect();
             options.sort_by_key(|i| i.index());
             (Target::Resource(*options.get(pick(rng, options.len())?)?), None)
@@ -329,10 +312,8 @@ fn choose_target(
             (Target::Building(*options.get(pick(rng, options.len())?)?), None)
         }
         Kind::ConquerCityState => {
-            let mut options: Vec<_> = crate::world::city_states::city_states(world)
-                .into_iter()
-                .filter(|c| *c != city_state)
-                .collect();
+            let mut options: Vec<_> =
+                crate::world::city_states::city_states(world).into_iter().filter(|c| *c != city_state).collect();
             options.sort();
             (Target::Civ(*options.get(pick(rng, options.len())?)?), None)
         }
@@ -384,25 +365,12 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<QuestEvent> {
         for q in active {
             match judge(world, r, cs, &q) {
                 Verdict::True => {
-                    let influence = r
-                        .quests
-                        .get(q.quest)
-                        .and_then(|x| x.influence)
-                        .unwrap_or(DEFAULT_INFLUENCE);
+                    let influence = r.quests.get(q.quest).and_then(|x| x.influence).unwrap_or(DEFAULT_INFLUENCE);
                     payouts.push((q.assignee, influence));
-                    events.push(QuestEvent::Completed {
-                        city_state: cs,
-                        quest: q.quest,
-                        by: q.assignee,
-                        influence,
-                    });
+                    events.push(QuestEvent::Completed { city_state: cs, quest: q.quest, by: q.assignee, influence });
                 }
                 _ if turn >= q.expires_on => {
-                    events.push(QuestEvent::Expired {
-                        city_state: cs,
-                        quest: q.quest,
-                        on: q.assignee,
-                    });
+                    events.push(QuestEvent::Expired { city_state: cs, quest: q.quest, on: q.assignee });
                 }
                 _ => keep.push(q),
             }
@@ -433,9 +401,7 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<QuestEvent> {
             .collect();
 
         for major in candidates {
-            let running = world
-                .civ(cs)
-                .map_or(0, |c| c.quests.active.iter().filter(|q| q.assignee == major).count());
+            let running = world.civ(cs).map_or(0, |c| c.quests.active.iter().filter(|q| q.assignee == major).count());
             if running >= MAX_ACTIVE || pool.is_empty() {
                 continue;
             }
@@ -444,9 +410,7 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<QuestEvent> {
             let Some(quest) = r.quests.get(quest_id) else { continue };
             let Some(kind) = kind_of(&quest.name) else { continue };
             // Never offer the same quest twice at once.
-            if world
-                .civ(cs)
-                .is_some_and(|c| c.quests.active.iter().any(|q| q.assignee == major && q.quest == quest_id))
+            if world.civ(cs).is_some_and(|c| c.quests.active.iter().any(|q| q.assignee == major && q.quest == quest_id))
             {
                 continue;
             }
@@ -490,9 +454,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     const CS: CivId = CivId(2);
@@ -544,10 +506,7 @@ mod tests {
         // The gap is named, not hidden: these need tribute and denunciations.
         for name in &cannot {
             assert!(
-                matches!(
-                    name.as_str(),
-                    "Give Gold" | "Invest" | "Bully City State" | "Denounce Civilization"
-                ),
+                matches!(name.as_str(), "Give Gold" | "Invest" | "Bully City State" | "Denounce Civilization"),
                 "unexpected unjudgeable quest {name} — either implement it or add it here"
             );
         }
@@ -734,11 +693,7 @@ mod tests {
         w.civ_mut(CivId(1)).unwrap().culture_stored = 10;
 
         let leading = w.civ(CS).unwrap().quests.active[0].clone();
-        assert_eq!(
-            judge(&w, &r, CS, &leading),
-            Verdict::False,
-            "leading on turn one is not winning"
-        );
+        assert_eq!(judge(&w, &r, CS, &leading), Verdict::False, "leading on turn one is not winning");
 
         w.turn = 20;
         assert_eq!(judge(&w, &r, CS, &leading), Verdict::True);

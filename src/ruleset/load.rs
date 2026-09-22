@@ -118,8 +118,7 @@ impl Ruleset {
                     // structure rather than a field, so it has to be picked
                     // out here where the json is still in hand.
                     for item in doc.as_array().unwrap_or_default() {
-                        let (Some(name), Some(turns)) =
-                            (item.get("name").and_then(|n| n.as_str()), item.get("turns"))
+                        let (Some(name), Some(turns)) = (item.get("name").and_then(|n| n.as_str()), item.get("turns"))
                         else {
                             continue;
                         };
@@ -167,8 +166,7 @@ impl Ruleset {
                 "Policies.json" => {
                     for group in doc.as_array().unwrap_or_default() {
                         let Some(bname) = group.get("name").and_then(|n| n.as_str()) else { continue };
-                        let branch = PolicyBranch::from_json(group)
-                            .map(|b| r.policy_branches.insert(bname, b));
+                        let branch = PolicyBranch::from_json(group).map(|b| r.policy_branches.insert(bname, b));
                         // A branch is a policy too: it is adopted before any
                         // of the policies inside it, and Unciv keeps it in the
                         // same collection (`Ruleset.kt:458`, `branch.branch =
@@ -287,11 +285,24 @@ impl Ruleset {
     }
 
     pub fn object_count(&self) -> usize {
-        self.tech_columns.len() + self.buildings.len() + self.units.len() + self.unit_types.len() + self.terrains.len()
-            + self.resources.len() + self.improvements.len() + self.technologies.len()
-            + self.policies.len() + self.policy_branches.len() + self.promotions.len()
-            + self.nations.len() + self.beliefs.len() + self.difficulties.len() + self.eras.len()
-            + self.speeds.len() + self.specialists.len() + self.victories.len()
+        self.tech_columns.len()
+            + self.buildings.len()
+            + self.units.len()
+            + self.unit_types.len()
+            + self.terrains.len()
+            + self.resources.len()
+            + self.improvements.len()
+            + self.technologies.len()
+            + self.policies.len()
+            + self.policy_branches.len()
+            + self.promotions.len()
+            + self.nations.len()
+            + self.beliefs.len()
+            + self.difficulties.len()
+            + self.eras.len()
+            + self.speeds.len()
+            + self.specialists.len()
+            + self.victories.len()
             + self.city_state_types.len()
             + self.quests.len()
     }

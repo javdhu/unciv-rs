@@ -11,9 +11,7 @@ const GK: &str = "../android/assets/jsons/Civ V - Gods & Kings";
 const VANILLA: &str = "../android/assets/jsons/Civ V - Vanilla";
 
 fn load(dir: &str) -> Ruleset {
-    Ruleset::load_dir(dir)
-        .expect("directory is readable")
-        .unwrap_or_else(|e| panic!("ruleset failed to load: {e}"))
+    Ruleset::load_dir(dir).expect("directory is readable").unwrap_or_else(|e| panic!("ruleset failed to load: {e}"))
 }
 
 #[test]
@@ -22,9 +20,18 @@ fn loads_gods_and_kings() {
     println!(
         "buildings {}  units {}  techs {}  terrains {}  resources {}  improvements {}\n\
          policies {} (in {} branches)  promotions {}  nations {}  beliefs {}  eras {}",
-        r.buildings.len(), r.units.len(), r.technologies.len(), r.terrains.len(),
-        r.resources.len(), r.improvements.len(), r.policies.len(), r.policy_branches.len(),
-        r.promotions.len(), r.nations.len(), r.beliefs.len(), r.eras.len(),
+        r.buildings.len(),
+        r.units.len(),
+        r.technologies.len(),
+        r.terrains.len(),
+        r.resources.len(),
+        r.improvements.len(),
+        r.policies.len(),
+        r.policy_branches.len(),
+        r.promotions.len(),
+        r.nations.len(),
+        r.beliefs.len(),
+        r.eras.len(),
     );
     println!("total objects: {}", r.object_count());
 
@@ -77,12 +84,8 @@ fn fields_survive_the_round_trip() {
 fn uniques_are_parsed_not_left_as_strings() {
     let r = load(GK);
     let total: usize = r.buildings.values().map(|b| b.uniques.len()).sum();
-    let known = r
-        .buildings
-        .values()
-        .flat_map(|b| &b.uniques)
-        .filter(|u| matches!(u.kind, UniqueKind::Known(_)))
-        .count();
+    let known =
+        r.buildings.values().flat_map(|b| &b.uniques).filter(|u| matches!(u.kind, UniqueKind::Known(_))).count();
     println!("building uniques: {known}/{total} resolved to a UniqueType");
     assert!(total > 150);
     assert_eq!(known, total, "every building unique should be a declared type");
@@ -116,8 +119,7 @@ fn cross_references_resolve() {
 #[test]
 fn era_numbers_follow_load_order() {
     let r = load(GK);
-    let mut seen: Vec<(i32, &str)> =
-        r.eras.iter().map(|(id, e)| (e.era_number, r.eras.name_of(id).unwrap())).collect();
+    let mut seen: Vec<(i32, &str)> = r.eras.iter().map(|(id, e)| (e.era_number, r.eras.name_of(id).unwrap())).collect();
     seen.sort();
     println!("{seen:?}");
     assert_eq!(seen.first().map(|(_, n)| *n), Some("Ancient era"));
@@ -149,12 +151,8 @@ fn techs_know_their_column_and_era() {
 #[test]
 fn policies_know_their_branch() {
     let r = load(GK);
-    let orphans: Vec<_> = r
-        .policies
-        .iter()
-        .filter(|(_, p)| p.branch.is_none())
-        .map(|(id, _)| r.policies.name_of(id).unwrap())
-        .collect();
+    let orphans: Vec<_> =
+        r.policies.iter().filter(|(_, p)| p.branch.is_none()).map(|(id, _)| r.policies.name_of(id).unwrap()).collect();
     assert!(orphans.is_empty(), "policies with no branch: {orphans:?}");
     let tradition = r.policies.by_name("Aristocracy").expect("Aristocracy exists");
     assert_eq!(tradition.branch_name(&r), Some("Tradition"));
@@ -188,11 +186,8 @@ fn sort_group_orders_by_unlocking_era() {
     assert_eq!(unit("Warrior"), 0);
 
     // A unit needing no tech has nothing to sort by and goes last.
-    let (id, untechd) = r
-        .units
-        .iter()
-        .find(|(_, u)| u.required_tech.is_none())
-        .expect("some units unlock without a tech");
+    let (id, untechd) =
+        r.units.iter().find(|(_, u)| u.required_tech.is_none()).expect("some units unlock without a tech");
     println!("no required tech: {}", r.units.name_of(id).unwrap());
     assert_eq!(untechd.sort_group(&r), 100);
 }
@@ -214,12 +209,8 @@ fn costs_are_derived_from_tech_columns() {
     // Only 61 of 224 buildings state a cost in the json across both rulesets;
     // the rest inherit their tech column's. Anything left unpriced should be a
     // building that genuinely cannot be built.
-    let unpriced: Vec<&str> = r
-        .buildings
-        .values()
-        .filter(|b| b.cost.unwrap_or(0) <= 0)
-        .map(|b| b.name.as_str())
-        .collect();
+    let unpriced: Vec<&str> =
+        r.buildings.values().filter(|b| b.cost.unwrap_or(0) <= 0).map(|b| b.name.as_str()).collect();
     println!("unpriced buildings: {unpriced:?}");
 
     assert_eq!(techs_priced, r.technologies.len(), "every tech must have a cost");
@@ -273,8 +264,5 @@ fn a_speed_knows_how_long_its_game_runs() {
     assert_eq!(standard.total_turns, 500, "the last untilTurn in the year table");
     let quick = r.speeds.by_name("Quick").expect("Quick exists");
     assert!(quick.total_turns < standard.total_turns, "a quick game is shorter");
-    assert!(
-        r.speeds.values().all(|s| s.total_turns > 0),
-        "every speed needs a length, or unit upkeep divides by zero"
-    );
+    assert!(r.speeds.values().all(|s| s.total_turns > 0), "every speed needs a length, or unit upkeep divides by zero");
 }

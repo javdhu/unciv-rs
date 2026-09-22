@@ -83,18 +83,15 @@ pub fn can_build(
         }
     }
     if let Some(tech) = imp.tech_required.as_deref() {
-        let known = r
-            .technologies
-            .id(tech)
-            .zip(world.civ(civ))
-            .is_some_and(|(t, c)| c.has_tech(t));
+        let known = r.technologies.id(tech).zip(world.civ(civ)).is_some_and(|(t, c)| c.has_tech(t));
         if !known {
             return Err(ImprovementRejection::NotUnlocked(tech.to_string()));
         }
     }
-    let fits = imp.terrains_can_be_built_on.iter().any(|t| {
-        tile_matches_in(&world.grid, r, tile, t, Some(civ)) == Verdict::True
-    });
+    let fits = imp
+        .terrains_can_be_built_on
+        .iter()
+        .any(|t| tile_matches_in(&world.grid, r, tile, t, Some(civ)) == Verdict::True);
     if !fits {
         return Err(ImprovementRejection::WrongTerrain);
     }
@@ -103,10 +100,7 @@ pub fn can_build(
 
 /// Everything a worker could build here, in id order.
 pub fn buildable(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> Vec<Id<TileImprovement>> {
-    r.improvements
-        .ids()
-        .filter(|i| can_build(world, r, civ, tile, *i).is_ok())
-        .collect()
+    r.improvements.ids().filter(|i| can_build(world, r, civ, tile, *i).is_ok()).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,12 +121,7 @@ pub fn work_on(
     improvement: Id<TileImprovement>,
 ) -> Result<WorkEvent, ImprovementRejection> {
     can_build(world, r, civ, tile, improvement)?;
-    let needed = r
-        .improvements
-        .get(improvement)
-        .and_then(|i| i.turns_to_build)
-        .unwrap_or(1)
-        .max(1) as u32;
+    let needed = r.improvements.get(improvement).and_then(|i| i.turns_to_build).unwrap_or(1).max(1) as u32;
 
     let slot = &mut world.grid.improvement_progress[tile.0 as usize];
     let done = match slot {
@@ -157,15 +146,9 @@ pub fn work_on(
 ///
 /// A Mine is `[+1 Production] <after discovering [Chemistry]>`. The same mine
 /// is worth more later, so this depends on the civ, not only the tile.
-pub fn conditional_yields(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    tile: TileId,
-) -> crate::stats::Stats {
+pub fn conditional_yields(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> crate::stats::Stats {
     use crate::stats::Stats;
-    let Some(imp) = world.grid.improvement[tile.0 as usize].and_then(|i| r.improvements.get(i))
-    else {
+    let Some(imp) = world.grid.improvement[tile.0 as usize].and_then(|i| r.improvements.get(i)) else {
         return Stats::ZERO;
     };
     let ctx = GameContext::new(r).with_world(world).for_civ(civ).on_tile(tile);
@@ -191,9 +174,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -216,10 +197,7 @@ mod tests {
         let (farm, mine) = (r.improvements.id("Farm").unwrap(), r.improvements.id("Mine").unwrap());
         let flat = TileId(9);
 
-        assert!(matches!(
-            can_build(&w, &r, CivId(0), flat, farm),
-            Err(ImprovementRejection::NotUnlocked(_))
-        ));
+        assert!(matches!(can_build(&w, &r, CivId(0), flat, farm), Err(ImprovementRejection::NotUnlocked(_))));
         know(&mut w, &r, "Agriculture");
         assert_eq!(can_build(&w, &r, CivId(0), flat, farm), Ok(()));
 
@@ -246,16 +224,10 @@ mod tests {
             );
             assert!(w.grid.improvement[9].is_none(), "not finished yet");
         }
-        assert_eq!(
-            work_on(&mut w, &r, CivId(0), tile, farm),
-            Ok(WorkEvent::Finished { tile, improvement: farm })
-        );
+        assert_eq!(work_on(&mut w, &r, CivId(0), tile, farm), Ok(WorkEvent::Finished { tile, improvement: farm }));
         assert_eq!(w.grid.improvement[9], Some(farm));
         assert!(w.grid.improvement_progress[9].is_none(), "progress is cleared");
-        assert_eq!(
-            can_build(&w, &r, CivId(0), tile, farm),
-            Err(ImprovementRejection::AlreadyImproved)
-        );
+        assert_eq!(can_build(&w, &r, CivId(0), tile, farm), Err(ImprovementRejection::AlreadyImproved));
     }
 
     #[test]
@@ -280,11 +252,7 @@ mod tests {
 
         if let Some(other) = other {
             work_on(&mut w, &r, CivId(0), tile, other).unwrap();
-            assert_eq!(
-                w.grid.improvement_progress[9],
-                Some((other, 1)),
-                "a half-dug mine is not a half-built farm"
-            );
+            assert_eq!(w.grid.improvement_progress[9], Some((other, 1)), "a half-dug mine is not a half-built farm");
         } else {
             let _ = farm;
         }

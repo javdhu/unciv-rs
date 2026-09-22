@@ -37,11 +37,7 @@ fn terrain_yield(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Vec<Contribution
     let mut acc: Vec<Contribution> = Vec::new();
     for id in grid.terrains(tile) {
         let Some(t) = r.terrains.get(id) else { continue };
-        let kind = if id == grid.terrain[tile.0 as usize] {
-            SourceKind::Terrain
-        } else {
-            SourceKind::Feature
-        };
+        let kind = if id == grid.terrain[tile.0 as usize] { SourceKind::Terrain } else { SourceKind::Feature };
         let entry = (Source::new(kind, t.name.clone()), t.stats());
 
         if t.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::NullifyYields)) {
@@ -70,8 +66,8 @@ pub fn tile_yield_breakdown(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Vec<C
         // A resource's improvement bonus lands only once the matching
         // improvement is built — `improvementStats` in the json.
         if let Some(imp) = improvement {
-            let matches = res.improvement.as_deref() == Some(imp.name.as_str())
-                || res.improved_by.iter().any(|n| n == &imp.name);
+            let matches =
+                res.improvement.as_deref() == Some(imp.name.as_str()) || res.improved_by.iter().any(|n| n == &imp.name);
             if matches {
                 for (name, amount) in &res.improvement_stats {
                     if let Some(stat) = crate::stats::Stat::parse(name) {
@@ -133,9 +129,7 @@ mod tests {
     use crate::stats::{Fixed, Stat};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn one_tile(r: &Ruleset, terrain: &str) -> TileGrid {
@@ -187,12 +181,8 @@ mod tests {
     #[test]
     fn override_stats_replaces_everything_before_it() {
         let r = ruleset();
-        let overriding: Vec<&str> = r
-            .terrains
-            .values()
-            .filter(|t| t.override_stats == Some(true))
-            .map(|t| t.name.as_str())
-            .collect();
+        let overriding: Vec<&str> =
+            r.terrains.values().filter(|t| t.override_stats == Some(true)).map(|t| t.name.as_str()).collect();
         println!("overrideStats terrains: {overriding:?}");
         assert!(!overriding.is_empty(), "the shipped ruleset uses this rule");
 
@@ -216,9 +206,7 @@ mod tests {
         let (res_id, res) = r
             .resources
             .iter()
-            .find(|(_, res)| {
-                res.terrains_can_be_found_on.iter().any(|t| t == "Grassland") && !res.stats().is_zero()
-            })
+            .find(|(_, res)| res.terrains_can_be_found_on.iter().any(|t| t == "Grassland") && !res.stats().is_zero())
             .expect("some resource yields on Grassland");
         g.resource[0] = Some(res_id);
 

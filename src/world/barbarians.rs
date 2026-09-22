@@ -10,8 +10,8 @@
 //! settlers and workers.
 
 use crate::arena::Id;
-use crate::ruleset::{Ruleset, TileImprovement};
 use crate::rng::Rng;
+use crate::ruleset::{Ruleset, TileImprovement};
 use crate::world::entities::Unit;
 use crate::world::grid::{CivId, TileId};
 use crate::world::world::World;
@@ -23,22 +23,14 @@ pub const DEFAULT_SPAWN_DELAY: u32 = 8;
 pub fn camp_improvement(r: &Ruleset) -> Option<Id<TileImprovement>> {
     r.improvements
         .iter()
-        .find(|(_, i)| {
-            i.uniques
-                .iter()
-                .any(|u| u.text.contains("Marks a barbarian camp"))
-        })
+        .find(|(_, i)| i.uniques.iter().any(|u| u.text.contains("Marks a barbarian camp")))
         .map(|(id, _)| id)
 }
 
 /// Every camp on the map, in tile order.
 pub fn camps(world: &World, r: &Ruleset) -> Vec<TileId> {
     let Some(camp) = camp_improvement(r) else { return Vec::new() };
-    world
-        .grid
-        .ids()
-        .filter(|t| world.grid.improvement[t.0 as usize] == Some(camp))
-        .collect()
+    world.grid.ids().filter(|t| world.grid.improvement[t.0 as usize] == Some(camp)).collect()
 }
 
 /// Place a camp. Used by map setup and by tests.
@@ -63,9 +55,7 @@ pub fn spawnable_unit(r: &Ruleset) -> Option<Id<crate::ruleset::BaseUnit>> {
         u.strength.unwrap_or(0) > 0
             && u.cost.unwrap_or(0) > 0
             && u.required_tech.is_none()
-            && r.unit_types
-                .by_name(&u.unit_type)
-                .is_some_and(|t| t.movement_type == "Land")
+            && r.unit_types.by_name(&u.unit_type).is_some_and(|t| t.movement_type == "Land")
     };
 
     r.units
@@ -121,18 +111,13 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        let mut civs = vec![
-            Civilization::new(CivId(0), nation, true),
-            Civilization::new(CivId(1), nation, true),
-        ];
+        let mut civs = vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)];
         civs[1].is_barbarian = true;
         let mut w = World::new(g, civs);
         w.diplomacy.mark_hostile(CivId(1));

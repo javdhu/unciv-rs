@@ -6,11 +6,11 @@
 //! floats — the rules layer has to be bit-identical between native and wasm.
 #![allow(dead_code)]
 
+use super::Unstructured as Todo;
+use crate::arena::Id;
+use crate::json::Json;
 use crate::stats::Fixed;
 use crate::unique::Unique;
-use super::Unstructured as Todo;
-use crate::json::Json;
-use crate::arena::Id;
 
 /// From `Techs.json (nested under `techs`)` — 154 objects across both shipped rulesets.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -687,7 +687,10 @@ impl Technology {
             quote: j.get("quote").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
             row: j.get("row").and_then(|v| v.as_i32()).unwrap_or_default(),
             prerequisites: j.get("prerequisites").map(|v| v.strings()).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             cost: j.get("cost").and_then(|v| v.as_i32()),
             civilopedia_text: Default::default(),
             column: Default::default(), // set by ruleset/load.rs
@@ -720,7 +723,10 @@ impl Policy {
         let name = j.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         Some(Self {
             name,
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             column: j.get("column").and_then(|v| v.as_i32()),
             row: j.get("row").and_then(|v| v.as_i32()),
             requires: j.get("requires").map(|v| v.strings()).unwrap_or_default(),
@@ -739,7 +745,10 @@ impl PolicyBranch {
             name,
             era: j.get("era").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
             priorities: j.get("priorities").map(|v| v.counter()).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
         })
     }
 }
@@ -753,7 +762,10 @@ impl Building {
         Some(Self {
             name,
             required_tech: j.get("requiredTech").and_then(|v| v.as_str().map(String::from)),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             culture: j.get("culture").and_then(|v| v.as_i32()),
             hurry_cost_modifier: j.get("hurryCostModifier").and_then(|v| v.as_i32()),
             maintenance: j.get("maintenance").and_then(|v| v.as_i32()),
@@ -774,7 +786,10 @@ impl Building {
             faith: j.get("faith").and_then(|v| v.as_i32()),
             science: j.get("science").and_then(|v| v.as_i32()),
             city_health: j.get("cityHealth").and_then(|v| v.as_i32()),
-            required_nearby_improved_resources: j.get("requiredNearbyImprovedResources").map(|v| v.strings()).unwrap_or_default(),
+            required_nearby_improved_resources: j
+                .get("requiredNearbyImprovedResources")
+                .map(|v| v.strings())
+                .unwrap_or_default(),
             food: j.get("food").and_then(|v| v.as_i32()),
             required_resource: j.get("requiredResource").and_then(|v| v.as_str().map(String::from)),
             civilopedia_text: Default::default(),
@@ -796,7 +811,10 @@ impl BaseUnit {
             required_tech: j.get("requiredTech").and_then(|v| v.as_str().map(String::from)),
             strength: j.get("strength").and_then(|v| v.as_i32()),
             attack_sound: j.get("attackSound").and_then(|v| v.as_str().map(String::from)),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             upgrades_to: j.get("upgradesTo").and_then(|v| v.as_str().map(String::from)),
             obsolete_tech: j.get("obsoleteTech").and_then(|v| v.as_str().map(String::from)),
             unique_to: j.get("uniqueTo").and_then(|v| v.as_str().map(String::from)),
@@ -822,7 +840,10 @@ impl Terrain {
         Some(Self {
             name,
             r#type: j.get("type").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             occurs_on: j.get("occursOn").map(|v| v.strings()).unwrap_or_default(),
             unbuildable: j.get("unbuildable").and_then(|v| v.as_bool()),
             movement_cost: j.get("movementCost").and_then(|v| v.as_i32()),
@@ -861,7 +882,10 @@ impl Nation {
             declaring_war: j.get("declaringWar").and_then(|v| v.as_str().map(String::from)),
             defeated: j.get("defeated").and_then(|v| v.as_str().map(String::from)),
             city_state_type: j.get("cityStateType").and_then(|v| v.as_str().map(String::from)),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             start_bias: j.get("startBias").map(|v| v.strings()).unwrap_or_default(),
             introduction: j.get("introduction").and_then(|v| v.as_str().map(String::from)),
             leader_name: j.get("leaderName").and_then(|v| v.as_str().map(String::from)),
@@ -888,7 +912,10 @@ impl TileImprovement {
         let name = j.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         Some(Self {
             name,
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             turns_to_build: j.get("turnsToBuild").and_then(|v| v.as_i32()),
             shortcut_key: j.get("shortcutKey").and_then(|v| v.as_str().map(String::from)),
             terrains_can_be_built_on: j.get("terrainsCanBeBuiltOn").map(|v| v.strings()).unwrap_or_default(),
@@ -915,7 +942,10 @@ impl TileResource {
         Some(Self {
             name,
             resource_type: j.get("resourceType").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             terrains_can_be_found_on: j.get("terrainsCanBeFoundOn").map(|v| v.strings()).unwrap_or_default(),
             improvement: j.get("improvement").and_then(|v| v.as_str().map(String::from)),
             improvement_stats: j.get("improvementStats").map(|v| v.counter()).unwrap_or_default(),
@@ -942,7 +972,10 @@ impl Promotion {
         let name = j.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         Some(Self {
             name,
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             unit_types: j.get("unitTypes").map(|v| v.strings()).unwrap_or_default(),
             prerequisites: j.get("prerequisites").map(|v| v.strings()).unwrap_or_default(),
             column: j.get("column").and_then(|v| v.as_i32()),
@@ -962,7 +995,10 @@ impl Belief {
         Some(Self {
             name,
             r#type: j.get("type").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
         })
     }
 }
@@ -976,15 +1012,30 @@ impl Difficulty {
         Some(Self {
             name,
             ai_building_cost_modifier: j.get("aiBuildingCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            ai_building_maintenance_modifier: j.get("aiBuildingMaintenanceModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
+            ai_building_maintenance_modifier: j
+                .get("aiBuildingMaintenanceModifier")
+                .and_then(|v| v.as_fixed())
+                .unwrap_or_default(),
             ai_city_growth_modifier: j.get("aiCityGrowthModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            ai_city_state_bonus_starting_units: j.get("aiCityStateBonusStartingUnits").map(|v| v.strings()).unwrap_or_default(),
-            ai_difficulty_level: j.get("aiDifficultyLevel").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
+            ai_city_state_bonus_starting_units: j
+                .get("aiCityStateBonusStartingUnits")
+                .map(|v| v.strings())
+                .unwrap_or_default(),
+            ai_difficulty_level: j
+                .get("aiDifficultyLevel")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default(),
             ai_free_techs: j.get("aiFreeTechs").map(|v| v.strings()).unwrap_or_default(),
-            ai_major_civ_bonus_starting_units: j.get("aiMajorCivBonusStartingUnits").map(|v| v.strings()).unwrap_or_default(),
+            ai_major_civ_bonus_starting_units: j
+                .get("aiMajorCivBonusStartingUnits")
+                .map(|v| v.strings())
+                .unwrap_or_default(),
             ai_unhappiness_modifier: j.get("aiUnhappinessModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             ai_unit_cost_modifier: j.get("aiUnitCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            ai_unit_maintenance_modifier: j.get("aiUnitMaintenanceModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
+            ai_unit_maintenance_modifier: j
+                .get("aiUnitMaintenanceModifier")
+                .and_then(|v| v.as_fixed())
+                .unwrap_or_default(),
             ai_unit_supply_modifier: j.get("aiUnitSupplyModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             ai_wonder_cost_modifier: j.get("aiWonderCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             ais_exchange_techs: j.get("aisExchangeTechs").and_then(|v| v.as_bool()).unwrap_or_default(),
@@ -997,7 +1048,10 @@ impl Difficulty {
             player_bonus_starting_units: j.get("playerBonusStartingUnits").map(|v| v.strings()).unwrap_or_default(),
             policy_cost_modifier: j.get("policyCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             research_cost_modifier: j.get("researchCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            turn_barbarians_can_enter_player_tiles: j.get("turnBarbariansCanEnterPlayerTiles").and_then(|v| v.as_i32()).unwrap_or_default(),
+            turn_barbarians_can_enter_player_tiles: j
+                .get("turnBarbariansCanEnterPlayerTiles")
+                .and_then(|v| v.as_i32())
+                .unwrap_or_default(),
             unhappiness_modifier: j.get("unhappinessModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             unit_cost_modifier: j.get("unitCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             unit_supply_base: j.get("unitSupplyBase").and_then(|v| v.as_i32()).unwrap_or_default(),
@@ -1021,15 +1075,24 @@ impl Era {
             research_agreement_cost: j.get("researchAgreementCost").and_then(|v| v.as_i32()).unwrap_or_default(),
             settler_population: j.get("settlerPopulation").and_then(|v| v.as_i32()).unwrap_or_default(),
             start_percent: j.get("startPercent").and_then(|v| v.as_i32()).unwrap_or_default(),
-            starting_military_unit: j.get("startingMilitaryUnit").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            starting_military_unit_count: j.get("startingMilitaryUnitCount").and_then(|v| v.as_i32()).unwrap_or_default(),
+            starting_military_unit: j
+                .get("startingMilitaryUnit")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default(),
+            starting_military_unit_count: j
+                .get("startingMilitaryUnitCount")
+                .and_then(|v| v.as_i32())
+                .unwrap_or_default(),
             starting_settler_count: j.get("startingSettlerCount").and_then(|v| v.as_i32()).unwrap_or_default(),
             starting_worker_count: j.get("startingWorkerCount").and_then(|v| v.as_i32()).unwrap_or_default(),
             starting_culture: j.get("startingCulture").and_then(|v| v.as_i32()),
             starting_gold: j.get("startingGold").and_then(|v| v.as_i32()),
             settler_buildings: j.get("settlerBuildings").map(|v| v.strings()).unwrap_or_default(),
             starting_obsolete_wonders: j.get("startingObsoleteWonders").map(|v| v.strings()).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             era_number: Default::default(), // set by ruleset/load.rs
         })
     }
@@ -1044,18 +1107,27 @@ impl Speed {
         Some(Self {
             name,
             barbarian_modifier: j.get("barbarianModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            city_state_tribute_scaling_interval: j.get("cityStateTributeScalingInterval").and_then(|v| v.as_fixed()).unwrap_or_default(),
+            city_state_tribute_scaling_interval: j
+                .get("cityStateTributeScalingInterval")
+                .and_then(|v| v.as_fixed())
+                .unwrap_or_default(),
             culture_cost_modifier: j.get("cultureCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             deal_duration: j.get("dealDuration").and_then(|v| v.as_i32()).unwrap_or_default(),
             faith_cost_modifier: j.get("faithCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             gold_cost_modifier: j.get("goldCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             gold_gift_modifier: j.get("goldGiftModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             golden_age_length_modifier: j.get("goldenAgeLengthModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            improvement_build_length_modifier: j.get("improvementBuildLengthModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
+            improvement_build_length_modifier: j
+                .get("improvementBuildLengthModifier")
+                .and_then(|v| v.as_fixed())
+                .unwrap_or_default(),
             modifier: j.get("modifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             peace_deal_duration: j.get("peaceDealDuration").and_then(|v| v.as_i32()).unwrap_or_default(),
             production_cost_modifier: j.get("productionCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
-            religious_pressure_adjacent_city: j.get("religiousPressureAdjacentCity").and_then(|v| v.as_i32()).unwrap_or_default(),
+            religious_pressure_adjacent_city: j
+                .get("religiousPressureAdjacentCity")
+                .and_then(|v| v.as_i32())
+                .unwrap_or_default(),
             science_cost_modifier: j.get("scienceCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             start_year: j.get("startYear").and_then(|v| v.as_i32()).unwrap_or_default(),
             turns: Default::default(),
@@ -1156,7 +1228,10 @@ impl RuinReward {
         Some(Self {
             name,
             notification: j.get("notification").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             color: j.get("color").and_then(|v| v.as_str().map(String::from)),
             excluded_difficulties: j.get("excludedDifficulties").map(|v| v.strings()).unwrap_or_default(),
         })
@@ -1174,7 +1249,10 @@ impl CityStateType {
             ally_bonus_uniques: j.get("allyBonusUniques").map(|v| v.strings()).unwrap_or_default(),
             color: j.get("color").map(|v| v.ints()).unwrap_or_default(),
             friend_bonus_uniques: j.get("friendBonusUniques").map(|v| v.strings()).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
         })
     }
 }
@@ -1188,7 +1266,10 @@ impl UnitType {
         Some(Self {
             name,
             movement_type: j.get("movementType").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             civilopedia_text: Default::default(),
         })
     }
@@ -1204,9 +1285,11 @@ impl Event {
             name,
             civilopedia_text: Default::default(),
             presentation: j.get("presentation").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            uniques: j.get("uniques").map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect()).unwrap_or_default(),
+            uniques: j
+                .get("uniques")
+                .map(|v| v.strings().iter().map(|s| Unique::parse(s)).collect())
+                .unwrap_or_default(),
             choices: Default::default(),
         })
     }
 }
-

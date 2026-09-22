@@ -92,12 +92,7 @@ pub fn ally_of(world: &World, cs: CivId) -> Option<CivId> {
 
 /// Every city-state still standing, in id order.
 pub fn city_states(world: &World) -> Vec<CivId> {
-    world
-        .civs
-        .iter()
-        .filter(|c| c.is_city_state() && c.is_alive())
-        .map(|c| c.id)
-        .collect()
+    world.civs.iter().filter(|c| c.is_city_state() && c.is_alive()).map(|c| c.id).collect()
 }
 
 /// Where this relationship settles if left alone.
@@ -140,23 +135,17 @@ pub fn drift(world: &World, cs: CivId, major: CivId) -> Fixed {
                 }
             }
         }
-        let scaled = (step * (Fixed::whole(100) + percent))
-            .checked_div(Fixed::whole(100))
-            .unwrap_or(step)
-            .max(Fixed::ZERO);
+        let scaled =
+            (step * (Fixed::whole(100) + percent)).checked_div(Fixed::whole(100)).unwrap_or(step).max(Fixed::ZERO);
         -(scaled.min(influence - resting))
     } else {
         let mut percent = Fixed::ZERO;
-        if world
-            .civ(major)
-            .is_some_and(|c| c.uniques.has(crate::UniqueType::CityStateInfluenceRecoversTwiceNormalRate))
+        if world.civ(major).is_some_and(|c| c.uniques.has(crate::UniqueType::CityStateInfluenceRecoversTwiceNormalRate))
         {
             percent += Fixed::whole(100);
         }
-        let scaled = (step * (Fixed::whole(100) + percent))
-            .checked_div(Fixed::whole(100))
-            .unwrap_or(step)
-            .max(Fixed::ZERO);
+        let scaled =
+            (step * (Fixed::whole(100) + percent)).checked_div(Fixed::whole(100)).unwrap_or(step).max(Fixed::ZERO);
         scaled.min(resting - influence)
     }
 }
@@ -260,21 +249,15 @@ pub fn influence_from_gift(
 
     // Gifts are worth less as the game goes on: a third as much by the end.
     let progress = if game_length > 0 {
-        Fixed::whole(world.turn as i32)
-            .checked_div(Fixed::whole(game_length))
-            .unwrap_or(Fixed::ONE)
-            .min(Fixed::ONE)
+        Fixed::whole(world.turn as i32).checked_div(Fixed::whole(game_length)).unwrap_or(Fixed::ONE).min(Fixed::ONE)
     } else {
         Fixed::ONE
     };
     let decay = Fixed::ONE - (Fixed::permille(667) * progress);
 
-    let mut gained = ((Precise::from_fixed(base) * Precise::from_fixed(decay)) * Precise::from_fixed(if gold_gift_modifier.is_zero() {
-            Fixed::ONE
-        } else {
-            gold_gift_modifier
-        }))
-        .to_fixed();
+    let mut gained = ((Precise::from_fixed(base) * Precise::from_fixed(decay))
+        * Precise::from_fixed(if gold_gift_modifier.is_zero() { Fixed::ONE } else { gold_gift_modifier }))
+    .to_fixed();
 
     if let Some(c) = world.civ(donor) {
         for u in c.uniques.matching(crate::UniqueType::CityStateGoldGiftsProvideMoreInfluence) {
@@ -360,10 +343,7 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
     let mut total = Stats::ZERO;
 
     let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ);
-    let holds = |u: &Unique| {
-        crate::world::conditionals::applies(u, &ctx)
-            == crate::world::conditionals::Verdict::True
-    };
+    let holds = |u: &Unique| crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True;
 
     for u in c.uniques.matching(crate::UniqueType::Stats).filter(|u| holds(u)) {
         if let Some(s) = u.params.first().and_then(|p| Stats::parse(p)) {
@@ -373,9 +353,7 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
 
     let capital = crate::world::connections::capital_of(world, r, civ);
     for u in c.uniques.matching(crate::UniqueType::StatsPerCity).filter(|u| holds(u)) {
-        let (Some(stats), Some(filter)) =
-            (u.params.first().and_then(|p| Stats::parse(p)), u.params.get(1))
-        else {
+        let (Some(stats), Some(filter)) = (u.params.first().and_then(|p| Stats::parse(p)), u.params.get(1)) else {
             continue;
         };
         for city_id in &c.cities {
@@ -461,8 +439,7 @@ pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
             }
             let Some(spy) = world.civ(major).and_then(|c| {
                 c.espionage.spies.iter().find(|s| {
-                    s.station == Some(capital)
-                        && s.action == crate::world::espionage::SpyAction::RiggingElections
+                    s.station == Some(capital) && s.action == crate::world::espionage::SpyAction::RiggingElections
                 })
             }) else {
                 continue;
@@ -500,8 +477,7 @@ pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
                     if !world.diplomacy.have_met(cs, major) {
                         continue;
                     }
-                    let delta =
-                        if major == w { ELECTION_WIN_INFLUENCE } else { ELECTION_LOSS_INFLUENCE };
+                    let delta = if major == w { ELECTION_WIN_INFLUENCE } else { ELECTION_LOSS_INFLUENCE };
                     world.diplomacy.add_influence(cs, major, delta);
                 }
                 results.push(ElectionResult::Rigged { city_state: cs, winner: w });
@@ -526,8 +502,7 @@ pub fn coup_chance(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> i32
     let ally = ally_of(world, cs);
     // With no ally there is no incumbent to beat, so the bar is the ally
     // threshold itself.
-    let ally_influence =
-        ally.map_or(ALLY_THRESHOLD, |a| world.diplomacy.influence(cs, a));
+    let ally_influence = ally.map_or(ALLY_THRESHOLD, |a| world.diplomacy.influence(cs, a));
     let gap = (ally_influence - world.diplomacy.influence(cs, plotter)).floor() as i32;
 
     let Some(capital) = crate::world::connections::capital_of(world, r, cs)
@@ -563,12 +538,9 @@ pub fn can_coup(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> bool {
     else {
         return false;
     };
-    world.civ(plotter).is_some_and(|c| {
-        c.espionage
-            .spies
-            .iter()
-            .any(|s| s.station == Some(capital) && s.is_established())
-    })
+    world
+        .civ(plotter)
+        .is_some_and(|c| c.espionage.spies.iter().any(|s| s.station == Some(capital) && s.is_established()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -602,9 +574,7 @@ pub fn attempt_coup(world: &mut World, r: &Ruleset, plotter: CivId, cs: CivId) -
 
     if roll < chance {
         // The plotter inherits exactly what the incumbent had.
-        let inherited = ally
-            .map(|a| world.diplomacy.influence(cs, a))
-            .unwrap_or(COUP_UNOPPOSED_INFLUENCE);
+        let inherited = ally.map(|a| world.diplomacy.influence(cs, a)).unwrap_or(COUP_UNOPPOSED_INFLUENCE);
         world.diplomacy.set_influence(cs, plotter, inherited);
         if let Some(a) = ally {
             world.diplomacy.add_influence(cs, a, COUP_ALLY_PENALTY);
@@ -658,9 +628,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     /// Two major civs and one city-state.
@@ -672,18 +640,16 @@ mod tests {
             Civilization::new(CivId(1), nation, true),
             Civilization::new(CivId(2), nation, true),
         ];
-        civs[2].city_state_type =
-            Some(type_named(r, "Cultured").or_else(|| r.city_state_types.ids().next())
-                .expect("the ruleset has city-state types"));
+        civs[2].city_state_type = Some(
+            type_named(r, "Cultured")
+                .or_else(|| r.city_state_types.ids().next())
+                .expect("the ruleset has city-state types"),
+        );
         let mut w = World::new(g, civs);
         // A city-state is its one city; without it the civ counts as dead.
         for (i, (col, row)) in [(2u16, 2u16), (8, 2), (5, 8)].into_iter().enumerate() {
             let t = w.grid.id_at(col, row).unwrap();
-            w.found_city(crate::world::city::City::found(
-                format!("City{i}"),
-                CivId(i as u8),
-                t,
-            ));
+            w.found_city(crate::world::city::City::found(format!("City{i}"), CivId(i as u8), t));
         }
         w.diplomacy.meet(CivId(0), CivId(2));
         w.diplomacy.meet(CivId(1), CivId(2));
@@ -863,11 +829,7 @@ mod tests {
 
         let gained = gift_gold(&mut w, CivId(0), CS, 500, 500, Fixed::ONE).expect("a legal gift");
         assert!(gained >= Fixed::whole(5), "never less than five");
-        assert_eq!(
-            gained.raw() % 5000,
-            0,
-            "{gained:?} should be a multiple of five, as the button says"
-        );
+        assert_eq!(gained.raw() % 5000, 0, "{gained:?} should be a multiple of five, as the button says");
         assert_eq!(w.civ(CivId(0)).unwrap().gold, 500, "the gold left our treasury");
         assert_eq!(w.civ(CS).unwrap().gold, 500, "and arrived in theirs");
         assert_eq!(w.diplomacy.influence(CS, CivId(0)), gained);
@@ -1022,12 +984,7 @@ mod tests {
                 wins[winner.0 as usize] += 1;
             }
         }
-        assert!(
-            wins[1] > wins[0],
-            "the incumbent with a hundred influence lost {}-{} to a newcomer",
-            wins[1],
-            wins[0]
-        );
+        assert!(wins[1] > wins[0], "the incumbent with a hundred influence lost {}-{} to a newcomer", wins[1], wins[0]);
     }
 
     #[test]
@@ -1086,8 +1043,7 @@ mod tests {
         // And never worse than hopeless.
         w.civ_mut(CivId(0)).unwrap().espionage.spies[0].rank = 1;
         w.diplomacy.set_influence(CS, CivId(1), Fixed::whole(500));
-        w.diplomacy
-            .set_influence(CS, CivId(0), crate::world::diplomacy::MINIMUM_INFLUENCE);
+        w.diplomacy.set_influence(CS, CivId(0), crate::world::diplomacy::MINIMUM_INFLUENCE);
         assert_eq!(coup_chance(&w, &r, CivId(0), CS), 0);
     }
 

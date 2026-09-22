@@ -44,12 +44,7 @@ pub type Contribution = (Source, i32);
 /// Itemised rather than summed because "why is my empire unhappy" is the
 /// question players actually ask, and answering it after the fact means
 /// recomputing.
-pub fn breakdown(
-    world: &World,
-    r: &Ruleset,
-    civ_id: CivId,
-    difficulty: Option<&Difficulty>,
-) -> Vec<Contribution> {
+pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&Difficulty>) -> Vec<Contribution> {
     let Some(civ) = world.civ(civ_id) else { return Vec::new() };
     let mut out = Vec::new();
 
@@ -75,23 +70,12 @@ pub fn breakdown(
 
     let cities = civ.cities.len() as i32;
     if cities > 0 {
-        out.push((
-            Source::new(SourceKind::Other, "Cities"),
-            scale(cities * UNHAPPINESS_PER_CITY),
-        ));
+        out.push((Source::new(SourceKind::Other, "Cities"), scale(cities * UNHAPPINESS_PER_CITY)));
     }
 
-    let citizens: i32 = civ
-        .cities
-        .iter()
-        .filter_map(|id| world.cities.get(*id))
-        .map(|c| c.population as i32)
-        .sum();
+    let citizens: i32 = civ.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.population as i32).sum();
     if citizens > 0 {
-        out.push((
-            Source::new(SourceKind::Other, "Population"),
-            scale(citizens * UNHAPPINESS_PER_CITIZEN),
-        ));
+        out.push((Source::new(SourceKind::Other, "Population"), scale(citizens * UNHAPPINESS_PER_CITIZEN)));
     }
 
     out
@@ -112,9 +96,7 @@ mod tests {
     use crate::Unique;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -156,13 +138,8 @@ mod tests {
     fn variety_of_luxuries_is_what_counts_not_quantity() {
         let r = ruleset();
         let mut w = world(&r);
-        let luxuries: Vec<_> = r
-            .resources
-            .iter()
-            .filter(|(_, x)| x.resource_type == "Luxury")
-            .map(|(id, _)| id)
-            .take(2)
-            .collect();
+        let luxuries: Vec<_> =
+            r.resources.iter().filter(|(_, x)| x.resource_type == "Luxury").map(|(id, _)| id).take(2).collect();
         assert_eq!(luxuries.len(), 2, "the ruleset has luxuries");
 
         let base = happiness(&w, &r, CivId(0), prince(&r));

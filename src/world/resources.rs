@@ -53,9 +53,7 @@ pub fn required_resources(r: &Ruleset, unit: Id<BaseUnit>) -> Vec<Id<TileResourc
 
 /// Whether this civ is short of anything this unit needs.
 pub fn is_missing_resources(r: &Ruleset, civ: &Civilization, unit: Id<BaseUnit>) -> bool {
-    required_resources(r, unit)
-        .into_iter()
-        .any(|res| civ.resources.get(&res).copied().unwrap_or(0) < 0)
+    required_resources(r, unit).into_iter().any(|res| civ.resources.get(&res).copied().unwrap_or(0) < 0)
 }
 
 /// Improvements that extract a resource — the named one plus anything in
@@ -100,10 +98,7 @@ pub fn provides_resource(
     let buildable_with_known_tech = |name: &str| {
         r.improvements.by_name(name).is_some_and(|imp| {
             imp.turns_to_build.is_some_and(|t| t != -1)
-                && imp
-                    .tech_required
-                    .as_deref()
-                    .is_none_or(|t| r.technologies.id(t).is_some_and(|id| civ.has_tech(id)))
+                && imp.tech_required.as_deref().is_none_or(|t| r.technologies.id(t).is_some_and(|id| civ.has_tech(id)))
         })
     };
 
@@ -116,10 +111,7 @@ pub fn provides_resource(
     let Some(built) = world.grid.improvement[tile.0 as usize] else { return false };
     let Some(built) = r.improvements.get(built) else { return false };
     improvements.contains(&built.name)
-        && built
-            .tech_required
-            .as_deref()
-            .is_none_or(|t| r.technologies.id(t).is_some_and(|id| civ.has_tech(id)))
+        && built.tech_required.as_deref().is_none_or(|t| r.technologies.id(t).is_some_and(|id| civ.has_tech(id)))
 }
 
 /// Recompute a civ's net stock: what its territory yields, less what its
@@ -132,7 +124,11 @@ pub fn provides_resource(
 /// A tile only counts once [`provides_resource`] is satisfied, and a strategic
 /// resource supplies its whole deposit rather than one unit — which is why a
 /// single Iron tile can support several Swordsmen.
-pub fn recompute_stock(world: &crate::world::world::World, r: &Ruleset, civ_id: crate::world::grid::CivId) -> ResourceStock {
+pub fn recompute_stock(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    civ_id: crate::world::grid::CivId,
+) -> ResourceStock {
     let mut stock = ResourceStock::new();
     let Some(civ) = world.civ(civ_id) else { return stock };
 
@@ -166,9 +162,7 @@ mod tests {
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn civ(r: &Ruleset) -> Civilization {
@@ -234,11 +228,7 @@ mod tests {
         w.grid.resource[5] = Some(iron);
         w.grid.resource_amount[5] = 2;
         w.grid.owner[5] = Some(CivId(0));
-        assert_eq!(
-            recompute_stock(&w, &r, CivId(0)).get(&iron),
-            Some(&-1),
-            "an unworked deposit is not a supply"
-        );
+        assert_eq!(recompute_stock(&w, &r, CivId(0)).get(&iron), Some(&-1), "an unworked deposit is not a supply");
 
         // Research what reveals it and build what extracts it, and the deposit
         // arrives whole — strategic resources give their amount, not one, which

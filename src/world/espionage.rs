@@ -27,8 +27,8 @@
 //! named rather than half-filled.
 
 use crate::arena::Id;
-use crate::ruleset::{Ruleset, Technology};
 use crate::rng::Rng;
+use crate::ruleset::{Ruleset, Technology};
 use crate::stats::Fixed;
 use crate::world::city::City;
 use crate::world::grid::CivId;
@@ -91,10 +91,7 @@ impl Spy {
 
     /// Is the spy in place and working, rather than travelling or settling in?
     pub fn is_established(&self) -> bool {
-        matches!(
-            self.action,
-            SpyAction::StealingTech | SpyAction::CounterIntelligence | SpyAction::RiggingElections
-        )
+        matches!(self.action, SpyAction::StealingTech | SpyAction::CounterIntelligence | SpyAction::RiggingElections)
     }
 }
 
@@ -130,18 +127,12 @@ impl Espionage {
     }
 
     pub fn idle(&self) -> impl Iterator<Item = usize> + '_ {
-        self.spies
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.station.is_none())
-            .map(|(i, _)| i)
+        self.spies.iter().enumerate().filter(|(_, s)| s.station.is_none()).map(|(i, _)| i)
     }
 
     /// Whoever we have watching this city, if anyone.
     pub fn defender_of(&self, city: Id<City>) -> Option<&Spy> {
-        self.spies
-            .iter()
-            .find(|s| s.station == Some(city) && s.action == SpyAction::CounterIntelligence)
+        self.spies.iter().find(|s| s.station == Some(city) && s.action == SpyAction::CounterIntelligence)
     }
 }
 
@@ -185,33 +176,36 @@ pub fn stealable(world: &World, thief: CivId, target: CivId) -> Vec<Id<Technolog
 }
 
 /// What stealing the dearest available tech costs in banked science.
-pub fn steal_cost(
-    r: &Ruleset,
-    techs: &[Id<Technology>],
-    science_cost_modifier: Fixed,
-) -> i32 {
-    let dearest = techs
-        .iter()
-        .filter_map(|t| r.technologies.get(*t))
-        .filter_map(|t| t.cost)
-        .max()
-        .unwrap_or(0);
+pub fn steal_cost(r: &Ruleset, techs: &[Id<Technology>], science_cost_modifier: Fixed) -> i32 {
+    let dearest = techs.iter().filter_map(|t| r.technologies.get(*t)).filter_map(|t| t.cost).max().unwrap_or(0);
     let modifier = if science_cost_modifier.is_zero() { Fixed::ONE } else { science_cost_modifier };
-    ((Fixed::whole(dearest) * STEAL_COST_MODIFIER) * modifier)
-        .floor()
-        .max(1) as i32
+    ((Fixed::whole(dearest) * STEAL_COST_MODIFIER) * modifier).floor().max(1) as i32
 }
 
 /// What happened to a spy this turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpyEvent {
-    Established { civ: CivId, city: Id<City> },
+    Established {
+        civ: CivId,
+        city: Id<City>,
+    },
     /// A technology changed hands. `identified` is whether the victim learned
     /// who took it — which is what turns a theft into a grievance.
-    TechStolen { thief: CivId, victim: CivId, tech: Id<Technology>, identified: bool },
-    Caught { civ: CivId, city: Id<City> },
+    TechStolen {
+        thief: CivId,
+        victim: CivId,
+        tech: Id<Technology>,
+        identified: bool,
+    },
+    Caught {
+        civ: CivId,
+        city: Id<City>,
+    },
     /// Nothing left worth taking here.
-    NothingToSteal { civ: CivId, city: Id<City> },
+    NothingToSteal {
+        civ: CivId,
+        city: Id<City>,
+    },
 }
 
 /// One turn for every spy on the map.
@@ -248,18 +242,10 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     let next = if remaining > 0 {
                         Spy { turns_remaining: remaining, ..spy.clone() }
                     } else if spy.action == SpyAction::Moving {
-                        Spy {
-                            action: SpyAction::EstablishingNetwork,
-                            turns_remaining: NETWORK_TURNS,
-                            ..spy.clone()
-                        }
+                        Spy { action: SpyAction::EstablishingNetwork, turns_remaining: NETWORK_TURNS, ..spy.clone() }
                     } else {
                         events.push(SpyEvent::Established { civ, city: city_id });
-                        Spy {
-                            action: settled_action(world, civ, city_id),
-                            turns_remaining: 0,
-                            ..spy.clone()
-                        }
+                        Spy { action: settled_action(world, civ, city_id), turns_remaining: 0, ..spy.clone() }
                     };
                     if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                         *s = next;
@@ -272,9 +258,7 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // by someone — there is nothing left to rig.
                     if !world.civ(victim).is_some_and(|c| c.is_city_state()) {
                         let next = settled_action(world, civ, city_id);
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             s.action = next;
                             s.progress = 0;
                         }
@@ -284,9 +268,7 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // A city we were watching that is no longer ours is a
                     // city to rob, not to guard.
                     if victim != civ {
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             s.action = SpyAction::StealingTech;
                             s.progress = 0;
                         }
@@ -303,9 +285,7 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // turns.
                     if victim == civ || world.civ(victim).is_some_and(|c| c.is_city_state()) {
                         let next = settled_action(world, civ, city_id);
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             s.action = next;
                             s.progress = 0;
                         }
@@ -317,9 +297,7 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                         // posted somewhere that is — rather than standing in
                         // an empty room until the game ends.
                         events.push(SpyEvent::NothingToSteal { civ, city: city_id });
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             *s = Spy { rank: s.rank, ..Spy::new() };
                         }
                         continue;
@@ -327,17 +305,12 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
                     // Progress is the city's own science, turned against it.
                     let science = crate::world::city::city_yield(&world.grid, r, city).science;
                     let rate = Fixed::whole(spy.rank as i32 * RANK_STEAL_PERCENT + 75);
-                    let gained = (science * rate)
-                        .checked_div(Fixed::whole(100))
-                        .unwrap_or(Fixed::ZERO)
-                        .floor()
-                        .max(0) as i32;
+                    let gained =
+                        (science * rate).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO).floor().max(0) as i32;
                     let progress = spy.progress + gained;
                     let cost = steal_cost(r, &techs, science_cost_modifier);
                     if progress < cost {
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             s.progress = progress;
                         }
                         continue;
@@ -345,16 +318,9 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
 
                     // Seeded from the game's own state, so a replay catches the
                     // same spy on the same turn.
-                    let mut rng = Rng::from_parts(&[
-                        turn as u64,
-                        civ.0 as u64,
-                        city_id.index() as u64,
-                        i as u64,
-                    ]);
-                    let defence = world
-                        .civ(victim)
-                        .and_then(|c| c.espionage.defender_of(city_id))
-                        .map_or(0, |d| d.skill());
+                    let mut rng = Rng::from_parts(&[turn as u64, civ.0 as u64, city_id.index() as u64, i as u64]);
+                    let defence =
+                        world.civ(victim).and_then(|c| c.espionage.defender_of(city_id)).map_or(0, |d| d.skill());
                     let roll = rng.range(0, 299) as i32 - spy.skill() + defence;
 
                     // Ties broken by id so the same techs are taken in the
@@ -363,19 +329,16 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
 
                     if roll >= CAUGHT_THRESHOLD {
                         events.push(SpyEvent::Caught { civ, city: city_id });
-                        if let Some(s) =
-                            world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i))
-                        {
+                        if let Some(s) = world.civ_mut(civ).and_then(|c| c.espionage.spies.get_mut(i)) {
                             *s = Spy::new(); // back to rank one, in the hideout
                         }
                         // The catcher learns from it.
-                        if let Some(d) = world
-                            .civ_mut(victim)
-                            .and_then(|c| c.espionage.spies.iter_mut().find(|s| {
-                                s.station == Some(city_id)
-                                    && s.action == SpyAction::CounterIntelligence
-                            }))
-                        {
+                        if let Some(d) = world.civ_mut(victim).and_then(|c| {
+                            c.espionage
+                                .spies
+                                .iter_mut()
+                                .find(|s| s.station == Some(city_id) && s.action == SpyAction::CounterIntelligence)
+                        }) {
                             d.rank = d.rank.saturating_add(1).min(3);
                         }
                         continue;
@@ -436,12 +399,7 @@ pub fn postings(world: &World, r: &Ruleset, civ: CivId) -> Vec<(usize, Id<City>)
     targets.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.index().cmp(&b.1.index())));
 
     let mut out = Vec::new();
-    let mut taken: std::collections::BTreeSet<Id<City>> = c
-        .espionage
-        .spies
-        .iter()
-        .filter_map(|s| s.station)
-        .collect();
+    let mut taken: std::collections::BTreeSet<Id<City>> = c.espionage.spies.iter().filter_map(|s| s.station).collect();
 
     let mut idle = idle.into_iter();
     // The second spy onward guards home, once there is something to guard.
@@ -471,21 +429,14 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> (World, Id<City>, Id<City>) {
         let g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        let mut w = World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        );
+        let mut w =
+            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
         let ours = w.found_city(City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
         let theirs = w.found_city(City::found("Babylon", CivId(1), w.grid.id_at(12, 12).unwrap()));
         w.cities.get_mut(theirs).unwrap().population = 12;
@@ -543,10 +494,7 @@ mod tests {
         for _ in 0..(TRAVEL_TURNS + NETWORK_TURNS + 1) {
             tick(&mut w, &r, Fixed::ONE);
         }
-        assert_eq!(
-            w.civ(CivId(0)).unwrap().espionage.spies[0].action,
-            SpyAction::CounterIntelligence
-        );
+        assert_eq!(w.civ(CivId(0)).unwrap().espionage.spies[0].action, SpyAction::CounterIntelligence);
         assert!(w.civ(CivId(0)).unwrap().espionage.defender_of(ours).is_some());
     }
 
@@ -599,10 +547,7 @@ mod tests {
         assign(&mut w, CivId(0), 0, theirs);
         for _ in 0..20 {
             for e in tick(&mut w, &r, Fixed::ONE) {
-                assert!(
-                    !matches!(e, SpyEvent::TechStolen { .. }),
-                    "there was nothing there to take"
-                );
+                assert!(!matches!(e, SpyEvent::TechStolen { .. }), "there was nothing there to take");
             }
         }
     }
@@ -675,10 +620,7 @@ mod tests {
         let roll = 250;
         assert!(roll - raw.skill() >= CAUGHT_THRESHOLD, "the raw spy is caught");
         assert!(roll - veteran.skill() < CAUGHT_THRESHOLD, "the veteran is not");
-        assert!(
-            roll - veteran.skill() >= IDENTIFIED_THRESHOLD,
-            "though it is seen, which is the price of the attempt"
-        );
+        assert!(roll - veteran.skill() >= IDENTIFIED_THRESHOLD, "though it is seen, which is the price of the attempt");
     }
 
     #[test]
@@ -694,10 +636,7 @@ mod tests {
 
         let d = w.civ(CivId(1)).unwrap().espionage.defender_of(theirs).expect("on watch");
         assert_eq!(d.skill(), 3 * RANK_SKILL_PERCENT);
-        assert!(
-            d.skill() > Spy::new().skill(),
-            "a veteran on watch should hurt more than a raw one"
-        );
+        assert!(d.skill() > Spy::new().skill(), "a veteran on watch should hurt more than a raw one");
     }
 
     /// Cities change hands, and a spy has to notice.
@@ -721,10 +660,7 @@ mod tests {
         // We take the city. The spy is now at home and should be guarding it.
         w.cities.get_mut(theirs).unwrap().owner = CivId(0);
         tick(&mut w, &r, Fixed::ONE);
-        assert_eq!(
-            w.civ(CivId(0)).unwrap().espionage.spies[0].action,
-            SpyAction::CounterIntelligence
-        );
+        assert_eq!(w.civ(CivId(0)).unwrap().espionage.spies[0].action, SpyAction::CounterIntelligence);
 
         // And the reverse: a city we were guarding that we then lost.
         let mut guard = Spy::new();

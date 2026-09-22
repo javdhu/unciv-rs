@@ -30,12 +30,7 @@ use crate::world::world::World;
 /// Cheapest first. A crude opinion, but a defensible one: early techs unlock
 /// the things later techs build on, so rushing an expensive one usually costs
 /// more than it returns. Ties break on id.
-pub fn choose_research(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    m: ScienceModifiers,
-) -> Option<Id<Technology>> {
+pub fn choose_research(world: &World, r: &Ruleset, civ: CivId, m: ScienceModifiers) -> Option<Id<Technology>> {
     let cities = world.civ(civ).map_or(0, |c| c.cities.len());
     available_techs(r, world.civ(civ)?)
         .into_iter()
@@ -77,10 +72,7 @@ pub fn choose_construction(
     let wins_the_game = victory_buildings(r);
     // What this city makes in a turn, for deciding whether a victory building
     // is a plan or a daydream.
-    let production = crate::world::city::city_yield(&world.grid, r, city)
-        .production
-        .floor()
-        .max(0) as i32;
+    let production = crate::world::city::city_yield(&world.grid, r, city).production.floor().max(0) as i32;
 
     available(r, civ_ref, city)
         .into_iter()
@@ -105,9 +97,17 @@ pub fn choose_construction(
                     if crate::world::settling::is_settler(r, id) {
                         // Land compounds and a granary does not — but only
                         // while there is somewhere to put it.
-                        if want_settler { Fixed::whole(400) } else { Fixed::whole(20) }
+                        if want_settler {
+                            Fixed::whole(400)
+                        } else {
+                            Fixed::whole(20)
+                        }
                     } else if is_worker(r, id) {
-                        if want_worker { Fixed::whole(200) } else { Fixed::whole(20) }
+                        if want_worker {
+                            Fixed::whole(200)
+                        } else {
+                            Fixed::whole(20)
+                        }
                     } else if want_scout {
                         // Something — anything — that can walk and look. The
                         // point is eyes, not strength, so a warrior counts:
@@ -126,7 +126,11 @@ pub fn choose_construction(
                         // Scoring a surplus soldier at its full strength
                         // instead produced a hundred and thirty-seven units
                         // and eighteen thousand gold of debt.
-                        if want_military { Fixed::whole(strength * 3) } else { Fixed::ONE }
+                        if want_military {
+                            Fixed::whole(strength * 3)
+                        } else {
+                            Fixed::ONE
+                        }
                     } else {
                         // Something with a job rather than a fight: a work
                         // boat, a spaceship part, a missionary. Low enough to
@@ -138,8 +142,7 @@ pub fn choose_construction(
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
                     let stats = crate::ruleset::queries::HasStats::stats(b);
-                    let mut flat: Fixed =
-                        Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
                     // A percentage is worth something even with nothing to
                     // multiply yet, or nothing would ever build a Library.
                     let pct: i32 = b.percent_stat_bonus.values().sum();
@@ -161,8 +164,7 @@ pub fn choose_construction(
                     // every building in the ruleset net-negative for a civ in
                     // debt, which is the old deadlock wearing a new hat.
                     let pressure = if net_gold < 0 { Fixed::whole(2) } else { Fixed::ONE };
-                    let upkeep =
-                        (Fixed::whole(b.maintenance.unwrap_or(0)) * weights.gold) * pressure;
+                    let upkeep = (Fixed::whole(b.maintenance.unwrap_or(0)) * weights.gold) * pressure;
                     flat -= upkeep;
 
                     // A building that wins the game is worth building even
@@ -286,19 +288,11 @@ pub fn settler_order(
 /// worker with nothing to do is 70 production spent on standing still.
 pub fn wants_worker(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
-    let workers = c
-        .units
-        .iter()
-        .filter_map(|u| world.units.get(*u))
-        .filter(|u| is_worker(r, u.base))
-        .count();
+    let workers = c.units.iter().filter_map(|u| world.units.get(*u)).filter(|u| is_worker(r, u.base)).count();
     if workers >= c.cities.len() {
         return false;
     }
-    c.cities
-        .iter()
-        .filter_map(|id| world.cities.get(*id))
-        .any(|city| !improvable_tiles(world, r, civ, city).is_empty())
+    c.cities.iter().filter_map(|id| world.cities.get(*id)).any(|city| !improvable_tiles(world, r, civ, city).is_empty())
 }
 
 /// Does this unit build improvements?
@@ -306,11 +300,9 @@ pub fn wants_worker(world: &World, r: &Ruleset, civ: CivId) -> bool {
 /// By the unique, not the name — the same reasoning as settlers and the
 /// palace.
 pub fn is_worker(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
-    r.units.get(base).is_some_and(|u| {
-        u.uniques
-            .iter()
-            .any(|x| x.unique_type() == Some(crate::UniqueType::BuildImprovements))
-    })
+    r.units
+        .get(base)
+        .is_some_and(|u| u.uniques.iter().any(|x| x.unique_type() == Some(crate::UniqueType::BuildImprovements)))
 }
 
 /// Worked tiles that could be improved and are not, best first.
@@ -337,12 +329,7 @@ const VICTORY_BUILD_HORIZON: i32 = 30;
 /// inverts the whole thing: the last milestone of a victory is unbuilt by
 /// definition, so a civ one building from winning scores lowest of all. The
 /// question is not "how close am I", it is "how close would this put me".
-fn victory_urgency(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    building: Id<crate::ruleset::Building>,
-) -> Fixed {
+fn victory_urgency(world: &World, r: &Ruleset, civ: CivId, building: Id<crate::ruleset::Building>) -> Fixed {
     let mut best = Fixed::ZERO;
     for id in crate::world::victory::victories_needing(r, building) {
         let Some(v) = r.victories.get(id) else { continue };
@@ -352,9 +339,7 @@ fn victory_urgency(
         }
         // 50 at no progress, 1050 for the one that finishes it.
         let after = (met + 1).min(judgeable);
-        let share = Fixed::whole(after as i32)
-            .checked_div(Fixed::whole(judgeable as i32))
-            .unwrap_or(Fixed::ZERO);
+        let share = Fixed::whole(after as i32).checked_div(Fixed::whole(judgeable as i32)).unwrap_or(Fixed::ZERO);
         let value = Fixed::whole(50) + (share * Fixed::whole(1000));
         best = best.max(value);
     }
@@ -441,8 +426,7 @@ pub fn improvable_tiles(
                 .into_iter()
                 .map(|i| {
                     let stats = crate::ruleset::queries::HasStats::stats(&r.improvements[i]);
-                    let mut worth: Fixed =
-                        Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    let mut worth: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
                     worth += resource_worth(world, r, civ_ref, *t, i);
                     (worth, i)
                 })
@@ -514,9 +498,7 @@ pub fn worker_order(
         .filter(|t| world.grid.improvement_progress[t.0 as usize].is_some())
         .filter(|t| {
             world.grid.improvement_progress[t.0 as usize]
-                .is_some_and(|(what, _)| {
-                    crate::world::improvements::can_build(world, r, civ, *t, what).is_ok()
-                })
+                .is_some_and(|(what, _)| crate::world::improvements::can_build(world, r, civ, *t, what).is_ok())
         })
         .min_by_key(|t| (world.grid.distance(u.position, *t), t.0));
 
@@ -525,8 +507,7 @@ pub fn worker_order(
         Some(t) => t,
         None => jobs.iter().min_by_key(|(t, _)| (world.grid.distance(u.position, *t), t.0))?.0,
     };
-    let reachable =
-        crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
     let step = reachable
         .keys()
         .copied()
@@ -556,8 +537,7 @@ pub fn explore_order(
         return None;
     }
 
-    let reachable =
-        crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
 
     // Step toward whichever reachable tile reveals the most that is unseen.
     // Ties break on tile id, so two machines wander identically.
@@ -566,12 +546,8 @@ pub fn explore_order(
         .copied()
         .filter(|t| *t != u.position)
         .map(|t| {
-            let unseen = world
-                .grid
-                .within(t, 2)
-                .into_iter()
-                .filter(|n| !world.visibility.has_explored(civ, *n))
-                .count();
+            let unseen =
+                world.grid.within(t, 2).into_iter().filter(|n| !world.visibility.has_explored(civ, *n)).count();
             (t, unseen)
         })
         .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))?;
@@ -676,13 +652,7 @@ pub fn city_state_gift(
     // that falls short is worse than none — it decays away.
     let mut gold = 50;
     while gold < spare {
-        let gained = crate::world::city_states::influence_from_gift(
-            world,
-            gold,
-            game_length,
-            gold_gift_modifier,
-            civ,
-        );
+        let gained = crate::world::city_states::influence_from_gift(world, gold, game_length, gold_gift_modifier, civ);
         if gained >= gap {
             return Some((cs, gold));
         }
@@ -764,12 +734,7 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
         return false;
     }
     // Something of theirs must be within reach, or the war is a gesture.
-    let their_cities: Vec<_> = world
-        .cities
-        .iter()
-        .filter(|(_, c)| c.owner == other)
-        .map(|(_, c)| c.centre)
-        .collect();
+    let their_cities: Vec<_> = world.cities.iter().filter(|(_, c)| c.owner == other).map(|(_, c)| c.centre).collect();
     world
         .civ(civ)
         .map(|c| {
@@ -836,18 +801,13 @@ pub fn military_order(
 
     // A city in reach is worth more than any unit beside it: killing an army
     // achieves nothing, taking a city ends a civilization.
-    let adjacent_city = world
-        .grid
-        .neighbours(u.position)
-        .find_map(|t| {
-            world
-                .cities
-                .iter()
-                .find(|(_, c)| {
-                    c.centre == t && c.owner != civ && world.diplomacy.at_war(civ, c.owner)
-                })
-                .map(|(id, _)| id)
-        });
+    let adjacent_city = world.grid.neighbours(u.position).find_map(|t| {
+        world
+            .cities
+            .iter()
+            .find(|(_, c)| c.centre == t && c.owner != civ && world.diplomacy.at_war(civ, c.owner))
+            .map(|(id, _)| id)
+    });
     if let Some(city) = adjacent_city {
         return Some(UnitOrder::Assault(city));
     }
@@ -857,12 +817,7 @@ pub fn military_order(
         .grid
         .neighbours(u.position)
         .flat_map(|t| world.units_at(t))
-        .filter(|id| {
-            world
-                .units
-                .get(*id)
-                .is_some_and(|o| o.owner != civ && world.diplomacy.at_war(civ, o.owner))
-        })
+        .filter(|id| world.units.get(*id).is_some_and(|o| o.owner != civ && world.diplomacy.at_war(civ, o.owner)))
         .collect();
     if let Some(target) = adjacent.into_iter().min() {
         return Some(UnitOrder::Attack(target));
@@ -875,12 +830,8 @@ pub fn military_order(
         .filter(|(_, c)| c.owner != civ && world.diplomacy.at_war(civ, c.owner))
         .map(|(_, c)| c.centre)
         .collect();
-    if let Some(target) = enemy_cities
-        .iter()
-        .min_by_key(|t| (world.grid.distance(u.position, **t), t.0))
-    {
-        let reachable =
-            crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    if let Some(target) = enemy_cities.iter().min_by_key(|t| (world.grid.distance(u.position, **t), t.0)) {
+        let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
         if let Some(step) = reachable
             .keys()
             .copied()
@@ -908,21 +859,13 @@ pub enum UnitOrder {
 ///
 /// Cheapest adoptable, which in practice means opening branches before
 /// deepening them — a reasonable default, and the place a real opinion would go.
-pub fn choose_policy(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    m: PolicyModifiers,
-) -> Option<Id<Policy>> {
+pub fn choose_policy(world: &World, r: &Ruleset, civ: CivId, m: PolicyModifiers) -> Option<Id<Policy>> {
     let c = world.civ(civ)?;
     let cost = policy_cost(c.adopted_policies.len(), c.cities.len(), m);
     if c.culture_stored < cost {
         return None;
     }
-    r.policies
-        .ids()
-        .filter(|p| is_adoptable(world, r, civ, *p).is_ok())
-        .min()
+    r.policies.ids().filter(|p| is_adoptable(world, r, civ, *p).is_ok()).min()
 }
 
 /// What a city should work toward, given what its owner lacks.
@@ -945,9 +888,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -1011,10 +952,7 @@ mod tests {
         let rich = choose_construction(&w, &r, CivId(0), &city, m, 40, Priorities::default());
         assert!(broke.is_some(), "a poor civ still has to build something");
         assert!(rich.is_some());
-        assert!(
-            upkeep(broke) <= upkeep(rich),
-            "being in debt should not make dear buildings more attractive"
-        );
+        assert!(upkeep(broke) <= upkeep(rich), "being in debt should not make dear buildings more attractive");
     }
 
     /// A thing that wins the game is worth building — when it can be built.
@@ -1045,15 +983,7 @@ mod tests {
 
         let city = w.cities.get(city_id).unwrap().clone();
         let pick = |w: &World| {
-            choose_construction(
-                w,
-                &r,
-                CivId(0),
-                &city,
-                CostModifiers::default(),
-                50,
-                Priorities::default(),
-            )
+            choose_construction(w, &r, CivId(0), &city, CostModifiers::default(), 50, Priorities::default())
         };
 
         // With no progress toward any victory, the nudge is small and ordinary
@@ -1067,10 +997,7 @@ mod tests {
         // Note "outright": a wonder that is one of several milestones is not
         // the last thing between this civ and the end of the game, and it is
         // correct for ordinary infrastructure to beat it.
-        let target = *wins
-            .iter()
-            .max_by_key(|b| victory_urgency(&w, &r, CivId(0), **b).raw())
-            .expect("at least one");
+        let target = *wins.iter().max_by_key(|b| victory_urgency(&w, &r, CivId(0), **b).raw()).expect("at least one");
         assert!(
             victory_urgency(&w, &r, CivId(0), target) > Fixed::whole(1000),
             "{} should be a game-ender",
@@ -1078,15 +1005,7 @@ mod tests {
         );
 
         let city = w.cities.get(city_id).unwrap().clone();
-        let near = choose_construction(
-            &w,
-            &r,
-            CivId(0),
-            &city,
-            CostModifiers::default(),
-            50,
-            Priorities::default(),
-        );
+        let near = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 50, Priorities::default());
         // Any game-ender will do — several victories may each be one
         // building away, and picking the cheapest of them is correct.
         match near {
@@ -1101,11 +1020,8 @@ mod tests {
 
         // And the urgency really is scaled, not flat: a milestone that only
         // gets a victory halfway is wanted far less than one that finishes it.
-        if let Some(partial) = wins
-            .iter()
-            .map(|b| victory_urgency(&w, &r, CivId(0), *b))
-            .filter(|u| *u < Fixed::whole(1000))
-            .max()
+        if let Some(partial) =
+            wins.iter().map(|b| victory_urgency(&w, &r, CivId(0), *b)).filter(|u| *u < Fixed::whole(1000)).max()
         {
             assert!(
                 partial < victory_urgency(&w, &r, CivId(0), target),
@@ -1125,15 +1041,7 @@ mod tests {
         }
         let city = w.cities.get(city_id).unwrap().clone();
         let (wins, _) = crate::world::victory::victory_constructions(&r);
-        let choice = choose_construction(
-            &w,
-            &r,
-            CivId(0),
-            &city,
-            CostModifiers::default(),
-            10,
-            Priorities::default(),
-        );
+        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, Priorities::default());
         if let Some(Construction::Building(id)) = choice {
             assert!(
                 !wins.contains(&id),
@@ -1155,18 +1063,13 @@ mod tests {
         let content = Priorities { happiness: 5, ..Default::default() };
         let miserable = Priorities { happiness: -15, ..Default::default() };
         let happiness_of = |c: Option<Construction>| match c {
-            Some(Construction::Building(id)) => {
-                crate::ruleset::queries::HasStats::stats(&r.buildings[id]).happiness
-            }
+            Some(Construction::Building(id)) => crate::ruleset::queries::HasStats::stats(&r.buildings[id]).happiness,
             _ => Fixed::ZERO,
         };
 
         let a = choose_construction(&w, &r, CivId(0), &city, m, 20, content);
         let b = choose_construction(&w, &r, CivId(0), &city, m, 20, miserable);
-        assert!(
-            happiness_of(b) >= happiness_of(a),
-            "a miserable empire should not pick the *less* cheering building"
-        );
+        assert!(happiness_of(b) >= happiness_of(a), "a miserable empire should not pick the *less* cheering building");
     }
 
     #[test]
@@ -1182,10 +1085,7 @@ mod tests {
                 choose_construction(&w, &r, CivId(0), &city, m, 10, Priorities::default()),
                 choose_construction(&w, &r, CivId(0), &city, m, 10, Priorities::default())
             );
-            assert_eq!(
-                choose_research(&w, &r, CivId(0), s),
-                choose_research(&w, &r, CivId(0), s)
-            );
+            assert_eq!(choose_research(&w, &r, CivId(0), s), choose_research(&w, &r, CivId(0), s));
         }
     }
 

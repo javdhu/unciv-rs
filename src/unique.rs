@@ -51,7 +51,11 @@ fn split_conditionals(s: &str) -> (String, Vec<String>) {
             }
             _ => {}
         }
-        if depth == 0 { base.push(c) } else { cur.push(c) }
+        if depth == 0 {
+            base.push(c)
+        } else {
+            cur.push(c)
+        }
     }
     (base.split_whitespace().collect::<Vec<_>>().join(" "), mods)
 }
@@ -81,7 +85,11 @@ fn placeholder_and_params(s: &str) -> (String, Vec<String>) {
             }
             _ => {}
         }
-        if depth == 0 { ph.push(c) } else { cur.push(c) }
+        if depth == 0 {
+            ph.push(c)
+        } else {
+            cur.push(c)
+        }
     }
     (ph, params)
 }

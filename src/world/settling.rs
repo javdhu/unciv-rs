@@ -31,11 +31,7 @@ use crate::world::yields::tile_yield;
 /// By the `FoundCity` unique rather than the name "Settler" — a ruleset may
 /// call it something else, and the same reasoning applies as to the palace.
 pub fn is_settler(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
-    r.units.get(base).is_some_and(|u| {
-        u.uniques
-            .iter()
-            .any(|x| x.unique_type() == Some(crate::UniqueType::FoundCity))
-    })
+    r.units.get(base).is_some_and(|u| u.uniques.iter().any(|x| x.unique_type() == Some(crate::UniqueType::FoundCity)))
 }
 
 /// The ruleset's settler, if it has exactly one obvious candidate.
@@ -85,12 +81,7 @@ impl std::fmt::Display for SettleRejection {
 impl std::error::Error for SettleRejection {}
 
 /// Whether a city may be founded here.
-pub fn can_settle(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    tile: TileId,
-) -> Result<(), SettleRejection> {
+pub fn can_settle(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> Result<(), SettleRejection> {
     if !is_passable(&world.grid, r, tile) {
         return Err(SettleRejection::Impassable);
     }
@@ -128,10 +119,8 @@ fn site_bonuses(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
     if on_hill {
         v += Fixed::whole(14);
     }
-    let next_to_mountain = world
-        .grid
-        .neighbours(tile)
-        .any(|n| world.grid.terrains(n).filter_map(named).any(|t| t == "Mountain"));
+    let next_to_mountain =
+        world.grid.neighbours(tile).any(|n| world.grid.terrains(n).filter_map(named).any(|t| t == "Mountain"));
     if next_to_mountain {
         v += Fixed::whole(5);
     }
@@ -162,13 +151,7 @@ pub fn rank_site(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
 }
 
 /// The best legal site within `radius` of `from`, best first.
-pub fn best_site(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    from: TileId,
-    radius: u32,
-) -> Option<(TileId, Fixed)> {
+pub fn best_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u32) -> Option<(TileId, Fixed)> {
     let mut sites: Vec<(TileId, Fixed)> = world
         .grid
         .within(from, radius)
@@ -211,21 +194,13 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(20, 20, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, true)])
     }
 
     fn settler(w: &mut World, r: &Ruleset, at: TileId, civ: CivId) -> Id<Unit> {
@@ -257,10 +232,7 @@ mod tests {
         let mut w = world(&r);
         let theirs = w.grid.id_at(3, 3).unwrap();
         w.grid.owner[theirs.0 as usize] = Some(CivId(1));
-        assert_eq!(
-            can_settle(&w, &r, CivId(0), theirs),
-            Err(SettleRejection::ForeignTerritory(CivId(1)))
-        );
+        assert_eq!(can_settle(&w, &r, CivId(0), theirs), Err(SettleRejection::ForeignTerritory(CivId(1))));
 
         let mountain = r.terrains.iter().find(|(_, t)| t.impassable == Some(true)).unwrap().0;
         let rock = w.grid.id_at(5, 5).unwrap();
@@ -353,10 +325,7 @@ mod tests {
 
         let crowded = w.grid.ring(centre, 2)[0];
         let s = settler(&mut w, &r, crowded, CivId(0));
-        assert!(matches!(
-            found_city_with(&mut w, &r, s, "Antium"),
-            Err(SettleRejection::TooClose { .. })
-        ));
+        assert!(matches!(found_city_with(&mut w, &r, s, "Antium"), Err(SettleRejection::TooClose { .. })));
         assert!(w.units.get(s).is_some(), "and the settler survives the refusal");
     }
 

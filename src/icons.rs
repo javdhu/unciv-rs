@@ -51,8 +51,7 @@ pub fn policy_icon(name: &str) -> Option<Sprite> {
 
 /// Major civs get their own flag; city-states share one icon per type.
 pub fn nation_icon(name: &str, city_state_type: Option<&str>) -> Option<Sprite> {
-    region("NationIcons", name)
-        .or_else(|| city_state_type.and_then(|t| region("CityStateIcons", t)))
+    region("NationIcons", name).or_else(|| city_state_type.and_then(|t| region("CityStateIcons", t)))
 }
 
 /// Last tier of every chain: `<Group>Icons/Fallback`, packed for a few groups only.
@@ -70,11 +69,21 @@ pub fn promotion_icon_or_fallback(name: &str) -> Option<(Sprite, bool)> {
     }
 }
 
-pub fn building_icon(name: &str) -> Option<Sprite> { region("BuildingIcons", name) }
-pub fn unit_icon(name: &str) -> Option<Sprite> { region("UnitIcons", name) }
-pub fn tech_icon(name: &str) -> Option<Sprite> { region("TechIcons", name) }
-pub fn resource_icon(name: &str) -> Option<Sprite> { region("ResourceIcons", name) }
-pub fn improvement_icon(name: &str) -> Option<Sprite> { region("ImprovementIcons", name) }
+pub fn building_icon(name: &str) -> Option<Sprite> {
+    region("BuildingIcons", name)
+}
+pub fn unit_icon(name: &str) -> Option<Sprite> {
+    region("UnitIcons", name)
+}
+pub fn tech_icon(name: &str) -> Option<Sprite> {
+    region("TechIcons", name)
+}
+pub fn resource_icon(name: &str) -> Option<Sprite> {
+    region("ResourceIcons", name)
+}
+pub fn improvement_icon(name: &str) -> Option<Sprite> {
+    region("ImprovementIcons", name)
+}
 
 #[cfg(test)]
 mod tests {
@@ -84,7 +93,10 @@ mod tests {
     fn strips_levels_like_kotlin_does() {
         assert_eq!(promotion_base_and_level("Accuracy II"), ("Accuracy II".into(), 2, "Accuracy".into()));
         assert_eq!(promotion_base_and_level("Scouting"), ("Scouting".into(), 0, "Scouting".into()));
-        assert_eq!(promotion_base_and_level("[Mounted] ability"), ("Mounted ability".into(), 0, "Mounted ability".into()));
+        assert_eq!(
+            promotion_base_and_level("[Mounted] ability"),
+            ("Mounted ability".into(), 0, "Mounted ability".into())
+        );
     }
 
     #[test]

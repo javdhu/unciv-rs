@@ -39,9 +39,9 @@
 
 use crate::arena::Id;
 use crate::ruleset::{Building, Ruleset};
+use crate::stats::{Fixed, Stat, Stats};
 use crate::world::city::City;
 use crate::world::grid::{CivId, RoadLevel, TileId};
-use crate::stats::{Fixed, Stat, Stats};
 use crate::world::world::World;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -142,21 +142,14 @@ impl Connections {
 pub fn palace(r: &Ruleset) -> Option<Id<Building>> {
     r.buildings
         .iter()
-        .find(|(_, b)| {
-            b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital))
-        })
+        .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital)))
         .map(|(id, _)| id)
 }
 
 /// This civ's capital, if it still has one.
 pub fn capital_of(world: &World, r: &Ruleset, civ: CivId) -> Option<Id<City>> {
     let palace = palace(r)?;
-    world
-        .civ(civ)?
-        .cities
-        .iter()
-        .copied()
-        .find(|id| world.cities.get(*id).is_some_and(|c| c.built.contains(&palace)))
+    world.civ(civ)?.cities.iter().copied().find(|id| world.cities.get(*id).is_some_and(|c| c.built.contains(&palace)))
 }
 
 /// Is this tile open water? Asked of the base terrain, so a forest on a coast
@@ -189,9 +182,9 @@ fn forest_or_jungle_is_road(world: &World, r: &Ruleset, civ: CivId, tile: TileId
     if world.grid.owner[tile.0 as usize] != Some(civ) {
         return false;
     }
-    world.grid.features[tile.0 as usize].iter().any(|f| {
-        r.terrains.name_of(*f).is_some_and(|n| n == "Forest" || n == "Jungle")
-    })
+    world.grid.features[tile.0 as usize]
+        .iter()
+        .any(|f| r.terrains.name_of(*f).is_some_and(|n| n == "Forest" || n == "Jungle"))
 }
 
 /// Is an enemy fleet sitting on this tile, or next to it?
@@ -218,10 +211,10 @@ pub fn tile_is_blockaded(world: &World, r: &Ruleset, tile: TileId) -> bool {
         return false; // an empty land tile is nobody's blockade
     }
     // An empty water tile is blockaded by enemy ships beside it.
-    world.grid.neighbours(tile).any(|n| {
-        is_water(world, r, n)
-            && military_owner(n).is_some_and(|civ| world.diplomacy.at_war(civ, owner))
-    })
+    world
+        .grid
+        .neighbours(tile)
+        .any(|n| is_water(world, r, n) && military_owner(n).is_some_and(|civ| world.diplomacy.at_war(civ, owner)))
 }
 
 /// A coastal city whose every adjacent water tile is blockaded cannot use its
@@ -256,10 +249,8 @@ pub fn find(world: &World, r: &Ruleset, civ: CivId) -> Connections {
         .filter(|(_, c)| world.diplomacy.may_enter_borders_of(civ, c.owner))
         .map(|(id, _)| id)
         .collect();
-    let centres: BTreeMap<TileId, Id<City>> = candidates
-        .iter()
-        .filter_map(|id| world.cities.get(*id).map(|c| (c.centre, *id)))
-        .collect();
+    let centres: BTreeMap<TileId, Id<City>> =
+        candidates.iter().filter_map(|id| world.cities.get(*id).map(|c| (c.centre, *id))).collect();
 
     let road_ok = road_usable(world, r, civ, RoadLevel::Road);
     let rail_ok = road_usable(world, r, civ, RoadLevel::Railroad);
@@ -305,8 +296,7 @@ pub fn find(world: &World, r: &Ruleset, civ: CivId) -> Connections {
             searches.push((
                 Mediums::ROAD,
                 Box::new(|t| {
-                    world.grid.unpillaged_road(t) != RoadLevel::None
-                        || forest_or_jungle_is_road(world, r, civ, t)
+                    world.grid.unpillaged_road(t) != RoadLevel::None || forest_or_jungle_is_road(world, r, civ, t)
                 }),
                 false,
             ));
@@ -422,10 +412,7 @@ pub fn trade_route_stats(
     // A unique that only applies on some condition has to be asked. One that
     // cannot be decided is not applied — an undecidable bonus paid out anyway
     // is a silent wrong number.
-    let ctx = crate::world::conditionals::GameContext::new(r)
-        .with_world(world)
-        .for_civ(civ)
-        .in_city(city_id);
+    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ).in_city(city_id);
     let holds = |u: &crate::unique::Unique| {
         crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True
     };
@@ -434,9 +421,7 @@ pub fn trade_route_stats(
     let sources = city
         .uniques
         .matching(crate::UniqueType::StatsFromTradeRoute)
-        .chain(
-            civ_uniques.into_iter().flat_map(|u| u.matching(crate::UniqueType::StatsFromTradeRoute)),
-        )
+        .chain(civ_uniques.into_iter().flat_map(|u| u.matching(crate::UniqueType::StatsFromTradeRoute)))
         .filter(|u| holds(u));
     for u in sources {
         if let Some(extra) = u.params.first().and_then(|p| Stats::parse(p)) {
@@ -449,17 +434,12 @@ pub fn trade_route_stats(
     let scalers = city
         .uniques
         .matching(crate::UniqueType::StatPercentFromTradeRoutes)
-        .chain(
-            civ_uniques
-                .into_iter()
-                .flat_map(|u| u.matching(crate::UniqueType::StatPercentFromTradeRoutes)),
-        )
+        .chain(civ_uniques.into_iter().flat_map(|u| u.matching(crate::UniqueType::StatPercentFromTradeRoutes)))
         .filter(|u| holds(u));
     for u in scalers {
-        let (Some(amount), Some(stat)) = (
-            u.params.first().and_then(|p| Fixed::parse(p)),
-            u.params.get(1).and_then(|p| Stat::parse(p)),
-        ) else {
+        let (Some(amount), Some(stat)) =
+            (u.params.first().and_then(|p| Fixed::parse(p)), u.params.get(1).and_then(|p| Stat::parse(p)))
+        else {
             continue;
         };
         percent[stat] += amount;
@@ -468,9 +448,7 @@ pub fn trade_route_stats(
         for stat in Stat::ALL {
             let pct = percent[stat];
             if !pct.is_zero() {
-                if let Some(scaled) =
-                    (stats[stat] * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100))
-                {
+                if let Some(scaled) = (stats[stat] * (Fixed::whole(100) + pct)).checked_div(Fixed::whole(100)) {
                     stats[stat] = scaled;
                 }
             }
@@ -519,8 +497,7 @@ pub fn transportation_upkeep(world: &World, r: &Ruleset, civ: CivId) -> Stats {
         .flat_map(|c| c.uniques.matching(crate::UniqueType::NoImprovementMaintenanceInSpecificTiles))
         .filter_map(|u| u.params.first().map(|s| s.as_str()))
         .collect();
-    let centres: BTreeSet<TileId> =
-        world.cities.iter().map(|(_, c)| c.centre).collect();
+    let centres: BTreeSet<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
 
     for tile in world.grid.ids() {
         if world.grid.owner[tile.0 as usize] != Some(civ) {
@@ -538,15 +515,13 @@ pub fn transportation_upkeep(world: &World, r: &Ruleset, civ: CivId) -> Stats {
         for u in &road.uniques {
             if !matches!(
                 u.unique_type(),
-                Some(crate::UniqueType::ImprovementMaintenance)
-                    | Some(crate::UniqueType::ImprovementAllMaintenance)
+                Some(crate::UniqueType::ImprovementMaintenance) | Some(crate::UniqueType::ImprovementAllMaintenance)
             ) {
                 continue;
             }
-            let (Some(amount), Some(stat)) = (
-                u.params.first().and_then(|p| Fixed::parse(p)),
-                u.params.get(1).and_then(|p| Stat::parse(p)),
-            ) else {
+            let (Some(amount), Some(stat)) =
+                (u.params.first().and_then(|p| Fixed::parse(p)), u.params.get(1).and_then(|p| Stat::parse(p)))
+            else {
                 continue;
             };
             total[stat] += amount;
@@ -618,9 +593,7 @@ pub fn road_plan(world: &World, r: &Ruleset, civ: CivId) -> Vec<TileId> {
         if let Some(path) = cheapest_link(world, r, civ, city.centre, &joined) {
             let missing: Vec<TileId> = path
                 .into_iter()
-                .filter(|t| {
-                    world.grid.unpillaged_road(*t) == RoadLevel::None && !joined.contains(t)
-                })
+                .filter(|t| world.grid.unpillaged_road(*t) == RoadLevel::None && !joined.contains(t))
                 .collect();
             if missing.is_empty() {
                 continue;
@@ -665,10 +638,7 @@ fn link_pays(
     // Only our own ground is charged, and a city we are about to grow into
     // will claim more of it, so this is an underestimate on purpose — a road
     // that is marginal today is usually worth it by the time it is finished.
-    let charged = missing
-        .iter()
-        .filter(|t| world.grid.owner[t.0 as usize] == Some(civ))
-        .count() as i32;
+    let charged = missing.iter().filter(|t| world.grid.owner[t.0 as usize] == Some(civ)).count() as i32;
     let Some(road) = r.improvements.by_name("Road") else { return false };
     let per_tile: Fixed = road
         .uniques
@@ -676,8 +646,7 @@ fn link_pays(
         .filter(|u| {
             matches!(
                 u.unique_type(),
-                Some(crate::UniqueType::ImprovementMaintenance)
-                    | Some(crate::UniqueType::ImprovementAllMaintenance)
+                Some(crate::UniqueType::ImprovementMaintenance) | Some(crate::UniqueType::ImprovementAllMaintenance)
             )
         })
         .filter(|u| u.params.get(1).and_then(|p| Stat::parse(p)) == Some(Stat::Gold))
@@ -733,13 +702,8 @@ fn cheapest_link(
                     continue;
                 }
             }
-            let step = if world.grid.unpillaged_road(next) != RoadLevel::None
-                || targets.contains(&next)
-            {
-                0
-            } else {
-                1
-            };
+            let step =
+                if world.grid.unpillaged_road(next) != RoadLevel::None || targets.contains(&next) { 0 } else { 1 };
             let candidate = cost + step;
             if candidate < best[i] {
                 best[i] = candidate;
@@ -766,21 +730,13 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, true),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)])
     }
 
     /// Everything reachable, so the tech gates are out of the way.
@@ -982,9 +938,7 @@ mod tests {
         let harbour = r
             .buildings
             .iter()
-            .find(|(_, b)| {
-                b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::ConnectTradeRoutes))
-            })
+            .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::ConnectTradeRoutes)))
             .map(|(id, _)| id)
             .expect("the ruleset has a harbour");
         let c = w.cities.get_mut(city).unwrap();
@@ -997,7 +951,6 @@ mod tests {
         let r = ruleset();
         let (mut w, rome, ostia) = across_a_sea(&r);
         assert!(!find(&w, &r, CivId(0)).has_trade_route(ostia), "open water joins nothing");
-
 
         give_harbour(&mut w, &r, rome);
         assert!(!find(&w, &r, CivId(0)).has_trade_route(ostia), "a port needs a port to talk to");
@@ -1057,11 +1010,8 @@ mod tests {
         // An enemy fleet parks on every water tile beside the port.
         w.diplomacy.declare_war(CivId(1), CivId(0));
         let trireme = r.units.id("Trireme").or_else(|| r.units.id("Work Boat")).unwrap();
-        let water: Vec<TileId> = w
-            .grid
-            .neighbours(w.cities.get(ostia).unwrap().centre)
-            .filter(|t| is_water(&w, &r, *t))
-            .collect();
+        let water: Vec<TileId> =
+            w.grid.neighbours(w.cities.get(ostia).unwrap().centre).filter(|t| is_water(&w, &r, *t)).collect();
         assert!(!water.is_empty(), "the test city is coastal");
         for t in &water {
             w.place_unit(crate::world::entities::Unit::new(trireme, CivId(1), *t, 4));
@@ -1140,11 +1090,7 @@ mod tests {
 
         pave(&mut w, &r, 1, 5, RoadLevel::Road, CivId(0));
         let c = find(&w, &r, CivId(0));
-        assert_eq!(
-            railroad_production_bonus(&w, &r, CivId(0), &c, ostia),
-            Fixed::ZERO,
-            "a road is not a railroad"
-        );
+        assert_eq!(railroad_production_bonus(&w, &r, CivId(0), &c, ostia), Fixed::ZERO, "a road is not a railroad");
 
         pave(&mut w, &r, 1, 5, RoadLevel::Railroad, CivId(0));
         let c = find(&w, &r, CivId(0));

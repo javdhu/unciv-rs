@@ -609,51 +609,109 @@ pub struct AccountUpdatedMessage {
 pub enum ApiStatusCode {
     #[cfg_attr(feature = "serde", serde(rename = "You are not logged in. Please login first."))]
     Unauthenticated,
-    #[cfg_attr(feature = "serde", serde(rename = "The operation couldn't be completed, since the resource was not found."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "The operation couldn't be completed, since the resource was not found.")
+    )]
     NotFound,
     #[cfg_attr(feature = "serde", serde(rename = "The media content type was invalid. Please report this as a bug."))]
     InvalidContentType,
-    #[cfg_attr(feature = "serde", serde(rename = "The server didn't understand the sent data. Please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "The server didn't understand the sent data. Please report this as a bug.")
+    )]
     InvalidJson,
-    #[cfg_attr(feature = "serde", serde(rename = "The amount of data sent to the server was too large. Please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "The amount of data sent to the server was too large. Please report this as a bug.")
+    )]
     PayloadOverflow,
     #[cfg_attr(feature = "serde", serde(rename = "The login failed. Is the username and password correct?"))]
     LoginFailed,
-    #[cfg_attr(feature = "serde", serde(rename = "The selected username is already taken. Please choose another name."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "The selected username is already taken. Please choose another name.")
+    )]
     UsernameAlreadyOccupied,
     #[cfg_attr(feature = "serde", serde(rename = "This password is not valid. Please choose another password."))]
     InvalidPassword,
-    #[cfg_attr(feature = "serde", serde(rename = "The server encountered an empty JSON problem. Please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "The server encountered an empty JSON problem. Please report this as a bug.")
+    )]
     EmptyJson,
     #[cfg_attr(feature = "serde", serde(rename = "The username is not valid. Please choose another one."))]
     InvalidUsername,
     #[cfg_attr(feature = "serde", serde(rename = "The display name is not valid. Please choose another one."))]
     InvalidDisplayName,
-    #[cfg_attr(feature = "serde", serde(rename = "You have already requested friendship with this player. Please wait until the request is accepted."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "You have already requested friendship with this player. Please wait until the request is accepted."
+        )
+    )]
     FriendshipAlreadyRequested,
     #[cfg_attr(feature = "serde", serde(rename = "You are already friends, you can't request it again."))]
     AlreadyFriends,
     #[cfg_attr(feature = "serde", serde(rename = "You don't have the required privileges to perform this operation."))]
     MissingPrivileges,
-    #[cfg_attr(feature = "serde", serde(rename = "The maximum number of players for this lobby is out of the supported range for this server. Please adjust the number. Two players should always work."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "The maximum number of players for this lobby is out of the supported range for this server. Please adjust the number. Two players should always work."
+        )
+    )]
     InvalidMaxPlayersCount,
-    #[cfg_attr(feature = "serde", serde(rename = "You are already in another lobby. You need to close or leave the other lobby before."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "You are already in another lobby. You need to close or leave the other lobby before.")
+    )]
     AlreadyInALobby,
-    #[cfg_attr(feature = "serde", serde(rename = "The operation could not be completed, since an invalid UUID was given. Please retry later or restart the game. If the problem persists, please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "The operation could not be completed, since an invalid UUID was given. Please retry later or restart the game. If the problem persists, please report this as a bug."
+        )
+    )]
     InvalidUuid,
     #[cfg_attr(feature = "serde", serde(rename = "The lobby was not found. Maybe it has already been closed?"))]
     InvalidLobbyUuid,
-    #[cfg_attr(feature = "serde", serde(rename = "You must be friends with the other player before this action can be completed. Try again later."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "You must be friends with the other player before this action can be completed. Try again later."
+        )
+    )]
     InvalidFriendUuid,
-    #[cfg_attr(feature = "serde", serde(rename = "The game was not found on the server. Try again later. If the problem persists, the game was probably already removed from the server, sorry."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "The game was not found on the server. Try again later. If the problem persists, the game was probably already removed from the server, sorry."
+        )
+    )]
     GameNotFound,
-    #[cfg_attr(feature = "serde", serde(rename = "This message could not be sent, since it was invalid. Remove any invalid characters and try again."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "This message could not be sent, since it was invalid. Remove any invalid characters and try again."
+        )
+    )]
     InvalidMessage,
-    #[cfg_attr(feature = "serde", serde(rename = "The WebSocket is not available. Please restart the game and try again. If the problem persists, please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "The WebSocket is not available. Please restart the game and try again. If the problem persists, please report this as a bug."
+        )
+    )]
     WsNotConnected,
     #[cfg_attr(feature = "serde", serde(rename = "The lobby is currently full. You can't join right now."))]
     LobbyFull,
-    #[cfg_attr(feature = "serde", serde(rename = "The ID of the player was invalid. Does the player exist? Please try again. If the problem persists, please report this as a bug."))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "The ID of the player was invalid. Does the player exist? Please try again. If the problem persists, please report this as a bug."
+        )
+    )]
     InvalidPlayerUUID,
     #[cfg_attr(feature = "serde", serde(rename = "Internal server error. Please report this as a bug."))]
     InternalServerError,
@@ -706,4 +764,3 @@ pub enum WebSocketMessageType {
     #[cfg_attr(feature = "serde", serde(rename = "accountUpdated"))]
     AccountUpdated,
 }
-

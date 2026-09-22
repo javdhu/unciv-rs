@@ -124,10 +124,18 @@ pub fn unit_matches(r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
     multi_filter(filter, &|term| match term {
         // Stateful terms, which a bare BaseUnit cannot answer.
         "Wounded" | "wounded" | "wounded units" => {
-            if unit.is_hurt() { Verdict::True } else { Verdict::False }
+            if unit.is_hurt() {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
         "Embarked" | "embarked" => {
-            if unit.embarked { Verdict::True } else { Verdict::False }
+            if unit.embarked {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
         "Barbarian" | "barbarians" | "City-State" => Verdict::Unknown, // needs civ kind
         _ => category(r, base, term),
@@ -197,9 +205,7 @@ mod tests {
     use crate::world::grid::{CivId, TileId};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn unit(r: &Ruleset, name: &str) -> Unit {
@@ -286,9 +292,24 @@ mod tests {
         let warrior = unit(&r, "Warrior");
         let mut undecidable = Vec::new();
         for filter in [
-            "Mounted", "Water", "Armored", "Helicopter", "Bomber", "Land", "Wounded",
-            "Ranged", "Air", "Submarine", "All", "Military", "Melee", "{Military} {Water}",
-            "Great General", "Great Admiral", "Civilian", "non-air",
+            "Mounted",
+            "Water",
+            "Armored",
+            "Helicopter",
+            "Bomber",
+            "Land",
+            "Wounded",
+            "Ranged",
+            "Air",
+            "Submarine",
+            "All",
+            "Military",
+            "Melee",
+            "{Military} {Water}",
+            "Great General",
+            "Great Admiral",
+            "Civilian",
+            "non-air",
         ] {
             if unit_matches(&r, &warrior, filter) == Verdict::Unknown {
                 undecidable.push(filter);

@@ -12,19 +12,38 @@ fn relax(src: &str) -> String {
         let c = b[i];
         if in_str {
             out.push(c);
-            if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { in_str = false }
+            if esc {
+                esc = false
+            } else if c == '\\' {
+                esc = true
+            } else if c == '"' {
+                in_str = false
+            }
             i += 1;
             continue;
         }
         match (c, b.get(i + 1)) {
-            ('"', _) => { in_str = true; out.push(c); i += 1 }
-            ('/', Some('/')) => { while i < b.len() && b[i] != '\n' { i += 1 } }
+            ('"', _) => {
+                in_str = true;
+                out.push(c);
+                i += 1
+            }
+            ('/', Some('/')) => {
+                while i < b.len() && b[i] != '\n' {
+                    i += 1
+                }
+            }
             ('/', Some('*')) => {
                 i += 2;
-                while i + 1 < b.len() && !(b[i] == '*' && b[i + 1] == '/') { i += 1 }
+                while i + 1 < b.len() && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1
+                }
                 i += 2;
             }
-            _ => { out.push(c); i += 1 }
+            _ => {
+                out.push(c);
+                i += 1
+            }
         }
     }
     // trailing commas before } or ]
@@ -33,14 +52,15 @@ fn relax(src: &str) -> String {
     for (i, &c) in o.iter().enumerate() {
         if c == ',' {
             if let Some(&n) = o[i + 1..].iter().find(|c| !c.is_whitespace()) {
-                if n == '}' || n == ']' { continue }
+                if n == '}' || n == ']' {
+                    continue;
+                }
             }
         }
         cleaned.push(c);
     }
     cleaned
 }
-
 
 /// Parse one of Unciv's lenient ruleset files.
 pub fn read_json(path: &Path) -> serde_json::Value {
@@ -56,10 +76,12 @@ pub fn ruleset_files(root: &str) -> Vec<PathBuf> {
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {
-                if p.file_name().is_some_and(|n| n == "translations") { continue }
+                if p.file_name().is_some_and(|n| n == "translations") {
+                    continue;
+                }
                 walk(&p, acc);
-            } else if p.extension().is_some_and(|x| x == "json")
-                && p.file_name().is_none_or(|n| n != "Tutorials.json") {
+            } else if p.extension().is_some_and(|x| x == "json") && p.file_name().is_none_or(|n| n != "Tutorials.json")
+            {
                 acc.push(p);
             }
         }

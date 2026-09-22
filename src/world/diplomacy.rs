@@ -188,9 +188,7 @@ impl Diplomacy {
         if self.always_hostile.contains(&a) || self.always_hostile.contains(&b) {
             return Stance::War;
         }
-        Pair::of(a, b)
-            .and_then(|p| self.pacts.get(&p))
-            .map_or(Stance::Peace, |p| p.stance)
+        Pair::of(a, b).and_then(|p| self.pacts.get(&p)).map_or(Stance::Peace, |p| p.stance)
     }
 
     pub fn at_war(&self, a: CivId, b: CivId) -> bool {
@@ -269,10 +267,7 @@ impl Diplomacy {
     /// borders and belongs beside it.
     pub fn is_protector(&self, major: CivId, city_state: CivId) -> bool {
         let Some(pair) = Pair::of(major, city_state) else { return false };
-        self.pacts
-            .get(&pair)
-            .zip(pair.slot(major))
-            .is_some_and(|(pact, slot)| pact.protector[slot])
+        self.pacts.get(&pair).zip(pair.slot(major)).is_some_and(|(pact, slot)| pact.protector[slot])
     }
 
     /// Pledge, or withdraw, protection.
@@ -300,11 +295,7 @@ impl Diplomacy {
 
     /// Everyone who holds any opinion of this city-state, in id order.
     pub fn influencers(&self, city_state: CivId) -> Vec<(CivId, Fixed)> {
-        self.influence
-            .iter()
-            .filter(|((cs, _), _)| *cs == city_state)
-            .map(|((_, major), v)| (*major, *v))
-            .collect()
+        self.influence.iter().filter(|((cs, _), _)| *cs == city_state).map(|((_, major), v)| (*major, *v)).collect()
     }
 
     /// `holder`'s view of `subject`.
@@ -326,11 +317,7 @@ impl Diplomacy {
 
     /// Every civ this one is at war with, in id order.
     pub fn enemies_of(&self, civ: CivId) -> Vec<CivId> {
-        self.pacts
-            .iter()
-            .filter(|(_, p)| p.stance == Stance::War)
-            .filter_map(|(pair, _)| pair.other(civ))
-            .collect()
+        self.pacts.iter().filter(|(_, p)| p.stance == Stance::War).filter_map(|(pair, _)| pair.other(civ)).collect()
     }
 
     pub fn pair_count(&self) -> usize {

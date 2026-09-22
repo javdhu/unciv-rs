@@ -128,10 +128,7 @@ impl<'a> GameContext<'a> {
         self.happiness = Some(h);
         self
     }
-    pub fn knowing(
-        mut self,
-        techs: &'a std::collections::BTreeSet<Id<crate::ruleset::Technology>>,
-    ) -> Self {
+    pub fn knowing(mut self, techs: &'a std::collections::BTreeSet<Id<crate::ruleset::Technology>>) -> Self {
         self.techs = Some(techs);
         self
     }
@@ -173,9 +170,7 @@ pub fn tile_matches_in(
     filter: &str,
     civ: Option<CivId>,
 ) -> Verdict {
-    crate::world::filters::multi_filter(filter, &|term| {
-        tile_matches_term(grid, ruleset, tile, term, civ)
-    })
+    crate::world::filters::multi_filter(filter, &|term| tile_matches_term(grid, ruleset, tile, term, civ))
 }
 
 fn tile_matches_term(
@@ -187,11 +182,8 @@ fn tile_matches_term(
 ) -> Verdict {
     struct G<'a>(&'a crate::world::grid::TileGrid);
     let world = G(world_grid);
-    let terrains: Vec<&crate::ruleset::Terrain> = world
-        .0
-        .terrains(tile)
-        .filter_map(|id: Id<Terrain>| r.terrains.get(id))
-        .collect();
+    let terrains: Vec<&crate::ruleset::Terrain> =
+        world.0.terrains(tile).filter_map(|id: Id<Terrain>| r.terrains.get(id)).collect();
     let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
 
     if terrains.iter().any(|t| t.name == filter) {
@@ -199,9 +191,8 @@ fn tile_matches_term(
     }
 
     // "Rough" is declared on the terrain as a unique, not as a field.
-    let rough = |t: &crate::ruleset::Terrain| {
-        t.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::RoughTerrain))
-    };
+    let rough =
+        |t: &crate::ruleset::Terrain| t.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::RoughTerrain));
 
     match filter {
         "Land" => return yes(terrains.iter().any(|t| t.r#type == "Land")),
@@ -254,12 +245,10 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         },
 
         // --- where the unit is ------------------------------------------
-        UniqueType::ConditionalInTiles | UniqueType::ConditionalFightingInTiles => {
-            match (ctx.tile, p(0)) {
-                (Some(t), Some(f)) => tile_matches(ctx, t, f),
-                _ => Verdict::Unknown,
-            }
-        }
+        UniqueType::ConditionalInTiles | UniqueType::ConditionalFightingInTiles => match (ctx.tile, p(0)) {
+            (Some(t), Some(f)) => tile_matches(ctx, t, f),
+            _ => Verdict::Unknown,
+        },
         UniqueType::ConditionalInTilesNot => match (ctx.tile, p(0)) {
             (Some(t), Some(f)) => match tile_matches(ctx, t, f) {
                 Verdict::True => Verdict::False,
@@ -315,7 +304,11 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         // --- what has been built -----------------------------------------
         UniqueType::ConditionalBuildingBuilt => match built_here(ctx, p(0)) {
             Some(b) => {
-                if b { Verdict::True } else { Verdict::False }
+                if b {
+                    Verdict::True
+                } else {
+                    Verdict::False
+                }
             }
             None => Verdict::Unknown,
         },
@@ -326,24 +319,27 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             let Some(id) = ctx.ruleset.buildings.id(name) else { return Verdict::Unknown };
             let Some(c) = world.civ(civ) else { return Verdict::Unknown };
             // Vacuously true with no cities, as "all" always is.
-            let all = c
-                .cities
-                .iter()
-                .filter_map(|cid| world.cities.get(*cid))
-                .all(|city| city.built.contains(&id));
-            if all { Verdict::True } else { Verdict::False }
+            let all = c.cities.iter().filter_map(|cid| world.cities.get(*cid)).all(|city| city.built.contains(&id));
+            if all {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
         UniqueType::ConditionalBuildingBuiltByAnybody => {
             let (Some(world), Some(name)) = (ctx.world, p(0)) else { return Verdict::Unknown };
             let Some(id) = ctx.ruleset.buildings.id(name) else { return Verdict::Unknown };
             let anyone = world.cities.iter().any(|(_, c)| c.built.contains(&id));
-            if anyone { Verdict::True } else { Verdict::False }
+            if anyone {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
 
         // --- the city itself ----------------------------------------------
         UniqueType::ConditionalPopulationFilter => {
-            let (Some(world), Some(city), Some(amount)) = (ctx.world, ctx.city, number(p(0)))
-            else {
+            let (Some(world), Some(city), Some(amount)) = (ctx.world, ctx.city, number(p(0))) else {
                 return Verdict::Unknown;
             };
             // Only the plain population filter is understood; the rest name
@@ -365,7 +361,11 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             };
             let Some(target) = ctx.ruleset.eras.by_name(era) else { return Verdict::Unknown };
             let reached = crate::world::policies::era_number(world, ctx.ruleset, civ);
-            if reached >= target.era_number { Verdict::True } else { Verdict::False }
+            if reached >= target.era_number {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
 
         UniqueType::ConditionalBeforeEra => {
@@ -374,15 +374,27 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             };
             let Some(target) = ctx.ruleset.eras.by_name(era) else { return Verdict::Unknown };
             let reached = crate::world::policies::era_number(world, ctx.ruleset, civ);
-            if reached < target.era_number { Verdict::True } else { Verdict::False }
+            if reached < target.era_number {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
 
         // --- the game's own settings ---------------------------------------
         UniqueType::ConditionalReligionEnabled => {
-            if ctx.religion_enabled { Verdict::True } else { Verdict::False }
+            if ctx.religion_enabled {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
         UniqueType::ConditionalReligionDisabled => {
-            if ctx.religion_enabled { Verdict::False } else { Verdict::True }
+            if ctx.religion_enabled {
+                Verdict::False
+            } else {
+                Verdict::True
+            }
         }
 
         // --- what the civ knows -----------------------------------------
@@ -401,18 +413,18 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         // Happiness is the one that matters: the growth and production
         // penalties of an unhappy empire are declared in GlobalUniques.json as
         // `<when below [-10] [Happiness]>`, not written in code anywhere.
-        UniqueType::ConditionalWhenBelowAmountStatResource => {
-            threshold(ctx, p(0), p(1), |value, bound| value < bound)
-        }
-        UniqueType::ConditionalWhenAboveAmountStatResource => {
-            threshold(ctx, p(0), p(1), |value, bound| value > bound)
-        }
+        UniqueType::ConditionalWhenBelowAmountStatResource => threshold(ctx, p(0), p(1), |value, bound| value < bound),
+        UniqueType::ConditionalWhenAboveAmountStatResource => threshold(ctx, p(0), p(1), |value, bound| value > bound),
         UniqueType::ConditionalWhenBetweenStatResource => {
             let (Some(low), Some(high), Some(stat)) = (number(p(0)), number(p(1)), p(2)) else {
                 return Verdict::Unknown;
             };
             let Some(value) = civ_wide_stat(ctx, stat) else { return Verdict::Unknown };
-            if value >= low && value <= high { Verdict::True } else { Verdict::False }
+            if value >= low && value <= high {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
         }
 
         _ => Verdict::Unknown,
@@ -463,7 +475,11 @@ fn threshold(
 ) -> Verdict {
     let (Some(bound), Some(stat)) = (number(amount), stat) else { return Verdict::Unknown };
     let Some(value) = civ_wide_stat(ctx, stat) else { return Verdict::Unknown };
-    if test(value, bound) { Verdict::True } else { Verdict::False }
+    if test(value, bound) {
+        Verdict::True
+    } else {
+        Verdict::False
+    }
 }
 
 /// The civ-wide quantities a threshold can be written against. Only happiness
@@ -570,9 +586,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -587,14 +601,8 @@ mod tests {
         let attacking = Unique::parse("when attacking");
         let ctx = GameContext::new(&r);
         assert_eq!(evaluate(&attacking, &ctx), Verdict::Unknown, "no combat in context");
-        assert_eq!(
-            evaluate(&attacking, &ctx.in_combat(CombatRole::Attacking)),
-            Verdict::True
-        );
-        assert_eq!(
-            evaluate(&attacking, &ctx.in_combat(CombatRole::Defending)),
-            Verdict::False
-        );
+        assert_eq!(evaluate(&attacking, &ctx.in_combat(CombatRole::Attacking)), Verdict::True);
+        assert_eq!(evaluate(&attacking, &ctx.in_combat(CombatRole::Defending)), Verdict::False);
     }
 
     #[test]
@@ -686,10 +694,7 @@ mod tests {
         let w = world(&r);
         let ctx = GameContext::new(&r).with_world(&w).on_tile(TileId(0));
         // Not a terrain this ruleset has, so the honest answer is "cannot say".
-        assert_eq!(
-            evaluate(&Unique::parse("in [Fresh water] tiles"), &ctx),
-            Verdict::Unknown
-        );
+        assert_eq!(evaluate(&Unique::parse("in [Fresh water] tiles"), &ctx), Verdict::Unknown);
         assert_eq!(
             evaluate(&Unique::parse("in tiles without [Fresh water]"), &ctx),
             Verdict::Unknown,
@@ -711,10 +716,7 @@ mod tests {
         w.civ_mut(CivId(0)).unwrap().techs.insert(writing);
         let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0));
         assert_eq!(evaluate(&cond, &ctx), Verdict::True);
-        assert_eq!(
-            evaluate(&Unique::parse("before discovering [Writing]"), &ctx),
-            Verdict::False
-        );
+        assert_eq!(evaluate(&Unique::parse("before discovering [Writing]"), &ctx), Verdict::False);
     }
 
     /// The rule this whole layer exists to make live.

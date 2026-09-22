@@ -2629,7 +2629,9 @@ impl UniqueType {
             UniqueType::StatPercentFromObject => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
             UniqueType::StatPercentFromObjectToResource => &[UniqueTarget::Building],
             UniqueType::AllStatsPercentFromObject => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
-            UniqueType::StatPercentFromReligionFollowers => &[UniqueTarget::FollowerBelief, UniqueTarget::FounderBelief],
+            UniqueType::StatPercentFromReligionFollowers => {
+                &[UniqueTarget::FollowerBelief, UniqueTarget::FounderBelief]
+            }
             UniqueType::BonusStatsFromCityStates => &[UniqueTarget::Global],
             UniqueType::StatPercentFromTradeRoutes => &[UniqueTarget::Global],
             UniqueType::NullifiesStat => &[UniqueTarget::Global],
@@ -2659,7 +2661,9 @@ impl UniqueType {
             UniqueType::FoodConsumptionByPopulation => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
             UniqueType::FoodConsumptionBySpecialists => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
             UniqueType::UnhappinessFromCitiesPercentage => &[UniqueTarget::Global],
-            UniqueType::UnhappinessFromPopulationTypePercentageChange => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
+            UniqueType::UnhappinessFromPopulationTypePercentageChange => {
+                &[UniqueTarget::FollowerBelief, UniqueTarget::Global]
+            }
             UniqueType::BonusHappinessFromLuxury => &[UniqueTarget::Global],
             UniqueType::RetainHappinessFromLuxury => &[UniqueTarget::Global],
             UniqueType::ExcessHappinessToGlobalStat => &[UniqueTarget::Global],
@@ -2717,7 +2721,9 @@ impl UniqueType {
             UniqueType::BetterDefensiveBuildings => &[UniqueTarget::Global],
             UniqueType::StrengthForCities => &[UniqueTarget::FollowerBelief, UniqueTarget::Global],
             UniqueType::ConsumesResources => &[UniqueTarget::Building, UniqueTarget::Improvement, UniqueTarget::Unit],
-            UniqueType::ProvidesResources => &[UniqueTarget::FollowerBelief, UniqueTarget::Global, UniqueTarget::Improvement],
+            UniqueType::ProvidesResources => {
+                &[UniqueTarget::FollowerBelief, UniqueTarget::Global, UniqueTarget::Improvement]
+            }
             UniqueType::CostsResources => &[UniqueTarget::Building, UniqueTarget::Improvement, UniqueTarget::Unit],
             UniqueType::PercentResourceProduction => &[UniqueTarget::Global],
             UniqueType::EnablesEmbassies => &[UniqueTarget::Global],
@@ -2767,8 +2773,34 @@ impl UniqueType {
             UniqueType::CanBePurchasedWithStat => &[UniqueTarget::Building, UniqueTarget::Unit],
             UniqueType::CanBePurchasedForAmountStat => &[UniqueTarget::Building, UniqueTarget::Unit],
             UniqueType::MaxNumberBuildable => &[UniqueTarget::Building, UniqueTarget::Unit],
-            UniqueType::OnlyAvailable => &[UniqueTarget::Building, UniqueTarget::Event, UniqueTarget::EventChoice, UniqueTarget::FollowerBelief, UniqueTarget::FounderBelief, UniqueTarget::Improvement, UniqueTarget::Policy, UniqueTarget::Promotion, UniqueTarget::Ruins, UniqueTarget::Tech, UniqueTarget::Unit, UniqueTarget::Victor],
-            UniqueType::Unavailable => &[UniqueTarget::Building, UniqueTarget::Event, UniqueTarget::EventChoice, UniqueTarget::FollowerBelief, UniqueTarget::FounderBelief, UniqueTarget::Improvement, UniqueTarget::Policy, UniqueTarget::Promotion, UniqueTarget::Ruins, UniqueTarget::Tech, UniqueTarget::Unit, UniqueTarget::Victor],
+            UniqueType::OnlyAvailable => &[
+                UniqueTarget::Building,
+                UniqueTarget::Event,
+                UniqueTarget::EventChoice,
+                UniqueTarget::FollowerBelief,
+                UniqueTarget::FounderBelief,
+                UniqueTarget::Improvement,
+                UniqueTarget::Policy,
+                UniqueTarget::Promotion,
+                UniqueTarget::Ruins,
+                UniqueTarget::Tech,
+                UniqueTarget::Unit,
+                UniqueTarget::Victor,
+            ],
+            UniqueType::Unavailable => &[
+                UniqueTarget::Building,
+                UniqueTarget::Event,
+                UniqueTarget::EventChoice,
+                UniqueTarget::FollowerBelief,
+                UniqueTarget::FounderBelief,
+                UniqueTarget::Improvement,
+                UniqueTarget::Policy,
+                UniqueTarget::Promotion,
+                UniqueTarget::Ruins,
+                UniqueTarget::Tech,
+                UniqueTarget::Unit,
+                UniqueTarget::Victor,
+            ],
             UniqueType::CannotBuildBuildings => &[UniqueTarget::Global],
             UniqueType::ConvertFoodToProductionWhenConstructed => &[UniqueTarget::Building, UniqueTarget::Unit],
             UniqueType::RequiresPopulation => &[UniqueTarget::Building, UniqueTarget::Unit],
@@ -2825,7 +2857,9 @@ impl UniqueType {
             UniqueType::StrengthBonusInRadius => &[UniqueTarget::Unit],
             UniqueType::AdditionalAttacks => &[UniqueTarget::Global, UniqueTarget::Unit],
             UniqueType::Movement => &[UniqueTarget::Global, UniqueTarget::Unit],
-            UniqueType::Sight => &[UniqueTarget::Global, UniqueTarget::Improvement, UniqueTarget::Terrain, UniqueTarget::Unit],
+            UniqueType::Sight => {
+                &[UniqueTarget::Global, UniqueTarget::Improvement, UniqueTarget::Terrain, UniqueTarget::Unit]
+            }
             UniqueType::Range => &[UniqueTarget::Global, UniqueTarget::Unit],
             UniqueType::AirInterceptionRange => &[UniqueTarget::Global, UniqueTarget::Unit],
             UniqueType::Heal => &[UniqueTarget::Global, UniqueTarget::Unit],
@@ -2963,7 +2997,9 @@ impl UniqueType {
             UniqueType::FreshWater => &[UniqueTarget::Terrain],
             UniqueType::RoughTerrain => &[UniqueTarget::Terrain],
             UniqueType::CoastalWater => &[UniqueTarget::Terrain],
-            UniqueType::ExcludedFromMapEditor => &[UniqueTarget::Improvement, UniqueTarget::Nation, UniqueTarget::Resource, UniqueTarget::Terrain],
+            UniqueType::ExcludedFromMapEditor => {
+                &[UniqueTarget::Improvement, UniqueTarget::Nation, UniqueTarget::Resource, UniqueTarget::Terrain]
+            }
             UniqueType::ResourceAmountOnTiles => &[UniqueTarget::Resource],
             UniqueType::CityStateOnlyResource => &[UniqueTarget::Resource],
             UniqueType::Stockpiled => &[UniqueTarget::Resource],
@@ -3188,10 +3224,14 @@ impl UniqueType {
             UniqueType::TriggerUponSigningDefensivePact => &[UniqueTarget::TriggerCondition],
             UniqueType::TriggerUponEnteringGoldenAge => &[UniqueTarget::TriggerCondition],
             UniqueType::TriggerUpponEndingGoldenAge => &[UniqueTarget::TriggerCondition],
-            UniqueType::TriggerUponConqueringCity => &[UniqueTarget::TriggerCondition, UniqueTarget::UnitTriggerCondition],
+            UniqueType::TriggerUponConqueringCity => {
+                &[UniqueTarget::TriggerCondition, UniqueTarget::UnitTriggerCondition]
+            }
             UniqueType::TriggerUponLosingCity => &[UniqueTarget::TriggerCondition],
             UniqueType::TriggerUponFoundingCity => &[UniqueTarget::TriggerCondition],
-            UniqueType::TriggerUponBuildingImprovement => &[UniqueTarget::TriggerCondition, UniqueTarget::UnitTriggerCondition],
+            UniqueType::TriggerUponBuildingImprovement => {
+                &[UniqueTarget::TriggerCondition, UniqueTarget::UnitTriggerCondition]
+            }
             UniqueType::TriggerUponDiscoveringNaturalWonder => &[UniqueTarget::TriggerCondition],
             UniqueType::TriggerUponConstructingBuilding => &[UniqueTarget::TriggerCondition],
             UniqueType::TriggerUponConstructingBuildingCityFilter => &[UniqueTarget::TriggerCondition],
@@ -3217,7 +3257,15 @@ impl UniqueType {
             UniqueType::TriggerUponDiscoveringTile => &[UniqueTarget::UnitTriggerCondition],
             UniqueType::TriggerUponEnteringTile => &[UniqueTarget::UnitTriggerCondition],
             UniqueType::ConditionalTimedUnique => &[UniqueTarget::MetaModifier],
-            UniqueType::AiChoiceWeight => &[UniqueTarget::Building, UniqueTarget::EventChoice, UniqueTarget::FollowerBelief, UniqueTarget::FounderBelief, UniqueTarget::Policy, UniqueTarget::Promotion, UniqueTarget::Tech],
+            UniqueType::AiChoiceWeight => &[
+                UniqueTarget::Building,
+                UniqueTarget::EventChoice,
+                UniqueTarget::FollowerBelief,
+                UniqueTarget::FounderBelief,
+                UniqueTarget::Policy,
+                UniqueTarget::Promotion,
+                UniqueTarget::Tech,
+            ],
             UniqueType::UnitActionPriority => &[UniqueTarget::MetaModifier, UniqueTarget::UnitActionModifier],
             UniqueType::HiddenFromCivilopedia => &[UniqueTarget::Displayable],
             UniqueType::ShowsWhenUnbuilable => &[UniqueTarget::Building, UniqueTarget::Unit],

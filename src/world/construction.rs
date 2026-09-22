@@ -13,10 +13,10 @@
 
 use crate::arena::Id;
 use crate::ruleset::{BaseUnit, Building, Ruleset};
-use crate::UniqueType;
 use crate::stats::Fixed;
 use crate::world::city::City;
 use crate::world::entities::Civilization;
+use crate::UniqueType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Construction {
@@ -143,12 +143,7 @@ pub fn production_cost(r: &Ruleset, what: Construction, m: CostModifiers) -> Opt
 }
 
 /// Whether this city may start on something now.
-pub fn can_construct(
-    r: &Ruleset,
-    civ: &Civilization,
-    city: &City,
-    what: Construction,
-) -> Result<(), Rejection> {
+pub fn can_construct(r: &Ruleset, civ: &Civilization, city: &City, what: Construction) -> Result<(), Rejection> {
     let (required_tech, unique_to) = match what {
         Construction::Building(id) => {
             let b = r.buildings.get(id).ok_or(Rejection::Unknown)?;
@@ -211,19 +206,21 @@ pub fn available(r: &Ruleset, civ: &Civilization, city: &City) -> Vec<Constructi
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstructionEvent {
-    Progressed { stored: i32 },
-    Completed { what: Construction, carried_over: i32 },
+    Progressed {
+        stored: i32,
+    },
+    Completed {
+        what: Construction,
+        carried_over: i32,
+    },
     /// Nothing queued; the production is banked anyway.
-    Idle { stored: i32 },
+    Idle {
+        stored: i32,
+    },
 }
 
 /// Bank a turn's production and finish the head of the queue if it is paid for.
-pub fn apply_production(
-    city: &mut City,
-    r: &Ruleset,
-    production: i32,
-    m: CostModifiers,
-) -> ConstructionEvent {
+pub fn apply_production(city: &mut City, r: &Ruleset, production: i32, m: CostModifiers) -> ConstructionEvent {
     city.production_stored += production.max(0);
 
     let Some(&head) = city.queue.first() else {
@@ -252,9 +249,7 @@ mod tests {
     use crate::world::grid::{CivId, TileId};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn civ(r: &Ruleset) -> Civilization {
@@ -268,10 +263,7 @@ mod tests {
         let city = City::found("Rome", CivId(0), TileId(0));
         let library = Construction::Building(r.building("Library").unwrap());
 
-        assert_eq!(
-            can_construct(&r, &c, &city, library),
-            Err(Rejection::NotUnlocked("Writing".into()))
-        );
+        assert_eq!(can_construct(&r, &c, &city, library), Err(Rejection::NotUnlocked("Writing".into())));
 
         c.techs.insert(r.technologies.id("Writing").unwrap());
         assert_eq!(can_construct(&r, &c, &city, library), Ok(()));
@@ -295,10 +287,7 @@ mod tests {
         let mut city = City::found("Rome", CivId(0), TileId(0));
         let id = r.building("Library").unwrap();
         city.built.insert(id);
-        assert_eq!(
-            can_construct(&r, &c, &city, Construction::Building(id)),
-            Err(Rejection::AlreadyBuilt)
-        );
+        assert_eq!(can_construct(&r, &c, &city, Construction::Building(id)), Err(Rejection::AlreadyBuilt));
     }
 
     #[test]
@@ -334,18 +323,13 @@ mod tests {
         let library = Construction::Building(r.building("Library").unwrap());
         let base = production_cost(&r, library, CostModifiers::default()).unwrap();
 
-        let slow = production_cost(
-            &r,
-            library,
-            CostModifiers { speed: Fixed::whole(3), ..Default::default() },
-        )
-        .unwrap();
+        let slow =
+            production_cost(&r, library, CostModifiers { speed: Fixed::whole(3), ..Default::default() }).unwrap();
         assert_eq!(slow, base * 3);
 
         // 1.5× truncates rather than rounds, as everywhere else.
         let city_state =
-            production_cost(&r, library, CostModifiers { civ: Fixed::permille(1_500), ..Default::default() })
-                .unwrap();
+            production_cost(&r, library, CostModifiers { civ: Fixed::permille(1_500), ..Default::default() }).unwrap();
         assert_eq!(city_state, (base * 3) / 2);
     }
 
@@ -359,10 +343,7 @@ mod tests {
         let mut city = City::found("Rome", CivId(0), TileId(0));
         city.queue.push(library);
 
-        assert_eq!(
-            apply_production(&mut city, &r, cost - 1, m),
-            ConstructionEvent::Progressed { stored: cost - 1 }
-        );
+        assert_eq!(apply_production(&mut city, &r, cost - 1, m), ConstructionEvent::Progressed { stored: cost - 1 });
         assert!(city.built.is_empty());
 
         assert_eq!(
@@ -378,10 +359,7 @@ mod tests {
     fn an_empty_queue_still_banks_production() {
         let r = ruleset();
         let mut city = City::found("Rome", CivId(0), TileId(0));
-        assert_eq!(
-            apply_production(&mut city, &r, 7, CostModifiers::default()),
-            ConstructionEvent::Idle { stored: 7 }
-        );
+        assert_eq!(apply_production(&mut city, &r, 7, CostModifiers::default()), ConstructionEvent::Idle { stored: 7 });
     }
 
     #[test]

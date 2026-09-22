@@ -48,35 +48,44 @@ fn every_ruleset_object_resolves_to_a_packed_icon() {
     type Resolver = fn(&serde_json::Map<String, serde_json::Value>) -> Option<Sprite>;
 
     let cases: Vec<(&str, Resolver)> = vec![
-        ("Buildings.json",       |m| icons::building_icon(&name_of(m))),
-        ("Units.json",           |m| icons::unit_icon(&name_of(m))),
-        ("Techs.json",           |m| icons::tech_icon(&name_of(m))),
-        ("TileResources.json",   |m| icons::resource_icon(&name_of(m))),
-        ("TileImprovements.json",|m| icons::improvement_icon(&name_of(m))),
-        ("UnitPromotions.json",  |m| icons::promotion_icon_or_fallback(&name_of(m)).map(|(s, _)| s)),
-        ("Policies.json",        |m| icons::policy_icon(&name_of(m))),
-        ("Nations.json",         |m| icons::nation_icon(&name_of(m),
-                                        m.get("cityStateType").and_then(|v| v.as_str()))),
+        ("Buildings.json", |m| icons::building_icon(&name_of(m))),
+        ("Units.json", |m| icons::unit_icon(&name_of(m))),
+        ("Techs.json", |m| icons::tech_icon(&name_of(m))),
+        ("TileResources.json", |m| icons::resource_icon(&name_of(m))),
+        ("TileImprovements.json", |m| icons::improvement_icon(&name_of(m))),
+        ("UnitPromotions.json", |m| icons::promotion_icon_or_fallback(&name_of(m)).map(|(s, _)| s)),
+        ("Policies.json", |m| icons::policy_icon(&name_of(m))),
+        ("Nations.json", |m| icons::nation_icon(&name_of(m), m.get("cityStateType").and_then(|v| v.as_str()))),
     ];
 
     let (mut total, mut missing) = (0usize, Vec::new());
     for (file, resolve) in cases {
         let objs = objects(file);
         // Techs.json nests eras that also carry `name`; those have no icon of their own.
-        let objs: Vec<_> = objs.into_iter()
+        let objs: Vec<_> = objs
+            .into_iter()
             .filter(|m| file != "Techs.json" || m.contains_key("row") || m.contains_key("prerequisites"))
             .collect();
         let miss: Vec<_> = objs.iter().filter(|m| resolve(m).is_none()).map(name_of).collect();
         println!("{:<24} {:>4} objects, {:>3} unresolved", file, objs.len(), miss.len());
-        for m in miss.iter().take(8) { println!("        {m}") }
+        for m in miss.iter().take(8) {
+            println!("        {m}")
+        }
         total += objs.len();
         missing.extend(miss);
     }
-    let on_fallback: Vec<_> = objects("UnitPromotions.json").iter()
+    let on_fallback: Vec<_> = objects("UnitPromotions.json")
+        .iter()
         .filter(|m| icons::promotion_icon(&name_of(m)).is_none())
-        .map(name_of).collect();
-    println!("\nTOTAL {}/{} resolved  ({} of them via the group fallback: {:?})",
-             total - missing.len(), total, on_fallback.len(), on_fallback);
+        .map(name_of)
+        .collect();
+    println!(
+        "\nTOTAL {}/{} resolved  ({} of them via the group fallback: {:?})",
+        total - missing.len(),
+        total,
+        on_fallback.len(),
+        on_fallback
+    );
     assert!(total > 600, "expected the full ruleset, got {total}");
     assert!(missing.is_empty(), "{} objects have no packed icon: {:?}", missing.len(), missing);
 }

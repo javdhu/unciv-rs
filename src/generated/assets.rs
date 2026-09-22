@@ -4898,12 +4898,24 @@ impl Sprite {
             Sprite::FormatRGBA8888 => "format: RGBA8888",
             Sprite::FilterMipMapLinearLinearMipMapLinearLinear => "filter: MipMapLinearLinear, MipMapLinearLinear",
             Sprite::RepeatNone => "repeat: none",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant => "TileSets/AbsoluteUnits/Units/African Forest Elephant",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage => "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant1 => "TileSets/AbsoluteUnits/Units/African Forest Elephant-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage2 => "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant2 => "TileSets/AbsoluteUnits/Units/African Forest Elephant-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage1 => "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage-1",
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant1 => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage2 => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephant2 => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsAfricanForestElephantCarthage1 => {
+                "TileSets/AbsoluteUnits/Units/African Forest Elephant-Carthage-1"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsAntiAircraftGun => "TileSets/AbsoluteUnits/Units/Anti-Aircraft Gun",
             Sprite::TileSetsAbsoluteUnitsUnitsAntiAircraftGun1 => "TileSets/AbsoluteUnits/Units/Anti-Aircraft Gun-1",
             Sprite::TileSetsAbsoluteUnitsUnitsAntiAircraftGun2 => "TileSets/AbsoluteUnits/Units/Anti-Aircraft Gun-2",
@@ -4926,7 +4938,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsBatteringRam => "TileSets/AbsoluteUnits/Units/Battering Ram",
             Sprite::TileSetsAbsoluteUnitsUnitsBatteringRam1 => "TileSets/AbsoluteUnits/Units/Battering Ram-1",
             Sprite::TileSetsAbsoluteUnitsUnitsBatteringRam2 => "TileSets/AbsoluteUnits/Units/Battering Ram-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsBatteringRamTheHuns => "TileSets/AbsoluteUnits/Units/Battering Ram-The Huns",
+            Sprite::TileSetsAbsoluteUnitsUnitsBatteringRamTheHuns => {
+                "TileSets/AbsoluteUnits/Units/Battering Ram-The Huns"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsBattleship => "TileSets/AbsoluteUnits/Units/Battleship",
             Sprite::TileSetsAbsoluteUnitsUnitsBattleship1 => "TileSets/AbsoluteUnits/Units/Battleship-1",
             Sprite::TileSetsAbsoluteUnitsUnitsBattleship2 => "TileSets/AbsoluteUnits/Units/Battleship-2",
@@ -4957,7 +4971,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsCataphract => "TileSets/AbsoluteUnits/Units/Cataphract",
             Sprite::TileSetsAbsoluteUnitsUnitsCataphract1 => "TileSets/AbsoluteUnits/Units/Cataphract-1",
             Sprite::TileSetsAbsoluteUnitsUnitsCataphract2 => "TileSets/AbsoluteUnits/Units/Cataphract-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsCataphractByzantium => "TileSets/AbsoluteUnits/Units/Cataphract-Byzantium",
+            Sprite::TileSetsAbsoluteUnitsUnitsCataphractByzantium => {
+                "TileSets/AbsoluteUnits/Units/Cataphract-Byzantium"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsCatapult => "TileSets/AbsoluteUnits/Units/Catapult",
             Sprite::TileSetsAbsoluteUnitsUnitsCatapult1 => "TileSets/AbsoluteUnits/Units/Catapult-1",
             Sprite::TileSetsAbsoluteUnitsUnitsCatapult2 => "TileSets/AbsoluteUnits/Units/Catapult-2",
@@ -4974,7 +4990,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsCompanionCavalry => "TileSets/AbsoluteUnits/Units/Companion Cavalry",
             Sprite::TileSetsAbsoluteUnitsUnitsCompanionCavalry1 => "TileSets/AbsoluteUnits/Units/Companion Cavalry-1",
             Sprite::TileSetsAbsoluteUnitsUnitsCompanionCavalry2 => "TileSets/AbsoluteUnits/Units/Companion Cavalry-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsCompanionCavalryGreece => "TileSets/AbsoluteUnits/Units/Companion Cavalry-Greece",
+            Sprite::TileSetsAbsoluteUnitsUnitsCompanionCavalryGreece => {
+                "TileSets/AbsoluteUnits/Units/Companion Cavalry-Greece"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsCompositeBowman => "TileSets/AbsoluteUnits/Units/Composite Bowman",
             Sprite::TileSetsAbsoluteUnitsUnitsCompositeBowman1 => "TileSets/AbsoluteUnits/Units/Composite Bowman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsCompositeBowman2 => "TileSets/AbsoluteUnits/Units/Composite Bowman-2",
@@ -4998,40 +5016,102 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsDromonByzantium2 => "TileSets/AbsoluteUnits/Units/Dromon-Byzantium-2",
             Sprite::TileSetsAbsoluteUnitsUnitsDromon2 => "TileSets/AbsoluteUnits/Units/Dromon-2",
             Sprite::TileSetsAbsoluteUnitsUnitsDromonByzantium1 => "TileSets/AbsoluteUnits/Units/Dromon-Byzantium-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianDenmark => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Denmark",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianPolynesia => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Polynesia",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainRenaissanceEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Renaissance era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryDenmark => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Denmark",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryPolynesia => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Polynesia",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra1 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra2 => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainRenaissanceEra => "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Renaissance era",
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilian2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianDenmark => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Denmark"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianModernEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Modern era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainModernEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Modern era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianPolynesia => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Polynesia"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianRenaissanceEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Renaissance era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitCivilianSpainRenaissanceEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Civilian-Spain-Renaissance era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitary2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryDenmark => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Denmark"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryModernEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Modern era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainModernEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Modern era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryPolynesia => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Polynesia"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra1 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitaryRenaissanceEra2 => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Renaissance era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsEmbarkedUnitMilitarySpainRenaissanceEra => {
+                "TileSets/AbsoluteUnits/Units/EmbarkedUnit-Military-Spain-Renaissance era"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsForeignLegion => "TileSets/AbsoluteUnits/Units/Foreign Legion",
             Sprite::TileSetsAbsoluteUnitsUnitsForeignLegion1 => "TileSets/AbsoluteUnits/Units/Foreign Legion-1",
             Sprite::TileSetsAbsoluteUnitsUnitsForeignLegion2 => "TileSets/AbsoluteUnits/Units/Foreign Legion-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsForeignLegionFrance => "TileSets/AbsoluteUnits/Units/Foreign Legion-France",
+            Sprite::TileSetsAbsoluteUnitsUnitsForeignLegionFrance => {
+                "TileSets/AbsoluteUnits/Units/Foreign Legion-France"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsFrigate => "TileSets/AbsoluteUnits/Units/Frigate",
             Sprite::TileSetsAbsoluteUnitsUnitsFrigate1 => "TileSets/AbsoluteUnits/Units/Frigate-1",
             Sprite::TileSetsAbsoluteUnitsUnitsFrigate2 => "TileSets/AbsoluteUnits/Units/Frigate-2",
@@ -5052,46 +5132,84 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsGreatArtist => "TileSets/AbsoluteUnits/Units/Great Artist",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatArtist1 => "TileSets/AbsoluteUnits/Units/Great Artist-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatArtist2 => "TileSets/AbsoluteUnits/Units/Great Artist-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra => "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatArtistIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great Artist-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineer => "TileSets/AbsoluteUnits/Units/Great Engineer",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineer1 => "TileSets/AbsoluteUnits/Units/Great Engineer-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineer2 => "TileSets/AbsoluteUnits/Units/Great Engineer-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra => "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatEngineerIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great Engineer-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneral => "TileSets/AbsoluteUnits/Units/Great General",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneral1 => "TileSets/AbsoluteUnits/Units/Great General-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneral2 => "TileSets/AbsoluteUnits/Units/Great General-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra => "TileSets/AbsoluteUnits/Units/Great General-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great General-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great General-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great General-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great General-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatGeneralIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great General-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchant => "TileSets/AbsoluteUnits/Units/Great Merchant",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchant1 => "TileSets/AbsoluteUnits/Units/Great Merchant-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchant2 => "TileSets/AbsoluteUnits/Units/Great Merchant-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra => "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatMerchantIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great Merchant-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatProphet => "TileSets/AbsoluteUnits/Units/Great Prophet",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatProphet1 => "TileSets/AbsoluteUnits/Units/Great Prophet-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatProphet2 => "TileSets/AbsoluteUnits/Units/Great Prophet-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra => "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatProphetIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great Prophet-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatScientist => "TileSets/AbsoluteUnits/Units/Great Scientist",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatScientist1 => "TileSets/AbsoluteUnits/Units/Great Scientist-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatScientist2 => "TileSets/AbsoluteUnits/Units/Great Scientist-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra => "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsGreatScientistIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Great Scientist-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsGreatWarInfantry => "TileSets/AbsoluteUnits/Units/Great War Infantry",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatWarInfantry1 => "TileSets/AbsoluteUnits/Units/Great War Infantry-1",
             Sprite::TileSetsAbsoluteUnitsUnitsGreatWarInfantry2 => "TileSets/AbsoluteUnits/Units/Great War Infantry-2",
             Sprite::TileSetsAbsoluteUnitsUnitsHakkapeliitta => "TileSets/AbsoluteUnits/Units/Hakkapeliitta",
             Sprite::TileSetsAbsoluteUnitsUnitsHakkapeliitta1 => "TileSets/AbsoluteUnits/Units/Hakkapeliitta-1",
             Sprite::TileSetsAbsoluteUnitsUnitsHakkapeliitta2 => "TileSets/AbsoluteUnits/Units/Hakkapeliitta-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsHakkapeliittaSweden => "TileSets/AbsoluteUnits/Units/Hakkapeliitta-Sweden",
+            Sprite::TileSetsAbsoluteUnitsUnitsHakkapeliittaSweden => {
+                "TileSets/AbsoluteUnits/Units/Hakkapeliitta-Sweden"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsHelicopterGunship => "TileSets/AbsoluteUnits/Units/Helicopter Gunship",
             Sprite::TileSetsAbsoluteUnitsUnitsHelicopterGunship1 => "TileSets/AbsoluteUnits/Units/Helicopter Gunship-1",
             Sprite::TileSetsAbsoluteUnitsUnitsHelicopterGunship2 => "TileSets/AbsoluteUnits/Units/Helicopter Gunship-2",
@@ -5102,12 +5220,20 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsHopliteGreece1 => "TileSets/AbsoluteUnits/Units/Hoplite-Greece-1",
             Sprite::TileSetsAbsoluteUnitsUnitsHopliteGreece2 => "TileSets/AbsoluteUnits/Units/Hoplite-Greece-2",
             Sprite::TileSetsAbsoluteUnitsUnitsHorseArcher => "TileSets/AbsoluteUnits/Units/Horse Archer",
-            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns => "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns",
+            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns => {
+                "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsHorseArcher1 => "TileSets/AbsoluteUnits/Units/Horse Archer-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns2 => "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns2 => {
+                "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsHorseArcher2 => "TileSets/AbsoluteUnits/Units/Horse Archer-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns1 => "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherBarbarians => "TileSets/AbsoluteUnits/Units/Horse Archer-Barbarians",
+            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherTheHuns1 => {
+                "TileSets/AbsoluteUnits/Units/Horse Archer-The Huns-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsHorseArcherBarbarians => {
+                "TileSets/AbsoluteUnits/Units/Horse Archer-Barbarians"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsHorseman => "TileSets/AbsoluteUnits/Units/Horseman",
             Sprite::TileSetsAbsoluteUnitsUnitsHorseman1 => "TileSets/AbsoluteUnits/Units/Horseman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsHorseman2 => "TileSets/AbsoluteUnits/Units/Horseman-2",
@@ -5125,9 +5251,15 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsInquisitor => "TileSets/AbsoluteUnits/Units/Inquisitor",
             Sprite::TileSetsAbsoluteUnitsUnitsInquisitor1 => "TileSets/AbsoluteUnits/Units/Inquisitor-1",
             Sprite::TileSetsAbsoluteUnitsUnitsInquisitor2 => "TileSets/AbsoluteUnits/Units/Inquisitor-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra => "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsInquisitorIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Inquisitor-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsIronclad => "TileSets/AbsoluteUnits/Units/Ironclad",
             Sprite::TileSetsAbsoluteUnitsUnitsIronclad1 => "TileSets/AbsoluteUnits/Units/Ironclad-1",
             Sprite::TileSetsAbsoluteUnitsUnitsIronclad2 => "TileSets/AbsoluteUnits/Units/Ironclad-2",
@@ -5138,7 +5270,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsJanissary => "TileSets/AbsoluteUnits/Units/Janissary",
             Sprite::TileSetsAbsoluteUnitsUnitsJanissary1 => "TileSets/AbsoluteUnits/Units/Janissary-1",
             Sprite::TileSetsAbsoluteUnitsUnitsJanissary2 => "TileSets/AbsoluteUnits/Units/Janissary-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsJanissaryTheOttomans => "TileSets/AbsoluteUnits/Units/Janissary-The Ottomans",
+            Sprite::TileSetsAbsoluteUnitsUnitsJanissaryTheOttomans => {
+                "TileSets/AbsoluteUnits/Units/Janissary-The Ottomans"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsKeshik => "TileSets/AbsoluteUnits/Units/Keshik",
             Sprite::TileSetsAbsoluteUnitsUnitsKeshik1 => "TileSets/AbsoluteUnits/Units/Keshik-1",
             Sprite::TileSetsAbsoluteUnitsUnitsKeshik2 => "TileSets/AbsoluteUnits/Units/Keshik-2",
@@ -5170,16 +5304,22 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsLongswordsman => "TileSets/AbsoluteUnits/Units/Longswordsman",
             Sprite::TileSetsAbsoluteUnitsUnitsLongswordsman1 => "TileSets/AbsoluteUnits/Units/Longswordsman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsLongswordsman2 => "TileSets/AbsoluteUnits/Units/Longswordsman-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsLongswordsmanBarbarians => "TileSets/AbsoluteUnits/Units/Longswordsman-Barbarians",
+            Sprite::TileSetsAbsoluteUnitsUnitsLongswordsmanBarbarians => {
+                "TileSets/AbsoluteUnits/Units/Longswordsman-Barbarians"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMachineGun => "TileSets/AbsoluteUnits/Units/Machine Gun",
             Sprite::TileSetsAbsoluteUnitsUnitsMachineGun1 => "TileSets/AbsoluteUnits/Units/Machine Gun-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMachineGun2 => "TileSets/AbsoluteUnits/Units/Machine Gun-2",
             Sprite::TileSetsAbsoluteUnitsUnitsMandekaluCavalry => "TileSets/AbsoluteUnits/Units/Mandekalu Cavalry",
             Sprite::TileSetsAbsoluteUnitsUnitsMandekaluCavalry1 => "TileSets/AbsoluteUnits/Units/Mandekalu Cavalry-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMandekaluCavalry2 => "TileSets/AbsoluteUnits/Units/Mandekalu Cavalry-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsMandekaluCavalrySonghai => "TileSets/AbsoluteUnits/Units/Mandekalu Cavalry-Songhai",
+            Sprite::TileSetsAbsoluteUnitsUnitsMandekaluCavalrySonghai => {
+                "TileSets/AbsoluteUnits/Units/Mandekalu Cavalry-Songhai"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMaoriWarrior => "TileSets/AbsoluteUnits/Units/Maori Warrior",
-            Sprite::TileSetsAbsoluteUnitsUnitsMaoriWarriorPolynesia => "TileSets/AbsoluteUnits/Units/Maori Warrior-Polynesia",
+            Sprite::TileSetsAbsoluteUnitsUnitsMaoriWarriorPolynesia => {
+                "TileSets/AbsoluteUnits/Units/Maori Warrior-Polynesia"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMaoriWarrior1 => "TileSets/AbsoluteUnits/Units/Maori Warrior-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMaoriWarrior2 => "TileSets/AbsoluteUnits/Units/Maori Warrior-2",
             Sprite::TileSetsAbsoluteUnitsUnitsMarauder => "TileSets/AbsoluteUnits/Units/Marauder",
@@ -5187,12 +5327,18 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsMarine1 => "TileSets/AbsoluteUnits/Units/Marine-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMarine2 => "TileSets/AbsoluteUnits/Units/Marine-2",
             Sprite::TileSetsAbsoluteUnitsUnitsMechanizedInfantry => "TileSets/AbsoluteUnits/Units/Mechanized Infantry",
-            Sprite::TileSetsAbsoluteUnitsUnitsMechanizedInfantry1 => "TileSets/AbsoluteUnits/Units/Mechanized Infantry-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsMechanizedInfantry2 => "TileSets/AbsoluteUnits/Units/Mechanized Infantry-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsMechanizedInfantry1 => {
+                "TileSets/AbsoluteUnits/Units/Mechanized Infantry-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsMechanizedInfantry2 => {
+                "TileSets/AbsoluteUnits/Units/Mechanized Infantry-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMehalSefari => "TileSets/AbsoluteUnits/Units/Mehal Sefari",
             Sprite::TileSetsAbsoluteUnitsUnitsMehalSefari1 => "TileSets/AbsoluteUnits/Units/Mehal Sefari-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMehalSefari2 => "TileSets/AbsoluteUnits/Units/Mehal Sefari-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsMehalSefariEthiopia => "TileSets/AbsoluteUnits/Units/Mehal Sefari-Ethiopia",
+            Sprite::TileSetsAbsoluteUnitsUnitsMehalSefariEthiopia => {
+                "TileSets/AbsoluteUnits/Units/Mehal Sefari-Ethiopia"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMinuteman => "TileSets/AbsoluteUnits/Units/Minuteman",
             Sprite::TileSetsAbsoluteUnitsUnitsMinuteman1 => "TileSets/AbsoluteUnits/Units/Minuteman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMinuteman2 => "TileSets/AbsoluteUnits/Units/Minuteman-2",
@@ -5203,9 +5349,15 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsMissionary => "TileSets/AbsoluteUnits/Units/Missionary",
             Sprite::TileSetsAbsoluteUnitsUnitsMissionary1 => "TileSets/AbsoluteUnits/Units/Missionary-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMissionary2 => "TileSets/AbsoluteUnits/Units/Missionary-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra => "TileSets/AbsoluteUnits/Units/Missionary-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Missionary-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Missionary-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Missionary-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Missionary-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsMissionaryIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Missionary-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMobileSAM => "TileSets/AbsoluteUnits/Units/Mobile SAM",
             Sprite::TileSetsAbsoluteUnitsUnitsMobileSAM1 => "TileSets/AbsoluteUnits/Units/Mobile SAM-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMobileSAM2 => "TileSets/AbsoluteUnits/Units/Mobile SAM-2",
@@ -5215,7 +5367,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsMohawkWarrior => "TileSets/AbsoluteUnits/Units/Mohawk Warrior",
             Sprite::TileSetsAbsoluteUnitsUnitsMohawkWarrior1 => "TileSets/AbsoluteUnits/Units/Mohawk Warrior-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMohawkWarrior2 => "TileSets/AbsoluteUnits/Units/Mohawk Warrior-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsMohawkWarriorIroquois => "TileSets/AbsoluteUnits/Units/Mohawk Warrior-Iroquois",
+            Sprite::TileSetsAbsoluteUnitsUnitsMohawkWarriorIroquois => {
+                "TileSets/AbsoluteUnits/Units/Mohawk Warrior-Iroquois"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsMusketeer => "TileSets/AbsoluteUnits/Units/Musketeer",
             Sprite::TileSetsAbsoluteUnitsUnitsMusketeer1 => "TileSets/AbsoluteUnits/Units/Musketeer-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMusketeer2 => "TileSets/AbsoluteUnits/Units/Musketeer-2",
@@ -5223,16 +5377,32 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsMusketman => "TileSets/AbsoluteUnits/Units/Musketman",
             Sprite::TileSetsAbsoluteUnitsUnitsMusketman1 => "TileSets/AbsoluteUnits/Units/Musketman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsMusketman2 => "TileSets/AbsoluteUnits/Units/Musketman-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsMusketmanBarbarians => "TileSets/AbsoluteUnits/Units/Musketman-Barbarians",
+            Sprite::TileSetsAbsoluteUnitsUnitsMusketmanBarbarians => {
+                "TileSets/AbsoluteUnits/Units/Musketman-Barbarians"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsImg => "TileSets/AbsoluteUnits/Units/img",
             Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephant => "TileSets/AbsoluteUnits/Units/Naresuan's Elephant",
-            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephantSiam => "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-Siam",
-            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephant1 => "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephant2 => "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry => "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry",
-            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry1 => "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry2 => "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantryDenmark => "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-Denmark",
+            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephantSiam => {
+                "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-Siam"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephant1 => {
+                "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNaresuanSElephant2 => {
+                "TileSets/AbsoluteUnits/Units/Naresuan's Elephant-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry => {
+                "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry1 => {
+                "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantry2 => {
+                "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsNorwegianSkiInfantryDenmark => {
+                "TileSets/AbsoluteUnits/Units/Norwegian Ski Infantry-Denmark"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsNuclearSubmarine => "TileSets/AbsoluteUnits/Units/Nuclear Submarine",
             Sprite::TileSetsAbsoluteUnitsUnitsNuclearSubmarine1 => "TileSets/AbsoluteUnits/Units/Nuclear Submarine-1",
             Sprite::TileSetsAbsoluteUnitsUnitsNuclearSubmarine2 => "TileSets/AbsoluteUnits/Units/Nuclear Submarine-2",
@@ -5247,7 +5417,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsPersianImmortal1 => "TileSets/AbsoluteUnits/Units/Persian Immortal-1",
             Sprite::TileSetsAbsoluteUnitsUnitsPersianImmortal2 => "TileSets/AbsoluteUnits/Units/Persian Immortal-2",
             Sprite::TileSetsAbsoluteUnitsUnitsPictishWarrior => "TileSets/AbsoluteUnits/Units/Pictish Warrior",
-            Sprite::TileSetsAbsoluteUnitsUnitsPictishWarriorCelts => "TileSets/AbsoluteUnits/Units/Pictish Warrior-Celts",
+            Sprite::TileSetsAbsoluteUnitsUnitsPictishWarriorCelts => {
+                "TileSets/AbsoluteUnits/Units/Pictish Warrior-Celts"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsPictishWarrior1 => "TileSets/AbsoluteUnits/Units/Pictish Warrior-1",
             Sprite::TileSetsAbsoluteUnitsUnitsPictishWarrior2 => "TileSets/AbsoluteUnits/Units/Pictish Warrior-2",
             Sprite::TileSetsAbsoluteUnitsUnitsPikeman => "TileSets/AbsoluteUnits/Units/Pikeman",
@@ -5260,7 +5432,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsQuinquereme => "TileSets/AbsoluteUnits/Units/Quinquereme",
             Sprite::TileSetsAbsoluteUnitsUnitsQuinquereme1 => "TileSets/AbsoluteUnits/Units/Quinquereme-1",
             Sprite::TileSetsAbsoluteUnitsUnitsQuinquereme2 => "TileSets/AbsoluteUnits/Units/Quinquereme-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsQuinqueremeCarthage => "TileSets/AbsoluteUnits/Units/Quinquereme-Carthage",
+            Sprite::TileSetsAbsoluteUnitsUnitsQuinqueremeCarthage => {
+                "TileSets/AbsoluteUnits/Units/Quinquereme-Carthage"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsRiderBarbarians => "TileSets/AbsoluteUnits/Units/Rider-Barbarians",
             Sprite::TileSetsAbsoluteUnitsUnitsRifleman => "TileSets/AbsoluteUnits/Units/Rifleman",
             Sprite::TileSetsAbsoluteUnitsUnitsRifleman1 => "TileSets/AbsoluteUnits/Units/Rifleman-1",
@@ -5293,15 +5467,29 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsSettler => "TileSets/AbsoluteUnits/Units/Settler",
             Sprite::TileSetsAbsoluteUnitsUnitsSettlerAncientEra => "TileSets/AbsoluteUnits/Units/Settler-Ancient era",
             Sprite::TileSetsAbsoluteUnitsUnitsSettler1 => "TileSets/AbsoluteUnits/Units/Settler-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerAncientEra1 => "TileSets/AbsoluteUnits/Units/Settler-Ancient era-1",
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerAncientEra1 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Ancient era-1"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsSettler2 => "TileSets/AbsoluteUnits/Units/Settler-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerAncientEra2 => "TileSets/AbsoluteUnits/Units/Settler-Ancient era-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra => "TileSets/AbsoluteUnits/Units/Settler-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Settler-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Settler-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerAncientEra2 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Ancient era-2"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Settler-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsSettlerMedievalEra => "TileSets/AbsoluteUnits/Units/Settler-Medieval era",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerMedievalEra1 => "TileSets/AbsoluteUnits/Units/Settler-Medieval era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsSettlerMedievalEra2 => "TileSets/AbsoluteUnits/Units/Settler-Medieval era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerMedievalEra1 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Medieval era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsSettlerMedievalEra2 => {
+                "TileSets/AbsoluteUnits/Units/Settler-Medieval era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsShipOfTheLine => "TileSets/AbsoluteUnits/Units/Ship of the Line",
             Sprite::TileSetsAbsoluteUnitsUnitsShipOfTheLine1 => "TileSets/AbsoluteUnits/Units/Ship of the Line-1",
             Sprite::TileSetsAbsoluteUnitsUnitsShipOfTheLine2 => "TileSets/AbsoluteUnits/Units/Ship of the Line-2",
@@ -5322,7 +5510,9 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsSwordsman => "TileSets/AbsoluteUnits/Units/Swordsman",
             Sprite::TileSetsAbsoluteUnitsUnitsSwordsman1 => "TileSets/AbsoluteUnits/Units/Swordsman-1",
             Sprite::TileSetsAbsoluteUnitsUnitsSwordsman2 => "TileSets/AbsoluteUnits/Units/Swordsman-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsSwordsmanBarbarians => "TileSets/AbsoluteUnits/Units/Swordsman-Barbarians",
+            Sprite::TileSetsAbsoluteUnitsUnitsSwordsmanBarbarians => {
+                "TileSets/AbsoluteUnits/Units/Swordsman-Barbarians"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsTank => "TileSets/AbsoluteUnits/Units/Tank",
             Sprite::TileSetsAbsoluteUnitsUnitsTank1 => "TileSets/AbsoluteUnits/Units/Tank-1",
             Sprite::TileSetsAbsoluteUnitsUnitsTank2 => "TileSets/AbsoluteUnits/Units/Tank-2",
@@ -5355,16 +5545,28 @@ impl Sprite {
             Sprite::TileSetsAbsoluteUnitsUnitsWorkBoats => "TileSets/AbsoluteUnits/Units/Work Boats",
             Sprite::TileSetsAbsoluteUnitsUnitsWorkBoats1 => "TileSets/AbsoluteUnits/Units/Work Boats-1",
             Sprite::TileSetsAbsoluteUnitsUnitsWorkBoats2 => "TileSets/AbsoluteUnits/Units/Work Boats-2",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra => "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkBoatsIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Work Boats-Industrial era-2"
+            }
             Sprite::TileSetsAbsoluteUnitsUnitsWorker => "TileSets/AbsoluteUnits/Units/Worker",
             Sprite::TileSetsAbsoluteUnitsUnitsWorker1 => "TileSets/AbsoluteUnits/Units/Worker-1",
             Sprite::TileSetsAbsoluteUnitsUnitsWorker2 => "TileSets/AbsoluteUnits/Units/Worker-2",
             Sprite::TileSetsAbsoluteUnitsUnitsWorkerBarbarians => "TileSets/AbsoluteUnits/Units/Worker-Barbarians",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra => "TileSets/AbsoluteUnits/Units/Worker-Industrial era",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra1 => "TileSets/AbsoluteUnits/Units/Worker-Industrial era-1",
-            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra2 => "TileSets/AbsoluteUnits/Units/Worker-Industrial era-2",
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra => {
+                "TileSets/AbsoluteUnits/Units/Worker-Industrial era"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra1 => {
+                "TileSets/AbsoluteUnits/Units/Worker-Industrial era-1"
+            }
+            Sprite::TileSetsAbsoluteUnitsUnitsWorkerIndustrialEra2 => {
+                "TileSets/AbsoluteUnits/Units/Worker-Industrial era-2"
+            }
             Sprite::FilterMipMapLinearLinearLinear => "filter: MipMapLinearLinear, Linear",
             Sprite::BuildingIconsAlhambra => "BuildingIcons/Alhambra",
             Sprite::BuildingIconsAmphitheater => "BuildingIcons/Amphitheater",
@@ -6180,7 +6382,9 @@ impl Sprite {
             Sprite::SkinsMinimalRoundedEdgeRectangleMidBorder => "Skins/Minimal/roundedEdgeRectangle-mid-border",
             Sprite::SkinsMinimalRoundedEdgeRectangleSmall => "Skins/Minimal/roundedEdgeRectangle-small",
             Sprite::SkinsMinimalRoundedTopEdgeRectangleSmall => "Skins/Minimal/roundedTopEdgeRectangle-small",
-            Sprite::SkinsMinimalRoundedTopEdgeRectangleSmallBorder => "Skins/Minimal/roundedTopEdgeRectangle-small-border",
+            Sprite::SkinsMinimalRoundedTopEdgeRectangleSmallBorder => {
+                "Skins/Minimal/roundedTopEdgeRectangle-small-border"
+            }
             Sprite::SkinsMinimalSelectBox => "Skins/Minimal/select-box",
             Sprite::SkinsMinimalSelectBoxPressed => "Skins/Minimal/select-box-pressed",
             Sprite::Size20481024 => "size: 2048, 1024",
@@ -6318,7 +6522,9 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesAtoll => "TileSets/FantasyHex/Tiles/Atoll",
             Sprite::TileSetsFantasyHexTilesBananas => "TileSets/FantasyHex/Tiles/Bananas",
             Sprite::TileSetsFantasyHexTilesBarbarianEncampment => "TileSets/FantasyHex/Tiles/Barbarian encampment",
-            Sprite::TileSetsFantasyHexTilesBarbarianEncampmentSnow => "TileSets/FantasyHex/Tiles/Barbarian encampment-Snow",
+            Sprite::TileSetsFantasyHexTilesBarbarianEncampmentSnow => {
+                "TileSets/FantasyHex/Tiles/Barbarian encampment-Snow"
+            }
             Sprite::TileSetsFantasyHexTilesBarringerCrater => "TileSets/FantasyHex/Tiles/Barringer Crater",
             Sprite::TileSetsFantasyHexTilesBison => "TileSets/FantasyHex/Tiles/Bison",
             Sprite::TileSetsFantasyHexTilesBisonCamp => "TileSets/FantasyHex/Tiles/Bison+Camp",
@@ -6332,13 +6538,23 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesCityCenter => "TileSets/FantasyHex/Tiles/City center",
             Sprite::TileSetsFantasyHexTilesCityCenterAncientEra => "TileSets/FantasyHex/Tiles/City center-Ancient era",
             Sprite::TileSetsFantasyHexTilesCityCenterAtomicEra => "TileSets/FantasyHex/Tiles/City center-Atomic era",
-            Sprite::TileSetsFantasyHexTilesCityCenterClassicalEra => "TileSets/FantasyHex/Tiles/City center-Classical era",
+            Sprite::TileSetsFantasyHexTilesCityCenterClassicalEra => {
+                "TileSets/FantasyHex/Tiles/City center-Classical era"
+            }
             Sprite::TileSetsFantasyHexTilesCityCenterFutureEra => "TileSets/FantasyHex/Tiles/City center-Future era",
-            Sprite::TileSetsFantasyHexTilesCityCenterIndustrialEra => "TileSets/FantasyHex/Tiles/City center-Industrial era",
-            Sprite::TileSetsFantasyHexTilesCityCenterInformationEra => "TileSets/FantasyHex/Tiles/City center-Information era",
-            Sprite::TileSetsFantasyHexTilesCityCenterMedievalEra => "TileSets/FantasyHex/Tiles/City center-Medieval era",
+            Sprite::TileSetsFantasyHexTilesCityCenterIndustrialEra => {
+                "TileSets/FantasyHex/Tiles/City center-Industrial era"
+            }
+            Sprite::TileSetsFantasyHexTilesCityCenterInformationEra => {
+                "TileSets/FantasyHex/Tiles/City center-Information era"
+            }
+            Sprite::TileSetsFantasyHexTilesCityCenterMedievalEra => {
+                "TileSets/FantasyHex/Tiles/City center-Medieval era"
+            }
             Sprite::TileSetsFantasyHexTilesCityCenterModernEra => "TileSets/FantasyHex/Tiles/City center-Modern era",
-            Sprite::TileSetsFantasyHexTilesCityCenterRenaissanceEra => "TileSets/FantasyHex/Tiles/City center-Renaissance era",
+            Sprite::TileSetsFantasyHexTilesCityCenterRenaissanceEra => {
+                "TileSets/FantasyHex/Tiles/City center-Renaissance era"
+            }
             Sprite::TileSetsFantasyHexTilesCityRuins => "TileSets/FantasyHex/Tiles/City ruins",
             Sprite::TileSetsFantasyHexTilesCoal => "TileSets/FantasyHex/Tiles/Coal",
             Sprite::TileSetsFantasyHexTilesCoast => "TileSets/FantasyHex/Tiles/Coast",
@@ -6352,7 +6568,9 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesDeerCamp => "TileSets/FantasyHex/Tiles/Deer+Camp",
             Sprite::TileSetsFantasyHexTilesDesert => "TileSets/FantasyHex/Tiles/Desert",
             Sprite::TileSetsFantasyHexTilesDesertFarm => "TileSets/FantasyHex/Tiles/Desert+Farm",
-            Sprite::TileSetsFantasyHexTilesDesertFloodPlainsFarm => "TileSets/FantasyHex/Tiles/Desert+Flood plains+Farm",
+            Sprite::TileSetsFantasyHexTilesDesertFloodPlainsFarm => {
+                "TileSets/FantasyHex/Tiles/Desert+Flood plains+Farm"
+            }
             Sprite::TileSetsFantasyHexTilesDyes => "TileSets/FantasyHex/Tiles/Dyes",
             Sprite::TileSetsFantasyHexTilesDyesPlantation => "TileSets/FantasyHex/Tiles/Dyes+Plantation",
             Sprite::TileSetsFantasyHexTilesElDorado => "TileSets/FantasyHex/Tiles/El Dorado",
@@ -6371,14 +6589,28 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesGrassland => "TileSets/FantasyHex/Tiles/Grassland",
             Sprite::TileSetsFantasyHexTilesGrasslandFarm => "TileSets/FantasyHex/Tiles/Grassland+Farm",
             Sprite::TileSetsFantasyHexTilesGrasslandForestCamp => "TileSets/FantasyHex/Tiles/Grassland+Forest+Camp",
-            Sprite::TileSetsFantasyHexTilesGrasslandForestDeerCamp => "TileSets/FantasyHex/Tiles/Grassland+Forest+Deer+Camp",
-            Sprite::TileSetsFantasyHexTilesGrasslandForestFursCamp => "TileSets/FantasyHex/Tiles/Grassland+Forest+Furs+Camp",
-            Sprite::TileSetsFantasyHexTilesGrasslandForestLumberMill => "TileSets/FantasyHex/Tiles/Grassland+Forest+Lumber mill",
-            Sprite::TileSetsFantasyHexTilesGrasslandForestTrufflesCamp => "TileSets/FantasyHex/Tiles/Grassland+Forest+Truffles+Camp",
+            Sprite::TileSetsFantasyHexTilesGrasslandForestDeerCamp => {
+                "TileSets/FantasyHex/Tiles/Grassland+Forest+Deer+Camp"
+            }
+            Sprite::TileSetsFantasyHexTilesGrasslandForestFursCamp => {
+                "TileSets/FantasyHex/Tiles/Grassland+Forest+Furs+Camp"
+            }
+            Sprite::TileSetsFantasyHexTilesGrasslandForestLumberMill => {
+                "TileSets/FantasyHex/Tiles/Grassland+Forest+Lumber mill"
+            }
+            Sprite::TileSetsFantasyHexTilesGrasslandForestTrufflesCamp => {
+                "TileSets/FantasyHex/Tiles/Grassland+Forest+Truffles+Camp"
+            }
             Sprite::TileSetsFantasyHexTilesGrasslandHillFarm => "TileSets/FantasyHex/Tiles/Grassland+Hill+Farm",
-            Sprite::TileSetsFantasyHexTilesGrasslandHillForestCamp => "TileSets/FantasyHex/Tiles/Grassland+Hill+Forest+Camp",
-            Sprite::TileSetsFantasyHexTilesGrasslandHillForestTradingPost => "TileSets/FantasyHex/Tiles/Grassland+Hill+Forest+Trading post",
-            Sprite::TileSetsFantasyHexTilesGrasslandJungleTradingPost => "TileSets/FantasyHex/Tiles/Grassland+Jungle+Trading post",
+            Sprite::TileSetsFantasyHexTilesGrasslandHillForestCamp => {
+                "TileSets/FantasyHex/Tiles/Grassland+Hill+Forest+Camp"
+            }
+            Sprite::TileSetsFantasyHexTilesGrasslandHillForestTradingPost => {
+                "TileSets/FantasyHex/Tiles/Grassland+Hill+Forest+Trading post"
+            }
+            Sprite::TileSetsFantasyHexTilesGrasslandJungleTradingPost => {
+                "TileSets/FantasyHex/Tiles/Grassland+Jungle+Trading post"
+            }
             Sprite::TileSetsFantasyHexTilesGrasslandForest => "TileSets/FantasyHex/Tiles/GrasslandForest",
             Sprite::TileSetsFantasyHexTilesGreatBarrierReef => "TileSets/FantasyHex/Tiles/Great Barrier Reef",
             Sprite::TileSetsFantasyHexTilesHill => "TileSets/FantasyHex/Tiles/Hill",
@@ -6419,8 +6651,12 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesPlains => "TileSets/FantasyHex/Tiles/Plains",
             Sprite::TileSetsFantasyHexTilesPlainsFarm => "TileSets/FantasyHex/Tiles/Plains+Farm",
             Sprite::TileSetsFantasyHexTilesPlainsForestCamp => "TileSets/FantasyHex/Tiles/Plains+Forest+Camp",
-            Sprite::TileSetsFantasyHexTilesPlainsForestLumberMill => "TileSets/FantasyHex/Tiles/Plains+Forest+Lumber mill",
-            Sprite::TileSetsFantasyHexTilesPlainsJungleTradingPost => "TileSets/FantasyHex/Tiles/Plains+Jungle+Trading post",
+            Sprite::TileSetsFantasyHexTilesPlainsForestLumberMill => {
+                "TileSets/FantasyHex/Tiles/Plains+Forest+Lumber mill"
+            }
+            Sprite::TileSetsFantasyHexTilesPlainsJungleTradingPost => {
+                "TileSets/FantasyHex/Tiles/Plains+Jungle+Trading post"
+            }
             Sprite::TileSetsFantasyHexTilesPlainsForest => "TileSets/FantasyHex/Tiles/PlainsForest",
             Sprite::TileSetsFantasyHexTilesPlainsJungle => "TileSets/FantasyHex/Tiles/PlainsJungle",
             Sprite::TileSetsFantasyHexTilesPlantation => "TileSets/FantasyHex/Tiles/Plantation",
@@ -6457,8 +6693,12 @@ impl Sprite {
             Sprite::TileSetsFantasyHexTilesTundraForestCamp => "TileSets/FantasyHex/Tiles/Tundra+Forest+Camp",
             Sprite::TileSetsFantasyHexTilesTundraForestCampFurs => "TileSets/FantasyHex/Tiles/Tundra+Forest+Camp+Furs",
             Sprite::TileSetsFantasyHexTilesTundraForestDeerCamp => "TileSets/FantasyHex/Tiles/Tundra+Forest+Deer+Camp",
-            Sprite::TileSetsFantasyHexTilesTundraForestLumberMill => "TileSets/FantasyHex/Tiles/Tundra+Forest+Lumber mill",
-            Sprite::TileSetsFantasyHexTilesTundraForestTrufflesCamp => "TileSets/FantasyHex/Tiles/Tundra+Forest+Truffles+Camp",
+            Sprite::TileSetsFantasyHexTilesTundraForestLumberMill => {
+                "TileSets/FantasyHex/Tiles/Tundra+Forest+Lumber mill"
+            }
+            Sprite::TileSetsFantasyHexTilesTundraForestTrufflesCamp => {
+                "TileSets/FantasyHex/Tiles/Tundra+Forest+Truffles+Camp"
+            }
             Sprite::TileSetsFantasyHexTilesTundraForest => "TileSets/FantasyHex/Tiles/TundraForest",
             Sprite::TileSetsFantasyHexTilesUluru => "TileSets/FantasyHex/Tiles/Uluru",
             Sprite::TileSetsFantasyHexTilesUranium => "TileSets/FantasyHex/Tiles/Uranium",
@@ -6507,11 +6747,17 @@ impl Sprite {
             Sprite::TileSetsFantasyHexUnitsDestroyer => "TileSets/FantasyHex/Units/Destroyer",
             Sprite::TileSetsFantasyHexUnitsDromon => "TileSets/FantasyHex/Units/Dromon",
             Sprite::TileSetsFantasyHexUnitsEmbarkedUnitCivilian => "TileSets/FantasyHex/Units/EmbarkedUnit-Civilian",
-            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitCivilianModernEra => "TileSets/FantasyHex/Units/EmbarkedUnit-Civilian-Modern era",
+            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitCivilianModernEra => {
+                "TileSets/FantasyHex/Units/EmbarkedUnit-Civilian-Modern era"
+            }
             Sprite::TileSetsFantasyHexUnitsEmbarkedUnitMilitary => "TileSets/FantasyHex/Units/EmbarkedUnit-Military",
-            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitMilitaryModernEra => "TileSets/FantasyHex/Units/EmbarkedUnit-Military-Modern era",
+            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitMilitaryModernEra => {
+                "TileSets/FantasyHex/Units/EmbarkedUnit-Military-Modern era"
+            }
             Sprite::TileSetsFantasyHexUnitsEmbarkedUnitSettler => "TileSets/FantasyHex/Units/EmbarkedUnit-Settler",
-            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitSettlerModernEra => "TileSets/FantasyHex/Units/EmbarkedUnit-Settler-Modern era",
+            Sprite::TileSetsFantasyHexUnitsEmbarkedUnitSettlerModernEra => {
+                "TileSets/FantasyHex/Units/EmbarkedUnit-Settler-Modern era"
+            }
             Sprite::TileSetsFantasyHexUnitsForeignLegion => "TileSets/FantasyHex/Units/Foreign Legion",
             Sprite::TileSetsFantasyHexUnitsFrigate => "TileSets/FantasyHex/Units/Frigate",
             Sprite::TileSetsFantasyHexUnitsGalleass => "TileSets/FantasyHex/Units/Galleass",
@@ -6595,7 +6841,9 @@ impl Sprite {
             Sprite::TileSetsFantasyHexUnitsSettler => "TileSets/FantasyHex/Units/Settler",
             Sprite::TileSetsFantasyHexUnitsSettlerBarbarians => "TileSets/FantasyHex/Units/Settler-Barbarians",
             Sprite::TileSetsFantasyHexUnitsSettlerModernEra => "TileSets/FantasyHex/Units/Settler-Modern era",
-            Sprite::TileSetsFantasyHexUnitsSettlerModernEraBarbarians => "TileSets/FantasyHex/Units/Settler-Modern era-Barbarians",
+            Sprite::TileSetsFantasyHexUnitsSettlerModernEraBarbarians => {
+                "TileSets/FantasyHex/Units/Settler-Modern era-Barbarians"
+            }
             Sprite::TileSetsFantasyHexUnitsShipOfTheLine => "TileSets/FantasyHex/Units/Ship of the Line",
             Sprite::TileSetsFantasyHexUnitsSiegeTower => "TileSets/FantasyHex/Units/Siege Tower",
             Sprite::TileSetsFantasyHexUnitsSipahi => "TileSets/FantasyHex/Units/Sipahi",
@@ -6618,158 +6866,460 @@ impl Sprite {
             Sprite::TileSetsFantasyHexUnitsWorkBoatsModernEra => "TileSets/FantasyHex/Units/Work Boats-Modern era",
             Sprite::TileSetsFantasyHexUnitsWorker => "TileSets/FantasyHex/Units/Worker",
             Sprite::TileSetsFantasyHexUnitsWorkerBarbarians => "TileSets/FantasyHex/Units/Worker-Barbarians",
-            Sprite::TileSetsFantasyHexUnitsWorkerBarbariansModernEra => "TileSets/FantasyHex/Units/Worker-Barbarians-Modern era",
+            Sprite::TileSetsFantasyHexUnitsWorkerBarbariansModernEra => {
+                "TileSets/FantasyHex/Units/Worker-Barbarians-Modern era"
+            }
             Sprite::TileSetsFantasyHexUnitsWorkerModernEra => "TileSets/FantasyHex/Units/Worker-Modern era",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottom => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-Bottom",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottom => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottomLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottomLeft => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottomRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottomRight => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTop => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-Top",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTop => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTopLeft => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTopLeft => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTopRight => "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-TopRight",
-            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTopRight => "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottom => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottom => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottom => "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottom => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottom => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottom => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-Bottom",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottomLeft => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottomRight => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTop => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTop => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTop => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTop => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTop => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-Top",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTopLeft => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTopLeft => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTopLeft => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTopLeft => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTopLeft => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTopRight => "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTopRight => "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTopRight => "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTopRight => "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTopRight => "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottom => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottomRight => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTop => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTop => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTop => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTop => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTop => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTopLeft => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTopLeft => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTopLeft => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTopLeft => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTopLeft => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTopRight => "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTopRight => "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTopRight => "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTopRight => "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTopRight => "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottom => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-Bottom",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottomLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-BottomLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottomRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-BottomRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTop => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-Top",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTopLeft => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-TopLeft",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-TopRight",
-            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTopRight => "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-TopRight",
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastDesertTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Desert-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastGrasslandTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Grassland-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastMountainTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Mountain-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastPlainsTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Plains-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastSnowTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Snow-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastTundraTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Tundra-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottom => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTop => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTop => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachCoastBeachCoastOceanTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Coast/Beach-Coast-Ocean-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesWaterOceanWaterOceanCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Water-Ocean/Water-Ocean-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottom => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottomLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachMountainBeachMountainCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Mountain/Beach-Mountain-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastBottomRight => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTop => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTop => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTop => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTop => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTop => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTopLeft => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachDesertBeachDesertCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Desert/Beach-Desert-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachGrasslandBeachGrasslandCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Grassland/Beach-Grassland-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachPlainsBeachPlainsCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Plains/Beach-Plains-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachSnowBeachSnowCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Snow/Beach-Snow-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesBeachTundraBeachTundraCoastTopRight => {
+                "TileSets/HexaRealm/Edges/Beach-Tundra/Beach-Tundra-Coast-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshMountainFreshMountainLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Mountain/Fresh-Mountain-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshDesertFreshDesertLakesTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Desert/Fresh-Desert-Lakes-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshGrasslandFreshGrasslandLakesTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Grassland/Fresh-Grassland-Lakes-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshPlainsFreshPlainsLakesTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Plains/Fresh-Plains-Lakes-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshSnowFreshSnowLakesTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Snow/Fresh-Snow-Lakes-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshTundraFreshTundraLakesTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Tundra/Fresh-Tundra-Lakes-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottom => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-Bottom"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottomLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-BottomLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraBottomRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-BottomRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTop => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-Top"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTopLeft => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-TopLeft"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesDesertTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Desert-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesGrasslandTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Grassland-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesMountainTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Mountain-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesPlainsTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Plains-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesSnowTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Snow-TopRight"
+            }
+            Sprite::TileSetsHexaRealmEdgesFreshLakesFreshLakesTundraTopRight => {
+                "TileSets/HexaRealm/Edges/Fresh-Lakes/Fresh-Lakes-Tundra-TopRight"
+            }
             Sprite::TileSetsHexaRealmTilesAcademy => "TileSets/HexaRealm/Tiles/Academy",
             Sprite::TileSetsHexaRealmTilesAcademyAtomicEra => "TileSets/HexaRealm/Tiles/Academy-Atomic era",
             Sprite::TileSetsHexaRealmTilesAcademyFutureEra => "TileSets/HexaRealm/Tiles/Academy-Future era",
@@ -6791,15 +7341,27 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesAtoll => "TileSets/HexaRealm/Tiles/Atoll",
             Sprite::TileSetsHexaRealmTilesBananas => "TileSets/HexaRealm/Tiles/Bananas",
             Sprite::TileSetsHexaRealmTilesBananasPlantation => "TileSets/HexaRealm/Tiles/Bananas+Plantation",
-            Sprite::TileSetsHexaRealmTilesBananasPlantationPillaged => "TileSets/HexaRealm/Tiles/Bananas+Plantation-Pillaged",
-            Sprite::TileSetsHexaRealmTilesCitrusPlantationPillaged => "TileSets/HexaRealm/Tiles/Citrus+Plantation-Pillaged",
-            Sprite::TileSetsHexaRealmTilesCottonPlantationPillaged => "TileSets/HexaRealm/Tiles/Cotton+Plantation-Pillaged",
+            Sprite::TileSetsHexaRealmTilesBananasPlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Bananas+Plantation-Pillaged"
+            }
+            Sprite::TileSetsHexaRealmTilesCitrusPlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Citrus+Plantation-Pillaged"
+            }
+            Sprite::TileSetsHexaRealmTilesCottonPlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Cotton+Plantation-Pillaged"
+            }
             Sprite::TileSetsHexaRealmTilesDyesPlantationPillaged => "TileSets/HexaRealm/Tiles/Dyes+Plantation-Pillaged",
-            Sprite::TileSetsHexaRealmTilesIncensePlantationPillaged => "TileSets/HexaRealm/Tiles/Incense+Plantation-Pillaged",
+            Sprite::TileSetsHexaRealmTilesIncensePlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Incense+Plantation-Pillaged"
+            }
             Sprite::TileSetsHexaRealmTilesPlantationPillaged => "TileSets/HexaRealm/Tiles/Plantation-Pillaged",
             Sprite::TileSetsHexaRealmTilesSilkPlantationPillaged => "TileSets/HexaRealm/Tiles/Silk+Plantation-Pillaged",
-            Sprite::TileSetsHexaRealmTilesSpicesPlantationPillaged => "TileSets/HexaRealm/Tiles/Spices+Plantation-Pillaged",
-            Sprite::TileSetsHexaRealmTilesSugarPlantationPillaged => "TileSets/HexaRealm/Tiles/Sugar+Plantation-Pillaged",
+            Sprite::TileSetsHexaRealmTilesSpicesPlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Spices+Plantation-Pillaged"
+            }
+            Sprite::TileSetsHexaRealmTilesSugarPlantationPillaged => {
+                "TileSets/HexaRealm/Tiles/Sugar+Plantation-Pillaged"
+            }
             Sprite::TileSetsHexaRealmTilesWinePlantationPillaged => "TileSets/HexaRealm/Tiles/Wine+Plantation-Pillaged",
             Sprite::TileSetsHexaRealmTilesBarbarianEncampment => "TileSets/HexaRealm/Tiles/Barbarian encampment",
             Sprite::TileSetsHexaRealmTilesBarbarianEncampmentT => "TileSets/HexaRealm/Tiles/Barbarian encampmentT",
@@ -6816,7 +7378,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesCattle => "TileSets/HexaRealm/Tiles/Cattle",
             Sprite::TileSetsHexaRealmTilesCattleP => "TileSets/HexaRealm/Tiles/CattleP",
             Sprite::TileSetsHexaRealmTilesCattlePasture => "TileSets/HexaRealm/Tiles/Cattle+Pasture",
-            Sprite::TileSetsHexaRealmTilesCattlePastureIndustrialEra => "TileSets/HexaRealm/Tiles/Cattle+Pasture-Industrial era",
+            Sprite::TileSetsHexaRealmTilesCattlePastureIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Cattle+Pasture-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesCattlePasturePillaged => "TileSets/HexaRealm/Tiles/Cattle+Pasture-Pillaged",
             Sprite::TileSetsHexaRealmTilesHorsesPasturePillaged => "TileSets/HexaRealm/Tiles/Horses+Pasture-Pillaged",
             Sprite::TileSetsHexaRealmTilesPasturePillaged => "TileSets/HexaRealm/Tiles/Pasture-Pillaged",
@@ -6832,15 +7396,23 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesCitrus => "TileSets/HexaRealm/Tiles/Citrus",
             Sprite::TileSetsHexaRealmTilesCitrusPlantation => "TileSets/HexaRealm/Tiles/Citrus+Plantation",
             Sprite::TileSetsHexaRealmTilesCityCenter => "TileSets/HexaRealm/Tiles/City center",
-            Sprite::TileSetsHexaRealmTilesCityCenterClassicalEra => "TileSets/HexaRealm/Tiles/City center-Classical era",
+            Sprite::TileSetsHexaRealmTilesCityCenterClassicalEra => {
+                "TileSets/HexaRealm/Tiles/City center-Classical era"
+            }
             Sprite::TileSetsHexaRealmTilesCityCenterAncientEra => "TileSets/HexaRealm/Tiles/City center-Ancient era",
             Sprite::TileSetsHexaRealmTilesCityCenterAtomicEra => "TileSets/HexaRealm/Tiles/City center-Atomic era",
             Sprite::TileSetsHexaRealmTilesCityCenterFutureEra => "TileSets/HexaRealm/Tiles/City center-Future era",
-            Sprite::TileSetsHexaRealmTilesCityCenterIndustrialEra => "TileSets/HexaRealm/Tiles/City center-Industrial era",
-            Sprite::TileSetsHexaRealmTilesCityCenterInformationEra => "TileSets/HexaRealm/Tiles/City center-Information era",
+            Sprite::TileSetsHexaRealmTilesCityCenterIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/City center-Industrial era"
+            }
+            Sprite::TileSetsHexaRealmTilesCityCenterInformationEra => {
+                "TileSets/HexaRealm/Tiles/City center-Information era"
+            }
             Sprite::TileSetsHexaRealmTilesCityCenterMedievalEra => "TileSets/HexaRealm/Tiles/City center-Medieval era",
             Sprite::TileSetsHexaRealmTilesCityCenterModernEra => "TileSets/HexaRealm/Tiles/City center-Modern era",
-            Sprite::TileSetsHexaRealmTilesCityCenterRenaissanceEra => "TileSets/HexaRealm/Tiles/City center-Renaissance era",
+            Sprite::TileSetsHexaRealmTilesCityCenterRenaissanceEra => {
+                "TileSets/HexaRealm/Tiles/City center-Renaissance era"
+            }
             Sprite::TileSetsHexaRealmTilesCityRuins => "TileSets/HexaRealm/Tiles/City ruins",
             Sprite::TileSetsHexaRealmTilesCoal => "TileSets/HexaRealm/Tiles/Coal",
             Sprite::TileSetsHexaRealmTilesCoast => "TileSets/HexaRealm/Tiles/Coast",
@@ -6851,12 +7423,16 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesCustomsHouse => "TileSets/HexaRealm/Tiles/Customs house",
             Sprite::TileSetsHexaRealmTilesCustomsHouseAtomicEra => "TileSets/HexaRealm/Tiles/Customs house-Atomic era",
             Sprite::TileSetsHexaRealmTilesCustomsHouseT => "TileSets/HexaRealm/Tiles/Customs houseT",
-            Sprite::TileSetsHexaRealmTilesCustomsHouseTAtomicEra => "TileSets/HexaRealm/Tiles/Customs houseT-Atomic era",
+            Sprite::TileSetsHexaRealmTilesCustomsHouseTAtomicEra => {
+                "TileSets/HexaRealm/Tiles/Customs houseT-Atomic era"
+            }
             Sprite::TileSetsHexaRealmTilesDeer => "TileSets/HexaRealm/Tiles/Deer",
             Sprite::TileSetsHexaRealmTilesDeerCamp => "TileSets/HexaRealm/Tiles/Deer+Camp",
             Sprite::TileSetsHexaRealmTilesDeerCampIndustrialEra => "TileSets/HexaRealm/Tiles/Deer+Camp-Industrial era",
             Sprite::TileSetsHexaRealmTilesDeerCampT => "TileSets/HexaRealm/Tiles/Deer+CampT",
-            Sprite::TileSetsHexaRealmTilesDeerCampTIndustrialEra => "TileSets/HexaRealm/Tiles/Deer+CampT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesDeerCampTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Deer+CampT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesDesert => "TileSets/HexaRealm/Tiles/Desert",
             Sprite::TileSetsHexaRealmTilesDesertHill => "TileSets/HexaRealm/Tiles/Desert+Hill",
             Sprite::TileSetsHexaRealmTilesDesertHillFallout => "TileSets/HexaRealm/Tiles/Desert+Hill+Fallout",
@@ -6894,7 +7470,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesFarmTH => "TileSets/HexaRealm/Tiles/FarmTH",
             Sprite::TileSetsHexaRealmTilesFish => "TileSets/HexaRealm/Tiles/Fish",
             Sprite::TileSetsHexaRealmTilesFishingBoats => "TileSets/HexaRealm/Tiles/Fishing Boats",
-            Sprite::TileSetsHexaRealmTilesFishingBoatsIndustrialEra => "TileSets/HexaRealm/Tiles/Fishing Boats-Industrial era",
+            Sprite::TileSetsHexaRealmTilesFishingBoatsIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Fishing Boats-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesFloodPlains => "TileSets/HexaRealm/Tiles/Flood plains",
             Sprite::TileSetsHexaRealmTilesForestG => "TileSets/HexaRealm/Tiles/ForestG",
             Sprite::TileSetsHexaRealmTilesForestGH => "TileSets/HexaRealm/Tiles/ForestGH",
@@ -6926,7 +7504,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesFursCampIndustrialEra => "TileSets/HexaRealm/Tiles/Furs+Camp-Industrial era",
             Sprite::TileSetsHexaRealmTilesFursT => "TileSets/HexaRealm/Tiles/FursT",
             Sprite::TileSetsHexaRealmTilesFursTCamp => "TileSets/HexaRealm/Tiles/FursT+Camp",
-            Sprite::TileSetsHexaRealmTilesFursTCampIndustrialEra => "TileSets/HexaRealm/Tiles/FursT+Camp-Industrial era",
+            Sprite::TileSetsHexaRealmTilesFursTCampIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/FursT+Camp-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesGems => "TileSets/HexaRealm/Tiles/Gems",
             Sprite::TileSetsHexaRealmTilesGoldOre => "TileSets/HexaRealm/Tiles/Gold Ore",
             Sprite::TileSetsHexaRealmTilesGrandMesa => "TileSets/HexaRealm/Tiles/Grand Mesa",
@@ -6943,7 +7523,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesHolySiteT => "TileSets/HexaRealm/Tiles/Holy siteT",
             Sprite::TileSetsHexaRealmTilesHorses => "TileSets/HexaRealm/Tiles/Horses",
             Sprite::TileSetsHexaRealmTilesHorsesPasture => "TileSets/HexaRealm/Tiles/Horses+Pasture",
-            Sprite::TileSetsHexaRealmTilesHorsesPastureIndustrialEra => "TileSets/HexaRealm/Tiles/Horses+Pasture-Industrial era",
+            Sprite::TileSetsHexaRealmTilesHorsesPastureIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Horses+Pasture-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesHutFarm => "TileSets/HexaRealm/Tiles/HutFarm",
             Sprite::TileSetsHexaRealmTilesHutFarmAtomicEra => "TileSets/HexaRealm/Tiles/HutFarm-Atomic era",
             Sprite::TileSetsHexaRealmTilesHutFarmAtomicEra2 => "TileSets/HexaRealm/Tiles/HutFarm-Atomic era2",
@@ -6966,7 +7548,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesIron => "TileSets/HexaRealm/Tiles/Iron",
             Sprite::TileSetsHexaRealmTilesIvory => "TileSets/HexaRealm/Tiles/Ivory",
             Sprite::TileSetsHexaRealmTilesIvoryCamp => "TileSets/HexaRealm/Tiles/Ivory+Camp",
-            Sprite::TileSetsHexaRealmTilesIvoryCampIndustrialEra => "TileSets/HexaRealm/Tiles/Ivory+Camp-Industrial era",
+            Sprite::TileSetsHexaRealmTilesIvoryCampIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Ivory+Camp-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesIvoryCampPillaged => "TileSets/HexaRealm/Tiles/Ivory+Camp-Pillaged",
             Sprite::TileSetsHexaRealmTilesJungleG => "TileSets/HexaRealm/Tiles/JungleG",
             Sprite::TileSetsHexaRealmTilesJungleGLow => "TileSets/HexaRealm/Tiles/JungleGLow",
@@ -6981,24 +7565,36 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesLandmarkTPillaged => "TileSets/HexaRealm/Tiles/LandmarkT-Pillaged",
             Sprite::TileSetsHexaRealmTilesLandmarkT => "TileSets/HexaRealm/Tiles/LandmarkT",
             Sprite::TileSetsHexaRealmTilesLumberMill => "TileSets/HexaRealm/Tiles/Lumber mill",
-            Sprite::TileSetsHexaRealmTilesLumberMillIndustrialEra => "TileSets/HexaRealm/Tiles/Lumber mill-Industrial era",
+            Sprite::TileSetsHexaRealmTilesLumberMillIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Lumber mill-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesLumberMillPillaged => "TileSets/HexaRealm/Tiles/Lumber mill-Pillaged",
             Sprite::TileSetsHexaRealmTilesLumberMillTPillaged => "TileSets/HexaRealm/Tiles/Lumber millT-Pillaged",
             Sprite::TileSetsHexaRealmTilesLumberMillT => "TileSets/HexaRealm/Tiles/Lumber millT",
-            Sprite::TileSetsHexaRealmTilesLumberMillTIndustrialEra => "TileSets/HexaRealm/Tiles/Lumber millT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesLumberMillTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Lumber millT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesManufactory => "TileSets/HexaRealm/Tiles/Manufactory",
             Sprite::TileSetsHexaRealmTilesManufactoryAtomicEra => "TileSets/HexaRealm/Tiles/Manufactory-Atomic era",
-            Sprite::TileSetsHexaRealmTilesManufactoryIndustrialEra => "TileSets/HexaRealm/Tiles/Manufactory-Industrial era",
+            Sprite::TileSetsHexaRealmTilesManufactoryIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Manufactory-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesManufactoryT => "TileSets/HexaRealm/Tiles/ManufactoryT",
             Sprite::TileSetsHexaRealmTilesManufactoryTAtomicEra => "TileSets/HexaRealm/Tiles/ManufactoryT-Atomic era",
-            Sprite::TileSetsHexaRealmTilesManufactoryTIndustrialEra => "TileSets/HexaRealm/Tiles/ManufactoryT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesManufactoryTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/ManufactoryT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesMarble => "TileSets/HexaRealm/Tiles/Marble",
             Sprite::TileSetsHexaRealmTilesMarbleQuarry => "TileSets/HexaRealm/Tiles/Marble+Quarry",
-            Sprite::TileSetsHexaRealmTilesMarbleQuarryIndustrialEra => "TileSets/HexaRealm/Tiles/Marble+Quarry-Industrial era",
+            Sprite::TileSetsHexaRealmTilesMarbleQuarryIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Marble+Quarry-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesMarbleQuarryPillaged => "TileSets/HexaRealm/Tiles/Marble+Quarry-Pillaged",
             Sprite::TileSetsHexaRealmTilesMarbleQuarryTPillaged => "TileSets/HexaRealm/Tiles/Marble+QuarryT-Pillaged",
             Sprite::TileSetsHexaRealmTilesMarbleQuarryT => "TileSets/HexaRealm/Tiles/Marble+QuarryT",
-            Sprite::TileSetsHexaRealmTilesMarbleQuarryTIndustrialEra => "TileSets/HexaRealm/Tiles/Marble+QuarryT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesMarbleQuarryTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Marble+QuarryT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesMarsh => "TileSets/HexaRealm/Tiles/Marsh",
             Sprite::TileSetsHexaRealmTilesMine => "TileSets/HexaRealm/Tiles/Mine",
             Sprite::TileSetsHexaRealmTilesMineIndustrialEra => "TileSets/HexaRealm/Tiles/Mine-Industrial era",
@@ -7057,7 +7653,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesSalt => "TileSets/HexaRealm/Tiles/Salt",
             Sprite::TileSetsHexaRealmTilesSheep => "TileSets/HexaRealm/Tiles/Sheep",
             Sprite::TileSetsHexaRealmTilesSheepPasture => "TileSets/HexaRealm/Tiles/Sheep+Pasture",
-            Sprite::TileSetsHexaRealmTilesSheepPastureIndustrialEra => "TileSets/HexaRealm/Tiles/Sheep+Pasture-Industrial era",
+            Sprite::TileSetsHexaRealmTilesSheepPastureIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Sheep+Pasture-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesSilk => "TileSets/HexaRealm/Tiles/Silk",
             Sprite::TileSetsHexaRealmTilesSilkPlantation => "TileSets/HexaRealm/Tiles/Silk+Plantation",
             Sprite::TileSetsHexaRealmTilesSilver => "TileSets/HexaRealm/Tiles/Silver",
@@ -7073,29 +7671,43 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesSriPada => "TileSets/HexaRealm/Tiles/Sri Pada",
             Sprite::TileSetsHexaRealmTilesStone => "TileSets/HexaRealm/Tiles/Stone",
             Sprite::TileSetsHexaRealmTilesStoneQuarry => "TileSets/HexaRealm/Tiles/Stone+Quarry",
-            Sprite::TileSetsHexaRealmTilesStoneQuarryIndustrialEra => "TileSets/HexaRealm/Tiles/Stone+Quarry-Industrial era",
+            Sprite::TileSetsHexaRealmTilesStoneQuarryIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Stone+Quarry-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesStoneQuarryPillaged => "TileSets/HexaRealm/Tiles/Stone+Quarry-Pillaged",
             Sprite::TileSetsHexaRealmTilesStoneQuarryTPillaged => "TileSets/HexaRealm/Tiles/Stone+QuarryT-Pillaged",
             Sprite::TileSetsHexaRealmTilesStoneQuarryT => "TileSets/HexaRealm/Tiles/Stone+QuarryT",
-            Sprite::TileSetsHexaRealmTilesStoneQuarryTIndustrialEra => "TileSets/HexaRealm/Tiles/Stone+QuarryT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesStoneQuarryTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Stone+QuarryT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesStoneD => "TileSets/HexaRealm/Tiles/StoneD",
             Sprite::TileSetsHexaRealmTilesStoneDQuarry => "TileSets/HexaRealm/Tiles/StoneD+Quarry",
-            Sprite::TileSetsHexaRealmTilesStoneDQuarryIndustrialEra => "TileSets/HexaRealm/Tiles/StoneD+Quarry-Industrial era",
+            Sprite::TileSetsHexaRealmTilesStoneDQuarryIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/StoneD+Quarry-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesStoneDQuarryPillaged => "TileSets/HexaRealm/Tiles/StoneD+Quarry-Pillaged",
             Sprite::TileSetsHexaRealmTilesSugar => "TileSets/HexaRealm/Tiles/Sugar",
             Sprite::TileSetsHexaRealmTilesSugarPlantation => "TileSets/HexaRealm/Tiles/Sugar+Plantation",
             Sprite::TileSetsHexaRealmTilesTerraceFarm => "TileSets/HexaRealm/Tiles/Terrace farm",
             Sprite::TileSetsHexaRealmTilesTradingPost => "TileSets/HexaRealm/Tiles/Trading post",
-            Sprite::TileSetsHexaRealmTilesTradingPostIndustrialEra => "TileSets/HexaRealm/Tiles/Trading post-Industrial era",
+            Sprite::TileSetsHexaRealmTilesTradingPostIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Trading post-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesTradingPostPillaged => "TileSets/HexaRealm/Tiles/Trading post-Pillaged",
             Sprite::TileSetsHexaRealmTilesTradingPostTPillaged => "TileSets/HexaRealm/Tiles/Trading postT-Pillaged",
             Sprite::TileSetsHexaRealmTilesTradingPostT => "TileSets/HexaRealm/Tiles/Trading postT",
-            Sprite::TileSetsHexaRealmTilesTradingPostTIndustrialEra => "TileSets/HexaRealm/Tiles/Trading postT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesTradingPostTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Trading postT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesTruffles => "TileSets/HexaRealm/Tiles/Truffles",
             Sprite::TileSetsHexaRealmTilesTrufflesCamp => "TileSets/HexaRealm/Tiles/Truffles+Camp",
-            Sprite::TileSetsHexaRealmTilesTrufflesCampIndustrialEra => "TileSets/HexaRealm/Tiles/Truffles+Camp-Industrial era",
+            Sprite::TileSetsHexaRealmTilesTrufflesCampIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Truffles+Camp-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesTrufflesCampT => "TileSets/HexaRealm/Tiles/Truffles+CampT",
-            Sprite::TileSetsHexaRealmTilesTrufflesCampTIndustrialEra => "TileSets/HexaRealm/Tiles/Truffles+CampT-Industrial era",
+            Sprite::TileSetsHexaRealmTilesTrufflesCampTIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Truffles+CampT-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesTundra => "TileSets/HexaRealm/Tiles/Tundra",
             Sprite::TileSetsHexaRealmTilesTundraHill => "TileSets/HexaRealm/Tiles/Tundra+Hill",
             Sprite::TileSetsHexaRealmTilesTundraHillFallout => "TileSets/HexaRealm/Tiles/Tundra+Hill+Fallout",
@@ -7107,7 +7719,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmTilesUranium => "TileSets/HexaRealm/Tiles/Uranium",
             Sprite::TileSetsHexaRealmTilesWhales => "TileSets/HexaRealm/Tiles/Whales",
             Sprite::TileSetsHexaRealmTilesWhalesFishingBoats => "TileSets/HexaRealm/Tiles/Whales+Fishing Boats",
-            Sprite::TileSetsHexaRealmTilesWhalesFishingBoatsIndustrialEra => "TileSets/HexaRealm/Tiles/Whales+Fishing Boats-Industrial era",
+            Sprite::TileSetsHexaRealmTilesWhalesFishingBoatsIndustrialEra => {
+                "TileSets/HexaRealm/Tiles/Whales+Fishing Boats-Industrial era"
+            }
             Sprite::TileSetsHexaRealmTilesWheat => "TileSets/HexaRealm/Tiles/Wheat",
             Sprite::TileSetsHexaRealmTilesWine => "TileSets/HexaRealm/Tiles/Wine",
             Sprite::TileSetsHexaRealmTilesWinePlantation => "TileSets/HexaRealm/Tiles/Wine+Plantation",
@@ -7136,7 +7750,9 @@ impl Sprite {
             Sprite::TileSetsHexaRealmUnitsCatapult => "TileSets/HexaRealm/Units/Catapult",
             Sprite::TileSetsHexaRealmUnitsCavalry => "TileSets/HexaRealm/Units/Cavalry",
             Sprite::TileSetsHexaRealmUnitsChariotArcher => "TileSets/HexaRealm/Units/Chariot Archer",
-            Sprite::TileSetsHexaRealmUnitsChariotArcherBarbarians => "TileSets/HexaRealm/Units/Chariot Archer-Barbarians",
+            Sprite::TileSetsHexaRealmUnitsChariotArcherBarbarians => {
+                "TileSets/HexaRealm/Units/Chariot Archer-Barbarians"
+            }
             Sprite::TileSetsHexaRealmUnitsChuKoNu => "TileSets/HexaRealm/Units/Chu-Ko-Nu",
             Sprite::TileSetsHexaRealmUnitsCivilianLandUnit => "TileSets/HexaRealm/Units/CivilianLandUnit",
             Sprite::TileSetsHexaRealmUnitsWorker => "TileSets/HexaRealm/Units/Worker",
@@ -7149,14 +7765,26 @@ impl Sprite {
             Sprite::TileSetsHexaRealmUnitsDestroyer => "TileSets/HexaRealm/Units/Destroyer",
             Sprite::TileSetsHexaRealmUnitsDromon => "TileSets/HexaRealm/Units/Dromon",
             Sprite::TileSetsHexaRealmUnitsEmbarkedUnitCivilian => "TileSets/HexaRealm/Units/EmbarkedUnit-Civilian",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitCivilianModernEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Civilian-Modern era",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitCivilianRenaissanceEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Civilian-Renaissance era",
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitCivilianModernEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Civilian-Modern era"
+            }
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitCivilianRenaissanceEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Civilian-Renaissance era"
+            }
             Sprite::TileSetsHexaRealmUnitsEmbarkedUnitMilitary => "TileSets/HexaRealm/Units/EmbarkedUnit-Military",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitMilitaryModernEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Military-Modern era",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitMilitaryRenaissanceEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Military-Renaissance era",
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitMilitaryModernEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Military-Modern era"
+            }
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitMilitaryRenaissanceEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Military-Renaissance era"
+            }
             Sprite::TileSetsHexaRealmUnitsEmbarkedUnitSettler => "TileSets/HexaRealm/Units/EmbarkedUnit-Settler",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitSettlerModernEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Settler-Modern era",
-            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitSettlerRenaissanceEra => "TileSets/HexaRealm/Units/EmbarkedUnit-Settler-Renaissance era",
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitSettlerModernEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Settler-Modern era"
+            }
+            Sprite::TileSetsHexaRealmUnitsEmbarkedUnitSettlerRenaissanceEra => {
+                "TileSets/HexaRealm/Units/EmbarkedUnit-Settler-Renaissance era"
+            }
             Sprite::TileSetsHexaRealmUnitsForeignLegion => "TileSets/HexaRealm/Units/Foreign Legion",
             Sprite::TileSetsHexaRealmUnitsFrigate => "TileSets/HexaRealm/Units/Frigate",
             Sprite::TileSetsHexaRealmUnitsFutureInfantry => "TileSets/HexaRealm/Units/Future Infantry",
@@ -7169,15 +7797,21 @@ impl Sprite {
             Sprite::TileSetsHexaRealmUnitsGreatArtist => "TileSets/HexaRealm/Units/Great Artist",
             Sprite::TileSetsHexaRealmUnitsGreatArtistModernEra => "TileSets/HexaRealm/Units/Great Artist-Modern era",
             Sprite::TileSetsHexaRealmUnitsGreatEngineer => "TileSets/HexaRealm/Units/Great Engineer",
-            Sprite::TileSetsHexaRealmUnitsGreatEngineerModernEra => "TileSets/HexaRealm/Units/Great Engineer-Modern era",
+            Sprite::TileSetsHexaRealmUnitsGreatEngineerModernEra => {
+                "TileSets/HexaRealm/Units/Great Engineer-Modern era"
+            }
             Sprite::TileSetsHexaRealmUnitsGreatGalleass => "TileSets/HexaRealm/Units/Great Galleass",
             Sprite::TileSetsHexaRealmUnitsGreatGeneral => "TileSets/HexaRealm/Units/Great General",
             Sprite::TileSetsHexaRealmUnitsGreatGeneralModernEra => "TileSets/HexaRealm/Units/Great General-Modern era",
             Sprite::TileSetsHexaRealmUnitsGreatMerchant => "TileSets/HexaRealm/Units/Great Merchant",
-            Sprite::TileSetsHexaRealmUnitsGreatMerchantModernEra => "TileSets/HexaRealm/Units/Great Merchant-Modern era",
+            Sprite::TileSetsHexaRealmUnitsGreatMerchantModernEra => {
+                "TileSets/HexaRealm/Units/Great Merchant-Modern era"
+            }
             Sprite::TileSetsHexaRealmUnitsGreatProphet => "TileSets/HexaRealm/Units/Great Prophet",
             Sprite::TileSetsHexaRealmUnitsGreatScientist => "TileSets/HexaRealm/Units/Great Scientist",
-            Sprite::TileSetsHexaRealmUnitsGreatScientistModernEra => "TileSets/HexaRealm/Units/Great Scientist-Modern era",
+            Sprite::TileSetsHexaRealmUnitsGreatScientistModernEra => {
+                "TileSets/HexaRealm/Units/Great Scientist-Modern era"
+            }
             Sprite::TileSetsHexaRealmUnitsGreatWarInfantry => "TileSets/HexaRealm/Units/Great War Infantry",
             Sprite::TileSetsHexaRealmUnitsHakkapeliitta => "TileSets/HexaRealm/Units/Hakkapeliitta",
             Sprite::TileSetsHexaRealmUnitsHelicopterGunship => "TileSets/HexaRealm/Units/Helicopter Gunship",

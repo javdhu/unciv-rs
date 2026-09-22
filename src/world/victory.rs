@@ -46,9 +46,7 @@ pub enum Milestone {
 /// Parse a milestone line. Unrecognised forms are preserved, not discarded.
 pub fn parse_milestone(text: &str) -> Milestone {
     let t = text.trim();
-    let param = |prefix: &str, suffix: &str| -> Option<&str> {
-        t.strip_prefix(prefix)?.strip_suffix(suffix)
-    };
+    let param = |prefix: &str, suffix: &str| -> Option<&str> { t.strip_prefix(prefix)?.strip_suffix(suffix) };
 
     if let Some(b) = param("Build [", "]") {
         return Milestone::BuiltBuilding(b.to_string());
@@ -77,12 +75,8 @@ pub fn completed_branches(world: &World, r: &Ruleset, civ: CivId) -> usize {
     r.policy_branches
         .ids()
         .filter(|branch| {
-            let members: Vec<_> = r
-                .policies
-                .iter()
-                .filter(|(_, p)| p.branch == Some(*branch))
-                .map(|(id, _)| id)
-                .collect();
+            let members: Vec<_> =
+                r.policies.iter().filter(|(_, p)| p.branch == Some(*branch)).map(|(id, _)| id).collect();
             !members.is_empty() && members.iter().all(|m| c.adopted_policies.contains(m))
         })
         .count()
@@ -90,18 +84,12 @@ pub fn completed_branches(world: &World, r: &Ruleset, civ: CivId) -> usize {
 
 /// Every city that is somebody's capital.
 fn capitals(world: &World, r: &Ruleset) -> Vec<(CivId, Id<crate::world::city::City>)> {
-    let palace = r.buildings.iter().find(|(_, b)| {
-        b.uniques
-            .iter()
-            .any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital))
-    });
-    let Some((palace, _)) = palace else { return Vec::new() };
-    world
-        .cities
+    let palace = r
+        .buildings
         .iter()
-        .filter(|(_, c)| c.built.contains(&palace))
-        .map(|(id, c)| (c.owner, id))
-        .collect()
+        .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital)));
+    let Some((palace, _)) = palace else { return Vec::new() };
+    world.cities.iter().filter(|(_, c)| c.built.contains(&palace)).map(|(id, c)| (c.owner, id)).collect()
 }
 
 /// Has this civ met the milestone?
@@ -109,22 +97,14 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
     let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
     let has_building = |owner: Option<CivId>, name: &str| {
         let Some(id) = r.buildings.id(name) else { return false };
-        world
-            .cities
-            .iter()
-            .filter(|(_, c)| owner.is_none_or(|o| c.owner == o))
-            .any(|(_, c)| c.built.contains(&id))
+        world.cities.iter().filter(|(_, c)| owner.is_none_or(|o| c.owner == o)).any(|(_, c)| c.built.contains(&id))
     };
 
     match m {
         Milestone::BuiltBuilding(name) => yes(has_building(Some(civ), name)),
         Milestone::BuildingBuiltGlobally(name) => yes(has_building(None, name)),
         Milestone::CompletePolicyBranches(n) => yes(completed_branches(world, r, civ) >= *n as usize),
-        Milestone::DestroyAllPlayers => yes(world
-            .civs
-            .iter()
-            .filter(|c| c.id != civ)
-            .all(|c| !c.is_alive())),
+        Milestone::DestroyAllPlayers => yes(world.civs.iter().filter(|c| c.id != civ).all(|c| !c.is_alive())),
         Milestone::CaptureAllCapitals => {
             let all = capitals(world, r);
             // No capitals at all is not a victory, it is an empty map.
@@ -135,12 +115,7 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
 }
 
 /// Progress toward one victory condition, milestone by milestone.
-pub fn progress(
-    world: &World,
-    r: &Ruleset,
-    civ: CivId,
-    victory: &Victory,
-) -> Vec<(Milestone, Verdict)> {
+pub fn progress(world: &World, r: &Ruleset, civ: CivId, victory: &Victory) -> Vec<(Milestone, Verdict)> {
     victory
         .milestones
         .iter()
@@ -282,29 +257,18 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
         let g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
-        World::new(
-            g,
-            vec![
-                Civilization::new(CivId(0), nation, false),
-                Civilization::new(CivId(1), nation, true),
-            ],
-        )
+        World::new(g, vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, true)])
     }
 
     #[test]
     fn milestones_parse_from_the_ruleset() {
-        assert_eq!(
-            parse_milestone("Build [Apollo Program]"),
-            Milestone::BuiltBuilding("Apollo Program".into())
-        );
+        assert_eq!(parse_milestone("Build [Apollo Program]"), Milestone::BuiltBuilding("Apollo Program".into()));
         assert_eq!(
             parse_milestone("Anyone should build [United Nations]"),
             Milestone::BuildingBuiltGlobally("United Nations".into())
@@ -312,10 +276,7 @@ mod tests {
         assert_eq!(parse_milestone("Complete [5] Policy branches"), Milestone::CompletePolicyBranches(5));
         assert_eq!(parse_milestone("Capture all capitals"), Milestone::CaptureAllCapitals);
         // Kept, not dropped.
-        assert_eq!(
-            parse_milestone("Win diplomatic vote"),
-            Milestone::Unsupported("Win diplomatic vote".into())
-        );
+        assert_eq!(parse_milestone("Win diplomatic vote"), Milestone::Unsupported("Win diplomatic vote".into()));
     }
 
     #[test]
@@ -377,12 +338,7 @@ mod tests {
 
         // Adopt every policy of one branch.
         let branch = r.policy_branches.ids().next().unwrap();
-        let members: Vec<_> = r
-            .policies
-            .iter()
-            .filter(|(_, p)| p.branch == Some(branch))
-            .map(|(id, _)| id)
-            .collect();
+        let members: Vec<_> = r.policies.iter().filter(|(_, p)| p.branch == Some(branch)).map(|(id, _)| id).collect();
         assert!(members.len() > 1, "a branch has several policies");
 
         for m in &members[..members.len() - 1] {

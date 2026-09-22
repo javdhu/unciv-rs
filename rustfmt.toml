@@ -1,0 +1,7 @@
+# Chosen as the settings that disturb the existing code least: it was written
+# wide, with short expressions kept on one line, and rustfmt's defaults would
+# have rewrapped four times as much of it.
+edition = "2021"
+max_width = 120
+use_small_heuristics = "Max"
+newline_style = "Unix"

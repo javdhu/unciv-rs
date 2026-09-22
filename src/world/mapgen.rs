@@ -29,8 +29,8 @@
 //! wet — from three cheap fields rather than from a simulation.
 
 use crate::arena::Id;
-use crate::ruleset::{Ruleset, Terrain};
 use crate::rng::Rng;
+use crate::ruleset::{Ruleset, Terrain};
 use crate::stats::Fixed;
 use crate::world::grid::{TileGrid, TileId};
 
@@ -106,8 +106,7 @@ fn value_noise(seed: u64, octave: u32, x: i64, y: i64, period: i64) -> Fixed {
     let ty = smoothstep(Fixed::whole(fy as i32).checked_div(Fixed::whole(period as i32)).unwrap_or(Fixed::ZERO));
 
     let top = lerp(lattice(seed, octave, cx, cy), lattice(seed, octave, cx + 1, cy), tx);
-    let bottom =
-        lerp(lattice(seed, octave, cx, cy + 1), lattice(seed, octave, cx + 1, cy + 1), tx);
+    let bottom = lerp(lattice(seed, octave, cx, cy + 1), lattice(seed, octave, cx + 1, cy + 1), tx);
     lerp(top, bottom, ty)
 }
 
@@ -134,9 +133,7 @@ fn fractal(seed: u64, x: i64, y: i64, base_period: i64) -> Fixed {
 /// Look a terrain up by name, or fall back to the first of its type. A mod
 /// that renames Grassland should still produce a map.
 fn terrain_or_any(r: &Ruleset, name: &str, kind: &str) -> Option<Id<Terrain>> {
-    r.terrains
-        .id(name)
-        .or_else(|| r.terrains.iter().find(|(_, t)| t.r#type == kind).map(|(id, _)| id))
+    r.terrains.id(name).or_else(|| r.terrains.iter().find(|(_, t)| t.r#type == kind).map(|(id, _)| id))
 }
 
 /// Build a world from a seed.
@@ -204,13 +201,10 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
 
     // Pass 2: water next to land is coast, not open ocean. Needs every tile's
     // terrain settled first, so it cannot be folded into pass 1.
-    let is_water = |g: &TileGrid, t: TileId| {
-        r.terrains.get(g.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Water")
-    };
-    let shallow: Vec<TileId> = grid
-        .ids()
-        .filter(|t| is_water(&grid, *t) && grid.neighbours(*t).any(|n| !is_water(&grid, n)))
-        .collect();
+    let is_water =
+        |g: &TileGrid, t: TileId| r.terrains.get(g.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Water");
+    let shallow: Vec<TileId> =
+        grid.ids().filter(|t| is_water(&grid, *t) && grid.neighbours(*t).any(|n| !is_water(&grid, n))).collect();
     for t in shallow {
         grid.terrain[t.0 as usize] = coast;
     }
@@ -249,8 +243,8 @@ fn shaped_elevation(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed
 fn temperature_at(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed {
     let half = (grid.height() as i64).max(2) / 2;
     let from_equator = (y - half).abs().min(half);
-    let latitude = Fixed::ONE
-        - Fixed::whole(from_equator as i32).checked_div(Fixed::whole(half as i32)).unwrap_or(Fixed::ZERO);
+    let latitude =
+        Fixed::ONE - Fixed::whole(from_equator as i32).checked_div(Fixed::whole(half as i32)).unwrap_or(Fixed::ZERO);
     // Three parts latitude to one part noise: enough to bend the bands without
     // putting a desert at the pole.
     let noise = fractal(p.seed ^ 0x54454d50, x, y, p.landmass_scale.max(2) / 2);
@@ -259,11 +253,8 @@ fn temperature_at(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed {
 
 /// Hills, forest and jungle, each where its own ruleset says it can go.
 fn place_features(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, elevation: &[Fixed]) {
-    let feature = |name: &str| {
-        r.terrains.id(name).filter(|id| {
-            r.terrains.get(*id).is_some_and(|t| t.r#type == "TerrainFeature")
-        })
-    };
+    let feature =
+        |name: &str| r.terrains.id(name).filter(|id| r.terrains.get(*id).is_some_and(|t| t.r#type == "TerrainFeature"));
     let hill = feature("Hill");
     let forest = feature("Forest");
     let jungle = feature("Jungle");
@@ -282,10 +273,7 @@ fn place_features(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, elevation
         // scatter, which is what makes a range look like a range.
         if let Some(hill) = hill {
             let e = elevation[i];
-            if e > Fixed::permille(700)
-                && e <= Fixed::permille(880)
-                && occurs_on(r, hill, &base_name)
-            {
+            if e > Fixed::permille(700) && e <= Fixed::permille(880) && occurs_on(r, hill, &base_name) {
                 grid.features[i].push(hill);
                 continue;
             }
@@ -334,9 +322,7 @@ fn place_resources(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters) {
         let candidates: Vec<_> = r
             .resources
             .iter()
-            .filter(|(_, res)| {
-                res.terrains_can_be_found_on.iter().any(|t| names.iter().any(|n| n == t))
-            })
+            .filter(|(_, res)| res.terrains_can_be_found_on.iter().any(|t| names.iter().any(|n| n == t)))
             .collect();
         if candidates.is_empty() {
             continue;
@@ -397,9 +383,7 @@ fn choose_starts(r: &Ruleset, grid: &TileGrid, p: &MapParameters, civs: usize) -
         return Vec::new();
     }
     let passable = |t: TileId| crate::world::movement::is_passable(grid, r, t);
-    let land = |t: TileId| {
-        r.terrains.get(grid.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Land")
-    };
+    let land = |t: TileId| r.terrains.get(grid.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Land");
 
     let mut scored: Vec<(i64, TileId)> = grid
         .ids()
@@ -460,9 +444,7 @@ mod tests {
     use super::*;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn counts(r: &Ruleset, m: &GeneratedMap) -> std::collections::BTreeMap<String, usize> {
@@ -500,17 +482,10 @@ mod tests {
             let water = m
                 .grid
                 .ids()
-                .filter(|t| {
-                    r.terrains
-                        .get(m.grid.terrain[t.0 as usize])
-                        .is_some_and(|x| x.r#type == "Water")
-                })
+                .filter(|t| r.terrains.get(m.grid.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Water"))
                 .count();
             let fraction = water * 100 / m.grid.len();
-            assert!(
-                (25..=80).contains(&fraction),
-                "seed {seed}: {fraction}% water is not a world worth playing on"
-            );
+            assert!((25..=80).contains(&fraction), "seed {seed}: {fraction}% water is not a world worth playing on");
         }
     }
 
@@ -552,8 +527,7 @@ mod tests {
         let m = generate(&r, MapParameters { seed: 3, ..Default::default() }, 4);
         let kinds = counts(&r, &m);
         assert!(kinds.len() >= 4, "only {} kinds of terrain: {kinds:?}", kinds.len());
-        let features =
-            m.grid.features.iter().filter(|f| !f.is_empty()).count();
+        let features = m.grid.features.iter().filter(|f| !f.is_empty()).count();
         assert!(features > 0, "a map with no hills and no forest is a table, not a world");
     }
 
@@ -590,10 +564,7 @@ mod tests {
             for t in &m.starts {
                 let terrain = r.terrains.get(m.grid.terrain[t.0 as usize]).unwrap();
                 assert_eq!(terrain.r#type, "Land", "a start in the sea");
-                assert!(
-                    crate::world::movement::is_passable(&m.grid, &r, *t),
-                    "a start on impassable ground"
-                );
+                assert!(crate::world::movement::is_passable(&m.grid, &r, *t), "a start on impassable ground");
             }
         }
     }
@@ -604,11 +575,7 @@ mod tests {
         let m = generate(&r, MapParameters { seed: 9, ..Default::default() }, 4);
         for (i, a) in m.starts.iter().enumerate() {
             for b in &m.starts[i + 1..] {
-                assert!(
-                    m.grid.distance(*a, *b) >= 4,
-                    "two starts {} tiles apart",
-                    m.grid.distance(*a, *b)
-                );
+                assert!(m.grid.distance(*a, *b) >= 4, "two starts {} tiles apart", m.grid.distance(*a, *b));
             }
         }
     }

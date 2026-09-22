@@ -65,11 +65,7 @@ pub fn points_per_turn(world: &World, r: &Ruleset, civ: CivId) -> BTreeMap<Strin
 ///
 /// At most one birth per kind per turn, which matches Unciv returning a single
 /// great person from `getNewGreatPerson`.
-pub fn accumulate(
-    people: &mut GreatPeople,
-    gained: &BTreeMap<String, i32>,
-    speed: Fixed,
-) -> Vec<GreatPersonEvent> {
+pub fn accumulate(people: &mut GreatPeople, gained: &BTreeMap<String, i32>, speed: Fixed) -> Vec<GreatPersonEvent> {
     for (kind, amount) in gained {
         *people.points.entry(kind.clone()).or_insert(0) += amount;
     }
@@ -106,19 +102,12 @@ mod tests {
         let none = gained("Great Scientist", 60);
         assert_eq!(
             accumulate(&mut p, &none, Fixed::ONE),
-            vec![GreatPersonEvent::Progressed {
-                kind: "Great Scientist".into(),
-                points: 60,
-                needed: 100
-            }]
+            vec![GreatPersonEvent::Progressed { kind: "Great Scientist".into(), points: 60, needed: 100 }]
         );
 
         assert_eq!(
             accumulate(&mut p, &gained("Great Scientist", 50), Fixed::ONE),
-            vec![GreatPersonEvent::Born {
-                kind: "Great Scientist".into(),
-                next_threshold: 200
-            }]
+            vec![GreatPersonEvent::Born { kind: "Great Scientist".into(), next_threshold: 200 }]
         );
         assert_eq!(p.points["Great Scientist"], 10, "the excess carries over");
     }
@@ -159,9 +148,7 @@ mod tests {
         use crate::world::entities::Civilization;
         use crate::world::grid::TileGrid;
 
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .unwrap()
-            .unwrap();
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
         let g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
         let mut w = World::new(g, vec![Civilization::new(CivId(0), nation, false)]);

@@ -79,8 +79,7 @@ pub fn reachable(
             let raw = cost_here + step;
 
             // The clamp: over budget is still reachable, for everything left.
-            let (total, can_continue) =
-                if raw < budget { (raw, true) } else { (budget, false) };
+            let (total, can_continue) = if raw < budget { (raw, true) } else { (budget, false) };
 
             if best.get(&next).is_none_or(|c| *c > total) {
                 best.insert(next, total);
@@ -94,13 +93,7 @@ pub fn reachable(
 }
 
 /// Returns whether movement between adjacent tiles `from` and `to` is affected by Zone of Control.
-pub fn is_movement_affected_by_zoc(
-    world: &World,
-    r: &Ruleset,
-    unit: &Unit,
-    from: TileId,
-    to: TileId,
-) -> bool {
+pub fn is_movement_affected_by_zoc(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> bool {
     if unit.has_unique(r, UniqueType::IgnoresZOC) {
         return false;
     }
@@ -128,12 +121,7 @@ pub fn is_movement_affected_by_zoc(
 }
 
 /// Whether `tile` is occupied such that `unit` cannot land (end turn) on it under 1UPT rules.
-pub fn is_tile_occupied_for(
-    world: &World,
-    r: &Ruleset,
-    tile: TileId,
-    unit: &Unit,
-) -> bool {
+pub fn is_tile_occupied_for(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
     let is_civ = unit.is_civilian(r);
     for (_, other) in world.units.iter() {
         if other.position != tile {
@@ -155,12 +143,7 @@ pub fn is_tile_occupied_for(
 }
 
 /// Whether `unit` can path through `tile`.
-pub fn can_pass_through(
-    world: &World,
-    _r: &Ruleset,
-    tile: TileId,
-    unit: &Unit,
-) -> bool {
+pub fn can_pass_through(world: &World, _r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
     for (_, other) in world.units.iter() {
         if other.position == tile && other.owner != unit.owner && world.diplomacy.at_war(unit.owner, other.owner) {
             return false;
@@ -248,16 +231,15 @@ pub fn step_cost_for_unit(
         return Some(Fixed::ONE);
     }
 
-    let is_hill = world.grid.terrains(to).any(|t_id| {
-        r.terrains.get(t_id).is_some_and(|t| t.r#type == "Hill" || t.name == "Hill")
-    });
+    let is_hill = world
+        .grid
+        .terrains(to)
+        .any(|t_id| r.terrains.get(t_id).is_some_and(|t| t.r#type == "Hill" || t.name == "Hill"));
     if is_hill
         && world.civ(unit.owner).is_some_and(|c| {
-            r.nations.get(c.nation).is_some_and(|n| {
-                n.uniques
-                    .iter()
-                    .any(|u| u.unique_type() == Some(UniqueType::IgnoreHillMovementCost))
-            })
+            r.nations
+                .get(c.nation)
+                .is_some_and(|n| n.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::IgnoreHillMovementCost)))
         })
     {
         return Some(Fixed::ONE);
@@ -267,11 +249,7 @@ pub fn step_cost_for_unit(
 }
 
 /// Every tile reachable for `unit_id` with its current movement and state.
-pub fn reachable_for_unit(
-    world: &World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-) -> BTreeMap<TileId, Fixed> {
+pub fn reachable_for_unit(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> BTreeMap<TileId, Fixed> {
     let Some(unit) = world.units.get(unit_id) else {
         return BTreeMap::new();
     };
@@ -302,11 +280,7 @@ pub fn reachable_for_unit(
             };
 
             let raw = cost_here + step;
-            let (total, can_continue) = if raw < budget {
-                (raw, true)
-            } else {
-                (budget, false)
-            };
+            let (total, can_continue) = if raw < budget { (raw, true) } else { (budget, false) };
 
             if best.get(&next).is_none_or(|c| *c > total) {
                 best.insert(next, total);
@@ -358,12 +332,7 @@ pub struct MoveEvent {
 }
 
 /// Move a unit, spending movement. Fails rather than half-moving.
-pub fn move_unit(
-    world: &mut World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-    to: TileId,
-) -> Result<MoveEvent, MoveRejection> {
+pub fn move_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>, to: TileId) -> Result<MoveEvent, MoveRejection> {
     let unit = world.units.get(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
     let (from, budget) = (unit.position, unit.movement_left);
     if from == to {
@@ -377,9 +346,7 @@ pub fn move_unit(
     }
 
     let centres: Vec<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
-    let cost = *reachable(&world.grid, r, from, budget, &centres)
-        .get(&to)
-        .ok_or(MoveRejection::OutOfRange)?;
+    let cost = *reachable(&world.grid, r, from, budget, &centres).get(&to).ok_or(MoveRejection::OutOfRange)?;
 
     let unit = world.units.get_mut(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
     let from_water = world.grid.is_water(r, from);
@@ -390,11 +357,7 @@ pub fn move_unit(
     } else if from_water && !to_water {
         unit.embarked = false;
     }
-    let spent = if embark_transition && unit.is_land_unit(r) {
-        budget
-    } else {
-        cost
-    };
+    let spent = if embark_transition && unit.is_land_unit(r) { budget } else { cost };
     unit.position = to;
     unit.movement_left = (budget - spent).max(Fixed::ZERO);
     unit.fortified = false;
@@ -403,11 +366,8 @@ pub fn move_unit(
 
 /// Restore every unit's movement. Called when its owner's turn begins.
 pub fn refresh_movement(world: &mut World, r: &Ruleset) {
-    let refreshed: Vec<(Id<Unit>, i32)> = world
-        .units
-        .iter()
-        .map(|(id, u)| (id, r.units.get(u.base).map_or(2, |b| b.movement)))
-        .collect();
+    let refreshed: Vec<(Id<Unit>, i32)> =
+        world.units.iter().map(|(id, u)| (id, r.units.get(u.base).map_or(2, |b| b.movement))).collect();
     for (id, movement) in refreshed {
         if let Some(u) = world.units.get_mut(id) {
             u.refresh(movement);
@@ -423,9 +383,7 @@ mod tests {
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset, terrain: &str) -> World {
@@ -615,17 +573,26 @@ mod tests {
 
         w.grid.set_river_between(a, b);
         // Crossing river without roads/bridges expends full movement (cost 100)
-        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+        assert_eq!(
+            step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)),
+            Some(Fixed::whole(100))
+        );
 
         // Add roads but no bridge tech -> still full cost
         w.grid.road[a.0 as usize] = RoadLevel::Road;
         w.grid.road[b.0 as usize] = RoadLevel::Road;
-        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+        assert_eq!(
+            step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)),
+            Some(Fixed::whole(100))
+        );
 
         // Give civ Engineering (bridge tech)
         if let Some(tech_id) = r.technologies.id("Engineering") {
             w.civ_mut(CivId(0)).unwrap().techs.insert(tech_id);
-            assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 2)));
+            assert_eq!(
+                step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)),
+                Some(Fixed::from_fraction(1, 2))
+            );
         }
     }
 
@@ -649,7 +616,10 @@ mod tests {
         w.civ_mut(CivId(0)).unwrap().techs.insert(optics);
 
         // Can embark, costs 100 (whole budget)
-        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), land_tile, water_tile, Fixed::whole(2)), Some(Fixed::whole(100)));
+        assert_eq!(
+            step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), land_tile, water_tile, Fixed::whole(2)),
+            Some(Fixed::whole(100))
+        );
 
         // Move onto water
         let event = move_unit(&mut w, &r, id, water_tile).expect("can embark");
@@ -682,7 +652,10 @@ mod tests {
         w.diplomacy.declare_war(CivId(0), CivId(1));
 
         assert!(is_movement_affected_by_zoc(&w, &r, w.units.get(id_a).unwrap(), a, b));
-        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id_a).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+        assert_eq!(
+            step_cost_for_unit(&w, &r, w.units.get(id_a).unwrap(), a, b, Fixed::whole(2)),
+            Some(Fixed::whole(100))
+        );
     }
 
     #[test]

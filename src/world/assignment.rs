@@ -106,12 +106,7 @@ pub struct Ranking {
 ///
 /// `surplus_food` is the city's current food balance: negative means starving,
 /// which changes how food is valued.
-pub fn rank_for_city_work(
-    yields: Stats,
-    city: &City,
-    focus: CityFocus,
-    surplus_food: i32,
-) -> Ranking {
+pub fn rank_for_city_work(yields: Stats, city: &City, focus: CityFocus, surplus_food: i32) -> Ranking {
     let weights = ranking_weights();
     let mut parts = Vec::new();
     let mut score = Fixed::ZERO;
@@ -130,11 +125,7 @@ pub fn rank_for_city_work(
 
     // Food splits: what stops the starving, and what is left over.
     let starving = surplus_food < 0;
-    let feed = if starving {
-        yields.food.min(Fixed::whole(-surplus_food)).max(Fixed::ZERO)
-    } else {
-        Fixed::ZERO
-    };
+    let feed = if starving { yields.food.min(Fixed::whole(-surplus_food)).max(Fixed::ZERO) } else { Fixed::ZERO };
     let growth = if city.avoid_growth { Fixed::ZERO } else { yields.food - feed };
 
     let food_value = (feed * weights.food) * Fixed::whole(STARVATION_URGENCY)
@@ -152,12 +143,7 @@ pub fn rank_for_city_work(
 /// Rank every tile a city could work but is not working, best first.
 ///
 /// Ties break on [`TileId`], so two machines reach the same answer.
-pub fn rank_available_tiles(
-    grid: &TileGrid,
-    r: &Ruleset,
-    city: &City,
-    focus: CityFocus,
-) -> Vec<(TileId, Ranking)> {
+pub fn rank_available_tiles(grid: &TileGrid, r: &Ruleset, city: &City, focus: CityFocus) -> Vec<(TileId, Ranking)> {
     let surplus = crate::world::city::food_surplus(grid, r, city);
     let mut ranked: Vec<(TileId, Ranking)> = workable_tiles(grid, city)
         .into_iter()
@@ -169,12 +155,7 @@ pub fn rank_available_tiles(
 }
 
 /// The tile a new citizen should take.
-pub fn best_tile_for_new_citizen(
-    grid: &TileGrid,
-    r: &Ruleset,
-    city: &City,
-    focus: CityFocus,
-) -> Option<TileId> {
+pub fn best_tile_for_new_citizen(grid: &TileGrid, r: &Ruleset, city: &City, focus: CityFocus) -> Option<TileId> {
     rank_available_tiles(grid, r, city, focus).into_iter().next().map(|(t, _)| t)
 }
 
@@ -203,9 +184,7 @@ mod tests {
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-            .expect("readable")
-            .expect("loads")
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
     }
 
     fn grid_of(r: &Ruleset, terrain: &str) -> TileGrid {
@@ -246,8 +225,7 @@ mod tests {
         let c = city(&grid_of(&ruleset(), "Grassland"));
         let yields = Stats::parse("+3 Production").unwrap();
         let plain = rank_for_city_work(yields, &c, CityFocus::None, 5).score;
-        let focused =
-            rank_for_city_work(yields, &c, CityFocus::Single(Stat::Production), 5).score;
+        let focused = rank_for_city_work(yields, &c, CityFocus::Single(Stat::Production), 5).score;
         assert_eq!(focused, plain * Fixed::whole(3));
     }
 
@@ -270,10 +248,7 @@ mod tests {
         let plenty = Stats::parse("+6 Food").unwrap();
         let c_score = rank_for_city_work(plenty, &c, CityFocus::None, starving).score;
         let surplus_part = c_score - a;
-        assert!(
-            surplus_part < a,
-            "the 4 surplus food should be worth less than the 2 that stop starvation"
-        );
+        assert!(surplus_part < a, "the 4 surplus food should be worth less than the 2 that stop starvation");
     }
 
     #[test]

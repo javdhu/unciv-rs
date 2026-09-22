@@ -31,16 +31,14 @@
 use civ_core::ruleset::Ruleset;
 use civ_core::world::assignment::CityFocus;
 use civ_core::world::entities::{Civilization, Unit};
+use civ_core::world::grid::CivId;
 use civ_core::world::mapgen::{generate, MapParameters};
 use civ_core::world::turn::{advance_turn, TurnModifiers};
 use civ_core::world::world::World;
-use civ_core::world::grid::CivId;
 use std::time::Instant;
 
 fn ruleset() -> Ruleset {
-    Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
-        .expect("readable")
-        .expect("loads")
+    Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
 }
 
 fn game(r: &Ruleset, width: u16, height: u16, civs: usize) -> World {
@@ -48,12 +46,8 @@ fn game(r: &Ruleset, width: u16, height: u16, civs: usize) -> World {
     let nation = r.nations.ids().next().unwrap();
     let list: Vec<_> = (0..civs).map(|i| Civilization::new(CivId(i as u8), nation, true)).collect();
     let mut w = World::new(map.grid, list);
-    let settler = r
-        .units
-        .iter()
-        .find(|(id, _)| civ_core::world::settling::is_settler(r, *id))
-        .map(|(id, _)| id)
-        .unwrap();
+    let settler =
+        r.units.iter().find(|(id, _)| civ_core::world::settling::is_settler(r, *id)).map(|(id, _)| id).unwrap();
     let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id).unwrap();
     for (i, start) in map.starts.iter().enumerate() {
         w.place_unit(Unit::new(settler, CivId(i as u8), *start, 2));
@@ -64,12 +58,7 @@ fn game(r: &Ruleset, width: u16, height: u16, civs: usize) -> World {
 
 fn play(w: &mut World, r: &Ruleset, turns: u32) {
     for _ in 0..turns {
-        advance_turn(
-            w,
-            r,
-            CityFocus::None,
-            TurnModifiers::default(),
-        );
+        advance_turn(w, r, CityFocus::None, TurnModifiers::default());
     }
 }
 
@@ -80,9 +69,7 @@ fn what_a_turn_costs() {
     println!("\n--- engine budget ---");
     println!("World struct (stack): {} bytes", std::mem::size_of::<World>());
 
-    for (w_, h_, civs, label) in
-        [(24u16, 16u16, 4usize, "small"), (40, 26, 6, "standard"), (64, 40, 8, "large")]
-    {
+    for (w_, h_, civs, label) in [(24u16, 16u16, 4usize, "small"), (40, 26, 6, "standard"), (64, 40, 8, "large")] {
         let mut w = game(&r, w_, h_, civs);
         // Warm it up into a mid-game state, which is when a turn is dearest.
         play(&mut w, &r, 80);

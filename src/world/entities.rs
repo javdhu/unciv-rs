@@ -150,9 +150,7 @@ impl Unit {
     }
 
     pub fn is_civilian(&self, r: &Ruleset) -> bool {
-        r.units.get(self.base).is_some_and(|b| {
-            b.strength.unwrap_or(0) == 0 && b.ranged_strength.unwrap_or(0) == 0
-        })
+        r.units.get(self.base).is_some_and(|b| b.strength.unwrap_or(0) == 0 && b.ranged_strength.unwrap_or(0) == 0)
     }
 
     pub fn is_military(&self, r: &Ruleset) -> bool {
@@ -164,10 +162,7 @@ impl Unit {
     }
 
     pub fn movement_type<'a>(&self, r: &'a Ruleset) -> Option<&'a str> {
-        r.units
-            .get(self.base)
-            .and_then(|b| r.unit_types.by_name(&b.unit_type))
-            .map(|ut| ut.movement_type.as_str())
+        r.units.get(self.base).and_then(|b| r.unit_types.by_name(&b.unit_type)).map(|ut| ut.movement_type.as_str())
     }
 
     pub fn is_water_unit(&self, r: &Ruleset) -> bool {
