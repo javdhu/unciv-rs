@@ -449,6 +449,7 @@ fn combat_dump() -> Option<Json> {
 fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifiers) {
     let speed_prod = doc.get("productionCostModifier").and_then(|v| v.as_fixed()).unwrap_or(Fixed::ONE);
     let speed_sci = doc.get("scienceCostModifier").and_then(|v| v.as_fixed()).unwrap_or(Fixed::ONE);
+    let speed_obj = doc.get("speed").and_then(|v| v.as_str()).and_then(|n| r.speeds.by_name(n));
     let difficulty = doc.get("difficulty").and_then(|v| v.as_str()).unwrap_or("Prince");
     let d = r.difficulties.by_name(difficulty);
 
@@ -457,11 +458,8 @@ fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifie
             speed: speed_prod,
             civ: d.map_or(Fixed::ONE, |d| d.building_cost_modifier),
             cities: doc.get("cities").and_then(|v| v.as_i32()).unwrap_or(1) as usize,
-            game_length: doc
-                .get("speed")
-                .and_then(|v| v.as_str())
-                .and_then(|name| r.speeds.by_name(name))
-                .map_or(500, |s| s.total_turns),
+            game_length: speed_obj.map_or(500, |s| s.total_turns),
+            religious_pressure: speed_obj.map_or(6, |s| s.religious_pressure_adjacent_city),
         },
         ScienceModifiers {
             difficulty: d.map_or(Fixed::ONE, |d| d.research_cost_modifier),

@@ -57,6 +57,8 @@ pub struct City {
     /// Uniques in force in this city, from its buildings. Rebuilt whenever
     /// something finishes — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
+    /// What this city believes. Pressure is stored, followers are derived.
+    pub faith: crate::world::religion::CityFaith,
 }
 
 impl City {
@@ -74,6 +76,9 @@ impl City {
             queue: Vec::new(),
             built: std::collections::BTreeSet::new(),
             uniques: Default::default(),
+            // A new city is atheist, and atheism is a positive quantity here
+            // rather than the absence of one.
+            faith: crate::world::religion::CityFaith::new(),
         }
     }
 

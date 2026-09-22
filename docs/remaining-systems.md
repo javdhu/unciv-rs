@@ -146,7 +146,7 @@ Unciv spends on an `EnumMap` per object, which its own source comments on.
 
 ---
 
-## Religion — pressure is state, followers are not
+## Religion — pressure is state, followers are not — **done**
 
 **The decision.** Religious pressure accumulates per (city, religion) — a sparse
 matrix, since most cities feel two or three religions at most. Follower *counts*
@@ -157,6 +157,32 @@ Store the pressure. Derive the followers. Storing both invites them to disagree.
 **Spread** is diffusion over the city adjacency graph, which needs the same
 determinism care as pathfinding: a fixed iteration order, or two machines reach
 different religions. Iterate the sparse map in key order, not hash order.
+
+**What the build added.** The determinism warning was right and lands in a
+sharper place than expected: the split of a population between religions is
+*largest-remainder apportionment*, the rule used for parliamentary seats, and
+Unciv breaks ties between equal remainders by hash order. Two cities with equal
+pressure from two religions is not a rare case — it is the ordinary case on the
+turn a second religion arrives. Ties break by civ id here.
+
+Two further shapes:
+
+* Atheism is a positive quantity, not an absence. Every city holds 100 pressure
+  for no religion. It keeps the denominator off zero and gives a city something
+  concrete to convert *from*.
+* A religion is identified by the civ that founded it, which is Civ V's own
+  rule — one religion per civ — and saves a separate arena.
+
+Spread runs once after every civ has moved, not inside a civ's turn, so the civ
+that goes first cannot push before the others have grown. Pressure from every
+source is gathered before any follower count is recomputed, or a city pushed by
+three religions would report converting three times in one turn.
+
+**Not yet reached in a real game.** Faith income needs a shrine, and the AI at
+permanent war on a bare map builds soldiers instead, so the 300-turn self-play
+founds no religion at all. The end-to-end test grants the faith building
+directly. That is an AI priority question, not a rules one, and it is the
+honest state of it: the system is correct and the AI does not yet reach for it.
 
 ---
 

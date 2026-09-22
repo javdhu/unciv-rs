@@ -241,3 +241,53 @@ mod tests {
         assert!(undecidable.is_empty(), "these filters do nothing: {undecidable:?}");
     }
 }
+
+/// Does a city match a city filter?
+///
+/// The filters that appear in the shipped rulesets are few and blunt — "in all
+/// cities", "in this city", "in City-State cities". Anything else is
+/// [`Verdict::Unknown`] rather than a guess, so a filter this does not
+/// understand withholds its bonus and stays countable.
+///
+/// `subject` is the city being asked about; `origin` is the city the effect
+/// comes from, which is what "this city" means.
+pub fn city_matches(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    subject: &crate::world::city::City,
+    origin: Option<&crate::world::city::City>,
+    filter: &str,
+) -> Verdict {
+    let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
+    let f = filter.trim();
+    let f = f.strip_prefix("in ").unwrap_or(f);
+    let _ = r;
+    match f {
+        "all cities" | "All" | "in all cities" => Verdict::True,
+        "this city" => match origin {
+            // Two cities are the same city when they stand on the same tile —
+            // names are not unique and ids are not in hand here.
+            Some(o) => yes(o.centre == subject.centre),
+            None => Verdict::Unknown,
+        },
+        "other cities" => match origin {
+            Some(o) => yes(o.centre != subject.centre),
+            None => Verdict::Unknown,
+        },
+        "your cities" | "cities" => match origin {
+            Some(o) => yes(o.owner == subject.owner),
+            None => Verdict::Unknown,
+        },
+        "foreign cities" | "enemy cities" => match origin {
+            Some(o) => yes(o.owner != subject.owner),
+            None => Verdict::Unknown,
+        },
+        // City-states are not modelled yet. Saying "no" would quietly hand out
+        // a bonus that should be withheld and hide the gap.
+        "City-State cities" | "City-State" => {
+            let _ = world;
+            Verdict::Unknown
+        }
+        _ => Verdict::Unknown,
+    }
+}

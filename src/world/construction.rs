@@ -60,14 +60,20 @@ pub struct CostModifiers {
     /// them — the mechanism Civ uses to keep them from being free wins for
     /// whoever expanded most.
     pub cities: usize,
-    /// How many turns a game at this speed runs for.
-    ///
-    /// Not a cost, but it comes from the same place — the game speed — and
-    /// unit upkeep needs it: Civ makes soldiers dearer as the game wears on,
-    /// as a fraction of the whole game elapsed. Carried here rather than as a
-    /// ninth argument threaded through every turn function.
+    /// How many turns a game at this speed runs for. Unit upkeep needs it:
+    /// Civ makes soldiers dearer as a fraction of the whole game elapsed.
     pub game_length: i32,
+    /// Base religious pressure one city puts on its neighbours each turn.
+    /// Nine on Quick, six on Standard, two on Marathon — a shorter game
+    /// converts faster so religion still resolves inside it.
+    pub religious_pressure: i32,
 }
+
+// `game_length` and `religious_pressure` are not costs. They are here because
+// they come from the same place as `speed` — the game speed object — and the
+// turn loop needs all three together. The alternative was a ninth and tenth
+// argument on every turn function, which buys tidiness in the type name and
+// pays for it at every call site.
 
 impl Default for CostModifiers {
     fn default() -> Self {
@@ -75,9 +81,10 @@ impl Default for CostModifiers {
             speed: Fixed::ONE,
             civ: Fixed::ONE,
             cities: 1,
-            // Standard speed, so a default-constructed game ages at the rate
-            // most of the ruleset was balanced for.
+            // Standard speed, so a default-constructed game ages and converts
+            // at the rate most of the ruleset was balanced for.
             game_length: 500,
+            religious_pressure: 6,
         }
     }
 }

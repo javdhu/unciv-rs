@@ -104,6 +104,10 @@ pub enum TurnEvent {
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
+    /// A city changed its majority religion. `from` is `None` when it had no
+    /// majority before, which is the common case — most conversions are of
+    /// the uncommitted, not of the faithful.
+    CityConverted { city: Id<City>, from: Option<CivId>, to: CivId },
     /// A soldier the treasury could not pay for. Not a battle loss — a
     /// bookkeeping one, which is why it is a separate event.
     UnitDisbanded { civ: CivId, unit: Id<crate::world::entities::Unit> },
@@ -398,7 +402,15 @@ pub fn apply_plan(
 
     for (city_id, food) in &plan.food {
         let Some(city) = world.cities.get_mut(*city_id) else { continue };
-        events.push(match apply_food(city, *food, m) {
+        let before = city.population;
+        let growth = apply_food(city, *food, m);
+        // Citizens are born into the city's existing faith, so growth is a
+        // source of religious pressure and not only of people.
+        let after = city.population;
+        if after != before {
+            city.faith.on_population_change(after as i32 - before as i32, after);
+        }
+        events.push(match growth {
             GrowthEvent::Grew { population, .. } => TurnEvent::CityGrew { city: *city_id, population },
             GrowthEvent::Starved { population } => TurnEvent::CityStarved { city: *city_id, population },
             GrowthEvent::Stored { food } => TurnEvent::CityStored { city: *city_id, food },
@@ -458,6 +470,22 @@ pub fn apply_plan(
             }
             crate::world::religion::FaithEvent::ReligionFounded { .. } => {
                 crate::world::policies::rebuild_uniques(world, r, plan.civ);
+                // A religion is founded *somewhere*, and that city becomes its
+                // holy city: it pushes five times as hard and converts to the
+                // new faith outright. Without this a religion is founded and
+                // has not one follower anywhere.
+                if let Some(home) =
+                    crate::world::connections::capital_of(world, r, plan.civ)
+                        .or_else(|| world.civ(plan.civ).and_then(|c| c.cities.first().copied()))
+                {
+                    if let Some(city) = world.cities.get_mut(home) {
+                        city.faith.holy_city_of = Some(plan.civ);
+                        let pop = city.population;
+                        city.faith
+                            .add_pressure(Some(plan.civ), crate::world::religion::PRESSURE_PER_CITIZEN * pop.max(1) as i32);
+                        city.faith.recount(pop);
+                    }
+                }
                 events.push(TurnEvent::ReligionFounded { civ: plan.civ });
             }
             crate::world::religion::FaithEvent::Stored { .. } => {}
@@ -602,6 +630,13 @@ pub fn advance_turn(
         events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
     }
 
+    // Religions spread once the whole map has moved, not inside any one civ's
+    // turn — a missionary does not care whose turn it is, and doing it per civ
+    // would let the civ that goes first push before the others had grown.
+    for c in crate::world::religion::spread(world, r, costs.religious_pressure) {
+        events.push(TurnEvent::CityConverted { city: c.city, from: c.from, to: c.to });
+    }
+
     // Units get their movement back for the turn that is starting.
     crate::world::movement::refresh_movement(world, r);
     update_visibility(world);
@@ -709,6 +744,70 @@ mod tests {
         assert!(earned.gold > Fixed::ZERO, "a route that earns nothing is not a route");
         let paid = connections::transportation_upkeep(&w, &r, CivId(0));
         assert!(paid.gold > Fixed::ZERO, "and the road costs something to keep");
+    }
+
+    /// Religion, from faith income to a converted neighbour, through the real
+    /// turn loop rather than by calling `spread` directly.
+    ///
+    /// The unit tests cover the pressure arithmetic. This is here because the
+    /// wiring has several joints — faith has to reach `apply_faith`, founding
+    /// has to mark a holy city, and spread has to run after every civ has
+    /// moved — and a system that works in isolation and is never called is
+    /// indistinguishable from one that does not exist.
+    #[test]
+    fn a_religion_is_founded_and_reaches_the_city_next_door() {
+        let r = ruleset();
+        let mut w = two_civ_world(&r);
+        let rome = w.civ(CivId(0)).unwrap().cities[0];
+        let centre = w.cities.get(rome).unwrap().centre;
+
+        // Faith has to come from somewhere. Every building in the ruleset that
+        // yields it will do; the shipped one is the Shrine.
+        let faith_buildings: Vec<_> = r
+            .buildings
+            .iter()
+            .filter(|(_, b)| crate::ruleset::queries::HasStats::stats(*b).faith > Fixed::ZERO)
+            .map(|(id, _)| id)
+            .collect();
+        assert!(!faith_buildings.is_empty(), "the ruleset should have a faith building");
+        {
+            let c = w.cities.get_mut(rome).unwrap();
+            c.population = 6;
+            c.built.extend(faith_buildings.iter().copied());
+            crate::world::city::rebuild_city_uniques(&r, c);
+        }
+        // A neighbour four tiles off, inside the spread range.
+        let (col, row) = w.grid.coords(centre);
+        let neighbour =
+            w.found_city(City::found("Veii", CivId(1), w.grid.id_at(col + 4, row).unwrap()));
+        w.cities.get_mut(neighbour).unwrap().population = 4;
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let (mut founded, mut converted) = (None, None);
+        for turn in 1..=200 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                match e {
+                    TurnEvent::ReligionFounded { civ } if civ == CivId(0) => {
+                        founded.get_or_insert(turn);
+                    }
+                    TurnEvent::CityConverted { city, to, .. } if city == neighbour => {
+                        converted.get_or_insert((turn, to));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let founded = founded.expect("a civ with faith income should found a religion");
+        let (turn, to) = converted.expect("and it should reach the city four tiles away");
+        assert_eq!(to, CivId(0), "the neighbour follows Rome's religion, not its own");
+        assert!(turn > founded, "founded on {founded}, converted on {turn}");
+        assert_eq!(
+            w.cities.get(rome).unwrap().faith.holy_city_of,
+            Some(CivId(0)),
+            "the city it was founded in is its holy city"
+        );
     }
 
     /// The property the phase split exists for.
