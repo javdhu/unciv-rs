@@ -277,14 +277,64 @@ compute.
 
 ---
 
-## Map generation — the one place to diverge deliberately
+## Map generation — the one place to diverge deliberately — **done**
+
+Implemented in `src/world/mapgen.rs`.
 
 189 stubs, and none of them are rules. Map generation is an aesthetic and
 balance exercise, and Unciv's answer is one option rather than a specification.
 It is also the system where a differential harness has nothing to say.
 
 **The one hard constraint:** it must be a pure function of a seed, or saved
-games cannot be regenerated and multiplayer cannot agree on a map.
+games cannot be regenerated and multiplayer cannot agree on a map. That rules
+out floating point, so the noise is hashed rather than trigonometric and every
+field is fixed point.
+
+**Three scalar fields** — elevation, temperature, humidity — each fractal value
+noise, with terrain a lookup on all three. Two decisions the sketch did not
+anticipate:
+
+* **Sea level is a quantile, not a threshold.** A fixed cutoff on noise gives
+  whatever water fraction that seed happens to produce: measured between 42%
+  and 84% across eight seeds, which is the difference between a continent and
+  an archipelago nobody asked for. Sorting the elevations and cutting at the
+  asked-for fraction costs one sort and removes the variance entirely.
+* **The edge falloff is east–west only.** Pulling the north and south edges
+  down too drowns the poles, and then the temperature bands have no polar land
+  to put ice on — the first draft produced a world with no snow anywhere,
+  because everywhere cold enough for it was underwater.
+
+---
+
+## What a generated map exposed about the AI
+
+Running a real game on real ground, rather than on the uniform grassland the
+other self-play uses, found four faults in one assertion — that cities should
+*grow*. Twenty-one cities, twenty-three citizens, two hundred and fifty turns.
+
+1. **`recompute_stock` was never called from the turn loop.** Every civ's
+   resource stock stayed empty for the whole game. The luxury happiness bonus
+   had nothing to count and the missing-strategic-resource combat penalty never
+   fired: two systems correct, tested, and unreachable.
+2. **The worker never extracted resources.** It ranked improvements by their
+   yields, and a Plantation on Silk adds a little food — it also adds four
+   happiness to the entire empire. It also only considered *worked* tiles, so a
+   luxury two tiles over that nobody was standing on was invisible.
+3. **Building maintenance was a hard gate.** Any building costing more upkeep
+   than the current surplus was struck off, which deadlocks: a poor civ cannot
+   buy the buildings that would make it rich. Upkeep is priced against the
+   building's worth now, twice as sharply when the books are in the red.
+4. **Expansion ignored happiness.** The flat five-city target's own comment
+   said "a real one would weigh happiness". Below zero happiness the ruleset
+   cuts growth by three quarters and then stops it, so city eight in an unhappy
+   empire does not add an eighth of an empire — it freezes the other seven.
+
+With all four, the 300-turn grassland game went from three bankrupt empires
+with fourteen techs to three solvent ones with twenty-odd, and takes five
+hundred turns to resolve because the survivors are now hard to kill.
+
+The pattern, again: **self-play finds missing connections; unit tests find
+wrong answers.** Every one of these four systems passed its own tests.
 
 ---
 

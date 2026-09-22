@@ -68,7 +68,7 @@ pub fn choose_construction(
     net_gold: i32,
     wants: Priorities,
 ) -> Option<Construction> {
-    let Priorities { want_settler, want_worker, want_scout, want_military } = wants;
+    let Priorities { want_settler, want_worker, want_scout, want_military, happiness } = wants;
     let civ_ref = world.civ(civ)?;
     let weights = ranking_weights();
 
@@ -103,15 +103,42 @@ pub fn choose_construction(
                 }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
-                    if b.maintenance.unwrap_or(0) > net_gold.max(0) {
-                        return None; // cannot keep it
-                    }
                     let stats = crate::ruleset::queries::HasStats::stats(b);
-                    let flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
+                    let mut flat: Fixed =
+                        Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
                     // A percentage is worth something even with nothing to
                     // multiply yet, or nothing would ever build a Library.
                     let pct: i32 = b.percent_stat_bonus.values().sum();
-                    flat + Fixed::whole(pct)
+                    flat = flat + Fixed::whole(pct);
+
+                    // Upkeep is priced, not gated.
+                    //
+                    // This used to be a hard refusal: any building costing
+                    // more upkeep than the civ's current surplus was struck
+                    // off. That deadlocks. A poor civ cannot afford buildings,
+                    // and it is poor *because* it has no buildings — measured
+                    // over 250 turns, one civ ended with nineteen cities, one
+                    // building between them and −71 happiness, which stops
+                    // growth everywhere and ends the game as a slideshow.
+                    //
+                    // Charging the upkeep against the value instead lets a
+                    // building earn its keep, and a civ already in the red
+                    // feel it twice as sharply. Three times was enough to make
+                    // every building in the ruleset net-negative for a civ in
+                    // debt, which is the old deadlock wearing a new hat.
+                    let pressure = if net_gold < 0 { Fixed::whole(2) } else { Fixed::ONE };
+                    let upkeep =
+                        Fixed::whole(b.maintenance.unwrap_or(0)).mul(weights.gold).mul(pressure);
+                    flat = flat - upkeep;
+
+                    // An unhappy empire is not merely poorer, it is stalled.
+                    // Weight what fixes that by how bad it has got, so a
+                    // colosseum beats a library exactly when it should.
+                    if happiness < 0 && stats.happiness > Fixed::ZERO {
+                        let urgency = Fixed::whole((-happiness).min(20));
+                        flat = flat + stats.happiness.mul(urgency);
+                    }
+                    flat
                 }
                 Construction::Unit(_) => Fixed::ZERO,
             };
@@ -123,11 +150,10 @@ pub fn choose_construction(
         .map(|(_, what)| what)
 }
 
-/// How many cities to aim for before stopping expansion.
+/// How many cities to aim for before stopping expansion, when happy.
 ///
-/// A flat number is a crude opinion — a real one would weigh happiness, land
-/// and neighbours — but expansion has to stop somewhere, and an empire that
-/// never stops is worse than one that stops too early.
+/// The flat number is a floor on ambition, not the whole rule — see
+/// [`wants_settler`], which stops sooner if the empire is already unhappy.
 const TARGET_CITIES: usize = 5;
 
 /// Whether the civ should be making a settler.
@@ -137,6 +163,18 @@ const TARGET_CITIES: usize = 5;
 /// citizens.
 pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
+    // An unhappy empire does not want another city. Each one costs happiness
+    // outright, and below zero the ruleset cuts growth by three quarters and
+    // then stops it entirely — so city eight in an unhappy empire does not
+    // add an eighth of an empire, it freezes the other seven.
+    //
+    // A flat target alone produced civs with eight cities, two buildings
+    // between them and −25 happiness, every city stuck at one citizen for two
+    // hundred turns. This is the "weigh happiness" the constant's comment
+    // asked for.
+    if crate::world::happiness::happiness(world, r, civ, None) < 0 {
+        return false;
+    }
     if c.cities.len() >= TARGET_CITIES {
         return false;
     }
@@ -219,14 +257,70 @@ pub fn is_worker(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
 ///
 /// Worked tiles only: improving land nobody stands on helps nothing this
 /// century.
+/// How far out a city can work, and so how far a worker will go for it.
+const CITY_WORK_RADIUS: u32 = 3;
+
+/// What an improvement is worth beyond its yields, because it unlocks the
+/// resource underneath.
+///
+/// A Plantation on Silk adds a little food. It also adds four happiness to the
+/// entire empire, and an empire below zero happiness does not grow at all.
+/// Valuing the tile by its yields alone is why a civ could hold four luxury
+/// tiles, extract none of them, and sit at −29 happiness for two hundred
+/// turns with every city stuck at one citizen.
+///
+/// A second copy of a luxury already held is worth nothing — happiness counts
+/// distinct luxuries — so this asks what the civ has, not what is on the map.
+fn resource_worth(
+    world: &World,
+    r: &Ruleset,
+    civ: Option<&crate::world::entities::Civilization>,
+    tile: crate::world::grid::TileId,
+    improvement: Id<crate::ruleset::TileImprovement>,
+) -> Fixed {
+    let Some(civ) = civ else { return Fixed::ZERO };
+    let Some(res_id) = world.grid.resource[tile.0 as usize] else { return Fixed::ZERO };
+    let Some(res) = r.resources.get(res_id) else { return Fixed::ZERO };
+    let Some(name) = r.improvements.name_of(improvement) else { return Fixed::ZERO };
+    if !crate::world::resources::extracting_improvements(r, res_id).iter().any(|i| i == name) {
+        return Fixed::ZERO;
+    }
+    let already = civ.resources.get(&res_id).copied().unwrap_or(0) > 0;
+    match res.resource_type.as_str() {
+        // The first of a luxury is the whole of its value.
+        "Luxury" if !already => Fixed::whole(60),
+        "Luxury" => Fixed::whole(2),
+        // Strategic resources gate whole unit lines; a second deposit still
+        // supports more of them, so this does not fall away to nothing.
+        "Strategic" if !already => Fixed::whole(40),
+        "Strategic" => Fixed::whole(10),
+        _ => Fixed::ZERO,
+    }
+}
+
 pub fn improvable_tiles(
     world: &World,
     r: &Ruleset,
     civ: CivId,
     city: &City,
 ) -> Vec<(crate::world::grid::TileId, Id<crate::ruleset::TileImprovement>)> {
-    let mut out: Vec<_> = city
-        .worked
+    // Tiles a citizen works, plus every other tile the city owns in its
+    // radius. The worked set alone misses the luxury two tiles over that
+    // nobody is standing on — and an unextracted luxury is four happiness the
+    // whole empire never gets.
+    let mut candidates: Vec<crate::world::grid::TileId> = city.worked.clone();
+    candidates.extend(
+        world
+            .grid
+            .within(city.centre, CITY_WORK_RADIUS)
+            .into_iter()
+            .filter(|t| world.grid.owner[t.0 as usize] == Some(civ)),
+    );
+    candidates.sort();
+    candidates.dedup();
+
+    let civ_ref = world.civ(civ);
+    let mut out: Vec<_> = candidates
         .iter()
         .filter(|t| world.grid.improvement[t.0 as usize].is_none())
         .filter_map(|t| {
@@ -236,7 +330,9 @@ pub fn improvable_tiles(
                 .into_iter()
                 .map(|i| {
                     let stats = crate::ruleset::queries::HasStats::stats(&r.improvements[i]);
-                    let worth: Fixed = Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
+                    let mut worth: Fixed =
+                        Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
+                    worth = worth + resource_worth(world, r, civ_ref, *t, i);
                     (worth, i)
                 })
                 .filter(|(worth, _)| *worth > Fixed::ZERO)
@@ -398,6 +494,10 @@ pub struct Priorities {
     pub want_worker: bool,
     pub want_scout: bool,
     pub want_military: bool,
+    /// The empire's happiness. Not a want but the thing most wants bend
+    /// around: an unhappy empire stops growing, and a civ that cannot grow
+    /// cannot earn its way out of anything.
+    pub happiness: i32,
 }
 
 impl Priorities {
@@ -407,6 +507,7 @@ impl Priorities {
             want_worker: wants_worker(world, r, civ),
             want_scout: wants_scout(world, r, civ),
             want_military: wants_military(world, r, civ),
+            happiness: crate::world::happiness::happiness(world, r, civ, None),
         }
     }
 }
@@ -706,22 +807,60 @@ mod tests {
         assert!(crate::world::construction::can_construct(&r, w.civ(CivId(0)).unwrap(), &city, choice).is_ok());
     }
 
+    /// Poverty shifts the choice toward cheap upkeep; it does not forbid
+    /// building.
+    ///
+    /// This used to assert that a civ with no income would only ever pick a
+    /// building with zero maintenance. That rule deadlocks — a poor civ cannot
+    /// buy the buildings that would make it rich — and produced empires of
+    /// nineteen cities with one building between them. Upkeep is priced
+    /// against the building's worth now, and priced three times as sharply
+    /// when the books are already in the red.
     #[test]
-    fn nothing_is_built_that_cannot_be_kept() {
+    fn poverty_makes_upkeep_dear_rather_than_forbidden() {
+        let r = ruleset();
+        let w = world(&r);
+        let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
+        let m = CostModifiers::default();
+        let upkeep = |c: Option<Construction>| match c {
+            Some(Construction::Building(id)) => r.buildings[id].maintenance.unwrap_or(0),
+            _ => 0,
+        };
+
+        let broke = choose_construction(&w, &r, CivId(0), &city, m, -10, Priorities::default());
+        let rich = choose_construction(&w, &r, CivId(0), &city, m, 40, Priorities::default());
+        assert!(broke.is_some(), "a poor civ still has to build something");
+        assert!(rich.is_some());
+        assert!(
+            upkeep(broke) <= upkeep(rich),
+            "being in debt should not make dear buildings more attractive"
+        );
+    }
+
+    /// An unhappy empire reaches for what fixes that, ahead of what it would
+    /// otherwise prefer.
+    #[test]
+    fn unhappiness_pulls_the_choice_toward_happiness() {
         let r = ruleset();
         let w = world(&r);
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
         let m = CostModifiers::default();
 
-        // With no income, only free-to-keep buildings are considered.
-        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, Priorities::default());
-        if let Some(Construction::Building(id)) = broke {
-            assert_eq!(r.buildings[id].maintenance.unwrap_or(0), 0, "{}", r.buildings[id].name);
-        }
+        let content = Priorities { happiness: 5, ..Default::default() };
+        let miserable = Priorities { happiness: -15, ..Default::default() };
+        let happiness_of = |c: Option<Construction>| match c {
+            Some(Construction::Building(id)) => {
+                crate::ruleset::queries::HasStats::stats(&r.buildings[id]).happiness
+            }
+            _ => Fixed::ZERO,
+        };
 
-        // With income, upkeep-bearing buildings come into range.
-        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, Priorities::default());
-        assert!(rich.is_some());
+        let a = choose_construction(&w, &r, CivId(0), &city, m, 20, content);
+        let b = choose_construction(&w, &r, CivId(0), &city, m, 20, miserable);
+        assert!(
+            happiness_of(b) >= happiness_of(a),
+            "a miserable empire should not pick the *less* cheering building"
+        );
     }
 
     #[test]

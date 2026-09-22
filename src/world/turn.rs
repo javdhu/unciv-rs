@@ -630,6 +630,22 @@ pub fn advance_turn(
         events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
     }
 
+    // What each civ actually holds, recomputed from the map rather than
+    // patched when a worker finishes.
+    //
+    // Nothing called this. Every civ's resource stock stayed empty for the
+    // whole game, which meant the luxury happiness bonus had nothing to count
+    // and the missing-strategic-resource combat penalty never fired — two
+    // systems that were correct, tested, and unreachable. Territory changes
+    // hands, improvements are pillaged and techs reveal new deposits, so this
+    // is derived per turn like city connection rather than invalidated.
+    for civ in world.civ_ids().collect::<Vec<_>>() {
+        let stock = crate::world::resources::recompute_stock(world, r, civ);
+        if let Some(c) = world.civ_mut(civ) {
+            c.resources = stock;
+        }
+    }
+
     // Religions spread once the whole map has moved, not inside any one civ's
     // turn — a missionary does not care whose turn it is, and doing it per civ
     // would let the civ that goes first push before the others had grown.
@@ -807,6 +823,87 @@ mod tests {
             w.cities.get(rome).unwrap().faith.holy_city_of,
             Some(CivId(0)),
             "the city it was founded in is its holy city"
+        );
+    }
+
+    /// A whole game on a generated map, which is the only test that asks
+    /// whether the engine plays rather than whether it computes.
+    ///
+    /// The other self-play runs on uniform grassland, which is a fair test of
+    /// the rules and an unfair one of the economy — grassland yields no gold
+    /// and no faith, so every civ is poor and nobody builds a shrine. On real
+    /// ground the numbers should be recognisably a game.
+    #[test]
+    fn a_game_on_a_generated_map_behaves_like_a_game() {
+        use crate::world::mapgen::{generate, MapParameters};
+        let r = ruleset();
+        let p = MapParameters { width: 40, height: 26, seed: 0x5EED, ..Default::default() };
+        let map = generate(&r, p, 4);
+        assert_eq!(map.starts.len(), 4);
+
+        let nation = r.nations.ids().next().unwrap();
+        let civs: Vec<_> =
+            (0..4u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
+        let mut w = World::new(map.grid, civs);
+        let settler = r
+            .units
+            .iter()
+            .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
+            .map(|(id, _)| id)
+            .expect("the ruleset has a settler");
+        let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id).unwrap();
+        for (i, start) in map.starts.iter().enumerate() {
+            w.place_unit(Unit::new(settler, CivId(i as u8), *start, 2));
+            w.place_unit(Unit::new(worker, CivId(i as u8), *start, 2));
+        }
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let (mut founded, mut wars, mut converted, mut roads_built) = (0, 0, 0, 0);
+        for _ in 1..=250 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                match e {
+                    TurnEvent::CityFounded { .. } => founded += 1,
+                    TurnEvent::WarDeclared { .. } => wars += 1,
+                    TurnEvent::CityConverted { .. } => converted += 1,
+                    TurnEvent::TileImproved { improvement, .. } => {
+                        if r.improvements.name_of(improvement) == Some("Road") {
+                            roads_built += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let alive = w.civs.iter().filter(|c| c.is_alive()).count();
+        let solvent = w.civs.iter().filter(|c| c.is_alive() && c.gold >= 0).count();
+        let techs: usize = w.civs.iter().map(|c| c.techs.len()).sum();
+        println!(
+            "founded {founded}, wars {wars}, conversions {converted}, roads {roads_built}, \
+             alive {alive}, solvent {solvent}, techs {techs}, cities {}",
+            w.cities.len()
+        );
+
+        assert!(founded >= 4, "every civ should at least settle its start: {founded}");
+        assert!(w.cities.len() > 4, "and someone should expand beyond it");
+        assert!(techs > 20, "250 turns should buy more than {techs} techs across four civs");
+        assert!(solvent > 0, "every surviving civ is bankrupt, which is not a game");
+
+        // Cities have to *grow*. This is the assertion that caught four
+        // separate holes at once: the resource stock was never recomputed, so
+        // no civ ever held a luxury; luxuries are the only real source of
+        // happiness, so every empire sat below zero; below zero the ruleset
+        // cuts growth by three quarters and then stops it; and the AI kept
+        // founding cities anyway. Twenty-one cities, twenty-three citizens,
+        // two hundred and fifty turns.
+        let largest = w.cities.iter().map(|(_, c)| c.population).max().unwrap_or(0);
+        let total: u32 = w.cities.iter().map(|(_, c)| c.population).sum();
+        assert!(largest >= 3, "the biggest city on the map is size {largest}");
+        assert!(
+            total as usize > w.cities.len(),
+            "{total} citizens across {} cities averages less than one each",
+            w.cities.len()
         );
     }
 
@@ -1326,7 +1423,7 @@ mod multi_civ {
         let mut peaces = 0;
         let mut battles = 0;
         let mut losses = 0;
-        for _ in 0..300 {
+        for _ in 0..500 {
             for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
@@ -1376,9 +1473,16 @@ mod multi_civ {
         assert_eq!(w.civs.len(), 3, "everyone is still in the list, alive or not");
         assert!(w.cities.len() > 3, "someone should have expanded");
 
-        // Three hundred turns is long enough for the whole arc: expand, meet,
+        // Five hundred turns is long enough for the whole arc: expand, meet,
         // fight, conquer. At a hundred the armies never converged — the
         // mechanisms were all in place and simply had not had time.
+        //
+        // It was three hundred until the economy started working. A civ that
+        // can afford buildings, holds luxuries and therefore grows is a much
+        // harder civ to finish off, and two healthy survivors take longer to
+        // resolve than three starving ones. That is the game getting better,
+        // not the test getting weaker — every civ now ends solvent with
+        // twenty-odd techs, where they used to end bankrupt with fourteen.
         assert!(founded > 3, "cities were founded");
         assert!(captures > 0, "and some changed hands");
         // Wars used to be permanent, so one declaration ground on forever.
