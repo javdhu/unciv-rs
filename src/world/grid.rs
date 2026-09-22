@@ -83,6 +83,40 @@ impl Direction {
     }
 }
 
+/// How good a road a tile carries.
+///
+/// This is a separate axis from `improvement`, not a kind of improvement: a
+/// tile can hold a Farm *and* a Road at once, and Unciv stores them in two
+/// fields for exactly that reason. The ordering is meaningful — a railroad is
+/// strictly better than a road — so `max` over a route gives its quality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum RoadLevel {
+    #[default]
+    None,
+    Road,
+    Railroad,
+}
+
+impl RoadLevel {
+    /// The ruleset improvement that builds this, by the name the JSON uses.
+    /// `None` has no improvement, which is why this returns an `Option`.
+    pub fn improvement_name(self) -> Option<&'static str> {
+        match self {
+            RoadLevel::None => None,
+            RoadLevel::Road => Some("Road"),
+            RoadLevel::Railroad => Some("Railroad"),
+        }
+    }
+
+    pub fn from_improvement_name(name: &str) -> Option<RoadLevel> {
+        match name {
+            "Road" => Some(RoadLevel::Road),
+            "Railroad" => Some(RoadLevel::Railroad),
+            _ => None,
+        }
+    }
+}
+
 /// The map. One array per attribute.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileGrid {
@@ -102,6 +136,11 @@ pub struct TileGrid {
     /// survives the worker being killed.
     pub improvement_progress: Vec<Option<(Id<TileImprovement>, u32)>>,
     pub owner: Vec<Option<CivId>>,
+    /// Roads, on their own axis so a tile can carry a road and an improvement.
+    pub road: Vec<RoadLevel>,
+    /// A pillaged road is still drawn but carries nothing, so connection and
+    /// movement ask [`TileGrid::unpillaged_road`] rather than reading `road`.
+    pub road_pillaged: Vec<bool>,
     /// Precomputed once. `None` at the map edge.
     neighbours: Vec<[Option<TileId>; 6]>,
 }
@@ -122,10 +161,27 @@ impl TileGrid {
             improvement: vec![None; n],
             improvement_progress: vec![None; n],
             owner: vec![None; n],
+            road: vec![RoadLevel::None; n],
+            road_pillaged: vec![false; n],
             neighbours: Vec::new(),
         };
         grid.neighbours = (0..n).map(|i| grid.compute_neighbours(TileId(i as u16))).collect();
         grid
+    }
+
+    /// The road a tile carries for any purpose that cares — movement,
+    /// connection, upkeep. A pillaged road carries nothing.
+    pub fn unpillaged_road(&self, t: TileId) -> RoadLevel {
+        let i = t.0 as usize;
+        if self.road_pillaged[i] { RoadLevel::None } else { self.road[i] }
+    }
+
+    /// Lay a road. Building over a pillaged road repairs it, which is why this
+    /// clears the flag rather than leaving the caller to remember.
+    pub fn set_road(&mut self, t: TileId, level: RoadLevel) {
+        let i = t.0 as usize;
+        self.road[i] = level;
+        self.road_pillaged[i] = false;
     }
 
     pub fn width(&self) -> u16 { self.width }

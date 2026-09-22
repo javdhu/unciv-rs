@@ -160,13 +160,35 @@ different religions. Iterate the sparse map in key order, not hash order.
 
 ---
 
-## Trade routes and connectivity — a graph, recomputed
+## Trade routes and connectivity — a graph, recomputed — **done**
+
+Implemented in `src/world/connections.rs`.
 
 **The decision.** City connection is reachability over roads, harbours and
 territory. It is derived, and the tempting optimisation is a dirty flag.
 
 **Recommend recomputing per turn instead.** A BFS over 10,240 tiles is
 microseconds, and invalidation bugs are not. Revisit only with a measurement.
+
+**What the build added to the design.** Three things the sketch did not have:
+
+* Roads are a *second axis* on the tile, not a kind of improvement. A tile
+  carries a farm and a road at once, so `TileGrid` grew `road` and
+  `road_pillaged` beside `improvement`.
+* Open borders is the one genuinely one-sided fact about a pair of civs. It is
+  stored as two bits inside the single `Pact` record — the asymmetry is real,
+  the duplication would not be.
+* The medium a city was reached by has to be remembered, not just *whether* it
+  was reached, because a harbour hop keeps the grade of the road that fed it.
+  That is the whole reason for the `Mediums` bitmask.
+
+**What it cost elsewhere.** Making roads worth building exposed that the worker
+AI had no commitment: it re-decided from scratch every turn and treated roads
+as the job of last resort, so a growing city's endless supply of unimproved
+tiles meant roads were never laid. Joining two cities five tiles apart took
+110 turns. Putting connection ahead of tile yield took it to 19, which is the
+optimum. The lesson generalises — a system that is merely *present* is not
+finished until something in the game actually reaches for it.
 
 ---
 

@@ -24,9 +24,17 @@ pub enum ImprovementRejection {
     NotUnlocked(String),
     /// Something is already here.
     AlreadyImproved,
+    /// This tile already carries this road, or a better one.
+    AlreadyPaved,
     /// Not a thing a worker can build.
     NotBuildable,
     Unknown,
+}
+
+/// Is this improvement a road? Asked by name, because a road is a road in the
+/// ruleset's vocabulary and an axis of its own in the world's.
+fn road_level_of(r: &Ruleset, improvement: Id<TileImprovement>) -> Option<crate::world::grid::RoadLevel> {
+    crate::world::grid::RoadLevel::from_improvement_name(r.improvements.name_of(improvement)?)
 }
 
 /// Whether a worker of this civ could start this improvement here.
@@ -45,8 +53,19 @@ pub fn can_build(
     if imp.turns_to_build.unwrap_or(-1) <= 0 {
         return Err(ImprovementRejection::NotBuildable);
     }
-    if world.grid.improvement[tile.0 as usize].is_some() {
-        return Err(ImprovementRejection::AlreadyImproved);
+    // Roads sit on their own axis, so a tile can take a road *and* a farm.
+    // What blocks a road is a road, not a farm.
+    match road_level_of(r, improvement) {
+        Some(level) => {
+            if world.grid.unpillaged_road(tile) >= level {
+                return Err(ImprovementRejection::AlreadyPaved);
+            }
+        }
+        None => {
+            if world.grid.improvement[tile.0 as usize].is_some() {
+                return Err(ImprovementRejection::AlreadyImproved);
+            }
+        }
     }
     if let Some(tech) = imp.tech_required.as_deref() {
         let known = r
@@ -108,7 +127,10 @@ pub fn work_on(
 
     if done >= needed {
         *slot = None;
-        world.grid.improvement[tile.0 as usize] = Some(improvement);
+        match road_level_of(r, improvement) {
+            Some(level) => world.grid.set_road(tile, level),
+            None => world.grid.improvement[tile.0 as usize] = Some(improvement),
+        }
         Ok(WorkEvent::Finished { tile, improvement })
     } else {
         *slot = Some((improvement, done));

@@ -54,6 +54,18 @@ impl Pair {
         (self.0, self.1)
     }
 
+    /// Which slot a civ occupies, 0 for the lower id. Directed facts about a
+    /// pair index by this, so they still live in the one pair record.
+    pub fn slot(self, civ: CivId) -> Option<usize> {
+        if civ == self.0 {
+            Some(0)
+        } else if civ == self.1 {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
     pub fn other(self, civ: CivId) -> Option<CivId> {
         if civ == self.0 {
             Some(self.1)
@@ -78,6 +90,14 @@ pub enum Stance {
 pub struct Pact {
     pub stance: Stance,
     pub defensive_pact: bool,
+    /// Who lets whom walk through. Indexed by [`Pair::slot`] of the *grantor*:
+    /// `open_borders[0]` is the lower-id civ opening its borders to the other.
+    ///
+    /// Open borders is the one genuinely one-sided thing about a pair — you
+    /// can be let in without letting them in. Storing it as two bits in the
+    /// one record keeps that asymmetry honest without splitting the pair into
+    /// two records that could disagree about the war.
+    pub open_borders: [bool; 2],
     /// Turns since the stance last changed — peace treaties have a duration.
     pub turns_in_stance: u32,
 }
@@ -170,6 +190,7 @@ impl Diplomacy {
         }
         pact.stance = Stance::War;
         pact.defensive_pact = false; // war ends any pact between the two
+        pact.open_borders = [false, false]; // and closes both sets of borders
         pact.turns_in_stance = 0;
         self.met.insert(pair, true); // you have certainly met now
         Some(DiplomacyEvent::WarDeclared { aggressor, against })
@@ -188,6 +209,35 @@ impl Diplomacy {
         pact.stance = Stance::Peace;
         pact.turns_in_stance = 0;
         Some(DiplomacyEvent::PeaceMade { pair })
+    }
+
+    /// May `visitor` pass through `grantor`'s territory?
+    ///
+    /// Own territory always, war never, and otherwise only if it was granted.
+    pub fn may_enter_borders_of(&self, visitor: CivId, grantor: CivId) -> bool {
+        if visitor == grantor {
+            return true;
+        }
+        if self.always_hostile.contains(&visitor) || self.always_hostile.contains(&grantor) {
+            return false;
+        }
+        let Some(pair) = Pair::of(visitor, grantor) else { return true };
+        if !self.met.get(&pair).copied().unwrap_or(false) {
+            return false;
+        }
+        let Some(pact) = self.pacts.get(&pair) else { return false };
+        if pact.stance == Stance::War {
+            return false;
+        }
+        pair.slot(grantor).is_some_and(|i| pact.open_borders[i])
+    }
+
+    /// Open (or close) `grantor`'s borders to `visitor`. One-sided: the
+    /// reverse direction is a separate call.
+    pub fn set_open_borders(&mut self, grantor: CivId, visitor: CivId, open: bool) {
+        let Some(pair) = Pair::of(grantor, visitor) else { return };
+        let Some(slot) = pair.slot(grantor) else { return };
+        self.pacts.entry(pair).or_default().open_borders[slot] = open;
     }
 
     pub fn pact(&self, a: CivId, b: CivId) -> Option<&Pact> {

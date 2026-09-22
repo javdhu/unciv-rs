@@ -259,22 +259,65 @@ pub fn worker_order(
     if !is_worker(r, u.base) {
         return None;
     }
+    // A job already under way on this tile is finished first, whatever else
+    // has become attractive since. Switching discards the progress, so a
+    // worker that re-decides every turn can dig for a century and finish
+    // nothing — which is exactly what it did before this line existed.
+    if let Some((what, _)) = world.grid.improvement_progress[u.position.0 as usize] {
+        if crate::world::improvements::can_build(world, r, civ, u.position, what).is_ok() {
+            return Some(UnitOrder::Improve(what));
+        }
+    }
+
     let c = world.civ(civ)?;
-    let jobs: Vec<_> = c
+    let mut jobs: Vec<_> = c
         .cities
         .iter()
         .filter_map(|id| world.cities.get(*id))
         .flat_map(|city| improvable_tiles(world, r, civ, city))
         .collect();
 
+    // Connecting a city comes before improving tiles, and replaces the list
+    // rather than joining the end of it.
+    //
+    // A trade route is worth several gold every turn for the rest of the
+    // game; one farm is worth one food. Leaving roads as the job of last
+    // resort means they are never done at all, because a growing city always
+    // has one more unimproved tile — measured at 110 turns to join two cities
+    // five tiles apart, against 19 — the optimum — once roads come first.
+    if let Some(road) = r.improvements.id("Road") {
+        let wanted = crate::world::connections::road_plan(world, r, civ);
+        if !wanted.is_empty() {
+            jobs = wanted.into_iter().map(|t| (t, road)).collect();
+        }
+    }
+
     // Already standing on a job? Dig.
     if let Some((_, imp)) = jobs.iter().find(|(t, _)| *t == u.position) {
         return Some(UnitOrder::Improve(*imp));
     }
+
+    // A dig someone abandoned is worth more than a fresh one of equal value,
+    // because the turns already spent are only kept if it is finished. The
+    // worker has no memory of its own, so the half-dug tile is the memory —
+    // without this two jobs at similar distance make it pace between them.
+    let unfinished = world
+        .grid
+        .ids()
+        .filter(|t| world.grid.improvement_progress[t.0 as usize].is_some())
+        .filter(|t| {
+            world.grid.improvement_progress[t.0 as usize]
+                .is_some_and(|(what, _)| {
+                    crate::world::improvements::can_build(world, r, civ, *t, what).is_ok()
+                })
+        })
+        .min_by_key(|t| (world.grid.distance(u.position, *t), t.0));
+
     // Otherwise head for the nearest one, ties by tile id.
-    let (target, _) = jobs
-        .iter()
-        .min_by_key(|(t, _)| (world.grid.distance(u.position, *t), t.0))?;
+    let target = &match unfinished {
+        Some(t) => t,
+        None => jobs.iter().min_by_key(|(t, _)| (world.grid.distance(u.position, *t), t.0))?.0,
+    };
     let reachable =
         crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
     let step = reachable

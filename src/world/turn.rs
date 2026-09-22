@@ -25,7 +25,7 @@ use crate::ruleset::Ruleset;
 use crate::world::assignment::{assign_idle_citizens, CityFocus};
 use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind};
 use crate::ruleset::Technology;
-use crate::stats::Fixed;
+use crate::stats::{Fixed, Stats};
 use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::UniqueType;
 use crate::world::ai::UnitOrder;
@@ -172,6 +172,14 @@ pub fn plan_civ_turn(
         }
     }
 
+    // Which cities are joined to the capital, and by what. Derived from the
+    // map, the treaties and the tech tree, so it is recomputed rather than
+    // cached — see `connections` for why.
+    let connections = crate::world::connections::find(world, r, civ);
+    let trade_gold = |id: Id<City>| -> Stats {
+        crate::world::connections::trade_route_stats(world, r, civ, &connections, id)
+    };
+
     for &city_id in &c.cities {
         let Some(city) = world.cities.get(city_id) else { continue };
         // Work on a copy: planning must not disturb the world the other civs
@@ -179,7 +187,19 @@ pub fn plan_civ_turn(
         let mut hypothetical = city.clone();
         assign_idle_citizens(&world.grid, r, &mut hypothetical, focus);
         let surplus = food_surplus(&world.grid, r, &hypothetical);
-        let output = city_yield(&world.grid, r, &hypothetical);
+        let mut output = city_yield(&world.grid, r, &hypothetical) + trade_gold(city_id);
+        // A railroad to the capital is worth a quarter more hammers. The
+        // capital gets it for being the capital.
+        let rail = crate::world::connections::railroad_production_bonus(
+            world, r, civ, &connections, city_id,
+        );
+        if !rail.is_zero() {
+            if let Some(boosted) =
+                output.production.mul(Fixed::whole(100) + rail).div(Fixed::whole(100))
+            {
+                output.production = boosted;
+            }
+        }
 
         // An unhappy empire grows slowly or not at all, and the thresholds for
         // that are the ruleset's, not this engine's.
@@ -201,7 +221,11 @@ pub fn plan_civ_turn(
                     city_yield(&world.grid, r, city).gold.round() as i32
                         - crate::world::city::city_maintenance(r, city)
                 })
-                .sum::<i32>();
+                .sum::<i32>()
+                + c.cities.iter().map(|id| trade_gold(*id).gold.round() as i32).sum::<i32>()
+                - crate::world::connections::transportation_upkeep(world, r, civ)
+                    .gold
+                    .round() as i32;
             if let Some(what) =
                 crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants)
             {
@@ -217,6 +241,9 @@ pub fn plan_civ_turn(
         plan.faith += output.faith.round() as i32;
         plan.gold += output.gold.round() as i32 - upkeep;
     }
+    // Roads are charged to the empire, not to a city — a road between two
+    // cities belongs to neither.
+    plan.gold -= crate::world::connections::transportation_upkeep(world, r, civ).gold.round() as i32;
     plan
 }
 
@@ -598,6 +625,64 @@ mod tests {
         let mut w = World::new(g, civs);
         w.found_city(City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap()));
         w
+    }
+
+    /// The whole road loop, driven by nothing but the turn engine: the plan
+    /// notices an unconnected city, a worker walks to the gap, digs, and the
+    /// treasury starts earning a trade route.
+    ///
+    /// Each piece has a unit test. This is here because the pieces have been
+    /// connected wrongly before — production that finished into nothing,
+    /// income that was earned and never banked — and only running the game
+    /// catches that.
+    #[test]
+    fn a_worker_connects_a_second_city_and_the_gold_starts_coming_in() {
+        use crate::world::connections;
+        let r = ruleset();
+        let mut w = two_civ_world(&r);
+        let rome = w.civ(CivId(0)).unwrap().cities[0];
+        // Give Rome a palace so it is a capital at all.
+        let palace = connections::palace(&r).expect("the ruleset has a palace");
+        {
+            let c = w.cities.get_mut(rome).unwrap();
+            c.built.insert(palace);
+            crate::world::city::rebuild_city_uniques(&r, c);
+        }
+        let ostia = w.found_city(City::found("Ostia", CivId(0), w.grid.id_at(13, 8).unwrap()));
+        w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id("The Wheel").unwrap());
+
+        let worker = r
+            .units
+            .iter()
+            .find(|(_, u)| u.name == "Worker")
+            .map(|(id, _)| id)
+            .expect("the ruleset has a worker");
+        w.place_unit(Unit::new(worker, CivId(0), w.grid.id_at(9, 8).unwrap(), 2));
+
+        assert!(!connections::find(&w, &r, CivId(0)).has_trade_route(ostia), "not yet");
+        let plan = connections::road_plan(&w, &r, CivId(0));
+        assert!(!plan.is_empty(), "the civ should want a road");
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let mut connected_on = None;
+        for turn in 1..=120 {
+            advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default());
+            if connections::find(&w, &r, CivId(0)).has_trade_route(ostia) {
+                connected_on = Some(turn);
+                break;
+            }
+        }
+
+        let turn = connected_on.expect("one worker should join two cities inside 120 turns");
+        // Four bare tiles at four worker-turns each, plus the walk. If this
+        // creeps up, the worker has started dithering between jobs again.
+        assert!(turn <= 25, "took {turn} turns, which is dithering, not working");
+        let c = connections::find(&w, &r, CivId(0));
+        let earned = connections::trade_route_stats(&w, &r, CivId(0), &c, ostia);
+        assert!(earned.gold > Fixed::ZERO, "a route that earns nothing is not a route");
+        let paid = connections::transportation_upkeep(&w, &r, CivId(0));
+        assert!(paid.gold > Fixed::ZERO, "and the road costs something to keep");
     }
 
     /// The property the phase split exists for.
@@ -1161,6 +1246,7 @@ mod multi_civ {
         }
         println!("total cities on the map: {}", w.cities.len());
 
+
         assert_eq!(w.civs.len(), 3, "everyone is still in the list, alive or not");
         assert!(w.cities.len() > 3, "someone should have expanded");
 
@@ -1175,11 +1261,20 @@ mod multi_civ {
         assert_eq!(victories, 1, "a game is won once, not once per turn");
         let (winner, condition) = w.winner.expect("someone won");
         println!("{winner:?} wins by {}", r.victories.name_of(condition).unwrap());
-        assert_eq!(
-            w.civs.iter().filter(|c| c.is_alive()).count(),
-            1,
-            "and the others are gone"
-        );
+        // Domination in this ruleset is "capture all capitals", which is not
+        // the same as leaving nobody standing — a civ that loses its palace
+        // and keeps three towns is beaten but not dead. This asserted one
+        // survivor until roads gave the leader the economy to take capitals
+        // faster than it could mop up; the win condition was always the
+        // capitals, so that is what is checked.
+        let palace = crate::world::connections::palace(&r).expect("the ruleset has a palace");
+        let unheld: Vec<_> = w
+            .cities
+            .iter()
+            .filter(|(_, c)| c.built.contains(&palace) && c.owner != winner)
+            .map(|(_, c)| c.name.clone())
+            .collect();
+        assert!(unheld.is_empty(), "the winner should hold every capital, but not {unheld:?}");
 
         // Everyone finds everyone. Before exploration existed this was zero:
         // settlers and workers stay near home, so sight never reached a

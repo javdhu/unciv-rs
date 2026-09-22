@@ -9,6 +9,7 @@ pub mod barbarians;
 pub mod city;
 pub mod combat;
 pub mod conditionals;
+pub mod connections;
 pub mod construction;
 pub mod filters;
 pub mod fog;
