@@ -221,6 +221,90 @@ pub fn fingerprint() -> u64 {
         }
     }
 
+    // --- a whole game ------------------------------------------------------
+    //
+    // Everything above checks a layer in isolation. This runs the engine:
+    // forty turns of four civs on a generated map, folding in every civ's
+    // holdings and every city's state at the end.
+    //
+    // It is the only check that covers the systems whose behaviour depends on
+    // state rather than on the ruleset — combat, religion's spread, city-state
+    // influence, espionage's rolls — and the only one that would catch two
+    // machines diverging on the third turn of an actual game rather than on
+    // an arithmetic edge case.
+    {
+        use crate::world::assignment::CityFocus;
+        use crate::world::construction::CostModifiers;
+        use crate::world::entities::{Civilization, Unit};
+        use crate::world::mapgen::{generate, MapParameters};
+        use crate::world::city::GrowthModifiers;
+        use crate::world::policies::PolicyModifiers;
+        use crate::world::research::ScienceModifiers;
+        use crate::world::turn::advance_turn;
+        use crate::world::world::World;
+
+        let map = generate(
+            &r,
+            MapParameters { width: 24, height: 16, seed: 0x1234_5678, ..Default::default() },
+            4,
+        );
+        if let Some(nation) = r.nations.ids().next() {
+            let civs: Vec<_> =
+                (0..4u8).map(|i| Civilization::new(CivId(i), nation, true)).collect();
+            let mut w = World::new(map.grid, civs);
+            let settler = r
+                .units
+                .iter()
+                .find(|(id, _)| crate::world::settling::is_settler(&r, *id))
+                .map(|(id, _)| id);
+            let worker = r.units.iter().find(|(_, u)| u.name == "Worker").map(|(id, _)| id);
+            for (i, start) in map.starts.iter().enumerate() {
+                for base in [settler, worker].into_iter().flatten() {
+                    w.place_unit(Unit::new(base, CivId(i as u8), *start, 2));
+                }
+            }
+            for _ in 0..40 {
+                advance_turn(
+                    &mut w,
+                    &r,
+                    CityFocus::None,
+                    GrowthModifiers::default(),
+                    CostModifiers::default(),
+                    ScienceModifiers::default(),
+                    None,
+                    PolicyModifiers::default(),
+                );
+            }
+
+            d.add(w.turn as i64).add(w.cities.len() as i64).add(w.units.len() as i64);
+            for civ in &w.civs {
+                d.add(civ.gold as i64)
+                    .add(civ.science_stored as i64)
+                    .add(civ.culture_stored as i64)
+                    .add(civ.techs.len() as i64)
+                    .add(civ.adopted_policies.len() as i64)
+                    .add(civ.faith.stored as i64)
+                    .add(civ.cities.len() as i64)
+                    .add(civ.units.len() as i64)
+                    .add(civ.espionage.spies.len() as i64)
+                    .add(civ.defeated as i64);
+            }
+            for (_, city) in w.cities.iter() {
+                d.add(city.population as i64)
+                    .add(city.food_stored as i64)
+                    .add(city.production_stored as i64)
+                    .add(city.health as i64)
+                    .add(city.built.len() as i64)
+                    .add(city.centre.0 as i64)
+                    .add(city.faith.total_pressure() as i64);
+            }
+            for (_, unit) in w.units.iter() {
+                d.add(unit.position.0 as i64).add(unit.health as i64);
+                d.add_fixed(unit.movement_left);
+            }
+        }
+    }
+
     d.0
 }
 
