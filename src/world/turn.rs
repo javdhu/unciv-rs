@@ -107,6 +107,12 @@ pub enum TurnEvent {
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
+    /// A technology changed hands without being researched. `identified` is
+    /// whether the victim learned whose spy took it, which is what turns a
+    /// theft into a grievance rather than a mystery.
+    TechStolen { thief: CivId, victim: CivId, tech: Id<Technology>, identified: bool },
+    /// A spy was caught in the act and killed.
+    SpyCaught { civ: CivId, city: Id<City> },
     /// A major civ bought favour.
     GoldGifted { from: CivId, to: CivId, gold: i32, influence: Fixed },
     /// A city-state's opinion of a major civ crossed a threshold — gained an
@@ -678,6 +684,33 @@ pub fn advance_turn(
         events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
     }
 
+    // Spies. New eras grant them, idle ones are posted, and the posted ones
+    // work — in that order, so a spy granted this turn is on its way this turn
+    // rather than idling for one.
+    for civ in world.civ_ids().collect::<Vec<_>>() {
+        if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_alive()) {
+            continue;
+        }
+        let era = crate::world::policies::era_number(world, r, civ);
+        if let Some(c) = world.civ_mut(civ) {
+            c.espionage.grant_for_era(era);
+        }
+        for (i, city) in crate::world::espionage::postings(world, r, civ) {
+            crate::world::espionage::assign(world, civ, i, city);
+        }
+    }
+    for e in crate::world::espionage::tick(world, r, science.speed) {
+        match e {
+            crate::world::espionage::SpyEvent::TechStolen { thief, victim, tech, identified } => {
+                events.push(TurnEvent::TechStolen { thief, victim, tech, identified });
+            }
+            crate::world::espionage::SpyEvent::Caught { civ, city } => {
+                events.push(TurnEvent::SpyCaught { civ, city });
+            }
+            _ => {}
+        }
+    }
+
     // City-state favour slides back toward where it belongs, and the bonuses
     // it buys are rebuilt from the new numbers. A friendship that lapsed this
     // turn has to stop paying this turn.
@@ -1036,6 +1069,74 @@ mod tests {
             "favour that never lapses is a purchase, not a relationship"
         );
         assert_eq!(ally_of(&w, CivId(1)), None, "and the alliance is gone with it");
+    }
+
+    /// Espionage through the real turn loop: a spy is granted by reaching an
+    /// era, posts itself, and brings home a technology nobody researched.
+    ///
+    /// The module's own tests drive `tick` directly. This one exists because
+    /// the granting, the posting and the unique rebuild after a stolen tech
+    /// are all wiring, and wiring is where this engine's bugs have lived.
+    ///
+    /// Espionage does not appear in the 250-turn generated-map game at all:
+    /// it starts in the Renaissance and four civs at permanent war reach the
+    /// Classical era. That is Civ's own pacing, not a fault, so the era is
+    /// granted here rather than waited for.
+    #[test]
+    fn a_spy_earns_its_era_posts_itself_and_steals() {
+        let r = ruleset();
+        let mut w = two_civ_world(&r);
+        let babylon = w.found_city(City::found("Babylon", CivId(1), w.grid.id_at(16, 16).unwrap()));
+        {
+            // Babylon needs land of its own to work, or it starves to one
+            // citizen and produces one science — `two_civ_world` hands the
+            // whole map to civ 0.
+            let centre = w.cities.get(babylon).unwrap().centre;
+            for t in w.grid.within(centre, 3) {
+                w.grid.owner[t.0 as usize] = Some(CivId(1));
+            }
+            w.cities.get_mut(babylon).unwrap().population = 14;
+        }
+        // Give the rival a lead worth stealing, and both sides the eras that
+        // grant spies.
+        for t in r.technologies.ids().take(20) {
+            w.civ_mut(CivId(1)).unwrap().techs.insert(t);
+        }
+        for civ in [CivId(0), CivId(1)] {
+            w.civ_mut(civ).unwrap().espionage.grant_for_era(
+                crate::world::espionage::FIRST_SPY_ERA,
+            );
+        }
+        assert_eq!(w.civ(CivId(0)).unwrap().espionage.spies.len(), 1);
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let before = w.civ(CivId(0)).unwrap().techs.len();
+        // Eighty turns: a few to travel and set up, then the theft. Kept
+        // short deliberately — a rival handed twenty technologies also has
+        // the units that come with them, and given three hundred turns it
+        // conquers the spy's owner and the test stops being about espionage.
+        let mut stolen = None;
+        for turn in 1..=80 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                if let TurnEvent::TechStolen { thief, tech, .. } = e {
+                    if thief == CivId(0) {
+                        stolen.get_or_insert((turn, tech));
+                    }
+                }
+            }
+            if stolen.is_some() {
+                break;
+            }
+        }
+
+        let (turn, tech) = stolen.expect("a spy in a rival capital should bring something home");
+        println!("stole {} on turn {turn}", r.technologies.name_of(tech).unwrap_or("?"));
+        assert!(w.civ(CivId(0)).unwrap().techs.contains(&tech));
+        assert!(w.civ(CivId(0)).unwrap().techs.len() > before, "and the count went up");
+        // It posted itself without being told where to go.
+        let spy = &w.civ(CivId(0)).unwrap().espionage.spies[0];
+        assert!(spy.station.is_some() || spy.rank == 1, "still working, or caught and home");
     }
 
     /// The property the phase split exists for.

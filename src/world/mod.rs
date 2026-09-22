@@ -21,6 +21,7 @@ pub mod grid;
 pub mod diplomacy;
 pub mod economy;
 pub mod entities;
+pub mod espionage;
 pub mod mapgen;
 pub mod movement;
 pub mod policies;

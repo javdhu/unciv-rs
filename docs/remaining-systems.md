@@ -14,7 +14,7 @@ matters more than its line count.
 | quests / city-states | 158 | directed pair matrix, like diplomacy — **done** |
 | religion | 104 | sparse matrix + diffusion |
 | trade & connectivity | 57 | a graph problem |
-| espionage | 56 | hidden state, per-player views |
+| espionage | 56 | hidden state, per-player views — **done** |
 | policies | 34 | mostly already generated |
 | victory | 31 | predicates, not state |
 | barbarians | 22 | seeded spawning |
@@ -284,6 +284,41 @@ improvements. Every Cultured city-state in the game would have paid out
 nothing. `civ_wide_yields` now reads them, which also makes any policy, belief
 or tech granting flat stats work for the first time. Two conditionals were
 needed to get there: `<before the [era]>` had no evaluator.
+
+---
+
+## Espionage — the one system allowed to be unfair — **done**
+
+Implemented in `src/world/espionage.rs`.
+
+Every other subsystem answers the same question for everyone: the same tile
+yields the same food whoever works it. Espionage does not. A spy takes
+something the victim cannot get back, and may never be identified.
+
+**Bounded randomness, seeded from state.** A steal resolves against a roll in
+`0..300`, shifted by the spy's rank and by any counter-intelligence in the
+city. Three bands: under 100 nobody knows who did it, 100–200 the victim learns
+whose spy it was, 200 and above the spy is caught. The bands are what make rank
+worth having — a veteran is *safer*, not merely luckier. The roll is seeded on
+the turn, the civ, the city and the spy's index, never from an ambient
+generator: two machines replaying a game must catch the same spy on the same
+turn.
+
+**Found by running it.** A spy posted to a rival's city that we then *captured*
+was left standing in its own civ's streets in `StealingTech` — `stealable(civ,
+civ)` is empty, so it reported nothing to steal every turn and never moved
+again. Its progress sat at 86 for two hundred and fifty turns. A spy now
+notices the ground moving under it, in both directions, and one with nothing
+left to steal goes home to be reposted.
+
+**Not here:** rigging city-state elections and coups. Those are city-state
+systems wearing a spy costume and belong with the quests that are not built.
+The gap is named rather than half-filled.
+
+**Not reached in the long game.** Espionage starts in the Renaissance, and four
+civs at permanent war reach the Classical era in 250 turns. That is Civ's own
+pacing, not a fault; the end-to-end test grants the era rather than waiting for
+it.
 
 ---
 

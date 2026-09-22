@@ -40,6 +40,8 @@ pub struct Civilization {
     pub faith: crate::world::religion::Faith,
     /// Points toward the next great person of each kind, and what it costs.
     pub great_people: crate::world::great_people::GreatPeople,
+    /// Spies, and which eras have already granted one.
+    pub espionage: crate::world::espionage::Espionage,
     /// Every unique currently in force for this civ, indexed for lookup.
     /// Rebuilt whenever policies or techs change — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
@@ -62,6 +64,7 @@ impl Civilization {
             is_ai,
             is_barbarian: false,
             city_state_type: None,
+            espionage: Default::default(),
             gold: 0,
             science_stored: 0,
             techs: BTreeSet::new(),
