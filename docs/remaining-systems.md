@@ -6,19 +6,34 @@ Sizes below are stub counts from `tools/stub_manifest.json` — an indication of
 surface area in Unciv, not an estimate of the work here, since a system's shape
 matters more than its line count.
 
-| | stubs | |
-|---|---|---|
-| AI / automation | 206 | no reference obligation |
-| map generation | 189 | aesthetic, not rules |
-| diplomacy | 167 | the hardest state shape |
-| quests / city-states | 158 | directed pair matrix, like diplomacy — **done** |
-| religion | 104 | sparse matrix + diffusion |
-| trade & connectivity | 57 | a graph problem |
-| espionage | 56 | hidden state, per-player views — **done** |
-| policies | 34 | mostly already generated |
-| victory | 31 | predicates, not state |
-| barbarians | 22 | seeded spawning |
-| great people | 15 | reuses the growth pattern |
+| | stubs | shape | state |
+|---|---|---|---|
+| AI / automation | 206 | no reference obligation | `ai.rs` |
+| map generation | 189 | aesthetic, not rules | `mapgen.rs` |
+| diplomacy | 167 | the hardest state shape | `diplomacy.rs` |
+| quests / city-states | 158 | directed pair matrix, like diplomacy | `city_states.rs`, **no quests** |
+| religion | 104 | sparse matrix + diffusion | `religion.rs` |
+| trade & connectivity | 57 | a graph problem | `connections.rs` |
+| espionage | 56 | hidden state, per-player views | `espionage.rs`, **no coups** |
+| policies | 34 | mostly already generated | `policies.rs` |
+| victory | 31 | predicates, not state | `victory.rs` |
+| barbarians | 22 | seeded spawning | `barbarians.rs` |
+| great people | 15 | reuses the growth pattern | `great_people.rs` |
+
+Every system on this list now exists. What is deliberately *not* built is named
+in the sections below: city-state **quests**, and the two espionage actions
+that are really city-state systems — rigging elections and staging coups. Those
+three belong together and are the honest remainder.
+
+Two further gaps are worth stating plainly, because both are cases of a system
+being correct and the AI not reaching for it:
+
+* **Religion never fires in the long self-play.** Faith needs a shrine, and an
+  AI at permanent war builds soldiers. The rules are right; the priorities are
+  not.
+* **Espionage never fires either**, but for a different and legitimate reason:
+  it starts in the Renaissance and four civs at war reach the Classical era in
+  250 turns. That is Civ's own pacing.
 
 ---
 
