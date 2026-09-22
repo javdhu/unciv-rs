@@ -67,6 +67,17 @@ impl Fixed {
         Some(Fixed(if neg { -v } else { v }))
     }
 
+    /// Creates a fixed-point value from a fraction `num / den`, rounding to
+    /// the nearest thousandth, half away from zero like [`Fixed::round`].
+    pub fn from_fraction(num: i64, den: i64) -> Fixed {
+        assert!(den != 0, "denominator cannot be zero");
+        let scaled = num.checked_mul(SCALE).expect("overflow in from_fraction");
+        // Integer division truncates toward zero, so the half goes on in the
+        // numerator's direction — a fixed `+ den / 2` rounds -1/2 to -0.499.
+        let half = den.abs() / 2;
+        Fixed((scaled + if scaled < 0 { -half } else { half }) / den)
+    }
+
     /// Rounds half away from zero, matching how Civ presents partial yields.
     pub fn round(self) -> i64 {
         let half = SCALE / 2;
@@ -298,6 +309,17 @@ mod tests {
         assert_eq!(Fixed::parse("1.2345"), Some(Fixed::permille(1_235)), "rounds half up");
         assert_eq!(Fixed::parse("abc"), None);
         assert_eq!(Fixed::parse(""), None);
+    }
+
+    #[test]
+    fn fractions_round_half_away_from_zero_on_both_sides() {
+        assert_eq!(Fixed::from_fraction(1, 2), Fixed::permille(500));
+        assert_eq!(Fixed::from_fraction(1, 3), Fixed::permille(333));
+        assert_eq!(Fixed::from_fraction(2, 3), Fixed::permille(667));
+        assert_eq!(Fixed::from_fraction(-1, 2), Fixed::permille(-500));
+        assert_eq!(Fixed::from_fraction(-2, 3), Fixed::permille(-667));
+        assert_eq!(Fixed::from_fraction(2, -3), Fixed::permille(-667));
+        assert_eq!(Fixed::from_fraction(-2, -3), Fixed::permille(667));
     }
 
     #[test]

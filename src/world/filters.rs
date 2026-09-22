@@ -126,7 +126,9 @@ pub fn unit_matches(r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
         "Wounded" | "wounded" | "wounded units" => {
             if unit.is_hurt() { Verdict::True } else { Verdict::False }
         }
-        "Embarked" | "embarked" => Verdict::Unknown, // not modelled yet
+        "Embarked" | "embarked" => {
+            if unit.embarked { Verdict::True } else { Verdict::False }
+        }
         "Barbarian" | "barbarians" | "City-State" => Verdict::Unknown, // needs civ kind
         _ => category(r, base, term),
     })
@@ -137,6 +139,56 @@ pub fn unit_matches(r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
 pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdict {
     let Some(b) = r.units.get(base) else { return Verdict::Unknown };
     multi_filter(filter, &|term| category(r, b, term))
+}
+
+/// Does a city match a city filter?
+///
+/// The filters that appear in the shipped rulesets are few and blunt — "in all
+/// cities", "in this city", "in City-State cities". Anything else is
+/// [`Verdict::Unknown`] rather than a guess, so a filter this does not
+/// understand withholds its bonus and stays countable.
+///
+/// `subject` is the city being asked about; `origin` is the city the effect
+/// comes from, which is what "this city" means.
+pub fn city_matches(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    subject: &crate::world::city::City,
+    origin: Option<&crate::world::city::City>,
+    filter: &str,
+) -> Verdict {
+    let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
+    let f = filter.trim();
+    let f = f.strip_prefix("in ").unwrap_or(f);
+    let _ = r;
+    match f {
+        "all cities" | "All" | "in all cities" => Verdict::True,
+        "this city" => match origin {
+            // Two cities are the same city when they stand on the same tile —
+            // names are not unique and ids are not in hand here.
+            Some(o) => yes(o.centre == subject.centre),
+            None => Verdict::Unknown,
+        },
+        "other cities" => match origin {
+            Some(o) => yes(o.centre != subject.centre),
+            None => Verdict::Unknown,
+        },
+        "your cities" | "cities" => match origin {
+            Some(o) => yes(o.owner == subject.owner),
+            None => Verdict::Unknown,
+        },
+        "foreign cities" | "enemy cities" => match origin {
+            Some(o) => yes(o.owner != subject.owner),
+            None => Verdict::Unknown,
+        },
+        // City-states are not modelled yet. Saying "no" would quietly hand out
+        // a bonus that should be withheld and hide the gap.
+        "City-State cities" | "City-State" => {
+            let _ = world;
+            Verdict::Unknown
+        }
+        _ => Verdict::Unknown,
+    }
 }
 
 #[cfg(test)]
@@ -196,7 +248,7 @@ mod tests {
         assert_eq!(unit_matches(&r, &warrior, "non-[Water]"), Verdict::True);
         assert_eq!(unit_matches(&r, &warrior, "non-[Land]"), Verdict::False);
         assert_eq!(
-            unit_matches(&r, &warrior, "non-[Embarked]"),
+            unit_matches(&r, &warrior, "non-[Barbarian]"),
             Verdict::Unknown,
             "negating something undecidable stays undecidable"
         );
@@ -209,16 +261,21 @@ mod tests {
         assert_eq!(unit_matches(&r, &warrior, "Wounded"), Verdict::False);
         warrior.health = 40;
         assert_eq!(unit_matches(&r, &warrior, "Wounded"), Verdict::True);
+
+        warrior.health = 100;
+        assert_eq!(unit_matches(&r, &warrior, "Embarked"), Verdict::False);
+        warrior.embarked = true;
+        assert_eq!(unit_matches(&r, &warrior, "Embarked"), Verdict::True);
     }
 
     #[test]
     fn an_unknown_term_poisons_a_conjunction_but_a_false_one_settles_it() {
         let r = ruleset();
         let warrior = unit(&r, "Warrior");
-        // Land is true, Embarked is undecidable — so the pair is undecidable.
-        assert_eq!(unit_matches(&r, &warrior, "{Land} {Embarked}"), Verdict::Unknown);
+        // Land is true, Barbarian is undecidable — so the pair is undecidable.
+        assert_eq!(unit_matches(&r, &warrior, "{Land} {Barbarian}"), Verdict::Unknown);
         // Water is definitely false, so nothing else needs deciding.
-        assert_eq!(unit_matches(&r, &warrior, "{Water} {Embarked}"), Verdict::False);
+        assert_eq!(unit_matches(&r, &warrior, "{Water} {Barbarian}"), Verdict::False);
     }
 
     /// Every filter the shipped ruleset actually uses should be decidable, or
@@ -239,55 +296,5 @@ mod tests {
         }
         println!("undecidable: {undecidable:?}");
         assert!(undecidable.is_empty(), "these filters do nothing: {undecidable:?}");
-    }
-}
-
-/// Does a city match a city filter?
-///
-/// The filters that appear in the shipped rulesets are few and blunt — "in all
-/// cities", "in this city", "in City-State cities". Anything else is
-/// [`Verdict::Unknown`] rather than a guess, so a filter this does not
-/// understand withholds its bonus and stays countable.
-///
-/// `subject` is the city being asked about; `origin` is the city the effect
-/// comes from, which is what "this city" means.
-pub fn city_matches(
-    world: &crate::world::world::World,
-    r: &Ruleset,
-    subject: &crate::world::city::City,
-    origin: Option<&crate::world::city::City>,
-    filter: &str,
-) -> Verdict {
-    let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
-    let f = filter.trim();
-    let f = f.strip_prefix("in ").unwrap_or(f);
-    let _ = r;
-    match f {
-        "all cities" | "All" | "in all cities" => Verdict::True,
-        "this city" => match origin {
-            // Two cities are the same city when they stand on the same tile —
-            // names are not unique and ids are not in hand here.
-            Some(o) => yes(o.centre == subject.centre),
-            None => Verdict::Unknown,
-        },
-        "other cities" => match origin {
-            Some(o) => yes(o.centre != subject.centre),
-            None => Verdict::Unknown,
-        },
-        "your cities" | "cities" => match origin {
-            Some(o) => yes(o.owner == subject.owner),
-            None => Verdict::Unknown,
-        },
-        "foreign cities" | "enemy cities" => match origin {
-            Some(o) => yes(o.owner != subject.owner),
-            None => Verdict::Unknown,
-        },
-        // City-states are not modelled yet. Saying "no" would quietly hand out
-        // a bonus that should be withheld and hide the gap.
-        "City-State cities" | "City-State" => {
-            let _ = world;
-            Verdict::Unknown
-        }
-        _ => Verdict::Unknown,
     }
 }

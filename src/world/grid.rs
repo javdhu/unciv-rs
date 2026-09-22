@@ -18,7 +18,8 @@
 //! change".
 
 use crate::arena::Id;
-use crate::ruleset::{Terrain, TileImprovement, TileResource};
+use crate::ruleset::{Ruleset, Terrain, TileImprovement, TileResource};
+use crate::unique_type::UniqueType;
 
 /// A dense index into [`TileGrid`]. `u16` holds 65,535 tiles; Civ's largest
 /// standard map is 128×80 = 10,240.
@@ -32,13 +33,14 @@ pub struct CivId(pub u8);
 /// The six hex directions, in a fixed order so that anything iterating them
 /// visits them identically on every machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
 pub enum Direction {
-    East,
-    NorthEast,
-    NorthWest,
-    West,
-    SouthWest,
-    SouthEast,
+    East = 0,
+    NorthEast = 1,
+    NorthWest = 2,
+    West = 3,
+    SouthWest = 4,
+    SouthEast = 5,
 }
 
 impl Direction {
@@ -46,6 +48,11 @@ impl Direction {
         Direction::East, Direction::NorthEast, Direction::NorthWest,
         Direction::West, Direction::SouthWest, Direction::SouthEast,
     ];
+
+    #[inline]
+    pub fn bit(self) -> u8 {
+        1 << (self as u8)
+    }
 
     pub fn opposite(self) -> Direction {
         match self {
@@ -141,6 +148,10 @@ pub struct TileGrid {
     /// A pillaged road is still drawn but carries nothing, so connection and
     /// movement ask [`TileGrid::unpillaged_road`] rather than reading `road`.
     pub road_pillaged: Vec<bool>,
+    /// Bitmask of river edges for each tile (indexed by Direction::bit).
+    pub river_edges: Vec<u8>,
+    /// Whether the improvement on this tile is pillaged.
+    pub improvement_pillaged: Vec<bool>,
     /// Precomputed once. `None` at the map edge.
     neighbours: Vec<[Option<TileId>; 6]>,
 }
@@ -163,6 +174,8 @@ impl TileGrid {
             owner: vec![None; n],
             road: vec![RoadLevel::None; n],
             road_pillaged: vec![false; n],
+            river_edges: vec![0; n],
+            improvement_pillaged: vec![false; n],
             neighbours: Vec::new(),
         };
         grid.neighbours = (0..n).map(|i| grid.compute_neighbours(TileId(i as u16))).collect();
@@ -182,6 +195,105 @@ impl TileGrid {
         let i = t.0 as usize;
         self.road[i] = level;
         self.road_pillaged[i] = false;
+    }
+
+    /// Pillage the road on this tile.
+    pub fn pillage_road(&mut self, t: TileId) {
+        self.road_pillaged[t.0 as usize] = true;
+    }
+
+    /// Repair the road on this tile.
+    pub fn repair_road(&mut self, t: TileId) {
+        self.road_pillaged[t.0 as usize] = false;
+    }
+
+    /// The direction from `from` to adjacent tile `to`, if they are neighbours.
+    pub fn direction_to(&self, from: TileId, to: TileId) -> Option<Direction> {
+        let i = from.0 as usize;
+        Direction::ALL
+            .into_iter()
+            .find(|&d| self.neighbours[i][d as usize] == Some(to))
+    }
+
+    /// Whether there is a river along the shared edge between two adjacent tiles.
+    pub fn has_river_between(&self, a: TileId, b: TileId) -> bool {
+        if let Some(d) = self.direction_to(a, b) {
+            (self.river_edges[a.0 as usize] & d.bit()) != 0
+        } else {
+            false
+        }
+    }
+
+    /// Mark a river on the shared edge between two adjacent tiles. Symmetrical.
+    pub fn set_river_between(&mut self, a: TileId, b: TileId) {
+        if let Some(d) = self.direction_to(a, b) {
+            self.river_edges[a.0 as usize] |= d.bit();
+            self.river_edges[b.0 as usize] |= d.opposite().bit();
+        }
+    }
+
+    /// Clear a river on the shared edge between two adjacent tiles. Symmetrical.
+    pub fn clear_river_between(&mut self, a: TileId, b: TileId) {
+        if let Some(d) = self.direction_to(a, b) {
+            self.river_edges[a.0 as usize] &= !d.bit();
+            self.river_edges[b.0 as usize] &= !d.opposite().bit();
+        }
+    }
+
+    /// Whether this tile borders any river.
+    pub fn has_river(&self, t: TileId) -> bool {
+        self.river_edges[t.0 as usize] != 0
+    }
+
+    /// The improvement this tile carries if unpillaged.
+    pub fn unpillaged_improvement(&self, t: TileId) -> Option<Id<TileImprovement>> {
+        let i = t.0 as usize;
+        if self.improvement_pillaged[i] {
+            None
+        } else {
+            self.improvement[i]
+        }
+    }
+
+    /// Set or change the improvement on a tile, clearing its pillaged status.
+    pub fn set_improvement(&mut self, t: TileId, imp: Option<Id<TileImprovement>>) {
+        let i = t.0 as usize;
+        self.improvement[i] = imp;
+        self.improvement_pillaged[i] = false;
+    }
+
+    /// Pillage the improvement on this tile.
+    pub fn pillage_improvement(&mut self, t: TileId) {
+        self.improvement_pillaged[t.0 as usize] = true;
+    }
+
+    /// Repair the improvement on this tile.
+    pub fn repair_improvement(&mut self, t: TileId) {
+        self.improvement_pillaged[t.0 as usize] = false;
+    }
+
+    /// Whether this tile is open water.
+    pub fn is_water(&self, r: &Ruleset, tile: TileId) -> bool {
+        r.terrains
+            .get(self.terrain[tile.0 as usize])
+            .is_some_and(|t| t.r#type == "Water")
+    }
+
+    /// Whether this tile has access to fresh water (river border, or adjacent fresh water lake/oasis).
+    pub fn is_fresh_water(&self, r: &Ruleset, tile: TileId) -> bool {
+        if self.has_river(tile) {
+            return true;
+        }
+        for n in self.neighbours(tile) {
+            for t_id in self.terrains(n) {
+                if let Some(t) = r.terrains.get(t_id) {
+                    if t.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::FreshWater)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub fn width(&self) -> u16 { self.width }
@@ -373,5 +485,43 @@ mod tests {
         let mut sorted = v.clone();
         sorted.sort();
         assert_eq!(v, sorted, "callers fold over this; order must not vary");
+    }
+
+    #[test]
+    fn river_edges_are_symmetric() {
+        let mut g = grid(6, 6);
+        let a = g.id_at(2, 2).unwrap();
+        let b = g.neighbour(a, Direction::East).unwrap();
+        assert!(!g.has_river_between(a, b));
+        assert!(!g.has_river_between(b, a));
+
+        g.set_river_between(a, b);
+        assert!(g.has_river_between(a, b));
+        assert!(g.has_river_between(b, a));
+        assert!(g.has_river(a));
+        assert!(g.has_river(b));
+
+        g.clear_river_between(a, b);
+        assert!(!g.has_river_between(a, b));
+        assert!(!g.has_river_between(b, a));
+        assert!(!g.has_river(a));
+        assert!(!g.has_river(b));
+    }
+
+    #[test]
+    fn improvement_pillaging_round_trips() {
+        let mut g = grid(4, 4);
+        let t = TileId(3);
+        let mut reg: Registry<TileImprovement> = Registry::new();
+        let farm = reg.insert("Farm", TileImprovement::default());
+
+        g.set_improvement(t, Some(farm));
+        assert_eq!(g.unpillaged_improvement(t), Some(farm));
+
+        g.pillage_improvement(t);
+        assert_eq!(g.unpillaged_improvement(t), None);
+
+        g.repair_improvement(t);
+        assert_eq!(g.unpillaged_improvement(t), Some(farm));
     }
 }

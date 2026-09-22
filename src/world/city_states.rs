@@ -172,6 +172,38 @@ pub struct RelationshipChange {
     pub to: Relationship,
 }
 
+/// Every standing city-state's relationship with every major, in id order.
+///
+/// Taken at the start of a turn and compared at the end with
+/// [`changes_since`]. Decay is only one of the things that moves a rank: a war
+/// declared turns a Friend `Unforgivable` on the spot, a quest paid out makes
+/// one, and a peace treaty hands back whatever the influence says. Watching
+/// only the decay step misses all of those.
+pub fn standings(world: &World) -> Vec<(CivId, CivId, Relationship)> {
+    let majors: Vec<CivId> = world.civs.iter().filter(|c| c.is_major()).map(|c| c.id).collect();
+    city_states(world)
+        .into_iter()
+        .flat_map(|cs| majors.iter().map(move |&major| (cs, major)))
+        .map(|(cs, major)| (cs, major, relationship(world, cs, major)))
+        .collect()
+}
+
+/// Every rank that differs from `before`.
+///
+/// A city-state that fell during the turn has no rank left to report, so it
+/// is skipped rather than reported as a change to nothing.
+pub fn changes_since(world: &World, before: &[(CivId, CivId, Relationship)]) -> Vec<RelationshipChange> {
+    let standing = city_states(world);
+    before
+        .iter()
+        .filter(|(cs, ..)| standing.contains(cs))
+        .filter_map(|&(cs, major, from)| {
+            let to = relationship(world, cs, major);
+            (to != from).then_some(RelationshipChange { city_state: cs, major, from, to })
+        })
+        .collect()
+}
+
 /// Slide every relationship one step toward where it belongs.
 ///
 /// Planned in full before anything is written, because an ally is decided by
@@ -742,6 +774,26 @@ mod tests {
         // And the influence is still there underneath, so peace restores it.
         w.diplomacy.make_peace(CivId(0), CS);
         assert_eq!(relationship(&w, CS, CivId(0)), Relationship::Ally);
+    }
+
+    #[test]
+    fn a_war_declared_is_a_rank_change_even_though_nothing_decayed() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.set_influence(CS, CivId(0), Fixed::whole(40));
+        let before = standings(&w);
+
+        w.diplomacy.declare_war(CivId(0), CS);
+        assert_eq!(
+            changes_since(&w, &before),
+            vec![RelationshipChange {
+                city_state: CS,
+                major: CivId(0),
+                from: Relationship::Friend,
+                to: Relationship::Unforgivable,
+            }],
+            "the decay step saw Unforgivable on both sides of it, so only a turn-long view catches this"
+        );
     }
 
     #[test]

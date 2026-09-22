@@ -115,6 +115,26 @@ impl World {
         id
     }
 
+    /// Hand a unit to another civ, moving it between the two registries.
+    ///
+    /// Changing `owner` alone leaves the old civ listing a unit it no longer
+    /// controls — it would count it, pay for it, and be kept alive by it.
+    pub fn transfer_unit(&mut self, id: Id<Unit>, to: CivId) {
+        let Some(from) = self.units.get(id).map(|u| u.owner) else { return };
+        if from == to {
+            return;
+        }
+        if let Some(u) = self.units.get_mut(id) {
+            u.owner = to;
+        }
+        if let Some(c) = self.civ_mut(from) {
+            c.units.retain(|u| *u != id);
+        }
+        if let Some(c) = self.civ_mut(to) {
+            c.units.push(id);
+        }
+    }
+
     /// Remove a unit and unregister it. The id stops resolving afterwards.
     pub fn remove_unit(&mut self, id: Id<Unit>) -> Option<Unit> {
         let unit = self.units.remove(id)?;

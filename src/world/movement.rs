@@ -18,8 +18,9 @@
 use crate::arena::Id;
 use crate::ruleset::Ruleset;
 use crate::stats::Fixed;
+use crate::unique_type::UniqueType;
 use crate::world::entities::Unit;
-use crate::world::grid::{TileGrid, TileId};
+use crate::world::grid::{RoadLevel, TileGrid, TileId};
 use crate::world::world::World;
 use std::collections::BTreeMap;
 
@@ -92,6 +93,234 @@ pub fn reachable(
     best
 }
 
+/// Returns whether movement between adjacent tiles `from` and `to` is affected by Zone of Control.
+pub fn is_movement_affected_by_zoc(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+) -> bool {
+    if unit.has_unique(r, UniqueType::IgnoresZOC) {
+        return false;
+    }
+    for n in world.grid.neighbours(from) {
+        if world.grid.distance(n, to) != 1 {
+            continue;
+        }
+        if let Some(city) = world.cities.iter().find(|(_, c)| c.centre == n).map(|(_, c)| c) {
+            if world.diplomacy.at_war(unit.owner, city.owner) {
+                return true;
+            }
+        }
+        for (_, other) in world.units.iter() {
+            if other.position == n
+                && other.owner != unit.owner
+                && other.is_military(r)
+                && world.diplomacy.at_war(unit.owner, other.owner)
+                && (other.is_water_unit(r) || (unit.is_land_unit(r) && !other.embarked))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Whether `tile` is occupied such that `unit` cannot land (end turn) on it under 1UPT rules.
+pub fn is_tile_occupied_for(
+    world: &World,
+    r: &Ruleset,
+    tile: TileId,
+    unit: &Unit,
+) -> bool {
+    let is_civ = unit.is_civilian(r);
+    for (_, other) in world.units.iter() {
+        if other.position != tile {
+            continue;
+        }
+        if other.owner != unit.owner {
+            return true;
+        }
+        if is_civ == other.is_civilian(r) {
+            return true;
+        }
+    }
+    for (_, city) in world.cities.iter() {
+        if city.centre == tile && city.owner != unit.owner {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `unit` can path through `tile`.
+pub fn can_pass_through(
+    world: &World,
+    _r: &Ruleset,
+    tile: TileId,
+    unit: &Unit,
+) -> bool {
+    for (_, other) in world.units.iter() {
+        if other.position == tile && other.owner != unit.owner && world.diplomacy.at_war(unit.owner, other.owner) {
+            return false;
+        }
+    }
+    for (_, city) in world.cities.iter() {
+        if city.centre == tile && city.owner != unit.owner && world.diplomacy.at_war(unit.owner, city.owner) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Cost for `unit` to step between adjacent tiles `from` and `to`.
+pub fn step_cost_for_unit(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+    budget: Fixed,
+) -> Option<Fixed> {
+    let _ = budget;
+    let terrain = terrain_cost(&world.grid, r, to)?;
+
+    let from_water = world.grid.is_water(r, from);
+    let to_water = world.grid.is_water(r, to);
+
+    if unit.is_water_unit(r) {
+        if !to_water && !world.cities.iter().any(|(_, c)| c.centre == to) {
+            return None;
+        }
+    } else if unit.is_land_unit(r) {
+        if !from_water && to_water {
+            let can_embark = unit.has_unique(r, UniqueType::LandUnitEmbarkation)
+                || world.civ(unit.owner).is_some_and(|c| {
+                    c.techs.iter().any(|t| {
+                        r.technologies.get(*t).is_some_and(|tech| {
+                            tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::LandUnitEmbarkation))
+                        })
+                    })
+                });
+            if !can_embark {
+                return None;
+            }
+            return Some(Fixed::whole(100));
+        } else if from_water && !to_water {
+            return Some(Fixed::whole(100));
+        }
+    }
+
+    if is_movement_affected_by_zoc(world, r, unit, from, to) {
+        return Some(Fixed::whole(100));
+    }
+
+    if world.cities.iter().any(|(_, c)| c.centre == to) {
+        return Some(CITY_CENTRE_COST);
+    }
+
+    let from_road = world.grid.unpillaged_road(from);
+    let to_road = world.grid.unpillaged_road(to);
+    let has_river = world.grid.has_river_between(from, to);
+
+    let bridges = world.civ(unit.owner).is_some_and(|c| {
+        c.techs.iter().any(|t| {
+            r.technologies.get(*t).is_some_and(|tech| {
+                tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::RoadsConnectAcrossRivers))
+            })
+        })
+    });
+
+    if from_road == RoadLevel::Railroad && to_road == RoadLevel::Railroad && (!has_river || bridges) {
+        return Some(Fixed::from_fraction(1, 5));
+    }
+
+    if from_road >= RoadLevel::Road && to_road >= RoadLevel::Road && (!has_river || bridges) {
+        return Some(Fixed::from_fraction(1, 2));
+    }
+
+    if has_river && !unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
+        return Some(Fixed::whole(100));
+    }
+
+    if unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
+        return Some(Fixed::ONE);
+    }
+
+    let is_hill = world.grid.terrains(to).any(|t_id| {
+        r.terrains.get(t_id).is_some_and(|t| t.r#type == "Hill" || t.name == "Hill")
+    });
+    if is_hill
+        && world.civ(unit.owner).is_some_and(|c| {
+            r.nations.get(c.nation).is_some_and(|n| {
+                n.uniques
+                    .iter()
+                    .any(|u| u.unique_type() == Some(UniqueType::IgnoreHillMovementCost))
+            })
+        })
+    {
+        return Some(Fixed::ONE);
+    }
+
+    Some(terrain)
+}
+
+/// Every tile reachable for `unit_id` with its current movement and state.
+pub fn reachable_for_unit(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+) -> BTreeMap<TileId, Fixed> {
+    let Some(unit) = world.units.get(unit_id) else {
+        return BTreeMap::new();
+    };
+    let from = unit.position;
+    let budget = unit.movement_left;
+    let mut best: BTreeMap<TileId, Fixed> = BTreeMap::new();
+    best.insert(from, Fixed::ZERO);
+    if budget <= Fixed::ZERO {
+        return best;
+    }
+
+    let mut frontier: Vec<(Fixed, TileId)> = vec![(Fixed::ZERO, from)];
+
+    while !frontier.is_empty() {
+        frontier.sort_by(|a, b| b.cmp(a));
+        let (cost_here, tile) = frontier.pop().expect("non-empty");
+        if best.get(&tile).is_some_and(|c| *c < cost_here) {
+            continue;
+        }
+
+        for next in world.grid.neighbours(tile) {
+            if !can_pass_through(world, r, next, unit) {
+                continue;
+            }
+
+            let Some(step) = step_cost_for_unit(world, r, unit, tile, next, budget - cost_here) else {
+                continue;
+            };
+
+            let raw = cost_here + step;
+            let (total, can_continue) = if raw < budget {
+                (raw, true)
+            } else {
+                (budget, false)
+            };
+
+            if best.get(&next).is_none_or(|c| *c > total) {
+                best.insert(next, total);
+                if can_continue {
+                    frontier.push((total, next));
+                }
+            }
+        }
+    }
+
+    best.retain(|&tile, _| tile == from || !is_tile_occupied_for(world, r, tile, unit));
+    best
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveRejection {
     /// The unit id no longer resolves.
@@ -102,6 +331,8 @@ pub enum MoveRejection {
     OutOfRange,
     /// Already there.
     NoMovement,
+    /// A tile already occupied by a friendly unit of the same type or an enemy.
+    TileOccupied,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,10 +368,23 @@ pub fn move_unit(
         .ok_or(MoveRejection::OutOfRange)?;
 
     let unit = world.units.get_mut(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
+    let from_water = world.grid.is_water(r, from);
+    let to_water = world.grid.is_water(r, to);
+    let embark_transition = (!from_water && to_water) || (from_water && !to_water);
+    if !from_water && to_water {
+        unit.embarked = true;
+    } else if from_water && !to_water {
+        unit.embarked = false;
+    }
+    let spent = if embark_transition && unit.is_land_unit(r) {
+        budget
+    } else {
+        cost
+    };
     unit.position = to;
-    unit.movement_left = (budget - cost).max(Fixed::ZERO);
+    unit.movement_left = (budget - spent).max(Fixed::ZERO);
     unit.fortified = false;
-    Ok(MoveEvent { unit: unit_id, from, to, spent: cost })
+    Ok(MoveEvent { unit: unit_id, from, to, spent })
 }
 
 /// Restore every unit's movement. Called when its owner's turn begins.
@@ -322,5 +566,130 @@ mod tests {
         let twice = reachable(&w.grid, &r, start, Fixed::whole(4), &[]);
         assert_eq!(once, twice);
         assert!(once.len() > 20);
+    }
+
+    #[test]
+    fn road_and_railroad_movement_discounts() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let a = w.grid.id_at(4, 4).unwrap();
+        let b = w.grid.id_at(4, 5).unwrap();
+        let id = warrior(&mut w, &r, a);
+        let u = w.units.get(id).unwrap();
+
+        // No roads: step cost is 1.0
+        assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::ONE));
+
+        // Both Road: step cost is 0.5
+        w.grid.road[a.0 as usize] = RoadLevel::Road;
+        w.grid.road[b.0 as usize] = RoadLevel::Road;
+        assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 2)));
+
+        // Both Railroad: step cost is 0.2
+        w.grid.road[a.0 as usize] = RoadLevel::Railroad;
+        w.grid.road[b.0 as usize] = RoadLevel::Railroad;
+        assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 5)));
+    }
+
+    #[test]
+    fn river_crossing_expends_movement_unless_bridged() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let a = w.grid.id_at(4, 4).unwrap();
+        let b = w.grid.id_at(4, 5).unwrap();
+        let id = warrior(&mut w, &r, a);
+
+        w.grid.set_river_between(a, b);
+        // Crossing river without roads/bridges expends full movement (cost 100)
+        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+
+        // Add roads but no bridge tech -> still full cost
+        w.grid.road[a.0 as usize] = RoadLevel::Road;
+        w.grid.road[b.0 as usize] = RoadLevel::Road;
+        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+
+        // Give civ Engineering (bridge tech)
+        if let Some(tech_id) = r.technologies.id("Engineering") {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(tech_id);
+            assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 2)));
+        }
+    }
+
+    #[test]
+    fn embarkation_requires_optics_and_toggles_state() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let land_tile = w.grid.id_at(4, 4).unwrap();
+        let water_tile = w.grid.id_at(4, 5).unwrap();
+        let coast_id = r.terrain("Coast").unwrap();
+        w.grid.terrain[water_tile.0 as usize] = coast_id;
+        assert!(w.grid.is_water(&r, water_tile));
+
+        let id = warrior(&mut w, &r, land_tile);
+
+        // Without Optics: cannot embark onto water
+        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), land_tile, water_tile, Fixed::whole(2)), None);
+
+        // Give Optics (enables embarkation)
+        let optics = r.technologies.id("Optics").expect("Optics exists");
+        w.civ_mut(CivId(0)).unwrap().techs.insert(optics);
+
+        // Can embark, costs 100 (whole budget)
+        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id).unwrap(), land_tile, water_tile, Fixed::whole(2)), Some(Fixed::whole(100)));
+
+        // Move onto water
+        let event = move_unit(&mut w, &r, id, water_tile).expect("can embark");
+        assert_eq!(event.spent, Fixed::whole(2)); // clamped
+        assert!(w.units.get(id).unwrap().embarked);
+
+        // Refresh and disembark onto land
+        w.units.get_mut(id).unwrap().refresh(2);
+        let disembark_event = move_unit(&mut w, &r, id, land_tile).expect("can disembark");
+        assert_eq!(disembark_event.spent, Fixed::whole(2));
+        assert!(!w.units.get(id).unwrap().embarked);
+    }
+
+    #[test]
+    fn zone_of_control_halts_movement() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let a = w.grid.id_at(4, 4).unwrap();
+        let b = w.grid.id_at(4, 5).unwrap();
+        let id_a = warrior(&mut w, &r, a);
+
+        let shared = w.grid.neighbours(a).find(|&n| n != b && w.grid.distance(n, b) == 1).unwrap();
+
+        let nation = r.nations.ids().next().unwrap();
+        w.civs.push(Civilization::new(CivId(1), nation, true));
+        let enemy_warrior = r.unit("Warrior").unwrap();
+        w.place_unit(Unit::new(enemy_warrior, CivId(1), shared, 2));
+
+        w.diplomacy.meet(CivId(0), CivId(1));
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+
+        assert!(is_movement_affected_by_zoc(&w, &r, w.units.get(id_a).unwrap(), a, b));
+        assert_eq!(step_cost_for_unit(&w, &r, w.units.get(id_a).unwrap(), a, b, Fixed::whole(2)), Some(Fixed::whole(100)));
+    }
+
+    #[test]
+    fn stacking_and_1upt_rules() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let t1 = w.grid.id_at(4, 4).unwrap();
+        let t2 = w.grid.id_at(4, 5).unwrap();
+
+        let _mil1 = warrior(&mut w, &r, t1);
+        let mil2 = warrior(&mut w, &r, t2);
+
+        // Another military unit cannot end turn on t1
+        let u2 = w.units.get(mil2).unwrap();
+        assert!(is_tile_occupied_for(&w, &r, t1, u2));
+
+        // But a civilian worker CAN share tile with a military unit
+        let worker_base = r.unit("Worker").unwrap();
+        let civ_worker = w.place_unit(Unit::new(worker_base, CivId(0), t2, 2));
+        let worker_unit = w.units.get(civ_worker).unwrap();
+        // Military on t1 does not occupy t1 for worker
+        assert!(!is_tile_occupied_for(&w, &r, t1, worker_unit));
     }
 }

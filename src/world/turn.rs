@@ -706,6 +706,8 @@ pub fn advance_turn(
     difficulty: Option<&crate::ruleset::Difficulty>,
     policies: PolicyModifiers,
 ) -> Vec<TurnEvent> {
+    let standings_before = crate::world::city_states::standings(world);
+
     // Phase 1 — pure. Every plan sees the same world; none of them change it.
     // A parallel map here would produce the identical `plans` vector.
     let plans: Vec<TurnPlan> = world
@@ -798,7 +800,12 @@ pub fn advance_turn(
     // City-state favour slides back toward where it belongs, and the bonuses
     // it buys are rebuilt from the new numbers. A friendship that lapsed this
     // turn has to stop paying this turn.
-    for change in crate::world::city_states::tick(world) {
+    //
+    // Ranks are reported against the start of the turn, not against the decay
+    // step alone: a war, a peace or a quest moves a rank as surely as decay
+    // does, and a friendship ended by a war declaration is still news.
+    crate::world::city_states::tick(world);
+    for change in crate::world::city_states::changes_since(world, &standings_before) {
         events.push(TurnEvent::CityStateRelationship {
             city_state: change.city_state,
             major: change.major,

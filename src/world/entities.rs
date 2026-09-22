@@ -6,8 +6,9 @@
 //! took its slot.
 
 use crate::arena::Id;
-use crate::ruleset::{BaseUnit, Nation, Technology};
+use crate::ruleset::{BaseUnit, Nation, Promotion, Ruleset, Technology};
 use crate::stats::Fixed;
+use crate::unique_type::UniqueType;
 use crate::world::city::City;
 use crate::world::grid::{CivId, TileId};
 use std::collections::BTreeSet;
@@ -101,6 +102,14 @@ impl Civilization {
         !self.defeated && (!self.cities.is_empty() || !self.units.is_empty())
     }
 
+    pub fn owns_city(&self, city: Id<City>) -> bool {
+        self.cities.contains(&city)
+    }
+
+    pub fn owns_unit(&self, unit: Id<Unit>) -> bool {
+        self.units.contains(&unit)
+    }
+
     pub fn has_tech(&self, t: Id<Technology>) -> bool {
         self.techs.contains(&t)
     }
@@ -118,6 +127,10 @@ pub struct Unit {
     /// else — Civ has half-moves.
     pub movement_left: Fixed,
     pub fortified: bool,
+    pub embarked: bool,
+    pub attacks_left: u8,
+    pub xp: u16,
+    pub promotions: BTreeSet<Id<Promotion>>,
 }
 
 impl Unit {
@@ -129,7 +142,60 @@ impl Unit {
             health: 100,
             movement_left: Fixed::whole(movement),
             fortified: false,
+            embarked: false,
+            attacks_left: 1,
+            xp: 0,
+            promotions: BTreeSet::new(),
         }
+    }
+
+    pub fn is_civilian(&self, r: &Ruleset) -> bool {
+        r.units.get(self.base).is_some_and(|b| {
+            b.strength.unwrap_or(0) == 0 && b.ranged_strength.unwrap_or(0) == 0
+        })
+    }
+
+    pub fn is_military(&self, r: &Ruleset) -> bool {
+        !self.is_civilian(r)
+    }
+
+    pub fn is_ranged(&self, r: &Ruleset) -> bool {
+        r.units.get(self.base).is_some_and(|b| b.ranged_strength.unwrap_or(0) > 0)
+    }
+
+    pub fn movement_type<'a>(&self, r: &'a Ruleset) -> Option<&'a str> {
+        r.units
+            .get(self.base)
+            .and_then(|b| r.unit_types.by_name(&b.unit_type))
+            .map(|ut| ut.movement_type.as_str())
+    }
+
+    pub fn is_water_unit(&self, r: &Ruleset) -> bool {
+        self.movement_type(r) == Some("Water")
+    }
+
+    pub fn is_land_unit(&self, r: &Ruleset) -> bool {
+        self.movement_type(r) == Some("Land")
+    }
+
+    pub fn is_air(&self, r: &Ruleset) -> bool {
+        self.movement_type(r) == Some("Air")
+    }
+
+    pub fn has_unique(&self, r: &Ruleset, ut: UniqueType) -> bool {
+        if let Some(base) = r.units.get(self.base) {
+            if base.uniques.iter().any(|u| u.unique_type() == Some(ut)) {
+                return true;
+            }
+        }
+        for promo_id in &self.promotions {
+            if let Some(p) = r.promotions.get(*promo_id) {
+                if p.uniques.iter().any(|u| u.unique_type() == Some(ut)) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn is_hurt(&self) -> bool {
@@ -143,5 +209,6 @@ impl Unit {
     /// Called at the start of each of the owner's turns.
     pub fn refresh(&mut self, movement: i32) {
         self.movement_left = Fixed::whole(movement);
+        self.attacks_left = 1;
     }
 }
