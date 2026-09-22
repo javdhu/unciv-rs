@@ -230,6 +230,14 @@ pub enum TurnEvent {
         to: CivId,
         demand: crate::world::diplomacy::Demand,
     },
+    /// A golden age began, or a running one was lengthened, by `turns`.
+    GoldenAgeStarted {
+        civ: CivId,
+        turns: u32,
+    },
+    GoldenAgeEnded {
+        civ: CivId,
+    },
     /// A conquered city stopped resisting and works again.
     ResistanceEnded {
         city: Id<City>,
@@ -455,7 +463,9 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         crate::world::assignment::release_extra_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         assign_idle_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         let surplus = food_surplus(&world.grid, r, &hypothetical);
-        let mut output = city_yield(&world.grid, r, &hypothetical) + trade_gold(city_id);
+        let golden = crate::world::golden_age::is_golden(world, civ);
+        let mut output =
+            crate::world::city::city_yield_with(&world.grid, r, &hypothetical, golden) + trade_gold(city_id);
         for _ in 0..crate::world::specialists::count(&hypothetical) {
             output += bonus;
         }
@@ -890,6 +900,13 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         events.push(TurnEvent::UnitDisbanded { civ: plan.civ, unit });
     }
     events.push(TurnEvent::Happiness { civ: plan.civ, value: plan.happiness });
+    match crate::world::golden_age::end_turn(world, plan.civ, plan.happiness, costs.speed, costs.golden_age_length) {
+        Some(crate::world::golden_age::GoldenAgeEvent::Started { civ, turns }) => {
+            events.push(TurnEvent::GoldenAgeStarted { civ, turns })
+        }
+        Some(crate::world::golden_age::GoldenAgeEvent::Ended { civ }) => events.push(TurnEvent::GoldenAgeEnded { civ }),
+        None => {}
+    }
 
     // Faith buys a pantheon, then a religion. Beliefs are uniques, so the
     // index has to be rebuilt or they do nothing.

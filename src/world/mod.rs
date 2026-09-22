@@ -20,6 +20,7 @@ pub mod espionage;
 pub mod expansion;
 pub mod filters;
 pub mod fog;
+pub mod golden_age;
 pub mod great_people;
 pub mod grid;
 pub mod happiness;

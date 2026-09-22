@@ -47,6 +47,8 @@ pub struct Civilization {
     pub recently_bullied: u32,
     /// Points toward the next great person of each kind, and what it costs.
     pub great_people: crate::world::great_people::GreatPeople,
+    /// Happiness banked toward the next golden age, and the one running.
+    pub golden_age: crate::world::golden_age::GoldenAge,
     /// Spies, and which eras have already granted one.
     pub espionage: crate::world::espionage::Espionage,
     /// What this city-state is asking of the major civs. Empty for everyone
@@ -86,6 +88,7 @@ impl Civilization {
             bought_with_increasing_price: Default::default(),
             recently_bullied: 0,
             great_people: Default::default(),
+            golden_age: Default::default(),
             uniques: Default::default(),
             resources: Default::default(),
             cities: Vec::new(),

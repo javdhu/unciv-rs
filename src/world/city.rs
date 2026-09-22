@@ -327,8 +327,27 @@ pub fn city_percent_bonuses(r: &Ruleset, city: &City) -> std::collections::BTree
 
 /// Everything the city produces, after its buildings have had their say.
 pub fn city_yield(grid: &TileGrid, r: &Ruleset, city: &City) -> Stats {
-    let base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
-    let bonuses = city_percent_bonuses(r, city);
+    city_yield_with(grid, r, city, false)
+}
+
+/// [`city_yield`], for a city whose owner may be in a golden age: a gold more
+/// on every tile it works that yields gold at all (`TileStatFunctions`), and
+/// a fifth more production and culture, added to its other percentages
+/// (`CityStats.getStatPercentBonusesFromGoldenAge`).
+pub fn city_yield_with(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
+    let mut base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
+    let mut bonuses = city_percent_bonuses(r, city);
+    if golden_age {
+        let tiles = std::iter::once(city.centre).chain(city.worked.iter().copied());
+        let gold_tiles = tiles.filter(|t| crate::world::golden_age::gains_gold(r, grid, *t)).count();
+        base.gold += Fixed::whole(gold_tiles as i32);
+        for stat in [Stat::Production, Stat::Culture] {
+            bonuses.entry(stat).or_default().add(Modifier::additive_percent(
+                Fixed::whole(crate::world::golden_age::PERCENT_BONUS),
+                Source::new(SourceKind::Other, "Golden Age"),
+            ));
+        }
+    }
 
     let mut out = base;
     for (stat, stack) in &bonuses {
