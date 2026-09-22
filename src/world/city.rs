@@ -18,6 +18,15 @@ use crate::world::grid::{CivId, TileGrid, TileId};
 use crate::world::yields::{tile_yield, Contribution};
 use crate::UniqueType;
 
+/// A city's health before any buildings add to it (`City.kt:361`).
+pub const BASE_CITY_HEALTH: i32 = 200;
+
+/// Defence before population and buildings (`ModConstants.kt:30`).
+pub const CITY_STRENGTH_BASE: i64 = 8_000;
+
+/// Added per citizen — five citizens are worth two defence.
+pub const CITY_STRENGTH_PER_POP: i64 = 400;
+
 /// How far a city may work. Three in Civ V.
 pub const WORK_RADIUS: u32 = 3;
 
@@ -42,6 +51,9 @@ pub struct City {
     pub queue: Vec<crate::world::construction::Construction>,
     /// Ordered so iteration and serialisation are reproducible.
     pub built: std::collections::BTreeSet<crate::arena::Id<crate::ruleset::Building>>,
+    /// Damage taken. A city is never destroyed — it floors at 1 and is then
+    /// captured, which is why `health` is separate from existing at all.
+    pub health: i32,
     /// Uniques in force in this city, from its buildings. Rebuilt whenever
     /// something finishes — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
@@ -57,6 +69,7 @@ impl City {
             food_stored: 0,
             worked: Vec::new(),
             avoid_growth: false,
+            health: BASE_CITY_HEALTH,
             production_stored: 0,
             queue: Vec::new(),
             built: std::collections::BTreeSet::new(),
@@ -274,6 +287,34 @@ pub fn city_yield(grid: &TileGrid, r: &Ruleset, city: &City) -> Stats {
         out[*stat] = stack.evaluate(base[*stat]);
     }
     out
+}
+
+/// The most damage a city can absorb.
+pub fn max_health(r: &Ruleset, city: &City) -> i32 {
+    BASE_CITY_HEALTH
+        + city
+            .built
+            .iter()
+            .filter_map(|id| r.buildings.get(*id))
+            .filter_map(|b| b.city_health)
+            .sum::<i32>()
+}
+
+/// How hard a city is to take.
+///
+/// Base, plus its citizens, plus whatever its walls add. Unciv also folds in a
+/// curve over technology known; that needs a global view of research and is
+/// left out here, so a late-game city is easier to storm than it should be.
+pub fn city_strength(r: &Ruleset, city: &City) -> Fixed {
+    let from_buildings: Fixed = city
+        .built
+        .iter()
+        .filter_map(|id| r.buildings.get(*id))
+        .filter_map(|b| b.city_strength)
+        .sum();
+    Fixed::permille(CITY_STRENGTH_BASE)
+        + Fixed::permille(CITY_STRENGTH_PER_POP).mul(Fixed::whole(city.population as i32))
+        + from_buildings
 }
 
 /// Gold a city's buildings cost to keep, per turn.

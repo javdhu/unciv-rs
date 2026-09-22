@@ -254,6 +254,116 @@ pub fn resolve_attack(
     })
 }
 
+/// What an attack on a city did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CityAttackResult {
+    pub damage: i32,
+    pub city_health: i32,
+    /// The city changed hands. A city is never destroyed — it is taken.
+    pub captured: bool,
+    pub attacker_died: bool,
+}
+
+/// Attack a city with a melee unit.
+///
+/// Cities floor at one health rather than being destroyed, and a melee unit
+/// that strikes a city already at one takes it. That is why war is worth
+/// fighting: killing an army achieves nothing on its own.
+pub fn attack_city(
+    world: &mut World,
+    r: &Ruleset,
+    attacker: Id<Unit>,
+    city_id: Id<crate::world::city::City>,
+) -> Result<CityAttackResult, CombatRejection> {
+    let a = world.units.get(attacker).ok_or(CombatRejection::NoSuchUnit)?;
+    let city = world.cities.get(city_id).ok_or(CombatRejection::NoSuchUnit)?;
+    if a.owner == city.owner {
+        return Err(CombatRejection::SameOwner);
+    }
+    if !world.diplomacy.at_war(a.owner, city.owner) {
+        return Err(CombatRejection::NotAtWar);
+    }
+    if !a.can_move() {
+        return Err(CombatRejection::NoMovement);
+    }
+    let (a_tile, centre, a_health, owner) = (a.position, city.centre, a.health, a.owner);
+    if !world.grid.neighbours(a_tile).any(|t| t == centre) {
+        return Err(CombatRejection::NotAdjacent);
+    }
+
+    let att = attacking_strength(world, r, attacker).ok_or(CombatRejection::NoSuchUnit)?;
+    let def = crate::world::city::city_strength(r, world.cities.get(city_id).unwrap());
+    let ratio = strength_ratio(att, def);
+    let randomness = combat_seed(world, a_tile, centre).unit_interval();
+
+    let to_city = damage_modifier_precise(ratio, false, randomness)
+        .mul(Precise::from_fixed(health_ratio(a_health)))
+        .round()
+        .max(0) as i32;
+    let to_attacker = damage_modifier_precise(ratio, true, randomness).round().max(0) as i32;
+
+    // A city floors at one; it is captured, not levelled.
+    let city = world.cities.get_mut(city_id).ok_or(CombatRejection::NoSuchUnit)?;
+    city.health = (city.health - to_city).max(1);
+    let at_bay = city.health <= 1;
+
+    let attacker_died = to_attacker >= a_health as i32;
+    if attacker_died {
+        world.remove_unit(attacker);
+    } else if let Some(u) = world.units.get_mut(attacker) {
+        u.health = (u.health as i32 - to_attacker).max(1) as u8;
+        u.movement_left = Fixed::ZERO;
+    }
+
+    // Taking it needs a surviving attacker and a city already at bay.
+    let captured = at_bay && !attacker_died;
+    if captured {
+        capture_city(world, r, city_id, owner);
+    }
+
+    Ok(CityAttackResult {
+        damage: to_city,
+        city_health: world.cities.get(city_id).map_or(0, |c| c.health),
+        captured,
+        attacker_died,
+    })
+}
+
+/// Hand a city to its conqueror.
+///
+/// Population is halved, as Civ does — a sacked city is not the city it was.
+/// Buildings survive here; Unciv destroys some of them on capture, which
+/// needs a per-building rule this crate does not carry yet.
+pub fn capture_city(
+    world: &mut World,
+    r: &Ruleset,
+    city_id: Id<crate::world::city::City>,
+    new_owner: crate::world::grid::CivId,
+) {
+    let Some(city) = world.cities.get_mut(city_id) else { return };
+    let old_owner = city.owner;
+    city.owner = new_owner;
+    city.population = (city.population / 2).max(1);
+    city.health = crate::world::city::max_health(r, city) / 2;
+    city.worked.clear();
+    city.queue.clear();
+    city.production_stored = 0;
+    let centre = city.centre;
+
+    if let Some(old) = world.civ_mut(old_owner) {
+        old.cities.retain(|c| *c != city_id);
+    }
+    if let Some(new) = world.civ_mut(new_owner) {
+        new.cities.push(city_id);
+    }
+    // The land around it changes hands with it.
+    for t in world.grid.within(centre, 1) {
+        if world.grid.owner[t.0 as usize] == Some(old_owner) {
+            world.grid.owner[t.0 as usize] = Some(new_owner);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,5 +584,114 @@ mod peace_tests {
         // War re-permits it, from either side's declaration.
         w.diplomacy.declare_war(CivId(1), CivId(0));
         assert!(resolve_attack(&mut w, &r, a, d).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod siege {
+    use super::*;
+    use crate::world::city::{max_health, City};
+    use crate::world::entities::Civilization;
+    use crate::world::grid::{CivId, TileGrid};
+
+    fn ruleset() -> Ruleset {
+        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+            .expect("readable")
+            .expect("loads")
+    }
+
+    fn besieged(r: &Ruleset) -> (World, Id<Unit>, Id<City>) {
+        let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(
+            g,
+            vec![
+                Civilization::new(CivId(0), nation, true),
+                Civilization::new(CivId(1), nation, true),
+            ],
+        );
+        let centre = w.grid.id_at(6, 6).unwrap();
+        let city = w.found_city_in(r, City::found("Carthage", CivId(1), centre));
+        let outside = w.grid.neighbours(centre).next().unwrap();
+        let warrior = r.unit("Warrior").unwrap();
+        let movement = r.units.get(warrior).unwrap().movement;
+        let unit = w.place_unit(Unit::new(warrior, CivId(0), outside, movement));
+        w.diplomacy.meet(CivId(0), CivId(1));
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        (w, unit, city)
+    }
+
+    #[test]
+    fn a_city_is_worn_down_but_never_destroyed() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        let full = max_health(&r, w.cities.get(city).unwrap());
+        assert_eq!(w.cities.get(city).unwrap().health, 200, "the base before walls");
+        assert!(full >= 200);
+
+        // Hammer it, refreshing the attacker each turn.
+        let mut rounds = 0;
+        while w.cities.get(city).map_or(false, |c| c.health > 1) && rounds < 100 {
+            w.units.get_mut(unit).unwrap().movement_left = Fixed::whole(2);
+            w.units.get_mut(unit).unwrap().health = 100;
+            let before = w.cities.get(city).unwrap().health;
+            let result = attack_city(&mut w, &r, unit, city).expect("a legal assault");
+            assert!(result.damage > 0, "an assault should hurt");
+            if !result.captured {
+                assert!(w.cities.get(city).unwrap().health < before || before == 1);
+            } else {
+                break;
+            }
+            rounds += 1;
+        }
+        println!("{rounds} assaults to take the city");
+        assert!(rounds > 0 && rounds < 100, "it should fall, but not at once");
+    }
+
+    #[test]
+    fn taking_a_city_moves_it_and_its_land() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        w.cities.get_mut(city).unwrap().population = 6;
+        w.cities.get_mut(city).unwrap().health = 1; // already at bay
+        let centre = w.cities.get(city).unwrap().centre;
+
+        assert_eq!(w.civ(CivId(1)).unwrap().cities, vec![city]);
+        let result = attack_city(&mut w, &r, unit, city).expect("legal");
+        assert!(result.captured);
+
+        let taken = w.cities.get(city).unwrap();
+        assert_eq!(taken.owner, CivId(0));
+        assert_eq!(taken.population, 3, "a sacked city is halved");
+        assert_eq!(w.civ(CivId(0)).unwrap().cities, vec![city]);
+        assert!(w.civ(CivId(1)).unwrap().cities.is_empty(), "and the loser loses it");
+        assert_eq!(w.grid.owner[centre.0 as usize], Some(CivId(0)), "the land goes with it");
+    }
+
+    #[test]
+    fn a_city_at_peace_cannot_be_stormed() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        w.diplomacy.make_peace(CivId(0), CivId(1));
+        assert_eq!(attack_city(&mut w, &r, unit, city), Err(CombatRejection::NotAtWar));
+    }
+
+    /// Losing every city ends a civilization, which is what makes Domination
+    /// reachable at all.
+    #[test]
+    fn losing_the_last_city_ends_a_civ() {
+        let r = ruleset();
+        let (mut w, unit, city) = besieged(&r);
+        w.cities.get_mut(city).unwrap().health = 1;
+        assert!(w.civ(CivId(1)).unwrap().is_alive());
+
+        attack_city(&mut w, &r, unit, city).expect("legal");
+        assert!(!w.civ(CivId(1)).unwrap().is_alive(), "no cities and no units left");
+        assert!(crate::world::victory::evaluate(
+            &crate::world::victory::Milestone::CaptureAllCapitals,
+            &w,
+            &r,
+            CivId(0)
+        ) == crate::world::conditionals::Verdict::True);
     }
 }

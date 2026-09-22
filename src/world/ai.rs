@@ -473,6 +473,24 @@ pub fn military_order(
         return None;
     }
 
+    // A city in reach is worth more than any unit beside it: killing an army
+    // achieves nothing, taking a city ends a civilization.
+    let adjacent_city = world
+        .grid
+        .neighbours(u.position)
+        .find_map(|t| {
+            world
+                .cities
+                .iter()
+                .find(|(_, c)| {
+                    c.centre == t && c.owner != civ && world.diplomacy.at_war(civ, c.owner)
+                })
+                .map(|(id, _)| id)
+        });
+    if let Some(city) = adjacent_city {
+        return Some(UnitOrder::Assault(city));
+    }
+
     // An adjacent enemy is the whole decision.
     let adjacent: Vec<_> = world
         .grid
@@ -522,6 +540,7 @@ pub enum UnitOrder {
     FoundCity,
     Improve(Id<crate::ruleset::TileImprovement>),
     Attack(Id<crate::world::entities::Unit>),
+    Assault(Id<crate::world::city::City>),
 }
 
 /// Which policy to adopt, if one is affordable.

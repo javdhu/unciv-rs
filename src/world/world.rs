@@ -24,6 +24,9 @@ pub struct World {
     /// twice inside each civ where they could disagree.
     pub diplomacy: crate::world::diplomacy::Diplomacy,
     pub turn: u32,
+    /// Who has won, once someone has. A game is won once; without this the
+    /// victory event fires again every turn afterwards.
+    pub winner: Option<(CivId, Id<crate::ruleset::Victory>)>,
 }
 
 impl World {
@@ -37,6 +40,7 @@ impl World {
             civs,
             diplomacy: Default::default(),
             turn: 0,
+            winner: None,
         }
     }
 

@@ -87,6 +87,7 @@ pub enum TurnEvent {
     CityFounded { city: Id<City>, by: CivId },
     CivsMet { a: CivId, b: CivId },
     WarDeclared { aggressor: CivId, against: CivId },
+    CityCaptured { city: Id<City>, by: CivId },
     Battle { attacker_died: bool, defender_died: bool },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
     /// Someone has met every milestone of a victory condition. Emitted once;
@@ -276,6 +277,13 @@ pub fn apply_plan(
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
                     });
+                }
+            }
+            UnitOrder::Assault(city) => {
+                if let Ok(result) = crate::world::combat::attack_city(world, r, *unit, *city) {
+                    if result.captured {
+                        events.push(TurnEvent::CityCaptured { city: *city, by: plan.civ });
+                    }
                 }
             }
             UnitOrder::Improve(improvement) => {
@@ -472,8 +480,11 @@ pub fn advance_turn(
 
     // Checked after everything has settled, so a turn that completes the last
     // milestone is the turn it is won on.
-    if let Some((civ, condition)) = crate::world::victory::winner(world, r) {
-        events.push(TurnEvent::Victory { civ, condition });
+    if world.winner.is_none() {
+        if let Some((civ, condition)) = crate::world::victory::winner(world, r) {
+            world.winner = Some((civ, condition));
+            events.push(TurnEvent::Victory { civ, condition });
+        }
     }
     events.push(TurnEvent::TurnEnded { turn: world.turn });
     events
@@ -1014,15 +1025,17 @@ mod multi_civ {
         let mut victories = 0;
         let mut meetings = 0;
         let mut wars = 0;
+        let mut captures = 0;
         let mut battles = 0;
         let mut losses = 0;
-        for _ in 0..100 {
+        for _ in 0..300 {
             for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
                     TurnEvent::Victory { .. } => victories += 1,
                     TurnEvent::CivsMet { .. } => meetings += 1,
                     TurnEvent::WarDeclared { .. } => wars += 1,
+                    TurnEvent::CityCaptured { .. } => captures += 1,
                     TurnEvent::Battle { attacker_died, defender_died } => {
                         battles += 1;
                         losses += attacker_died as u32 + defender_died as u32;
@@ -1045,7 +1058,8 @@ mod multi_civ {
         }
         println!(
             "cities founded: {founded}, first contacts: {meetings}, wars: {wars}, \
-             battles: {battles}, units lost: {losses}, victories: {victories}"
+             battles: {battles}, units lost: {losses}, cities taken: {captures}, \
+             victories: {victories}"
         );
         for a in 0..3u8 {
             for b in (a + 1)..3u8 {
@@ -1058,11 +1072,21 @@ mod multi_civ {
         }
         println!("total cities on the map: {}", w.cities.len());
 
-        assert_eq!(w.civs.len(), 3, "everyone is still in the list");
+        assert_eq!(w.civs.len(), 3, "everyone is still in the list, alive or not");
         assert!(w.cities.len() > 3, "someone should have expanded");
+
+        // Three hundred turns is long enough for the whole arc: expand, meet,
+        // fight, conquer. At a hundred the armies never converged — the
+        // mechanisms were all in place and simply had not had time.
+        assert!(founded > 3, "cities were founded");
+        assert!(captures > 0, "and some changed hands");
+        assert_eq!(victories, 1, "a game is won once, not once per turn");
+        let (winner, condition) = w.winner.expect("someone won");
+        println!("{winner:?} wins by {}", r.victories.name_of(condition).unwrap());
         assert_eq!(
-            victories, 0,
-            "nobody holds every capital, so Domination must not fire"
+            w.civs.iter().filter(|c| c.is_alive()).count(),
+            1,
+            "and the others are gone"
         );
 
         // Everyone finds everyone. Before exploration existed this was zero:
