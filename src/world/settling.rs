@@ -185,7 +185,10 @@ pub fn found_city_with(
     can_settle(world, r, civ, tile)?;
 
     world.remove_unit(settler);
-    let id = world.found_city(City::found(name, civ, tile));
+    // `found_city_in`, not `found_city`: a civ's first city gets its palace.
+    // Founding through the ruleset-free path left every capital founded by a
+    // settler without one, so no civ in a real game had a capital at all.
+    let id = world.found_city_in(r, City::found(name, civ, tile));
 
     // A new city claims its immediate surroundings.
     for t in world.grid.within(tile, 1) {
@@ -323,6 +326,21 @@ mod tests {
         for t in w.grid.within(site, 1) {
             assert_eq!(w.grid.owner[t.0 as usize], Some(CivId(0)));
         }
+    }
+
+    #[test]
+    fn a_settlers_first_city_is_a_capital() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let site = w.grid.id_at(10, 10).unwrap();
+        let s = settler(&mut w, &r, site, CivId(0));
+        let rome = found_city_with(&mut w, &r, s, "Rome").expect("a legal site");
+        assert_eq!(crate::world::connections::capital_of(&w, &r, CivId(0)), Some(rome), "the first city has the palace");
+
+        let far = w.grid.id_at(2, 2).unwrap();
+        let s2 = settler(&mut w, &r, far, CivId(0));
+        found_city_with(&mut w, &r, s2, "Antium").expect("a legal site");
+        assert_eq!(crate::world::connections::capital_of(&w, &r, CivId(0)), Some(rome), "and the second does not");
     }
 
     #[test]
