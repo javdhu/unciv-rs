@@ -5,6 +5,7 @@
 
 pub mod ai;
 pub mod assignment;
+pub mod barbarians;
 pub mod city;
 pub mod combat;
 pub mod conditionals;
@@ -13,6 +14,7 @@ pub mod filters;
 pub mod fog;
 pub mod happiness;
 pub mod improvements;
+pub mod great_people;
 pub mod grid;
 pub mod diplomacy;
 pub mod entities;

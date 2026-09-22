@@ -102,6 +102,8 @@ pub struct Diplomacy {
     attitudes: BTreeMap<(CivId, CivId), Attitude>,
     /// Who has met whom. Symmetric, so also keyed by pair.
     met: BTreeMap<Pair, bool>,
+    /// Permanently at war with everyone.
+    always_hostile: std::collections::BTreeSet<CivId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,9 +133,24 @@ impl Diplomacy {
         Pair::of(a, b).is_some_and(|p| self.met.get(&p).copied().unwrap_or(false))
     }
 
+    /// Civs who are permanently hostile — barbarians. Held here rather than
+    /// checked through the world, so `at_war` stays a pure lookup.
+    pub fn mark_hostile(&mut self, civ: CivId) {
+        self.always_hostile.insert(civ);
+    }
+
+    pub fn is_hostile(&self, civ: CivId) -> bool {
+        self.always_hostile.contains(&civ)
+    }
+
     /// The stance between two civs. The same answer whichever way it is asked,
     /// because there is only one place to read it from.
     pub fn stance(&self, a: CivId, b: CivId) -> Stance {
+        // Barbarians are at war with everyone and cannot be reasoned with, so
+        // there is no pact to consult.
+        if self.always_hostile.contains(&a) || self.always_hostile.contains(&b) {
+            return Stance::War;
+        }
         Pair::of(a, b)
             .and_then(|p| self.pacts.get(&p))
             .map_or(Stance::Peace, |p| p.stance)
@@ -159,6 +176,10 @@ impl Diplomacy {
     }
 
     pub fn make_peace(&mut self, a: CivId, b: CivId) -> Option<DiplomacyEvent> {
+        // No treaty with barbarians.
+        if self.always_hostile.contains(&a) || self.always_hostile.contains(&b) {
+            return None;
+        }
         let pair = Pair::of(a, b)?;
         let pact = self.pacts.entry(pair).or_default();
         if pact.stance == Stance::Peace {

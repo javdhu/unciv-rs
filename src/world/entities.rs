@@ -18,6 +18,9 @@ pub struct Civilization {
     pub id: CivId,
     pub nation: Id<Nation>,
     pub is_ai: bool,
+    /// Barbarians are a civilization in the data model and not one in the
+    /// game: permanently hostile, never at peace, never diplomatic.
+    pub is_barbarian: bool,
     pub gold: i32,
     /// Science accumulated toward the current research.
     pub science_stored: i32,
@@ -28,6 +31,8 @@ pub struct Civilization {
     pub culture_stored: i32,
     /// Ordered, so iteration and serialisation are reproducible.
     pub adopted_policies: std::collections::BTreeSet<Id<crate::ruleset::Policy>>,
+    /// Points toward the next great person of each kind, and what it costs.
+    pub great_people: crate::world::great_people::GreatPeople,
     /// Every unique currently in force for this civ, indexed for lookup.
     /// Rebuilt whenever policies or techs change — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
@@ -48,12 +53,14 @@ impl Civilization {
             id,
             nation,
             is_ai,
+            is_barbarian: false,
             gold: 0,
             science_stored: 0,
             techs: BTreeSet::new(),
             researching: None,
             culture_stored: 0,
             adopted_policies: Default::default(),
+            great_people: Default::default(),
             uniques: Default::default(),
             resources: Default::default(),
             cities: Vec::new(),

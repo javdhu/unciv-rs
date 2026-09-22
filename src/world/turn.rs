@@ -74,7 +74,10 @@ pub struct TurnPlan {
 ///
 /// The log is the save format and the thing clients replay, so every state
 /// change a player could notice has to appear here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Not `Copy`: a great person is named rather than identified, because the
+// kinds come from `greatPersonPoints` keys and need not be units the ruleset
+// declares. Forcing an id there would drop the ones that are not.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnEvent {
     CityGrew { city: Id<City>, population: u32 },
     CityStarved { city: Id<City>, population: u32 },
@@ -90,6 +93,7 @@ pub enum TurnEvent {
     CivsMet { a: CivId, b: CivId },
     WarDeclared { aggressor: CivId, against: CivId },
     PeaceMade { a: CivId, b: CivId },
+    GreatPersonBorn { civ: CivId, kind: String },
     CityCaptured { city: Id<City>, by: CivId },
     Battle { attacker_died: bool, defender_died: bool },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
@@ -389,6 +393,40 @@ pub fn apply_plan(
         civ.culture_stored += plan.culture.max(0);
     }
     events.push(TurnEvent::Happiness { civ: plan.civ, value: plan.happiness });
+
+    // Great people gather from wonders and specialists.
+    let gained = crate::world::great_people::points_per_turn(world, r, plan.civ);
+    if !gained.is_empty() {
+        let speed = m.speed;
+        let births: Vec<String> = {
+            let Some(civ) = world.civ_mut(plan.civ) else { return events };
+            let mut people = std::mem::take(&mut civ.great_people);
+            let out = crate::world::great_people::accumulate(&mut people, &gained, speed)
+                .into_iter()
+                .filter_map(|e| match e {
+                    crate::world::great_people::GreatPersonEvent::Born { kind, .. } => Some(kind),
+                    _ => None,
+                })
+                .collect();
+            civ.great_people = people;
+            out
+        };
+        for kind in births {
+            // A great person is a unit, when the ruleset has one by that name.
+            if let Some(base) = r.units.id(&kind) {
+                let centre = world
+                    .civ(plan.civ)
+                    .and_then(|c| c.cities.first().copied())
+                    .and_then(|id| world.cities.get(id))
+                    .map(|c| c.centre);
+                if let Some(centre) = centre {
+                    let movement = r.units.get(base).map_or(2, |u| u.movement);
+                    world.place_unit(Unit::new(base, plan.civ, centre, movement));
+                }
+            }
+            events.push(TurnEvent::GreatPersonBorn { civ: plan.civ, kind });
+        }
+    }
 
     if let Some(civ) = world.civ_mut(plan.civ) {
         if let ResearchEvent::Completed { tech, .. } = apply_science(civ, r, science_after_debt, science) {
