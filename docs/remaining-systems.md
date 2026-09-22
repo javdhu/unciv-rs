@@ -11,7 +11,7 @@ matters more than its line count.
 | AI / automation | 206 | no reference obligation |
 | map generation | 189 | aesthetic, not rules |
 | diplomacy | 167 | the hardest state shape |
-| quests / city-states | 158 | directed pair matrix, like diplomacy |
+| quests / city-states | 158 | directed pair matrix, like diplomacy — **done** |
 | religion | 104 | sparse matrix + diffusion |
 | trade & connectivity | 57 | a graph problem |
 | espionage | 56 | hidden state, per-player views |
@@ -248,6 +248,42 @@ four tiles apart correctly refuse to build one.
 
 With all three, the same self-play ends with a clear winner by Domination and
 the defeated civs solvent.
+
+---
+
+## City-states — influence is directed, the ally is derived — **done**
+
+Implemented in `src/world/city_states.rs`.
+
+A city-state is an ordinary `Civilization` with a `city_state_type` set. It
+never expands and never wins, and exists to be a *source* — culture, food,
+happiness — that major civs compete over. Modelling it as a civ rather than as
+a kind of city is what lets it hold territory, fight, be conquered and appear
+in diplomacy without any of those systems needing a special case.
+
+**Influence is directed.** It is a city-state's opinion of one major civ, with
+no reciprocal value, so it is stored keyed `(city_state, major)` beside the
+attitudes rather than among the symmetric pacts. Protection is the same shape
+as open borders and shares the pair record's directed slots.
+
+**The ally is not stored at all.** Unciv keeps an `allyCiv` field; a stored
+answer to a derived question has to be updated when influence rises, when it
+decays, when a rival overtakes you, when the ally is destroyed and when the
+ally declares war. Derived, it cannot fall out of step. Ties break on the lower
+civ id — not because that is fair, but because two civs at exactly 60 has to
+resolve the same way on every machine.
+
+**Influence is rent, not a purchase.** It slides a point a turn back to a
+resting point, so an alliance bought at 60 lasts exactly 60 turns. The gift
+formula needs a real fractional power (`gold^1.01 / 9.8`), which is what the
+deterministic `pow` was built for.
+
+**The trap, again.** The bonuses are uniques like `[+3 Culture]`, and nothing
+in the engine read a civ-level flat-stat unique — they were consumed only by
+improvements. Every Cultured city-state in the game would have paid out
+nothing. `civ_wide_yields` now reads them, which also makes any policy, belief
+or tech granting flat stats work for the first time. Two conditionals were
+needed to get there: `<before the [era]>` had no evaluator.
 
 ---
 

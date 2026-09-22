@@ -222,6 +222,12 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
             .into_iter()
             .cloned(),
     );
+    // So are the bonuses a city-state owes its friends. They come and go as
+    // influence rises and falls, which is why this index is rebuilt every
+    // turn for a major civ rather than only when something is adopted.
+    if civ.is_major() {
+        uniques.extend(crate::world::city_states::bonus_uniques(world, r, civ_id));
+    }
 
     let index = UniqueIndex::build(&uniques);
     if let Some(civ) = world.civ_mut(civ_id) {

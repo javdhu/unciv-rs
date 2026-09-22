@@ -68,6 +68,9 @@ pub struct TurnPlan {
     pub orders: Vec<(Id<Unit>, UnitOrder)>,
     /// Civs to declare war on this turn.
     pub declare_war_on: Vec<CivId>,
+    /// Gold to send a city-state, and which one. Decided in the read phase
+    /// like every other choice, and paid in the write phase.
+    pub gift: Option<(CivId, i32)>,
     /// Civs to settle with, where both sides want it.
     pub make_peace_with: Vec<CivId>,
 }
@@ -104,6 +107,18 @@ pub enum TurnEvent {
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
+    /// A major civ bought favour.
+    GoldGifted { from: CivId, to: CivId, gold: i32, influence: Fixed },
+    /// A city-state's opinion of a major civ crossed a threshold — gained an
+    /// ally, lost a friend. Reported on the change, not every turn, because
+    /// the influence number itself moves constantly and the *rank* is what
+    /// anyone acts on.
+    CityStateRelationship {
+        city_state: CivId,
+        major: CivId,
+        from: crate::world::city_states::Relationship,
+        to: crate::world::city_states::Relationship,
+    },
     /// A city changed its majority religion. `from` is `None` when it had no
     /// majority before, which is the common case — most conversions are of
     /// the uncommitted, not of the faithful.
@@ -141,6 +156,7 @@ pub fn plan_civ_turn(
         orders: Vec::new(),
         declare_war_on: Vec::new(),
         make_peace_with: Vec::new(),
+        gift: None,
     };
     let Some(c) = world.civ(civ) else { return plan };
     plan.happiness = crate::world::happiness::happiness(world, r, civ, difficulty);
@@ -152,6 +168,13 @@ pub fn plan_civ_turn(
     plan.policy = crate::world::ai::choose_policy(world, r, civ, policies);
 
     let wants = crate::world::ai::Priorities::assess(world, r, civ);
+    plan.gift = crate::world::ai::city_state_gift(
+        world,
+        r,
+        civ,
+        costs.game_length,
+        costs.gold_gift_modifier,
+    );
 
     // War and peace are decided before orders, so soldiers act on this turn's
     // stance rather than last turn's.
@@ -251,6 +274,15 @@ pub fn plan_civ_turn(
         plan.faith += output.faith.round() as i32;
         plan.gold += output.gold.round() as i32 - upkeep;
     }
+    // Flat yields the empire is owed that no tile produces: city-state
+    // friendship, and any policy or belief that grants stats outright.
+    let owed = crate::world::city_states::civ_wide_yields(world, r, civ);
+    plan.science += owed.science.round() as i32;
+    plan.culture += owed.culture.round() as i32;
+    plan.faith += owed.faith.round() as i32;
+    plan.gold += owed.gold.round() as i32;
+    plan.happiness += owed.happiness.round() as i32;
+
     // Roads and soldiers are charged to the empire, not to a city — a road
     // between two cities belongs to neither, and an army belongs to none.
     plan.gold -= crate::world::connections::transportation_upkeep(world, r, civ).gold.round() as i32;
@@ -445,6 +477,22 @@ pub fn apply_plan(
         civ.gold += plan.gold;
         civ.culture_stored += plan.culture.max(0);
     }
+    // Courting a city-state is paid out of the same treasury as everything
+    // else, and before the debt check, so a civ cannot gift itself into
+    // disbanding its own army.
+    if let Some((cs, gold)) = plan.gift {
+        if let Some(gained) = crate::world::city_states::gift_gold(
+            world,
+            plan.civ,
+            cs,
+            gold,
+            costs.game_length,
+            costs.gold_gift_modifier,
+        ) {
+            events.push(TurnEvent::GoldGifted { from: plan.civ, to: cs, gold, influence: gained });
+        }
+    }
+
     // Debt has to bite, or gold is a number that only falls. This is the one
     // place the army shrinks without a battle.
     for unit in crate::world::economy::disband_for_debt(
@@ -628,6 +676,23 @@ pub fn advance_turn(
     let mut events = Vec::new();
     for plan in &plans {
         events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
+    }
+
+    // City-state favour slides back toward where it belongs, and the bonuses
+    // it buys are rebuilt from the new numbers. A friendship that lapsed this
+    // turn has to stop paying this turn.
+    for change in crate::world::city_states::tick(world) {
+        events.push(TurnEvent::CityStateRelationship {
+            city_state: change.city_state,
+            major: change.major,
+            from: change.from,
+            to: change.to,
+        });
+    }
+    for civ in world.civ_ids().collect::<Vec<_>>() {
+        if world.civ(civ).is_some_and(|c| c.is_major()) {
+            crate::world::policies::rebuild_uniques(world, r, civ);
+        }
     }
 
     // What each civ actually holds, recomputed from the map rather than
@@ -905,6 +970,72 @@ mod tests {
             "{total} citizens across {} cities averages less than one each",
             w.cities.len()
         );
+    }
+
+    /// A major civ buys a city-state's friendship through the real turn loop
+    /// and starts collecting on it.
+    ///
+    /// The joints: the AI has to want the gift, the plan has to carry it, the
+    /// gold has to move, influence has to cross a threshold, the bonus
+    /// uniques have to reach the civ's index, and something has to *read*
+    /// them. The last one was missing — every Cultured city-state in the game
+    /// paid out nothing, because a civ-level `[+3 Culture]` had no consumer.
+    #[test]
+    fn a_city_state_can_be_bought_and_then_pays_out() {
+        use crate::world::city_states::{ally_of, relationship, Relationship};
+        let r = ruleset();
+        let mut w = two_civ_world(&r);
+        // Turn civ 1 into a Cultured city-state with a city of its own.
+        {
+            let c = w.civ_mut(CivId(1)).unwrap();
+            c.city_state_type = Some(
+                crate::world::city_states::type_named(&r, "Cultured")
+                    .or_else(|| r.city_state_types.ids().next())
+                    .expect("the ruleset has city-state types"),
+            );
+        }
+        w.found_city(City::found("Venice", CivId(1), w.grid.id_at(16, 16).unwrap()));
+        w.diplomacy.meet(CivId(0), CivId(1));
+        w.civ_mut(CivId(0)).unwrap().gold = 4000;
+
+        let (m, costs, science) =
+            (GrowthModifiers::default(), CostModifiers::default(), ScienceModifiers::default());
+        let mut became = None;
+        for turn in 1..=120 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default()) {
+                if let TurnEvent::CityStateRelationship { to, major, .. } = e {
+                    if major == CivId(0) && to >= Relationship::Friend {
+                        became.get_or_insert((turn, to));
+                    }
+                }
+            }
+            if became.is_some() {
+                break;
+            }
+        }
+
+        let (turn, level) = became.expect("a civ with four thousand gold should buy a friend");
+        println!("{level:?} on turn {turn}");
+        assert!(matches!(relationship(&w, CivId(1), CivId(0)), Relationship::Friend | Relationship::Ally));
+
+        // And the friendship pays. Cultured city-states grant culture.
+        let owed = crate::world::city_states::civ_wide_yields(&w, &r, CivId(0));
+        assert!(
+            owed.culture > Fixed::ZERO,
+            "a Cultured ally that grants no culture is a unique nothing reads"
+        );
+
+        // Left alone, it lapses — influence is rent.
+        let held = w.diplomacy.influence(CivId(1), CivId(0));
+        w.civ_mut(CivId(0)).unwrap().gold = 0; // no more gifts
+        for _ in 0..200 {
+            advance_turn(&mut w, &r, CityFocus::None, m, costs, science, None, PolicyModifiers::default());
+        }
+        assert!(
+            w.diplomacy.influence(CivId(1), CivId(0)) < held,
+            "favour that never lapses is a purchase, not a relationship"
+        );
+        assert_eq!(ally_of(&w, CivId(1)), None, "and the alliance is gone with it");
     }
 
     /// The property the phase split exists for.
@@ -1351,6 +1482,7 @@ mod expansion {
                 orders: Vec::new(),
                 declare_war_on: Vec::new(),
                 make_peace_with: Vec::new(),
+                gift: None,
             }
         };
         let events = apply_plan(

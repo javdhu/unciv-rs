@@ -21,6 +21,11 @@ pub struct Civilization {
     /// Barbarians are a civilization in the data model and not one in the
     /// game: permanently hostile, never at peace, never diplomatic.
     pub is_barbarian: bool,
+    /// City-states are a civilization that never wins and never expands. They
+    /// are a *source* of things — culture, food, happiness, units — that major
+    /// civs compete over, which is why they are modelled as civs at all rather
+    /// than as a kind of city.
+    pub city_state_type: Option<Id<crate::ruleset::CityStateType>>,
     pub gold: i32,
     /// Science accumulated toward the current research.
     pub science_stored: i32,
@@ -56,6 +61,7 @@ impl Civilization {
             nation,
             is_ai,
             is_barbarian: false,
+            city_state_type: None,
             gold: 0,
             science_stored: 0,
             techs: BTreeSet::new(),
@@ -70,6 +76,18 @@ impl Civilization {
             units: Vec::new(),
             defeated: false,
         }
+    }
+
+    /// A city-state is one that has been given a type. Nothing else
+    /// distinguishes it — it is an ordinary civ that happens never to be
+    /// playing to win.
+    pub fn is_city_state(&self) -> bool {
+        self.city_state_type.is_some()
+    }
+
+    /// A civ that is playing the game: not barbarians, not a city-state.
+    pub fn is_major(&self) -> bool {
+        !self.is_barbarian && !self.is_city_state()
     }
 
     pub fn is_alive(&self) -> bool {

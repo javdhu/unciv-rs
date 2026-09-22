@@ -63,6 +63,10 @@ pub struct CostModifiers {
     /// How many turns a game at this speed runs for. Unit upkeep needs it:
     /// Civ makes soldiers dearer as a fraction of the whole game elapsed.
     pub game_length: i32,
+    /// How much influence a gift of gold to a city-state buys, scaled by
+    /// speed — a quick game gives more per coin, so diplomacy still resolves
+    /// inside it.
+    pub gold_gift_modifier: Fixed,
     /// Base religious pressure one city puts on its neighbours each turn.
     /// Nine on Quick, six on Standard, two on Marathon — a shorter game
     /// converts faster so religion still resolves inside it.
@@ -85,6 +89,7 @@ impl Default for CostModifiers {
             // at the rate most of the ruleset was balanced for.
             game_length: 500,
             religious_pressure: 6,
+            gold_gift_modifier: Fixed::ONE,
         }
     }
 }

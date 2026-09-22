@@ -167,6 +167,12 @@ pub fn achieved(world: &World, r: &Ruleset, civ: CivId, victory: &Victory) -> bo
 /// objects by id everywhere else, and a name would either allocate or leak.
 pub fn winner(world: &World, r: &Ruleset) -> Option<(CivId, Id<Victory>)> {
     for civ in world.living_civs().collect::<Vec<_>>() {
+        // City-states and barbarians are not playing to win, and a domination
+        // condition that counted them would never be met — nobody sets out to
+        // capture every city-state capital on the map.
+        if !world.civ(civ).is_some_and(|c| c.is_major()) {
+            continue;
+        }
         for (id, victory) in r.victories.iter() {
             if achieved(world, r, civ, victory) {
                 return Some((civ, id));

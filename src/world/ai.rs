@@ -163,6 +163,10 @@ const TARGET_CITIES: usize = 5;
 /// citizens.
 pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
+    // A city-state is its one city and nothing more.
+    if !c.is_major() {
+        return false;
+    }
     // An unhappy empire does not want another city. Each one costs happiness
     // outright, and below zero the ruleset cuts growth by three quarters and
     // then stops it entirely — so city eight in an unhappy empire does not
@@ -510,6 +514,75 @@ impl Priorities {
             happiness: crate::world::happiness::happiness(world, r, civ, None),
         }
     }
+}
+
+/// How much gold to send a city-state, and which one.
+///
+/// A major civ with money and no ally buys one. The bar is deliberately high —
+/// influence decays a point a turn, so a gift that does not reach a threshold
+/// is spent and gone — and reserves are kept back rather than emptied, because
+/// a treasury at zero disbands the army.
+///
+/// Returns nothing when there is nothing worth buying: already allied
+/// everywhere, or too poor to buy a friendship that would last.
+pub fn city_state_gift(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    game_length: i32,
+    gold_gift_modifier: Fixed,
+) -> Option<(CivId, i32)> {
+    let c = world.civ(civ)?;
+    if !c.is_major() {
+        return None;
+    }
+    // Keep a working balance. Everything above it is diplomacy money.
+    const RESERVE: i32 = 250;
+    let spare = c.gold - RESERVE;
+    if spare < 50 {
+        return None;
+    }
+
+    // The city-state where the next threshold is closest, so the gold buys a
+    // rank rather than a number. Ties by id.
+    let mut best: Option<(Fixed, CivId)> = None;
+    for cs in crate::world::city_states::city_states(world) {
+        if world.diplomacy.at_war(cs, civ) {
+            continue;
+        }
+        let have = world.diplomacy.influence(cs, civ);
+        let target = if have < crate::world::city_states::FRIEND_THRESHOLD {
+            crate::world::city_states::FRIEND_THRESHOLD
+        } else if crate::world::city_states::ally_of(world, cs) != Some(civ) {
+            crate::world::city_states::ALLY_THRESHOLD
+        } else {
+            continue; // already ours
+        };
+        let gap = target - have;
+        if best.is_none_or(|(g, id)| gap < g || (gap == g && cs.0 < id.0)) {
+            best = Some((gap, cs));
+        }
+    }
+    let (gap, cs) = best?;
+
+    // Smallest gift that closes the gap, capped by what we can spare. A gift
+    // that falls short is worse than none — it decays away.
+    let mut gold = 50;
+    while gold < spare {
+        let gained = crate::world::city_states::influence_from_gift(
+            world,
+            gold,
+            game_length,
+            gold_gift_modifier,
+            civ,
+        );
+        if gained >= gap {
+            return Some((cs, gold));
+        }
+        gold += 50;
+    }
+    let _ = r;
+    None
 }
 
 /// Total fighting strength a civ can field.

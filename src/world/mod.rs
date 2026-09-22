@@ -7,6 +7,7 @@ pub mod ai;
 pub mod assignment;
 pub mod barbarians;
 pub mod city;
+pub mod city_states;
 pub mod combat;
 pub mod conditionals;
 pub mod connections;

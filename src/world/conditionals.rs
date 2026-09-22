@@ -368,6 +368,15 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             if reached >= target.era_number { Verdict::True } else { Verdict::False }
         }
 
+        UniqueType::ConditionalBeforeEra => {
+            let (Some(world), Some(civ), Some(era)) = (ctx.world, ctx.civ, p(0)) else {
+                return Verdict::Unknown;
+            };
+            let Some(target) = ctx.ruleset.eras.by_name(era) else { return Verdict::Unknown };
+            let reached = crate::world::policies::era_number(world, ctx.ruleset, civ);
+            if reached < target.era_number { Verdict::True } else { Verdict::False }
+        }
+
         // --- the game's own settings ---------------------------------------
         UniqueType::ConditionalReligionEnabled => {
             if ctx.religion_enabled { Verdict::True } else { Verdict::False }
@@ -518,7 +527,17 @@ fn for_each_conditional(r: &Ruleset, f: &mut impl FnMut(&Unique)) {
         .chain(r.technologies.values().map(|t| &t.uniques))
         .chain(r.nations.values().map(|n| &n.uniques))
         .chain(r.beliefs.values().map(|b| &b.uniques));
-    for uniques in all {
+    // City-state bonuses are stored as raw strings rather than parsed uniques,
+    // because they are granted to a *different* civ than the one that holds
+    // them. They carry era conditionals like everything else, so they belong
+    // in the count.
+    let city_state_bonuses: Vec<Unique> = r
+        .city_state_types
+        .values()
+        .flat_map(|t| t.friend_bonus_uniques.iter().chain(t.ally_bonus_uniques.iter()))
+        .map(|text| Unique::parse(text))
+        .collect();
+    for uniques in all.chain(std::iter::once(&city_state_bonuses)) {
         for u in uniques {
             for c in &u.conditionals {
                 f(c);

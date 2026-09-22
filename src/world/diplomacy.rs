@@ -30,6 +30,10 @@
 //! rather than by maintenance — there is no second copy to disagree with.
 
 use crate::stats::Fixed;
+
+/// The floor on city-state influence. Below this there is nothing further to
+/// lose, which is what stops a long war from making a grudge permanent.
+pub const MINIMUM_INFLUENCE: Fixed = Fixed::permille(-60_000);
 use crate::world::grid::CivId;
 use std::collections::BTreeMap;
 
@@ -98,6 +102,11 @@ pub struct Pact {
     /// one record keeps that asymmetry honest without splitting the pair into
     /// two records that could disagree about the war.
     pub open_borders: [bool; 2],
+    /// Who has pledged to protect whom, indexed by [`Pair::slot`] of the
+    /// *protector*. Only meaningful when one side is a city-state, but it
+    /// costs nothing to carry and keeps every directed fact about a pair in
+    /// the one record.
+    pub protector: [bool; 2],
     /// Turns since the stance last changed — peace treaties have a duration.
     pub turns_in_stance: u32,
 }
@@ -124,6 +133,11 @@ pub struct Diplomacy {
     met: BTreeMap<Pair, bool>,
     /// Permanently at war with everyone.
     always_hostile: std::collections::BTreeSet<CivId>,
+    /// How much a major civ has bought, fought or bribed its way into a
+    /// city-state's favour. Directed and *not* symmetric — the city-state's
+    /// opinion of you is not your opinion of it — and keyed
+    /// `(city_state, major)`, which is the direction Unciv stores it in too.
+    influence: BTreeMap<(CivId, CivId), Fixed>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +205,7 @@ impl Diplomacy {
         pact.stance = Stance::War;
         pact.defensive_pact = false; // war ends any pact between the two
         pact.open_borders = [false, false]; // and closes both sets of borders
+        pact.protector = [false, false]; // you do not protect what you invade
         pact.turns_in_stance = 0;
         self.met.insert(pair, true); // you have certainly met now
         Some(DiplomacyEvent::WarDeclared { aggressor, against })
@@ -242,6 +257,51 @@ impl Diplomacy {
 
     pub fn pact(&self, a: CivId, b: CivId) -> Option<&Pact> {
         Pair::of(a, b).and_then(|p| self.pacts.get(&p))
+    }
+
+    /// Has `major` pledged to protect `city_state`?
+    ///
+    /// Directed, and stored on the pair record's second directed slot rather
+    /// than in a set of its own: protection is exactly as one-sided as open
+    /// borders and belongs beside it.
+    pub fn is_protector(&self, major: CivId, city_state: CivId) -> bool {
+        let Some(pair) = Pair::of(major, city_state) else { return false };
+        self.pacts
+            .get(&pair)
+            .zip(pair.slot(major))
+            .is_some_and(|(pact, slot)| pact.protector[slot])
+    }
+
+    /// Pledge, or withdraw, protection.
+    pub fn set_protector(&mut self, major: CivId, city_state: CivId, on: bool) {
+        let Some(pair) = Pair::of(major, city_state) else { return };
+        let Some(slot) = pair.slot(major) else { return };
+        self.pacts.entry(pair).or_default().protector[slot] = on;
+    }
+
+    /// How much sway `major` holds over `city_state`.
+    pub fn influence(&self, city_state: CivId, major: CivId) -> Fixed {
+        self.influence.get(&(city_state, major)).copied().unwrap_or(Fixed::ZERO)
+    }
+
+    /// Set it, floored — influence has a bottom, so a city-state you have
+    /// wronged beyond measure cannot be wronged further.
+    pub fn set_influence(&mut self, city_state: CivId, major: CivId, amount: Fixed) {
+        self.influence.insert((city_state, major), amount.max(MINIMUM_INFLUENCE));
+    }
+
+    pub fn add_influence(&mut self, city_state: CivId, major: CivId, amount: Fixed) {
+        let now = self.influence(city_state, major);
+        self.set_influence(city_state, major, now + amount);
+    }
+
+    /// Everyone who holds any opinion of this city-state, in id order.
+    pub fn influencers(&self, city_state: CivId) -> Vec<(CivId, Fixed)> {
+        self.influence
+            .iter()
+            .filter(|((cs, _), _)| *cs == city_state)
+            .map(|((_, major), v)| (*major, *v))
+            .collect()
     }
 
     /// `holder`'s view of `subject`.

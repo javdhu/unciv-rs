@@ -460,6 +460,7 @@ fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifie
             cities: doc.get("cities").and_then(|v| v.as_i32()).unwrap_or(1) as usize,
             game_length: speed_obj.map_or(500, |s| s.total_turns),
             religious_pressure: speed_obj.map_or(6, |s| s.religious_pressure_adjacent_city),
+            gold_gift_modifier: speed_obj.map_or(Fixed::ONE, |s| s.gold_gift_modifier),
         },
         ScienceModifiers {
             difficulty: d.map_or(Fixed::ONE, |d| d.research_cost_modifier),
