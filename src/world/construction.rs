@@ -42,6 +42,9 @@ pub enum Rejection {
     /// Carries no cost and cannot be produced — the Palace, or a
     /// faith-purchased religious building.
     NotProducible,
+    /// The city is too small — a Settler costs two citizens, so a size-1 city
+    /// cannot make one without erasing itself.
+    NeedsPopulation(u32),
     /// The id does not resolve in this ruleset.
     Unknown,
 }
@@ -125,6 +128,12 @@ pub fn can_construct(
             let u = r.units.get(id).ok_or(Rejection::Unknown)?;
             if u.cost.unwrap_or(0) <= 0 {
                 return Err(Rejection::NotProducible);
+            }
+            for unique in u.uniques.iter().filter(|x| x.unique_type() == Some(UniqueType::RequiresPopulation)) {
+                let needed = unique.params.first().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+                if city.population < needed {
+                    return Err(Rejection::NeedsPopulation(needed));
+                }
             }
             (u.required_tech.clone(), u.unique_to.clone())
         }

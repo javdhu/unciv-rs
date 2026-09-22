@@ -26,6 +26,27 @@ use crate::world::movement::is_passable;
 use crate::world::world::World;
 use crate::world::yields::tile_yield;
 
+/// Whether this unit type founds cities.
+///
+/// By the `FoundCity` unique rather than the name "Settler" — a ruleset may
+/// call it something else, and the same reasoning applies as to the palace.
+pub fn is_settler(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
+    r.units.get(base).is_some_and(|u| {
+        u.uniques
+            .iter()
+            .any(|x| x.unique_type() == Some(crate::UniqueType::FoundCity))
+    })
+}
+
+/// The ruleset's settler, if it has exactly one obvious candidate.
+pub fn settler_unit(r: &Ruleset) -> Option<Id<crate::ruleset::BaseUnit>> {
+    r.units
+        .ids()
+        .filter(|id| is_settler(r, *id))
+        .filter(|id| r.units.get(*id).is_some_and(|u| u.cost.unwrap_or(0) > 0))
+        .min()
+}
+
 /// Cities may not be founded within this many tiles of another
 /// (`ModConstants.kt:49`).
 pub const MINIMAL_CITY_DISTANCE: u32 = 3;

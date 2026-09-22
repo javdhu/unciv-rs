@@ -66,6 +66,7 @@ pub fn choose_construction(
     city: &City,
     m: CostModifiers,
     net_gold: i32,
+    want_settler: bool,
 ) -> Option<Construction> {
     let civ_ref = world.civ(civ)?;
     let weights = ranking_weights();
@@ -75,6 +76,11 @@ pub fn choose_construction(
         .filter_map(|what| {
             let cost = production_cost(r, what, m)?;
             let value = match what {
+                // A settler is worth more than any building while the empire
+                // is small — land compounds and a granary does not.
+                Construction::Unit(id) if crate::world::settling::is_settler(r, id) && want_settler => {
+                    Fixed::whole(400)
+                }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
                     if b.maintenance.unwrap_or(0) > net_gold.max(0) {
@@ -95,6 +101,73 @@ pub fn choose_construction(
         .filter(|(score, _)| *score > Fixed::ZERO)
         .max_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)))
         .map(|(_, what)| what)
+}
+
+/// How many cities to aim for before stopping expansion.
+///
+/// A flat number is a crude opinion — a real one would weigh happiness, land
+/// and neighbours — but expansion has to stop somewhere, and an empire that
+/// never stops is worse than one that stops too early.
+const TARGET_CITIES: usize = 5;
+
+/// Whether the civ should be making a settler.
+///
+/// Only if it is below its target *and* somewhere legal exists to put one:
+/// building a settler with nowhere to go wastes 106 production and two
+/// citizens.
+pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
+    let Some(c) = world.civ(civ) else { return false };
+    if c.cities.len() >= TARGET_CITIES {
+        return false;
+    }
+    // One in flight at a time.
+    let settlers = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| crate::world::settling::is_settler(r, u.base))
+        .count();
+    if settlers > 0 {
+        return false;
+    }
+    c.cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .any(|city| crate::world::settling::best_site(world, r, civ, city.centre, 6).is_some())
+}
+
+/// What a settler should do this turn: walk toward the best site, or found.
+pub fn settler_order(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<crate::world::entities::Unit>,
+) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    if !crate::world::settling::is_settler(r, u.base) {
+        return None;
+    }
+    // Standing somewhere legal? Then stop walking.
+    if crate::world::settling::can_settle(world, r, civ, u.position).is_ok() {
+        return Some(UnitOrder::FoundCity);
+    }
+    let (target, _) = crate::world::settling::best_site(world, r, civ, u.position, 8)?;
+    // One step of the way, as far as this turn's movement allows.
+    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    let step = reachable
+        .keys()
+        .copied()
+        .filter(|t| *t != u.position)
+        .min_by_key(|t| (world.grid.distance(*t, target), t.0))?;
+    Some(UnitOrder::MoveTo(step))
+}
+
+/// What a unit is told to do. Deliberately small: the turn loop applies these,
+/// so anything here has to be expressible as a single reversible step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitOrder {
+    MoveTo(crate::world::grid::TileId),
+    FoundCity,
 }
 
 /// Which policy to adopt, if one is affordable.
@@ -171,7 +244,7 @@ mod tests {
         let r = ruleset();
         let w = world(&r);
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
-        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10)
+        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false)
             .expect("a new city can build something");
         match choice {
             Construction::Building(id) => println!("chose {}", r.buildings[id].name),
@@ -188,13 +261,13 @@ mod tests {
         let m = CostModifiers::default();
 
         // With no income, only free-to-keep buildings are considered.
-        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0);
+        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, false);
         if let Some(Construction::Building(id)) = broke {
             assert_eq!(r.buildings[id].maintenance.unwrap_or(0), 0, "{}", r.buildings[id].name);
         }
 
         // With income, upkeep-bearing buildings come into range.
-        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20);
+        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, false);
         assert!(rich.is_some());
     }
 
@@ -208,8 +281,8 @@ mod tests {
 
         for _ in 0..5 {
             assert_eq!(
-                choose_construction(&w, &r, CivId(0), &city, m, 10),
-                choose_construction(&w, &r, CivId(0), &city, m, 10)
+                choose_construction(&w, &r, CivId(0), &city, m, 10, false),
+                choose_construction(&w, &r, CivId(0), &city, m, 10, false)
             );
             assert_eq!(
                 choose_research(&w, &r, CivId(0), s),
@@ -238,7 +311,7 @@ mod tests {
         let before = w.clone();
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
         choose_research(&w, &r, CivId(0), ScienceModifiers::default());
-        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10);
+        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false);
         choose_policy(&w, &r, CivId(0), PolicyModifiers::default());
         assert_eq!(w, before, "every decision is a pure read");
     }

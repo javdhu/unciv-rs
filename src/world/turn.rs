@@ -28,6 +28,8 @@ use crate::ruleset::Technology;
 use crate::stats::Fixed;
 use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::UniqueType;
+use crate::world::ai::UnitOrder;
+use crate::world::entities::Unit;
 use crate::world::city::{apply_food, city_yield, food_surplus, City, GrowthEvent, GrowthModifiers};
 use crate::world::construction::{apply_production, ConstructionEvent, Construction, CostModifiers};
 use crate::world::policies::PolicyModifiers;
@@ -60,6 +62,9 @@ pub struct TurnPlan {
     pub policy: Option<Id<crate::ruleset::Policy>>,
     /// What each idle city should start on.
     pub construction: Vec<(Id<City>, Construction)>,
+    /// What each unit should do. Settlers walk and found; everything else has
+    /// no opinion yet.
+    pub orders: Vec<(Id<Unit>, UnitOrder)>,
 }
 
 /// Something that happened, in the order it happened.
@@ -78,6 +83,7 @@ pub enum TurnEvent {
     Happiness { civ: CivId, value: i32 },
     TechLearned { civ: CivId, tech: Id<Technology> },
     CivDefeated { civ: CivId },
+    CityFounded { city: Id<City>, by: CivId },
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
@@ -107,6 +113,7 @@ pub fn plan_civ_turn(
         research: None,
         policy: None,
         construction: Vec::new(),
+        orders: Vec::new(),
     };
     let Some(c) = world.civ(civ) else { return plan };
     plan.happiness = crate::world::happiness::happiness(world, r, civ, difficulty);
@@ -116,6 +123,13 @@ pub fn plan_civ_turn(
         plan.research = crate::world::ai::choose_research(world, r, civ, science);
     }
     plan.policy = crate::world::ai::choose_policy(world, r, civ, policies);
+
+    let want_settler = crate::world::ai::wants_settler(world, r, civ);
+    for unit in &c.units {
+        if let Some(order) = crate::world::ai::settler_order(world, r, civ, *unit) {
+            plan.orders.push((*unit, order));
+        }
+    }
 
     for &city_id in &c.cities {
         let Some(city) = world.cities.get(city_id) else { continue };
@@ -148,7 +162,7 @@ pub fn plan_civ_turn(
                 })
                 .sum::<i32>();
             if let Some(what) =
-                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net)
+                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, want_settler)
             {
                 plan.construction.push((city_id, what));
             }
@@ -224,6 +238,22 @@ pub fn apply_plan(
 ) -> Vec<TurnEvent> {
     let mut events = Vec::new();
 
+    // Orders first: a settler that founds this turn should be counted as a
+    // city for everything that follows.
+    for (unit, order) in &plan.orders {
+        match order {
+            UnitOrder::MoveTo(tile) => {
+                let _ = crate::world::movement::move_unit(world, r, *unit, *tile);
+            }
+            UnitOrder::FoundCity => {
+                let name = format!("City {}", world.cities.len() + 1);
+                if let Ok(city) = crate::world::settling::found_city_with(world, r, *unit, name) {
+                    events.push(TurnEvent::CityFounded { city, by: plan.civ });
+                }
+            }
+        }
+    }
+
     for (city_id, what) in &plan.construction {
         if let Some(city) = world.cities.get_mut(*city_id) {
             if city.queue.is_empty() {
@@ -260,10 +290,19 @@ pub fn apply_plan(
 
     for (city_id, production) in &plan.production {
         let Some(city) = world.cities.get_mut(*city_id) else { continue };
-        if let ConstructionEvent::Completed { what, .. } =
-            apply_production(city, r, *production, costs)
-        {
+        let (done, centre, owner) = {
+            let event = apply_production(city, r, *production, costs);
+            (event, city.centre, city.owner)
+        };
+        if let ConstructionEvent::Completed { what, .. } = done {
             events.push(TurnEvent::CityCompleted { city: *city_id, what });
+            // A finished unit has to be put on the map. Buildings are recorded
+            // inside the city; units are not, and without this the production
+            // spent on them simply disappears.
+            if let Construction::Unit(base) = what {
+                let movement = r.units.get(base).map_or(2, |u| u.movement);
+                world.place_unit(Unit::new(base, owner, centre, movement));
+            }
         }
     }
 
@@ -673,7 +712,8 @@ mod self_play {
         let city = w.cities.get(civ.cities[0]).unwrap();
         println!(
             "after 100 turns: {techs} techs, {builds} buildings, {growths} growths, \
-             population {}, {} policies, {} gold",
+             {} cities, capital population {}, {} policies, {} gold",
+            civ.cities.len(),
             city.population,
             civ.adopted_policies.len(),
             civ.gold
@@ -684,6 +724,12 @@ mod self_play {
         assert!(growths > 0, "it should have grown");
         assert!(city.population > 1);
         assert_eq!(civ.techs.len(), techs, "every learned tech is recorded");
+
+        // An empire, not a city. Expansion needs a settler built, walked and
+        // consumed — three systems agreeing, and the last place a completed
+        // unit was silently discarded.
+        assert!(civ.cities.len() > 1, "it should have expanded, got {}", civ.cities.len());
+        assert!(civ.gold >= 0, "and stayed solvent, got {}", civ.gold);
     }
 
     /// Civ's answer to bankruptcy: research pays for the debt.
@@ -765,5 +811,72 @@ mod self_play {
         let (w2, log2) = run();
         assert_eq!(log1, log2, "the same game plays out the same way");
         assert_eq!(w1, w2);
+    }
+}
+
+#[cfg(test)]
+mod expansion {
+    use super::*;
+    use crate::world::entities::Civilization;
+    use crate::world::grid::TileGrid;
+
+    /// A completed unit has to reach the map. Buildings are recorded inside
+    /// the city; units are not, and for a while the production spent on them
+    /// simply vanished — the city paid 106 hammers for a settler that never
+    /// existed. Self-play found it; no unit test would have.
+    #[test]
+    fn a_finished_unit_is_placed_on_the_map() {
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+            .unwrap()
+            .unwrap();
+        let mut g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
+        g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(g, vec![Civilization::new(CivId(0), nation, false)]);
+        let centre = w.grid.id_at(4, 4).unwrap();
+        let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), centre));
+
+        let warrior = r.unit("Warrior").unwrap();
+        let cost = crate::world::construction::production_cost(
+            &r,
+            Construction::Unit(warrior),
+            CostModifiers::default(),
+        )
+        .unwrap();
+        w.cities.get_mut(city_id).unwrap().queue.push(Construction::Unit(warrior));
+
+        assert!(w.civ(CivId(0)).unwrap().units.is_empty());
+        let plan = TurnPlan {
+            civ: CivId(0),
+            production: vec![(city_id, cost)],
+            ..TurnPlan {
+                civ: CivId(0),
+                assignments: Vec::new(),
+                food: Vec::new(),
+                production: Vec::new(),
+                science: 0,
+                culture: 0,
+                gold: 0,
+                happiness: 0,
+                research: None,
+                policy: None,
+                construction: Vec::new(),
+                orders: Vec::new(),
+            }
+        };
+        let events = apply_plan(
+            &mut w,
+            &r,
+            &plan,
+            GrowthModifiers::default(),
+            CostModifiers::default(),
+            ScienceModifiers::default(),
+            PolicyModifiers::default(),
+        );
+
+        assert!(events.iter().any(|e| matches!(e, TurnEvent::CityCompleted { .. })));
+        let units = &w.civ(CivId(0)).unwrap().units;
+        assert_eq!(units.len(), 1, "the warrior should exist");
+        assert_eq!(w.units.get(units[0]).unwrap().position, centre, "and stand in the city");
     }
 }
