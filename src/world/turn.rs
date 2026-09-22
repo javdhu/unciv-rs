@@ -66,6 +66,8 @@ pub struct TurnPlan {
     pub orders: Vec<(Id<Unit>, UnitOrder)>,
     /// Civs to declare war on this turn.
     pub declare_war_on: Vec<CivId>,
+    /// Civs to settle with, where both sides want it.
+    pub make_peace_with: Vec<CivId>,
 }
 
 /// Something that happened, in the order it happened.
@@ -87,6 +89,7 @@ pub enum TurnEvent {
     CityFounded { city: Id<City>, by: CivId },
     CivsMet { a: CivId, b: CivId },
     WarDeclared { aggressor: CivId, against: CivId },
+    PeaceMade { a: CivId, b: CivId },
     CityCaptured { city: Id<City>, by: CivId },
     Battle { attacker_died: bool, defender_died: bool },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
@@ -121,6 +124,7 @@ pub fn plan_civ_turn(
         construction: Vec::new(),
         orders: Vec::new(),
         declare_war_on: Vec::new(),
+        make_peace_with: Vec::new(),
     };
     let Some(c) = world.civ(civ) else { return plan };
     plan.happiness = crate::world::happiness::happiness(world, r, civ, difficulty);
@@ -133,10 +137,20 @@ pub fn plan_civ_turn(
 
     let wants = crate::world::ai::Priorities::assess(world, r, civ);
 
-    // War is decided before orders, so soldiers act on this turn's stance.
+    // War and peace are decided before orders, so soldiers act on this turn's
+    // stance rather than last turn's.
     for other in world.civ_ids().collect::<Vec<_>>() {
-        if other != civ && crate::world::ai::should_declare_war(world, r, civ, other) {
+        if other == civ {
+            continue;
+        }
+        if crate::world::ai::should_declare_war(world, r, civ, other) {
             plan.declare_war_on.push(other);
+        } else if crate::world::ai::wants_peace(world, r, civ, other)
+            && crate::world::ai::wants_peace(world, r, other, civ)
+        {
+            // Both have to want it. A one-sided wish is a surrender, which is
+            // a different thing and not modelled.
+            plan.make_peace_with.push(other);
         }
     }
     for unit in &c.units {
@@ -261,6 +275,15 @@ pub fn apply_plan(
             world.diplomacy.declare_war(plan.civ, *other)
         {
             events.push(TurnEvent::WarDeclared { aggressor, against });
+        }
+    }
+
+    for other in &plan.make_peace_with {
+        if let Some(crate::world::diplomacy::DiplomacyEvent::PeaceMade { pair }) =
+            world.diplomacy.make_peace(plan.civ, *other)
+        {
+            let (a, b) = pair.civs();
+            events.push(TurnEvent::PeaceMade { a, b });
         }
     }
 
@@ -958,6 +981,7 @@ mod expansion {
                 construction: Vec::new(),
                 orders: Vec::new(),
                 declare_war_on: Vec::new(),
+                make_peace_with: Vec::new(),
             }
         };
         let events = apply_plan(
@@ -1026,6 +1050,7 @@ mod multi_civ {
         let mut meetings = 0;
         let mut wars = 0;
         let mut captures = 0;
+        let mut peaces = 0;
         let mut battles = 0;
         let mut losses = 0;
         for _ in 0..300 {
@@ -1035,6 +1060,7 @@ mod multi_civ {
                     TurnEvent::Victory { .. } => victories += 1,
                     TurnEvent::CivsMet { .. } => meetings += 1,
                     TurnEvent::WarDeclared { .. } => wars += 1,
+                    TurnEvent::PeaceMade { .. } => peaces += 1,
                     TurnEvent::CityCaptured { .. } => captures += 1,
                     TurnEvent::Battle { attacker_died, defender_died } => {
                         battles += 1;
@@ -1059,6 +1085,7 @@ mod multi_civ {
         println!(
             "cities founded: {founded}, first contacts: {meetings}, wars: {wars}, \
              battles: {battles}, units lost: {losses}, cities taken: {captures}, \
+             peaces: {peaces}, \
              victories: {victories}"
         );
         for a in 0..3u8 {
@@ -1080,6 +1107,9 @@ mod multi_civ {
         // mechanisms were all in place and simply had not had time.
         assert!(founded > 3, "cities were founded");
         assert!(captures > 0, "and some changed hands");
+        // Wars used to be permanent, so one declaration ground on forever.
+        // Now they start and stop: roughly as many settlements as outbreaks.
+        assert!(wars > 1 && peaces > 0, "{wars} wars, {peaces} peaces");
         assert_eq!(victories, 1, "a game is won once, not once per turn");
         let (winner, condition) = w.winner.expect("someone won");
         println!("{winner:?} wins by {}", r.victories.name_of(condition).unwrap());

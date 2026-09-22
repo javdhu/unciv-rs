@@ -457,6 +457,43 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
         .unwrap_or(false)
 }
 
+/// Whether a civ would accept peace with an enemy.
+///
+/// Wars in this engine were permanent, which is why a three-hundred-turn game
+/// saw forty-two cities change hands: nobody could ever stop. A war ends when
+/// the losing side wants out and the winner is not actually winning.
+///
+/// Both conditions matter. Without the first, wars end arbitrarily; without
+/// the second, a civ about to take a capital would hand it back.
+pub fn wants_peace(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool {
+    if !world.diplomacy.at_war(civ, other) {
+        return false;
+    }
+    // A fresh war has not been tested yet.
+    let turns = world.diplomacy.pact(civ, other).map_or(0, |p| p.turns_in_stance);
+    if turns < MINIMUM_WAR_LENGTH {
+        return false;
+    }
+
+    let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
+    // Losing badly: sue for peace.
+    if mine.mul(Fixed::whole(2)) < theirs {
+        return true;
+    }
+    // Winning clearly: press on.
+    if mine > theirs.mul(Fixed::whole(2)) {
+        return false;
+    }
+    // A grinding stalemate is worth ending.
+    turns > STALEMATE_LENGTH
+}
+
+/// A war must run this long before anyone considers stopping.
+const MINIMUM_WAR_LENGTH: u32 = 10;
+
+/// And this long before an even fight counts as going nowhere.
+const STALEMATE_LENGTH: u32 = 30;
+
 /// What a soldier should do: hit something adjacent, march toward the enemy,
 /// or hold the nearest city.
 pub fn military_order(
