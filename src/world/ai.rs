@@ -66,9 +66,9 @@ pub fn choose_construction(
     city: &City,
     m: CostModifiers,
     net_gold: i32,
-    want_settler: bool,
-    want_worker: bool,
+    wants: Priorities,
 ) -> Option<Construction> {
+    let Priorities { want_settler, want_worker, want_scout, want_military } = wants;
     let civ_ref = world.civ(civ)?;
     let weights = ranking_weights();
 
@@ -85,6 +85,22 @@ pub fn choose_construction(
                 // Worth less than a settler — land first, then make it
                 // productive — but more than any single building.
                 Construction::Unit(id) if is_worker(r, id) && want_worker => Fixed::whole(200),
+                // Something — anything — that can walk and look. Cheap and
+                // early: the point is eyes, not strength.
+                Construction::Unit(id) if want_scout && !crate::world::settling::is_settler(r, id) && !is_worker(r, id) => {
+                    let u = r.units.get(id)?;
+                    let fast = u.movement as i32;
+                    Fixed::whole(100 + fast * 10)
+                }
+                // Soldiers, scored by what they bring to a fight per hammer.
+                Construction::Unit(id) if want_military => {
+                    let u = r.units.get(id)?;
+                    let strength = u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0));
+                    if strength == 0 {
+                        return None;
+                    }
+                    Fixed::whole(strength * 3)
+                }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
                     if b.maintenance.unwrap_or(0) > net_gold.max(0) {
@@ -269,6 +285,235 @@ pub fn worker_order(
     Some(UnitOrder::MoveTo(step))
 }
 
+/// Send an idle military unit toward the nearest unexplored ground.
+///
+/// Without this a civilization never sees anything but its own land, so it
+/// never meets a neighbour and the whole contested half of the game — contact,
+/// diplomacy, war — cannot start. Three civs on one map behaved as three
+/// separate games until something wandered.
+pub fn explore_order(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<crate::world::entities::Unit>,
+) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    // Settlers and workers have jobs; only the idle military wanders.
+    if crate::world::settling::is_settler(r, u.base) || is_worker(r, u.base) {
+        return None;
+    }
+    if !u.can_move() {
+        return None;
+    }
+
+    let reachable =
+        crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+
+    // Step toward whichever reachable tile reveals the most that is unseen.
+    // Ties break on tile id, so two machines wander identically.
+    let (best, gain) = reachable
+        .keys()
+        .copied()
+        .filter(|t| *t != u.position)
+        .map(|t| {
+            let unseen = world
+                .grid
+                .within(t, 2)
+                .into_iter()
+                .filter(|n| !world.visibility.has_explored(civ, *n))
+                .count();
+            (t, unseen)
+        })
+        .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))?;
+
+    (gain > 0).then_some(UnitOrder::MoveTo(best))
+}
+
+/// Whether the civ should make something to explore with.
+///
+/// One early wanderer is enough to find the neighbours; after that the
+/// military exists for other reasons.
+pub fn wants_scout(world: &World, r: &Ruleset, civ: CivId) -> bool {
+    let Some(c) = world.civ(civ) else { return false };
+    let military = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| !crate::world::settling::is_settler(r, u.base) && !is_worker(r, u.base))
+        .count();
+    military == 0 && !c.cities.is_empty()
+}
+
+/// What a civ is short of this turn.
+///
+/// Gathered once per civ rather than threaded as separate flags: five
+/// booleans in a signature is a sign they belong together, and it keeps the
+/// decision about *what to want* in one place, separate from *what to build*.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Priorities {
+    pub want_settler: bool,
+    pub want_worker: bool,
+    pub want_scout: bool,
+    pub want_military: bool,
+}
+
+impl Priorities {
+    pub fn assess(world: &World, r: &Ruleset, civ: CivId) -> Priorities {
+        Priorities {
+            want_settler: wants_settler(world, r, civ),
+            want_worker: wants_worker(world, r, civ),
+            want_scout: wants_scout(world, r, civ),
+            want_military: wants_military(world, r, civ),
+        }
+    }
+}
+
+/// Total fighting strength a civ can field.
+///
+/// Base strength, not effective — a threat assessment made on flat ground is
+/// close enough, and computing terrain bonuses for every unit of every rival
+/// every turn is not.
+pub fn military_strength(world: &World, r: &Ruleset, civ: CivId) -> Fixed {
+    world
+        .civ(civ)
+        .map(|c| {
+            c.units
+                .iter()
+                .filter_map(|u| world.units.get(*u))
+                .filter_map(|u| r.units.get(u.base))
+                .filter_map(|b| b.strength)
+                .map(Fixed::whole)
+                .sum()
+        })
+        .unwrap_or(Fixed::ZERO)
+}
+
+/// How many military units the civ should keep.
+///
+/// Two per city as a floor, and more if a neighbour it has met is visibly
+/// stronger. Crude, but it means a civ that ignores its army gets punished
+/// rather than merely noticed.
+pub fn target_military(world: &World, r: &Ruleset, civ: CivId) -> usize {
+    let Some(c) = world.civ(civ) else { return 0 };
+    let base = c.cities.len() * 2;
+    let mine = military_strength(world, r, civ);
+    let strongest_rival = world
+        .civ_ids()
+        .filter(|o| *o != civ && world.diplomacy.have_met(civ, *o))
+        .map(|o| military_strength(world, r, o))
+        .max()
+        .unwrap_or(Fixed::ZERO);
+    if strongest_rival > mine {
+        base + 2
+    } else {
+        base
+    }
+}
+
+pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
+    let Some(c) = world.civ(civ) else { return false };
+    let have = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| {
+            !crate::world::settling::is_settler(r, u.base)
+                && !is_worker(r, u.base)
+                && r.units.get(u.base).and_then(|b| b.strength).unwrap_or(0) > 0
+        })
+        .count();
+    have < target_military(world, r, civ)
+}
+
+/// Whether to declare war on a civ already met.
+///
+/// Only with a clear advantage and something to take. An AI that declares war
+/// it cannot win is worse than one that never declares at all, and a threshold
+/// makes the decision legible: at 1.5x strength with an adjacent target,
+/// attack.
+pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool {
+    if !world.diplomacy.have_met(civ, other) || world.diplomacy.at_war(civ, other) {
+        return false;
+    }
+    let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
+    if mine < theirs.mul(Fixed::permille(1_500)) || mine.is_zero() {
+        return false;
+    }
+    // Something of theirs must be within reach, or the war is a gesture.
+    let their_cities: Vec<_> = world
+        .cities
+        .iter()
+        .filter(|(_, c)| c.owner == other)
+        .map(|(_, c)| c.centre)
+        .collect();
+    world
+        .civ(civ)
+        .map(|c| {
+            c.units
+                .iter()
+                .filter_map(|u| world.units.get(*u))
+                .any(|u| their_cities.iter().any(|t| world.grid.distance(u.position, *t) <= 8))
+        })
+        .unwrap_or(false)
+}
+
+/// What a soldier should do: hit something adjacent, march toward the enemy,
+/// or hold the nearest city.
+pub fn military_order(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<crate::world::entities::Unit>,
+) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    if crate::world::settling::is_settler(r, u.base) || is_worker(r, u.base) {
+        return None;
+    }
+    if !u.can_move() {
+        return None;
+    }
+
+    // An adjacent enemy is the whole decision.
+    let adjacent: Vec<_> = world
+        .grid
+        .neighbours(u.position)
+        .flat_map(|t| world.units_at(t))
+        .filter(|id| {
+            world
+                .units
+                .get(*id)
+                .is_some_and(|o| o.owner != civ && world.diplomacy.at_war(civ, o.owner))
+        })
+        .collect();
+    if let Some(target) = adjacent.into_iter().min() {
+        return Some(UnitOrder::Attack(target));
+    }
+
+    // At war and nothing to hit? Walk toward their nearest city.
+    let enemy_cities: Vec<_> = world
+        .cities
+        .iter()
+        .filter(|(_, c)| c.owner != civ && world.diplomacy.at_war(civ, c.owner))
+        .map(|(_, c)| c.centre)
+        .collect();
+    if let Some(target) = enemy_cities
+        .iter()
+        .min_by_key(|t| (world.grid.distance(u.position, **t), t.0))
+    {
+        let reachable =
+            crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+        if let Some(step) = reachable
+            .keys()
+            .copied()
+            .filter(|t| *t != u.position)
+            .min_by_key(|t| (world.grid.distance(*t, *target), t.0))
+        {
+            return Some(UnitOrder::MoveTo(step));
+        }
+    }
+    None
+}
+
 /// What a unit is told to do. Deliberately small: the turn loop applies these,
 /// so anything here has to be expressible as a single reversible step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +521,7 @@ pub enum UnitOrder {
     MoveTo(crate::world::grid::TileId),
     FoundCity,
     Improve(Id<crate::ruleset::TileImprovement>),
+    Attack(Id<crate::world::entities::Unit>),
 }
 
 /// Which policy to adopt, if one is affordable.
@@ -352,7 +598,7 @@ mod tests {
         let r = ruleset();
         let w = world(&r);
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
-        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false, false)
+        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, Priorities::default())
             .expect("a new city can build something");
         match choice {
             Construction::Building(id) => println!("chose {}", r.buildings[id].name),
@@ -369,13 +615,13 @@ mod tests {
         let m = CostModifiers::default();
 
         // With no income, only free-to-keep buildings are considered.
-        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, false, false);
+        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, Priorities::default());
         if let Some(Construction::Building(id)) = broke {
             assert_eq!(r.buildings[id].maintenance.unwrap_or(0), 0, "{}", r.buildings[id].name);
         }
 
         // With income, upkeep-bearing buildings come into range.
-        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, false, false);
+        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, Priorities::default());
         assert!(rich.is_some());
     }
 
@@ -389,8 +635,8 @@ mod tests {
 
         for _ in 0..5 {
             assert_eq!(
-                choose_construction(&w, &r, CivId(0), &city, m, 10, false, false),
-                choose_construction(&w, &r, CivId(0), &city, m, 10, false, false)
+                choose_construction(&w, &r, CivId(0), &city, m, 10, Priorities::default()),
+                choose_construction(&w, &r, CivId(0), &city, m, 10, Priorities::default())
             );
             assert_eq!(
                 choose_research(&w, &r, CivId(0), s),
@@ -419,7 +665,7 @@ mod tests {
         let before = w.clone();
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
         choose_research(&w, &r, CivId(0), ScienceModifiers::default());
-        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false, false);
+        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, Priorities::default());
         choose_policy(&w, &r, CivId(0), PolicyModifiers::default());
         assert_eq!(w, before, "every decision is a pure read");
     }

@@ -62,9 +62,10 @@ pub struct TurnPlan {
     pub policy: Option<Id<crate::ruleset::Policy>>,
     /// What each idle city should start on.
     pub construction: Vec<(Id<City>, Construction)>,
-    /// What each unit should do. Settlers walk and found; everything else has
-    /// no opinion yet.
+    /// What each unit should do.
     pub orders: Vec<(Id<Unit>, UnitOrder)>,
+    /// Civs to declare war on this turn.
+    pub declare_war_on: Vec<CivId>,
 }
 
 /// Something that happened, in the order it happened.
@@ -85,6 +86,8 @@ pub enum TurnEvent {
     CivDefeated { civ: CivId },
     CityFounded { city: Id<City>, by: CivId },
     CivsMet { a: CivId, b: CivId },
+    WarDeclared { aggressor: CivId, against: CivId },
+    Battle { attacker_died: bool, defender_died: bool },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
@@ -116,6 +119,7 @@ pub fn plan_civ_turn(
         policy: None,
         construction: Vec::new(),
         orders: Vec::new(),
+        declare_war_on: Vec::new(),
     };
     let Some(c) = world.civ(civ) else { return plan };
     plan.happiness = crate::world::happiness::happiness(world, r, civ, difficulty);
@@ -126,11 +130,19 @@ pub fn plan_civ_turn(
     }
     plan.policy = crate::world::ai::choose_policy(world, r, civ, policies);
 
-    let want_settler = crate::world::ai::wants_settler(world, r, civ);
-    let want_worker = crate::world::ai::wants_worker(world, r, civ);
+    let wants = crate::world::ai::Priorities::assess(world, r, civ);
+
+    // War is decided before orders, so soldiers act on this turn's stance.
+    for other in world.civ_ids().collect::<Vec<_>>() {
+        if other != civ && crate::world::ai::should_declare_war(world, r, civ, other) {
+            plan.declare_war_on.push(other);
+        }
+    }
     for unit in &c.units {
         let order = crate::world::ai::settler_order(world, r, civ, *unit)
-            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit));
+            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit))
+            .or_else(|| crate::world::ai::military_order(world, r, civ, *unit))
+            .or_else(|| crate::world::ai::explore_order(world, r, civ, *unit));
         if let Some(order) = order {
             plan.orders.push((*unit, order));
         }
@@ -167,7 +179,7 @@ pub fn plan_civ_turn(
                 })
                 .sum::<i32>();
             if let Some(what) =
-                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, want_settler, want_worker)
+                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants)
             {
                 plan.construction.push((city_id, what));
             }
@@ -243,12 +255,28 @@ pub fn apply_plan(
 ) -> Vec<TurnEvent> {
     let mut events = Vec::new();
 
+    for other in &plan.declare_war_on {
+        if let Some(crate::world::diplomacy::DiplomacyEvent::WarDeclared { aggressor, against }) =
+            world.diplomacy.declare_war(plan.civ, *other)
+        {
+            events.push(TurnEvent::WarDeclared { aggressor, against });
+        }
+    }
+
     // Orders first: a settler that founds this turn should be counted as a
     // city for everything that follows.
     for (unit, order) in &plan.orders {
         match order {
             UnitOrder::MoveTo(tile) => {
                 let _ = crate::world::movement::move_unit(world, r, *unit, *tile);
+            }
+            UnitOrder::Attack(target) => {
+                if let Ok(result) = crate::world::combat::resolve_attack(world, r, *unit, *target) {
+                    events.push(TurnEvent::Battle {
+                        attacker_died: result.attacker_died,
+                        defender_died: result.defender_died,
+                    });
+                }
             }
             UnitOrder::Improve(improvement) => {
                 if let Some(tile) = world.units.get(*unit).map(|u| u.position) {
@@ -918,6 +946,7 @@ mod expansion {
                 policy: None,
                 construction: Vec::new(),
                 orders: Vec::new(),
+                declare_war_on: Vec::new(),
             }
         };
         let events = apply_plan(
@@ -984,12 +1013,20 @@ mod multi_civ {
         let mut founded = 0;
         let mut victories = 0;
         let mut meetings = 0;
+        let mut wars = 0;
+        let mut battles = 0;
+        let mut losses = 0;
         for _ in 0..100 {
             for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
                 match e {
                     TurnEvent::CityFounded { .. } => founded += 1,
                     TurnEvent::Victory { .. } => victories += 1,
                     TurnEvent::CivsMet { .. } => meetings += 1,
+                    TurnEvent::WarDeclared { .. } => wars += 1,
+                    TurnEvent::Battle { attacker_died, defender_died } => {
+                        battles += 1;
+                        losses += attacker_died as u32 + defender_died as u32;
+                    }
                     _ => {}
                 }
             }
@@ -1006,7 +1043,10 @@ mod multi_civ {
                 civ.units.len()
             );
         }
-        println!("cities founded: {founded}, first contacts: {meetings}, victories: {victories}");
+        println!(
+            "cities founded: {founded}, first contacts: {meetings}, wars: {wars}, \
+             battles: {battles}, units lost: {losses}, victories: {victories}"
+        );
         for a in 0..3u8 {
             for b in (a + 1)..3u8 {
                 println!(
@@ -1025,13 +1065,17 @@ mod multi_civ {
             "nobody holds every capital, so Domination must not fire"
         );
 
-        // Nobody meets anybody, and that is the finding rather than a bug in
-        // first contact — `seeing_a_neighbour_is_meeting_them` shows the
-        // mechanism works. Nothing *explores*: settlers and workers stay near
-        // home, so sight never reaches a neighbour and the map stays dark.
-        // Until something wanders, three civs on one map are three separate
-        // games, which is why their results here are identical.
-        assert_eq!(meetings, 0, "no exploration yet, so no contact");
+        // Everyone finds everyone. Before exploration existed this was zero:
+        // settlers and workers stay near home, so sight never reached a
+        // neighbour and three civs on one map were three separate games.
+        assert_eq!(meetings, 3, "three civs means three pairs, each meeting once");
+        for a in 0..3u8 {
+            for b in (a + 1)..3u8 {
+                assert!(w.diplomacy.have_met(CivId(a), CivId(b)));
+            }
+        }
+        // Meeting is not war, but a clear advantage invites one.
+        assert!(wars > 0, "someone should have taken their chance");
     }
 }
 
@@ -1079,5 +1123,65 @@ mod contact {
         // And it does not keep firing.
         update_visibility(&mut w);
         assert!(detect_first_contact(&mut w).is_empty(), "already acquainted");
+    }
+}
+
+#[cfg(test)]
+mod warfare {
+    use super::*;
+    use crate::world::entities::{Civilization, Unit};
+    use crate::world::grid::TileGrid;
+
+    /// Two civs at war with soldiers in reach should fight, through the turn
+    /// loop rather than by calling combat directly.
+    #[test]
+    fn armies_at_war_actually_fight() {
+        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+            .unwrap()
+            .unwrap();
+        let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
+        g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(
+            g,
+            vec![
+                Civilization::new(CivId(0), nation, true),
+                Civilization::new(CivId(1), nation, true),
+            ],
+        );
+        w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
+        w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
+
+        let warrior = r.unit("Warrior").unwrap();
+        let movement = r.units.get(warrior).unwrap().movement;
+        let a = w.grid.id_at(6, 6).unwrap();
+        let b = w.grid.neighbours(a).next().unwrap();
+        w.place_unit(Unit::new(warrior, CivId(0), a, movement));
+        w.place_unit(Unit::new(warrior, CivId(1), b, movement));
+
+        w.diplomacy.meet(CivId(0), CivId(1));
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+
+        let prince = r.difficulties.by_name("Prince");
+        let (m, costs, science, policies) = (
+            GrowthModifiers::default(),
+            CostModifiers::default(),
+            ScienceModifiers::default(),
+            PolicyModifiers::default(),
+        );
+
+        let mut battles = 0;
+        let mut deaths = 0;
+        for _ in 0..30 {
+            for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
+                if let TurnEvent::Battle { attacker_died, defender_died } = e {
+                    battles += 1;
+                    deaths += attacker_died as u32 + defender_died as u32;
+                }
+            }
+        }
+        println!("{battles} battles, {deaths} units destroyed");
+        assert!(battles > 0, "adjacent enemies at war should fight");
+        assert!(deaths > 0, "and someone should eventually lose");
     }
 }
