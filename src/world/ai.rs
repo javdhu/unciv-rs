@@ -550,6 +550,22 @@ pub fn explore_order(
 
     let reachable = crate::world::movement::reachable_for_unit(world, r, unit);
 
+    // Ruins we can see and reach this turn come first
+    // (`UnitAutomation.tryGoToRuinAndEncampment`), cheapest then by id.
+    if world.civ(civ).is_some_and(|c| c.is_major()) {
+        let ruin = reachable
+            .iter()
+            .filter(|(t, _)| {
+                **t != u.position
+                    && world.grid.improvement[t.0 as usize].is_some_and(|i| crate::world::ruins::is_ruins(r, i))
+            })
+            .filter(|(t, _)| world.visibility.can_see(civ, **t))
+            .min_by(|a, b| a.1.cmp(b.1).then(a.0.cmp(b.0)));
+        if let Some((t, _)) = ruin {
+            return Some(UnitOrder::MoveTo(*t));
+        }
+    }
+
     // Step toward whichever reachable tile reveals the most that is unseen.
     // Ties break on tile id, so two machines wander identically.
     let (best, gain) = reachable
@@ -1356,6 +1372,7 @@ pub enum UnitOrder {
     Assault(Id<crate::world::city::City>),
     /// A great person's one act, where it stands.
     GreatPerson(crate::world::great_person_actions::Action),
+    Religious(crate::world::religious_units::ReligiousAction),
 }
 
 /// Which policy to adopt, if one is affordable.

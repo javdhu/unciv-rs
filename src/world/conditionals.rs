@@ -53,6 +53,7 @@ pub struct GameContext<'a> {
     pub opponent: Option<Opponent>,
     /// The civ's current happiness, when it is known.
     pub happiness: Option<i32>,
+    pub difficulty: Option<&'a crate::ruleset::Difficulty>,
     /// Whether religion is turned on for this game. A game setting, not a
     /// rule, so nothing in the world can answer it.
     pub religion_enabled: bool,
@@ -91,6 +92,7 @@ impl<'a> GameContext<'a> {
             combat: None,
             opponent: None,
             happiness: None,
+            difficulty: None,
             religion_enabled: true,
             techs: None,
         }
@@ -197,6 +199,7 @@ fn tile_matches_term(
     match filter {
         "Land" => return yes(terrains.iter().any(|t| t.r#type == "Land")),
         "Water" => return yes(terrains.iter().any(|t| t.r#type == "Water")),
+        "Natural Wonder" => return yes(world.0.natural_wonder[tile.0 as usize].is_some()),
         // Features are everything after the base terrain.
         "Featureless" => return yes(world.0.features[tile.0 as usize].is_empty()),
         "Rough terrain" => return yes(terrains.iter().copied().any(rough)),
@@ -390,6 +393,53 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         }
 
         // --- the game's own settings ---------------------------------------
+        // --- the clock and the civ's religious progress --------------------
+        UniqueType::ConditionalAfterTurns | UniqueType::ConditionalBeforeTurns => {
+            let (Some(world), Some(n)) = (ctx.world, p(0).and_then(|x| x.parse::<u32>().ok())) else {
+                return Verdict::Unknown;
+            };
+            let after = world.turn >= n;
+            let want = cond.unique_type() == Some(UniqueType::ConditionalAfterTurns);
+            if after == want {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
+        }
+        UniqueType::ConditionalBeforePantheon
+        | UniqueType::ConditionalAfterPantheon
+        | UniqueType::ConditionalBeforeReligion
+        | UniqueType::ConditionalAfterGeneratingGreatProphet => {
+            let Some(c) = ctx.world.zip(ctx.civ).and_then(|(w, c)| w.civ(c)) else { return Verdict::Unknown };
+            let holds = match cond.unique_type() {
+                Some(UniqueType::ConditionalBeforePantheon) => !c.faith.has_pantheon(),
+                Some(UniqueType::ConditionalAfterPantheon) => c.faith.has_pantheon(),
+                Some(UniqueType::ConditionalBeforeReligion) => !c.faith.founded,
+                _ => c.faith.prophets_earned > 0,
+            };
+            if holds {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
+        }
+        UniqueType::ConditionalDifficulty
+        | UniqueType::ConditionalDifficultyOrHigher
+        | UniqueType::ConditionalDifficultyOrLower => {
+            let (Some(difficulty), Some(name)) = (ctx.difficulty, p(0)) else { return Verdict::Unknown };
+            let Some(wanted) = ctx.ruleset.difficulties.id(name) else { return Verdict::False };
+            let Some(current) = ctx.ruleset.difficulties.id(&difficulty.name) else { return Verdict::Unknown };
+            let holds = match cond.unique_type() {
+                Some(UniqueType::ConditionalDifficultyOrHigher) => current.index() >= wanted.index(),
+                Some(UniqueType::ConditionalDifficultyOrLower) => current.index() <= wanted.index(),
+                _ => current == wanted,
+            };
+            if holds {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
+        }
         UniqueType::ConditionalReligionEnabled => {
             if ctx.religion_enabled {
                 Verdict::True

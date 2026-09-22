@@ -2,8 +2,19 @@
 // native one. The whole determinism claim of this crate reduces to these two
 // numbers matching.
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 
-const path = process.argv[2] ?? "target/wasm32-unknown-unknown/release/civ_core.wasm";
+// Cargo's output may be redirected by CARGO_TARGET_DIR or local configuration.
+// Ask Cargo rather than accidentally checking an older project-local build.
+function cargoWasmPath() {
+  const metadata = JSON.parse(execFileSync("cargo", ["metadata", "--no-deps", "--format-version", "1"], {
+    encoding: "utf8",
+  }));
+  return join(metadata.target_directory, "wasm32-unknown-unknown", "release", "civ_core.wasm");
+}
+
+const path = process.argv[2] ?? cargoWasmPath();
 const bytes = readFileSync(path);
 
 let instance;

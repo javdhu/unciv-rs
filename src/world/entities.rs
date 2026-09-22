@@ -52,6 +52,10 @@ pub struct Civilization {
     /// Science banked in each of the last eight turns, indexed by turn mod
     /// eight (`scienceOfLast8Turns`). What a Great Scientist is worth.
     pub recent_science: [i32; 8],
+    /// The last rewards ancient ruins gave, oldest first, not to be repeated.
+    pub recent_ruins: Vec<String>,
+    /// Natural wonders this civilization has discovered, counted once per kind.
+    pub known_natural_wonders: BTreeSet<Id<crate::ruleset::Terrain>>,
     /// Spies, and which eras have already granted one.
     pub espionage: crate::world::espionage::Espionage,
     /// What this city-state is asking of the major civs. Empty for everyone
@@ -93,6 +97,8 @@ impl Civilization {
             great_people: Default::default(),
             golden_age: Default::default(),
             recent_science: [0; 8],
+            recent_ruins: Vec::new(),
+            known_natural_wonders: BTreeSet::new(),
             uniques: Default::default(),
             resources: Default::default(),
             cities: Vec::new(),
@@ -146,6 +152,10 @@ pub struct Unit {
     pub attacks_left: u8,
     pub xp: u16,
     pub promotions: BTreeSet<Id<Promotion>>,
+    /// The creed carried by this unit, independent of its current owner.
+    pub religion: Option<CivId>,
+    pub religious_strength: i32,
+    pub religious_uses_left: u8,
 }
 
 impl Unit {
@@ -161,6 +171,9 @@ impl Unit {
             attacks_left: 1,
             xp: 0,
             promotions: BTreeSet::new(),
+            religion: None,
+            religious_strength: 0,
+            religious_uses_left: 0,
         }
     }
 

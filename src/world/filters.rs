@@ -193,6 +193,10 @@ pub fn city_matches(
     let _ = r;
     match f {
         "all cities" | "All" | "in all cities" => Verdict::True,
+        "all cities in which the majority religion is a major religion" => yes(subject
+            .faith
+            .majority(subject.population)
+            .is_some_and(|creed| world.civ(creed).is_some_and(|c| c.faith.founded))),
         // What a conquest made of it (`City.matchesFilter`).
         "puppeted cities" | "Puppeted" => yes(subject.puppet),
         "annexed cities" | "Annexed" => yes(subject.founder != subject.owner && !subject.puppet),

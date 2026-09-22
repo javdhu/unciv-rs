@@ -70,6 +70,11 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         out.push((Source::new(SourceKind::Resource, "Luxury resources"), luxuries * per_luxury));
     }
 
+    let wonders = crate::world::natural_wonders::known_stats(world, r, civ_id).happiness.floor() as i32;
+    if wonders != 0 {
+        out.push((Source::new(SourceKind::Other, "Natural Wonders"), wonders));
+    }
+
     // Difficulty scales the unhappiness, not the happiness.
     let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
     let scale = |n: i32| (Fixed::whole(n) * modifier).floor() as i32;

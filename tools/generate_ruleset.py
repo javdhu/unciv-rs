@@ -144,6 +144,10 @@ def build(struct, objs, note):
         # every reader distinguish two things that mean the same.
         opt = present < len(objs) and not (ty.startswith("Vec<") or ty.startswith("std::collections::"))
         fields.append((k, ty, opt, present, len(objs)))
+    # RuinReward.kt permits custom reward weights even though the bundled
+    # rulesets rely on its default of one.
+    if struct == "RuinReward" and "weight" not in ks:
+        fields.append(("weight", "i32", True, 0, len(objs)))
     structs.append((struct, note, len(objs), fields))
 
 for fname, (outer, key, inner) in NESTED.items():

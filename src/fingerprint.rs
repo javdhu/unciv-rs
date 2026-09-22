@@ -47,6 +47,9 @@ pub fn embedded_sources() -> Vec<(String, String)> {
         "Eras.json",
         "Speeds.json",
         "Nations.json",
+        "Ruins.json",
+        "Beliefs.json",
+        "UnitPromotions.json",
     ];
     files.iter().map(|(n, c)| (n.to_string(), c.to_string())).collect()
 }
@@ -67,6 +70,14 @@ impl Digest {
 
     fn add_fixed(&mut self, v: Fixed) -> &mut Self {
         self.add(v.raw())
+    }
+
+    fn add_text(&mut self, text: &str) -> &mut Self {
+        self.add(text.len() as i64);
+        for byte in text.bytes() {
+            self.add(byte as i64);
+        }
+        self
     }
 }
 
@@ -214,6 +225,7 @@ pub fn fingerprint() -> u64 {
             // check. Adding camps to the generator left the fingerprint
             // completely unchanged, which is how the gap was found.
             d.add(map.grid.improvement[i].map_or(-1, |x| x.index() as i64));
+            d.add(map.grid.natural_wonder[i].map_or(-1, |x| x.index() as i64));
             d.add(map.grid.road[i] as i64);
             d.add(map.grid.road_pillaged[i] as i64);
         }
@@ -269,7 +281,17 @@ pub fn fingerprint() -> u64 {
             // turn thirty and elections are held every fifteen, so a shorter
             // game would fold in nothing from either.
             for _ in 0..60 {
-                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default());
+                for event in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
+                    match event {
+                        crate::world::turn::TurnEvent::RuinsExplored { civ, tile, reward } => {
+                            d.add(1).add(civ.0 as i64).add(tile.0 as i64).add(reward.index() as i64);
+                        }
+                        crate::world::turn::TurnEvent::NaturalWonderDiscovered(found) => {
+                            d.add(2).add(found.civ.0 as i64).add(found.wonder.index() as i64).add(found.first as i64);
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             d.add(w.turn as i64).add(w.cities.len() as i64).add(w.units.len() as i64);
@@ -280,12 +302,24 @@ pub fn fingerprint() -> u64 {
                     .add(civ.techs.len() as i64)
                     .add(civ.adopted_policies.len() as i64)
                     .add(civ.faith.stored as i64)
+                    .add(civ.faith.founded as i64)
+                    .add(civ.faith.enhanced as i64)
+                    .add(civ.faith.prophets_earned as i64)
                     .add(civ.cities.len() as i64)
                     .add(civ.units.len() as i64)
                     .add(civ.espionage.spies.len() as i64)
                     .add(civ.quests.active.len() as i64)
                     .add(civ.quests.next_turn as i64)
                     .add(civ.defeated as i64);
+                for reward in &civ.recent_ruins {
+                    d.add_text(reward);
+                }
+                for wonder in &civ.known_natural_wonders {
+                    d.add(wonder.index() as i64);
+                }
+                for tile in w.grid.ids() {
+                    d.add(w.visibility.has_explored(civ.id, tile) as i64);
+                }
                 // Influence is directed and lives outside the civ, so it has
                 // to be folded in by hand or the whole city-state layer is
                 // invisible to this check.
@@ -307,14 +341,76 @@ pub fn fingerprint() -> u64 {
                     .add(city.built.len() as i64)
                     .add(city.centre.0 as i64)
                     .add(city.faith.total_pressure() as i64);
+                d.add(city.faith.holy_city_blocked as i64);
             }
             for (_, unit) in w.units.iter() {
                 d.add(unit.position.0 as i64).add(unit.health as i64);
+                d.add(unit.base.index() as i64).add(unit.xp as i64);
+                d.add(unit.religion.map_or(-1, |c| c.0 as i64))
+                    .add(unit.religious_strength as i64)
+                    .add(unit.religious_uses_left as i64);
                 d.add_fixed(unit.movement_left);
             }
         }
     }
 
+    // Religion needs faith income that the short general game may never
+    // produce. A funded two-city scenario exercises physical prophets,
+    // enhancement, faith purchases and missionary travel on every target.
+    {
+        use crate::world::assignment::CityFocus;
+        use crate::world::entities::Civilization;
+        use crate::world::religious_units::ReligiousEvent;
+        use crate::world::turn::{advance_turn, update_visibility, TurnEvent, TurnModifiers};
+        use crate::world::world::World;
+        if let (Some(grass), Some(nation)) = (r.terrain("Grassland"), r.nations.id("Rome")) {
+            let mut w = World::new(TileGrid::new(22, 10, grass), vec![Civilization::new(CivId(0), nation, true)]);
+            for (name, col) in [("Home", 3), ("Distant", 15)] {
+                let centre = w.grid.id_at(col, 5).unwrap();
+                let city = w.found_city_in(&r, City::found(name, CivId(0), centre));
+                for tile in w.grid.within(centre, 2) {
+                    w.claim_tile(city, tile);
+                }
+            }
+            w.civ_mut(CivId(0)).unwrap().faith.stored = 1500;
+            update_visibility(&mut w);
+            for _ in 0..25 {
+                for event in advance_turn(&mut w, &r, CityFocus::None, TurnModifiers::default()) {
+                    match event {
+                        TurnEvent::ProphetBorn { unit, .. } => {
+                            d.add(3).add(unit.index() as i64);
+                        }
+                        TurnEvent::ReligionFounded { .. } => {
+                            d.add(4);
+                        }
+                        TurnEvent::ReligionEnhanced { .. } => {
+                            d.add(5);
+                        }
+                        TurnEvent::FaithPurchased { faith, .. } => {
+                            d.add(6).add(faith);
+                        }
+                        TurnEvent::ReligiousUnitActed {
+                            event: ReligiousEvent::Spread { city, pressure, uses_left, .. },
+                            ..
+                        } => {
+                            d.add(7).add(city.index() as i64).add(pressure as i64).add(uses_left as i64);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let faith = &w.civ(CivId(0)).unwrap().faith;
+            d.add(faith.stored as i64).add(faith.founded as i64).add(faith.enhanced as i64);
+            for belief in &faith.beliefs {
+                d.add(belief.index() as i64);
+            }
+            for (_, city) in w.cities.iter() {
+                for (creed, pressure) in city.faith.pressures() {
+                    d.add(creed.map_or(-1, |c| c.0 as i64)).add(pressure as i64);
+                }
+            }
+        }
+    }
     d.0
 }
 

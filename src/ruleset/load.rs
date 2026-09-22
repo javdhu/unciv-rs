@@ -39,6 +39,8 @@ pub struct Ruleset {
     pub city_state_types: Registry<CityStateType>,
     /// What city-states ask of major civs. See `world::quests`.
     pub quests: Registry<Quest>,
+    /// What ancient ruins may give. See `world::ruins`.
+    pub ruin_rewards: Registry<RuinReward>,
     /// Rules that apply to everyone, from `GlobalUniques.json`.
     ///
     /// This is where Civ keeps the consequences of unhappiness — the growth and
@@ -109,6 +111,7 @@ impl Ruleset {
                 "UnitPromotions.json" => flat(&mut r.promotions, &doc, Promotion::from_json),
                 "Nations.json" => flat(&mut r.nations, &doc, Nation::from_json),
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
+                "Ruins.json" => flat(&mut r.ruin_rewards, &doc, RuinReward::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),
                 "Eras.json" => flat(&mut r.eras, &doc, Era::from_json),
                 "Speeds.json" => {
@@ -305,6 +308,7 @@ impl Ruleset {
             + self.victories.len()
             + self.city_state_types.len()
             + self.quests.len()
+            + self.ruin_rewards.len()
     }
 
     /// Every name referenced by one object that no object answers to.

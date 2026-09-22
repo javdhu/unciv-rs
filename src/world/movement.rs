@@ -162,9 +162,16 @@ pub fn may_enter_territory(world: &World, visitor: CivId, owner: CivId) -> bool 
 }
 
 /// Whether `unit` can path through `tile`.
-pub fn can_pass_through(world: &World, _r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
+pub fn may_unit_enter_territory(world: &World, r: &Ruleset, unit: &Unit, owner: CivId) -> bool {
+    may_enter_territory(world, unit.owner, owner)
+        || unit.has_unique(r, UniqueType::CanEnterForeignTiles)
+        || unit.has_unique(r, UniqueType::CanEnterForeignTilesButLosesReligiousStrength)
+}
+
+/// Whether this unit may pass through a tile, including its border privileges.
+pub fn can_pass_through(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
     if let Some(owner) = world.grid.owner[tile.0 as usize] {
-        if !may_enter_territory(world, unit.owner, owner) {
+        if !may_unit_enter_territory(world, r, unit, owner) {
             return false;
         }
     }
@@ -274,6 +281,15 @@ pub fn step_cost_for_unit(
 
 /// Every tile reachable for `unit_id` with its current movement and state.
 pub fn reachable_for_unit(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> BTreeMap<TileId, Fixed> {
+    search_for_unit(world, r, unit_id, None)
+}
+
+fn search_for_unit(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    mut parents: Option<&mut BTreeMap<TileId, TileId>>,
+) -> BTreeMap<TileId, Fixed> {
     let Some(unit) = world.units.get(unit_id) else {
         return BTreeMap::new();
     };
@@ -308,6 +324,9 @@ pub fn reachable_for_unit(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> BTre
 
             if best.get(&next).is_none_or(|c| *c > total) {
                 best.insert(next, total);
+                if let Some(parents) = parents.as_mut() {
+                    parents.insert(next, tile);
+                }
                 if can_continue {
                     frontier.push((total, next));
                 }
@@ -342,7 +361,7 @@ pub fn can_traverse(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: T
         return false;
     }
     if let Some(owner) = world.grid.owner[to.0 as usize] {
-        if !may_enter_territory(world, unit.owner, owner) {
+        if !may_unit_enter_territory(world, r, unit, owner) {
             return false;
         }
     }
@@ -411,6 +430,7 @@ pub fn expel(world: &mut World, r: &Ruleset, visitor: CivId, host: CivId) {
         .units
         .iter()
         .filter(|(_, u)| u.owner == visitor && world.grid.owner[u.position.0 as usize] == Some(host))
+        .filter(|(_, u)| !may_unit_enter_territory(world, r, u, host))
         .map(|(id, _)| id)
         .collect();
     for id in inside {
@@ -418,7 +438,7 @@ pub fn expel(world: &mut World, r: &Ruleset, visitor: CivId, host: CivId) {
         let fits = |t: TileId| {
             is_passable(&world.grid, r, t)
                 && world.grid.is_water(r, t) == unit.is_water_unit(r)
-                && world.grid.owner[t.0 as usize].is_none_or(|o| may_enter_territory(world, visitor, o))
+                && world.grid.owner[t.0 as usize].is_none_or(|o| may_unit_enter_territory(world, r, &unit, o))
                 && !is_tile_occupied_for(world, r, t, &unit)
         };
         let dest = (1..=30u32).find_map(|d| {
@@ -461,7 +481,7 @@ impl std::fmt::Display for MoveRejection {
 
 impl std::error::Error for MoveRejection {}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MoveEvent {
     pub unit: Id<Unit>,
     pub from: TileId,
@@ -471,6 +491,19 @@ pub struct MoveEvent {
 
 /// Move a unit, spending movement. Fails rather than half-moving.
 pub fn move_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>, to: TileId) -> Result<MoveEvent, MoveRejection> {
+    move_unit_with(world, r, unit_id, to, |_, _| {})
+}
+
+/// Follow a validated route, resolving tile-entry effects after each step.
+/// A callback that consumes movement (for example a ruins upgrade) can stop
+/// the route early; the returned event reports where the unit actually ended.
+pub fn move_unit_with(
+    world: &mut World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    to: TileId,
+    mut entered: impl FnMut(&mut World, MoveEvent),
+) -> Result<MoveEvent, MoveRejection> {
     let unit = world.units.get(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
     let (from, budget) = (unit.position, unit.movement_left);
     if from == to {
@@ -485,22 +518,43 @@ pub fn move_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>, to: TileId) 
 
     // Every rule of the map — roads, rivers, embarking, zones of control,
     // closed borders, one unit to a tile — not the terrain alone.
-    let cost = *reachable_for_unit(world, r, unit_id).get(&to).ok_or(MoveRejection::OutOfRange)?;
-
-    let unit = world.units.get_mut(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
-    let from_water = world.grid.is_water(r, from);
-    let to_water = world.grid.is_water(r, to);
-    let embark_transition = (!from_water && to_water) || (from_water && !to_water);
-    if !from_water && to_water {
-        unit.embarked = true;
-    } else if from_water && !to_water {
-        unit.embarked = false;
+    let mut parents = BTreeMap::new();
+    let reachable = search_for_unit(world, r, unit_id, Some(&mut parents));
+    if !reachable.contains_key(&to) {
+        return Err(MoveRejection::OutOfRange);
     }
-    let spent = if embark_transition && unit.is_land_unit(r) { budget } else { cost };
-    unit.position = to;
-    unit.movement_left = (budget - spent).max(Fixed::ZERO);
-    unit.fortified = false;
-    Ok(MoveEvent { unit: unit_id, from, to, spent })
+    let mut path = Vec::new();
+    let mut cursor = to;
+    while cursor != from {
+        path.push(cursor);
+        cursor = *parents.get(&cursor).ok_or(MoveRejection::OutOfRange)?;
+    }
+    let mut last = from;
+    let mut spent = Fixed::ZERO;
+    for next in path.into_iter().rev() {
+        let Some(unit) = world.units.get(unit_id) else { break };
+        if unit.movement_left <= Fixed::ZERO || unit.position != last {
+            break;
+        }
+        // Entry effects can spawn a unit or change territory after the route
+        // was found. Validate the next step against that updated world.
+        if !can_pass_through(world, r, next, unit) || (next == to && is_tile_occupied_for(world, r, next, unit)) {
+            break;
+        }
+        let Some(cost) = step_cost_for_unit(world, r, unit, last, next, unit.movement_left) else { break };
+        let cost = cost.min(unit.movement_left);
+        let embarked = unit.is_land_unit(r) && world.grid.is_water(r, next);
+        let unit = world.units.get_mut(unit_id).expect("unit checked above");
+        unit.position = next;
+        unit.embarked = embarked;
+        unit.movement_left -= cost;
+        unit.fortified = false;
+        spent += cost;
+        entered(world, MoveEvent { unit: unit_id, from: last, to: next, spent: cost });
+        last = next;
+    }
+    let ended = world.units.get(unit_id).map_or(last, |u| u.position);
+    Ok(MoveEvent { unit: unit_id, from, to: ended, spent })
 }
 
 /// Restore every unit's movement. Called when its owner's turn begins.

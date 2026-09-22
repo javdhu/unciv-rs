@@ -389,6 +389,32 @@ which is why Civ combat punishes attacking uphill so sharply. Wounded units hit
 softer, one percent per three points of health missing, which is what makes
 finishing a damaged unit worth a turn.
 
+## Exploration and religious units
+
+`world/ruins.rs` loads rewards from `Ruins.json`, including modded weights and
+availability conditions. Movement resolves every entered tile, so a ruin on the
+way to a destination is collected. Rewards update research, population pressure,
+unit upgrades and map knowledge; a revealed map does not grant live sight.
+
+`world/natural_wonders.rs` places wonders using terrain and spacing constraints,
+supports connected groups such as the reef, and records discovery once per civ
+and wonder. Discoveries grant happiness and ruleset bonuses. City output applies
+Spain's natural-wonder tile multiplier before city building percentages.
+
+Faith earns physical prophets. The first founds a religion and the second adds
+an Enhancer and another Follower belief. Missionaries carry their birth city's
+religion, use limited spread charges and suffer border attrition; inquisitors
+block rival spread, remove heresy and suppress or restore holy-city pressure.
+The AI buys and directs religious units through the normal plan/apply phases.
+Partly used prophets cannot also construct a Holy Site.
+
+The existing deterministic prophet-cost threshold is retained; this does not
+implement Unciv's probabilistic prophet-birth timing or global religion cap.
+The funded scenario in `tests/religion_turns.rs` verifies the whole path from
+stored faith to founding, enhancement, purchase and a missionary reaching a
+distant city. It checks reachability without depending on the economic AI
+earning enough faith in an ordinary short game.
+
 ## Randomness
 
 `rng.rs` — splitmix64, seeded explicitly from the state that produced the roll
@@ -405,12 +431,13 @@ integer whose meaning is fixed.
 
 ```
 ./tools/check_determinism.sh
-  native         0xc1414d0de7353015
-  wasm32         0xc1414d0de7353015
-  linux/arm64    0xc1414d0de7353015
-  linux/amd64    0xc1414d0de7353015
-OK: bit-identical across 4 targets
 ```
+
+The script compares macOS/native, wasm32, Linux ARM64 and Linux AMD64, and
+reports unavailable targets explicitly. The scenario embeds ruins, beliefs and
+unit promotions so exploration rewards and religious actions participate in
+the check. It also runs the funded two-city religion scenario described above;
+the ordinary short game is not enough to guarantee that religion is exercised.
 
 The scenario ends by playing a game: sixty turns of four civs and two
 city-states on a map generated from a fixed seed, folding in every civ's

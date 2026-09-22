@@ -35,7 +35,7 @@ with_limit() {
 }
 
 echo "native"
-native=$(cargo test --quiet --release the_scenario_actually_runs -- --nocapture 2>/dev/null | fingerprint_from)
+native=$(cargo test --quiet --release --lib the_scenario_actually_runs -- --nocapture 2>/dev/null | fingerprint_from)
 
 echo "wasm32"
 cargo build --quiet --release --target wasm32-unknown-unknown
@@ -59,7 +59,7 @@ if docker info >/dev/null 2>&1; then
       -v "$PWD/..:/work" -w /work/civ-core-rs \
       -e CARGO_TARGET_DIR="/tmp/target-${platform//\//-}" \
       rust:latest \
-      cargo test --release --quiet the_scenario_actually_runs -- --nocapture \
+      cargo test --release --quiet --lib the_scenario_actually_runs -- --nocapture \
       | fingerprint_from)
     if [ -n "$value" ]; then
       results+=("$platform $value")

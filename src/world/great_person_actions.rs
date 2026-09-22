@@ -206,7 +206,14 @@ pub fn can(world: &World, r: &Ruleset, unit: Id<Unit>, action: Action, s: Scalin
             }
         }
         Action::GoldenAge => {}
-        Action::Construct(imp) => can_place(world, r, civ, u.position, imp)?,
+        Action::Construct(imp) => {
+            if u.has_unique(r, UniqueType::MayFoundReligion)
+                && u.religious_uses_left != crate::world::religious_units::initial_uses(r, u)
+            {
+                return Err(ActionRejection::NotAble);
+            }
+            can_place(world, r, civ, u.position, imp)?;
+        }
     }
     Ok(())
 }

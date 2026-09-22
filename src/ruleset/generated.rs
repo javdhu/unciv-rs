@@ -634,6 +634,8 @@ pub struct RuinReward {
     pub color: Option<String>,
     /// 4/22 objects carry this.
     pub excluded_difficulties: Vec<String>,
+    /// 0/22 objects carry this. Defaults to one when selecting rewards.
+    pub weight: Option<i32>,
 }
 
 /// From `CityStateTypes.json` — 10 objects across both shipped rulesets.
@@ -1234,6 +1236,7 @@ impl RuinReward {
                 .unwrap_or_default(),
             color: j.get("color").and_then(|v| v.as_str().map(String::from)),
             excluded_difficulties: j.get("excludedDifficulties").map(|v| v.strings()).unwrap_or_default(),
+            weight: j.get("weight").and_then(|v| v.as_i32()),
         })
     }
 }

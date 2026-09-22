@@ -89,6 +89,14 @@ impl Visibility {
         }
     }
 
+    /// Learn the map without gaining live sight of its units or ownership.
+    pub fn explore(&mut self, civ: CivId, tile: TileId) {
+        let (w, m) = self.at(civ, tile);
+        if let Some(x) = self.explored.get_mut(w) {
+            *x |= m;
+        }
+    }
+
     /// Clear the live mask for one civ. Called at the start of recomputing
     /// sight; exploration is untouched, because it is permanent.
     pub fn clear_visible(&mut self, civ: CivId) {

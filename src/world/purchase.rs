@@ -43,6 +43,8 @@ pub enum PurchaseRejection {
     Puppet,
     /// Nothing is bought in a city still resisting its conqueror.
     InResistance,
+    /// A purchased civilian needs a free civilian slot in its birth city.
+    TileOccupied,
     NotEnough {
         cost: i64,
         has: i64,
@@ -57,6 +59,7 @@ impl std::fmt::Display for PurchaseRejection {
             PurchaseRejection::NotForSale => write!(f, "cannot be bought with that"),
             PurchaseRejection::Puppet => write!(f, "a puppet does its own buying"),
             PurchaseRejection::InResistance => write!(f, "the city is resisting"),
+            PurchaseRejection::TileOccupied => write!(f, "the city already holds a civilian unit"),
             PurchaseRejection::NotEnough { cost, has } => write!(f, "costs {cost}, has {has}"),
         }
     }
@@ -326,7 +329,62 @@ pub fn can_purchase(
     if c.resistance > 0 {
         return Err(PurchaseRejection::InResistance);
     }
-    can_construct(r, civ, c, what).map_err(PurchaseRejection::Cannot)?;
+    // Religious units are intentionally unbuildable, so they have no
+    // production cost. Their faith-purchase unique supplies eligibility and
+    // price; all other restrictions still apply.
+    let religious = match what {
+        Construction::Unit(id) => r
+            .units
+            .get(id)
+            .is_some_and(|b| b.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::ReligiousUnit))),
+        Construction::Building(_) => false,
+    };
+    match can_construct(r, civ, c, what) {
+        Err(Rejection::NotProducible) if religious && stat == Stat::Faith => {
+            let Construction::Unit(id) = what else { unreachable!() };
+            let base = r.units.get(id).ok_or(PurchaseRejection::Cannot(Rejection::Unknown))?;
+            if r.unit_types.by_name(&base.unit_type).is_some_and(|t| t.movement_type == "Water") && !c.coastal {
+                return Err(PurchaseRejection::Cannot(Rejection::NotCoastal));
+            }
+            for unique in base.uniques.iter().filter(|u| u.unique_type() == Some(UniqueType::RequiresPopulation)) {
+                let needed = unique.params.first().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+                if c.population < needed {
+                    return Err(PurchaseRejection::Cannot(Rejection::NeedsPopulation(needed)));
+                }
+            }
+            if let Some(tech) = &base.required_tech {
+                if !r.technologies.id(tech).is_some_and(|id| civ.has_tech(id)) {
+                    return Err(PurchaseRejection::Cannot(Rejection::NotUnlocked(tech.clone())));
+                }
+            }
+            if let Some(nation) = &base.unique_to {
+                if r.nations.name_of(civ.nation) != Some(nation.as_str()) {
+                    return Err(PurchaseRejection::Cannot(Rejection::UniqueToAnother(nation.clone())));
+                }
+            }
+        }
+        result => result.map_err(PurchaseRejection::Cannot)?,
+    }
+    if religious {
+        let Construction::Unit(id) = what else { unreachable!() };
+        let base = r.units.get(id).ok_or(PurchaseRejection::Cannot(Rejection::Unknown))?;
+        let ctx = GameContext::new(r).with_world(world).for_civ(c.owner).in_city(city).on_tile(c.centre);
+        if base
+            .uniques
+            .iter()
+            .any(|u| u.unique_type() == Some(UniqueType::OnlyAvailable) && applies(u, &ctx) != Verdict::True)
+        {
+            return Err(PurchaseRejection::NotForSale);
+        }
+        let mut unit = Unit::new(id, c.owner, c.centre, base.movement);
+        crate::world::religious_units::initialize_unit(world, r, &mut unit, Some(city));
+        if unit.religion.is_none() && !unit.has_unique(r, UniqueType::MayFoundReligion) {
+            return Err(PurchaseRejection::NotForSale);
+        }
+        if crate::world::movement::is_tile_occupied_for(world, r, c.centre, &unit) {
+            return Err(PurchaseRejection::TileOccupied);
+        }
+    }
     let cost = self::cost(world, r, city, what, stat, m).ok_or(PurchaseRejection::NotForSale)?;
     let has = reserve(world, c.owner, stat);
     if cost > 0 && has < cost {
@@ -376,7 +434,14 @@ pub fn purchase(
     };
     if let Construction::Unit(base) = what {
         let movement = r.units.get(base).map_or(2, |u| u.movement);
-        world.place_unit(Unit::new(base, owner, centre, movement));
+        let mut unit = Unit::new(base, owner, centre, movement);
+        crate::world::religious_units::initialize_unit(world, r, &mut unit, Some(city));
+        if unit.has_unique(r, UniqueType::ReligiousUnit)
+            && !unit.has_unique(r, UniqueType::CanMoveImmediatelyOnceBought)
+        {
+            unit.movement_left = Fixed::ZERO;
+        }
+        world.place_unit(unit);
     }
     let name = item_name(r, what).to_string();
     if let Some(c) = world.civ_mut(owner) {

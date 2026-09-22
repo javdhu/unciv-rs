@@ -335,7 +335,80 @@ pub fn city_yield(grid: &TileGrid, r: &Ruleset, city: &City) -> Stats {
 /// a fifth more production and culture, added to its other percentages
 /// (`CityStats.getStatPercentBonusesFromGoldenAge`).
 pub fn city_yield_with(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
+    finish_city_yield(grid, r, city, golden_age, Stats::ZERO)
+}
+
+/// City output with its owner's tile-yield modifiers, including Spain's
+/// natural-wonder bonus. Tile percentages precede building percentages.
+pub fn city_yield_in(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
+    let bonus = tile_percentage_bonus(world, r, city, golden_age);
+    finish_city_yield(&world.grid, r, city, golden_age, bonus)
+}
+
+fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
+    use crate::world::conditionals::{applies, tile_matches_in, GameContext, Verdict};
+    let Some(civ) = world.civ(city.owner) else { return Stats::ZERO };
+    let modifiers: Vec<_> = city
+        .uniques
+        .matching(UniqueType::AllStatsPercentFromObject)
+        .chain(civ.uniques.matching(UniqueType::AllStatsPercentFromObject))
+        .collect();
+    if modifiers.is_empty() {
+        return Stats::ZERO;
+    }
+    let grid = &world.grid;
+    let mut context = GameContext::new(r).with_world(world).for_civ(city.owner);
+    context.city =
+        world.cities.iter().find(|(_, c)| c.centre == city.centre && c.owner == city.owner).map(|(id, _)| id);
+    let mut bonus = Stats::ZERO;
+    for tile in std::iter::once(city.centre).chain(city.worked.iter().copied()) {
+        let ctx = context.on_tile(tile);
+        let percent: Fixed = modifiers
+            .iter()
+            .filter_map(|u| {
+                let filter = u.params.get(1)?;
+                (applies(u, &ctx) == Verdict::True
+                    && tile_matches_in(grid, r, tile, filter, Some(city.owner)) == Verdict::True)
+                    .then(|| u.params.first().and_then(|p| Fixed::parse(p)))
+                    .flatten()
+            })
+            .sum();
+        if percent.is_zero() {
+            continue;
+        }
+        // Tile percentages do not multiply the improvement's own output;
+        // Kotlin keeps terrain, improvement and road percentage categories.
+        let mut affected: Stats = crate::world::yields::tile_yield_breakdown(grid, r, tile)
+            .into_iter()
+            .filter(|(source, _)| source.kind != SourceKind::Improvement)
+            .map(|(_, stats)| stats)
+            .sum();
+        if tile == city.centre {
+            if let Some(gap) = crate::world::yields::missing_from_minimum(
+                tile_yield(grid, r, tile),
+                crate::world::yields::CITY_CENTRE_MINIMUM,
+            ) {
+                affected += gap;
+            }
+        }
+        for u in city.uniques.matching(UniqueType::StatsFromTiles) {
+            if u.params.get(1).is_some_and(|f| tile_matches_in(grid, r, tile, f, Some(city.owner)) == Verdict::True) {
+                affected += u.params.first().and_then(|p| Stats::parse(p)).unwrap_or_default();
+            }
+        }
+        if golden_age && crate::world::golden_age::gains_gold(r, grid, tile) {
+            affected.gold += Fixed::ONE;
+        }
+        for stat in Stat::ALL {
+            bonus[stat] += (affected[stat] * percent).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO);
+        }
+    }
+    bonus
+}
+
+fn finish_city_yield(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool, tile_bonus: Stats) -> Stats {
     let mut base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
+    base += tile_bonus;
     let mut bonuses = city_percent_bonuses(r, city);
     if golden_age {
         let tiles = std::iter::once(city.centre).chain(city.worked.iter().copied());

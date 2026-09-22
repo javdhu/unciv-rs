@@ -42,6 +42,8 @@ pub struct Faith {
     pub prophets_earned: i32,
     /// A religion exists once a prophet has founded one.
     pub founded: bool,
+    /// An enhancer and a second follower belief have been selected.
+    pub enhanced: bool,
 }
 
 impl Faith {
@@ -77,11 +79,11 @@ pub fn available_beliefs(world: &World, r: &Ruleset, kind: &str) -> Vec<Id<Belie
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FaithEvent {
     PantheonFounded { belief: Id<Belief> },
-    ReligionFounded { beliefs: Vec<Id<Belief>> },
+    ProphetBorn { unit: Id<crate::world::entities::Unit> },
     Stored { faith: i32 },
 }
 
-/// Spend a turn's faith: a pantheon first, then a religion when one is due.
+/// Spend a turn's faith: a pantheon first, then a physical great prophet.
 ///
 /// Returns what happened so the caller can record it; the civ's unique index
 /// is rebuilt by the caller, since beliefs are uniques and have to reach it to
@@ -108,27 +110,23 @@ pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, s
         return FaithEvent::Stored { faith: stored };
     }
 
-    // Then a prophet, who founds a religion with a founder and a follower
-    // belief. Later prophets would enhance it; that is not modelled yet.
-    let founded = world.civ(civ_id).is_some_and(|c| c.faith.founded);
-    if !founded {
-        let earned = world.civ(civ_id).map_or(0, |c| c.faith.prophets_earned);
-        let cost = prophet_cost(earned, speed);
+    // Earning a prophet and using it are separate events. Do not spend more
+    // faith while an unused prophet is already waiting on the map.
+    let Some(civ) = world.civ(civ_id) else { return FaithEvent::Stored { faith: stored } };
+    if civ.is_major()
+        && !civ.units.iter().filter_map(|id| world.units.get(*id)).any(|unit| {
+            unit.has_unique(r, crate::UniqueType::MayFoundReligion)
+                && unit.religious_uses_left == crate::world::religious_units::initial_uses(r, unit)
+        })
+    {
+        let cost = prophet_cost(civ.faith.prophets_earned, speed);
         if stored >= cost {
-            let mut chosen: Vec<Id<Belief>> = Vec::new();
-            for kind in ["Founder", "Follower"] {
-                if let Some(b) = available_beliefs(world, r, kind).into_iter().min() {
-                    chosen.push(b);
+            if let Some(unit) = crate::world::religious_units::spawn_prophet(world, r, civ_id) {
+                if let Some(civ) = world.civ_mut(civ_id) {
+                    civ.faith.stored -= cost;
+                    civ.faith.prophets_earned += 1;
                 }
-            }
-            if !chosen.is_empty() {
-                if let Some(c) = world.civ_mut(civ_id) {
-                    c.faith.stored -= cost;
-                    c.faith.prophets_earned += 1;
-                    c.faith.founded = true;
-                    c.faith.beliefs.extend(chosen.iter().copied());
-                }
-                return FaithEvent::ReligionFounded { beliefs: chosen };
+                return FaithEvent::ProphetBorn { unit };
             }
         }
     }
@@ -177,6 +175,8 @@ pub struct CityFaith {
     /// The city a religion was founded in pushes harder and cannot be
     /// converted away by ordinary pressure.
     pub holy_city_of: Option<CivId>,
+    /// An inquisitor can suppress a conquered holy city until it is restored.
+    pub holy_city_blocked: bool,
 }
 
 impl Default for CityFaith {
@@ -185,6 +185,7 @@ impl Default for CityFaith {
             pressure: std::collections::BTreeMap::from([(None, ATHEIST_PRESSURE)]),
             followers: std::collections::BTreeMap::new(),
             holy_city_of: None,
+            holy_city_blocked: false,
         }
     }
 }
@@ -397,8 +398,10 @@ pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Con
 
     for &id in &ids {
         let Some(city) = world.cities.get(id) else { continue };
-        if let Some(holy) = city.faith.holy_city_of {
-            pushes.push((id, Some(holy), HOLY_CITY_MULTIPLIER * pressure_per_city));
+        if !city.faith.holy_city_blocked {
+            if let Some(holy) = city.faith.holy_city_of {
+                pushes.push((id, Some(holy), HOLY_CITY_MULTIPLIER * pressure_per_city));
+            }
         }
         let Some(majority) = city.faith.majority(city.population) else { continue };
         let range = spread_range(world, r, city);
@@ -491,9 +494,19 @@ mod tests {
         assert!(matches!(e, FaithEvent::PantheonFounded { .. }), "{e:?}");
         assert!(w.civ(CivId(0)).unwrap().faith.has_pantheon());
 
-        // A religion needs far more.
+        // Faith earns a physical prophet. Founding is its map action.
+        let tile = w.grid.id_at(3, 3).unwrap();
+        w.found_city_in(&r, crate::world::city::City::found("Home", CivId(0), tile));
         let e = apply_faith(&mut w, &r, CivId(0), 250, Fixed::ONE);
-        assert!(matches!(e, FaithEvent::ReligionFounded { .. }), "{e:?}");
+        let FaithEvent::ProphetBorn { unit } = e else { panic!("{e:?}") };
+        assert!(!w.civ(CivId(0)).unwrap().faith.founded);
+        crate::world::religious_units::perform(
+            &mut w,
+            &r,
+            unit,
+            crate::world::religious_units::ReligiousAction::FoundReligion,
+        )
+        .unwrap();
         let faith = &w.civ(CivId(0)).unwrap().faith;
         assert!(faith.founded);
         assert_eq!(faith.prophets_earned, 1);

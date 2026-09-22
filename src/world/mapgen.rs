@@ -212,6 +212,8 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
     place_features(r, &mut grid, &p, &elevation);
     place_resources(r, &mut grid, &p);
     let starts = choose_starts(r, &grid, &p, civs);
+    crate::world::natural_wonders::place(r, &mut grid, p.seed, &starts);
+    crate::world::ruins::place(r, &mut grid, p.seed, &starts);
     place_camps(r, &mut grid, &p, &starts);
     GeneratedMap { grid, starts }
 }
@@ -353,7 +355,7 @@ fn place_camps(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, starts: &[Ti
     let clearance = 6;
     for tile in grid.ids().collect::<Vec<_>>() {
         let i = tile.0 as usize;
-        if grid.improvement[i].is_some() || grid.owner[i].is_some() {
+        if grid.improvement[i].is_some() || grid.owner[i].is_some() || grid.natural_wonder[i].is_some() {
             continue;
         }
         let Some(t) = r.terrains.get(grid.terrain[i]) else { continue };

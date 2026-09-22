@@ -27,7 +27,7 @@ use crate::ruleset::Technology;
 use crate::stats::{Fixed, Stats};
 use crate::world::ai::UnitOrder;
 use crate::world::assignment::{assign_idle_citizens, CityFocus};
-use crate::world::city::{apply_food, city_yield, food_surplus, City, GrowthEvent, GrowthModifiers};
+use crate::world::city::{apply_food, City, GrowthEvent, GrowthModifiers};
 use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::world::construction::{apply_production, Construction, ConstructionEvent, CostModifiers};
 use crate::world::entities::Unit;
@@ -54,6 +54,8 @@ pub struct TurnPlan {
     pub border_culture: Vec<(Id<City>, i32)>,
     /// What to buy outright with gold, city by city.
     pub purchases: Vec<(Id<City>, Construction)>,
+    /// One religious unit to buy with the civilization's faith.
+    pub faith_purchase: Option<(Id<City>, Construction)>,
     /// Science the civ will bank, summed across its cities.
     pub science: i32,
     /// Faith the civ will bank, toward a pantheon and then a religion.
@@ -149,6 +151,35 @@ pub enum TurnEvent {
     PeaceMade {
         a: CivId,
         b: CivId,
+    },
+    /// A unit cleared ancient ruins and was rewarded.
+    RuinsExplored {
+        civ: CivId,
+        tile: TileId,
+        reward: Id<crate::ruleset::RuinReward>,
+    },
+    /// The site was cleared but this ruleset had no applicable reward.
+    RuinsCleared {
+        civ: CivId,
+        tile: TileId,
+    },
+    UnitMoved(crate::world::movement::MoveEvent),
+    NaturalWonderDiscovered(crate::world::natural_wonders::Discovery),
+    ReligiousUnitActed {
+        civ: CivId,
+        event: crate::world::religious_units::ReligiousEvent,
+    },
+    ReligionEnhanced {
+        civ: CivId,
+    },
+    ProphetBorn {
+        civ: CivId,
+        unit: Id<Unit>,
+    },
+    FaithPurchased {
+        city: Id<City>,
+        what: Construction,
+        faith: i64,
     },
     /// A great person was spent.
     GreatPersonActed {
@@ -387,6 +418,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         production: Vec::new(),
         border_culture: Vec::new(),
         purchases: Vec::new(),
+        faith_purchase: None,
         science: 0,
         faith: 0,
         culture: 0,
@@ -438,15 +470,20 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     plan.trades = crate::world::ai::choose_trades(world, r, civ);
     plan.answers = crate::world::ai::answer_demands(world, r, civ);
     plan.demands = crate::world::ai::choose_demands(world, r, civ);
+    plan.faith_purchase = crate::world::religious_units::choose_purchase(world, r, civ, costs);
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
         let scaling = crate::world::great_person_actions::Scaling { costs, science };
-        let order = crate::world::ai::settler_order(world, r, civ, *unit)
-            .or_else(|| crate::world::ai::great_person_order(world, r, civ, *unit, scaling))
-            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit, &worker_jobs))
-            .or_else(|| crate::world::ai::military_order(world, r, civ, *unit))
-            .or_else(|| crate::world::ai::explore_order(world, r, civ, *unit));
+        let order = if world.units.get(*unit).is_some_and(|u| u.has_unique(r, UniqueType::ReligiousUnit)) {
+            crate::world::religious_units::plan_action(world, r, civ, *unit)
+        } else {
+            crate::world::ai::settler_order(world, r, civ, *unit)
+                .or_else(|| crate::world::ai::great_person_order(world, r, civ, *unit, scaling))
+                .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit, &worker_jobs))
+                .or_else(|| crate::world::ai::military_order(world, r, civ, *unit))
+                .or_else(|| crate::world::ai::explore_order(world, r, civ, *unit))
+        };
         if let Some(order) = order {
             plan.orders.push((*unit, order));
         }
@@ -469,10 +506,10 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         let focus = if city.puppet { CityFocus::Single(crate::stats::Stat::Gold) } else { focus };
         crate::world::assignment::release_extra_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         assign_idle_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
-        let surplus = food_surplus(&world.grid, r, &hypothetical);
         let golden = crate::world::golden_age::is_golden(world, civ);
-        let mut output =
-            crate::world::city::city_yield_with(&world.grid, r, &hypothetical, golden) + trade_gold(city_id);
+        let base_output = crate::world::city::city_yield_in(world, r, &hypothetical, golden);
+        let surplus = base_output.food.round() as i32 - crate::world::city::food_consumed(&hypothetical);
+        let mut output = base_output + trade_gold(city_id);
         for _ in 0..crate::world::specialists::count(&hypothetical) {
             output += bonus;
         }
@@ -511,7 +548,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
                 .iter()
                 .filter_map(|id| world.cities.get(*id))
                 .map(|city| {
-                    city_yield(&world.grid, r, city).gold.round() as i32 - crate::world::city::city_maintenance(r, city)
+                    crate::world::city::city_yield_in(world, r, city, golden).gold.round() as i32
+                        - crate::world::city::city_maintenance(r, city)
                 })
                 .sum::<i32>()
                 + c.cities.iter().map(|id| trade_gold(*id).gold.round() as i32).sum::<i32>()
@@ -546,6 +584,13 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     plan.faith += owed.faith.round() as i32;
     plan.gold += owed.gold.round() as i32;
     plan.happiness += owed.happiness.round() as i32;
+    // Wonder happiness is already included by happiness(). Other per-wonder
+    // reserves reach the empire here once, like other flat income.
+    let wonders = crate::world::natural_wonders::known_stats(world, r, civ);
+    plan.science += wonders.science.round() as i32;
+    plan.culture += wonders.culture.round() as i32;
+    plan.faith += wonders.faith.round() as i32;
+    plan.gold += wonders.gold.round() as i32;
 
     // Roads and soldiers are charged to the empire, not to a city — a road
     // between two cities belongs to neither, and an army belongs to none.
@@ -640,6 +685,63 @@ fn still_ours(world: &World, plan: &TurnPlan, city: Id<City>) -> bool {
     world.cities.get(city).is_some_and(|c| c.owner == plan.civ)
 }
 
+fn religious_events(
+    civ: CivId,
+    input: impl IntoIterator<Item = crate::world::religious_units::ReligiousEvent>,
+) -> Vec<TurnEvent> {
+    use crate::world::religious_units::ReligiousEvent as R;
+    let mut events = Vec::new();
+    for event in input {
+        match &event {
+            R::Founded { .. } => events.push(TurnEvent::ReligionFounded { civ }),
+            R::Enhanced { .. } => events.push(TurnEvent::ReligionEnhanced { civ }),
+            R::Spread { city, from, to: Some(to), .. } | R::HeresyRemoved { city, from, to: Some(to), .. }
+                if *from != Some(*to) =>
+            {
+                events.push(TurnEvent::CityConverted { city: *city, from: *from, to: *to });
+            }
+            _ => {}
+        }
+        events.push(TurnEvent::ReligiousUnitActed { civ, event });
+    }
+    events
+}
+
+fn explore_on_entry(
+    world: &mut World,
+    r: &Ruleset,
+    unit: Id<Unit>,
+    mods: TurnModifiers,
+    wonder_sites: &[(TileId, Id<crate::ruleset::Terrain>)],
+    events: &mut Vec<TurnEvent>,
+) {
+    let Some(u) = world.units.get(unit) else { return };
+    let (civ, tile) = (u.owner, u.position);
+    let had_ruins = world.grid.improvement[tile.0 as usize].is_some_and(|i| crate::world::ruins::is_ruins(r, i));
+    for seen in world.grid.within(tile, 2) {
+        world.visibility.observe(civ, seen);
+    }
+    let setting = crate::world::ruins::Setting {
+        difficulty: mods.difficulty,
+        speed: mods.costs.speed,
+        faith_cost: mods.costs.faith_cost,
+        gold_cost: mods.costs.gold_cost,
+        culture_cost: mods.policies.speed,
+        science_cost: mods.science.speed,
+    };
+    if let Some(f) = crate::world::ruins::on_enter(world, r, unit, setting) {
+        crate::world::policies::rebuild_uniques(world, r, civ);
+        events.push(TurnEvent::RuinsExplored { civ: f.civ, tile: f.tile, reward: f.reward });
+    } else if had_ruins && world.grid.improvement[tile.0 as usize].is_none() {
+        events.push(TurnEvent::RuinsCleared { civ, tile });
+    }
+    events.extend(
+        crate::world::natural_wonders::discover_at(world, r, wonder_sites)
+            .into_iter()
+            .map(TurnEvent::NaturalWonderDiscovered),
+    );
+}
+
 pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnModifiers) -> Vec<TurnEvent> {
     let TurnModifiers { growth: m, costs, science, policies, difficulty } = mods;
     let mut events = Vec::new();
@@ -720,10 +822,20 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
 
     // Orders first: a settler that founds this turn should be counted as a
     // city for everything that follows.
+    // Wonder locations stay fixed while these orders run. Find them once,
+    // rather than scanning every map tile after every movement step.
+    let wonder_sites = crate::world::natural_wonders::sites(&world.grid);
     for (unit, order) in &plan.orders {
+        // A unit captured by an earlier plan must not obey its former owner.
+        if world.units.get(*unit).is_none_or(|u| u.owner != plan.civ) {
+            continue;
+        }
         match order {
             UnitOrder::MoveTo(tile) => {
-                let _ = crate::world::movement::move_unit(world, r, *unit, *tile);
+                let _ = crate::world::movement::move_unit_with(world, r, *unit, *tile, |world, moved| {
+                    events.push(TurnEvent::UnitMoved(moved));
+                    explore_on_entry(world, r, *unit, mods, &wonder_sites, &mut events);
+                });
             }
             UnitOrder::Attack(target) => {
                 if let Ok(result) = crate::world::combat::resolve_attack(world, r, *unit, *target) {
@@ -765,6 +877,11 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
                     events.push(TurnEvent::GreatPersonActed { civ: plan.civ, outcome });
                 }
             }
+            UnitOrder::Religious(action) => {
+                if let Ok(event) = crate::world::religious_units::perform(world, r, *unit, *action) {
+                    events.extend(religious_events(plan.civ, [event]));
+                }
+            }
             UnitOrder::FoundCity => {
                 let name = format!("City {}", world.cities.len() + 1);
                 if let Ok(city) = crate::world::settling::found_city_with(world, r, *unit, name) {
@@ -784,7 +901,7 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
     }
     if let Some(tech) = plan.research {
         if let Some(civ) = world.civ_mut(plan.civ) {
-            if civ.researching.is_none() {
+            if civ.researching.is_none() && crate::world::research::can_research(r, civ, tech).is_ok() {
                 civ.researching = Some(tech);
             }
         }
@@ -916,6 +1033,14 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             events.push(TurnEvent::Purchased { city: *city_id, what: *what, gold: cost });
         }
     }
+    if let Some((city, what)) = plan.faith_purchase {
+        if still_ours(world, plan, city) {
+            if let Ok(faith) = crate::world::purchase::purchase(world, r, city, what, crate::stats::Stat::Faith, costs)
+            {
+                events.push(TurnEvent::FaithPurchased { city, what, faith });
+            }
+        }
+    }
 
     // Debt has to bite, or gold is a number that only falls. This is the one
     // place the army shrinks without a battle.
@@ -931,39 +1056,20 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         None => {}
     }
 
-    // Faith buys a pantheon, then a religion. Beliefs are uniques, so the
-    // index has to be rebuilt or they do nothing.
-    if plan.faith > 0 {
-        let event = crate::world::religion::apply_faith(world, r, plan.civ, plan.faith, m.speed);
-        match event {
-            crate::world::religion::FaithEvent::PantheonFounded { belief } => {
-                crate::world::policies::rebuild_uniques(world, r, plan.civ);
-                events.push(TurnEvent::PantheonFounded { civ: plan.civ, belief });
-            }
-            crate::world::religion::FaithEvent::ReligionFounded { .. } => {
-                crate::world::policies::rebuild_uniques(world, r, plan.civ);
-                // A religion is founded *somewhere*, and that city becomes its
-                // holy city: it pushes five times as hard and converts to the
-                // new faith outright. Without this a religion is founded and
-                // has not one follower anywhere.
-                if let Some(home) = crate::world::connections::capital_of(world, r, plan.civ)
-                    .or_else(|| world.civ(plan.civ).and_then(|c| c.cities.first().copied()))
-                {
-                    if let Some(city) = world.cities.get_mut(home) {
-                        city.faith.holy_city_of = Some(plan.civ);
-                        let pop = city.population;
-                        city.faith.add_pressure(
-                            Some(plan.civ),
-                            crate::world::religion::PRESSURE_PER_CITIZEN * pop.max(1) as i32,
-                        );
-                        city.faith.recount(pop);
-                    }
-                }
-                events.push(TurnEvent::ReligionFounded { civ: plan.civ });
-            }
-            crate::world::religion::FaithEvent::Stored { .. } => {}
+    // Bank even zero-income turns: ruins and gifts can already have supplied
+    // enough faith for a pantheon or a physical prophet.
+    let event = crate::world::religion::apply_faith(world, r, plan.civ, plan.faith, costs.faith_cost);
+    match event {
+        crate::world::religion::FaithEvent::PantheonFounded { belief } => {
+            crate::world::policies::rebuild_uniques(world, r, plan.civ);
+            events.push(TurnEvent::PantheonFounded { civ: plan.civ, belief });
         }
+        crate::world::religion::FaithEvent::ProphetBorn { unit } => {
+            events.push(TurnEvent::ProphetBorn { civ: plan.civ, unit });
+        }
+        crate::world::religion::FaithEvent::Stored { .. } => {}
     }
+    events.extend(religious_events(plan.civ, crate::world::religious_units::end_turn(world, r, plan.civ)));
 
     // Great people gather from wonders and specialists.
     let gained = crate::world::great_people::points_per_turn(world, r, plan.civ);
@@ -1223,6 +1329,9 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     // Units get their movement back for the turn that is starting.
     crate::world::movement::refresh_movement(world, r);
     update_visibility(world);
+    events.extend(
+        crate::world::natural_wonders::discover_visible(world, r).into_iter().map(TurnEvent::NaturalWonderDiscovered),
+    );
     events.extend(detect_first_contact(world));
     crate::world::opinion::tick(world, mods.growth.speed);
     crate::world::tribute::tick(world);
@@ -1415,6 +1524,7 @@ mod tests {
                 production: Vec::new(),
                 border_culture: Vec::new(),
                 purchases: Vec::new(),
+                faith_purchase: None,
                 science: 0,
                 faith: 0,
                 culture: 0,
@@ -1537,6 +1647,9 @@ mod tests {
                     TurnEvent::QuestCompleted { .. } => completed += 1,
                     TurnEvent::GoldGifted { .. } => gifts += 1,
                     TurnEvent::CityStateRelationship { .. } => ranks += 1,
+                    TurnEvent::RuinsExplored { civ, reward, .. } => {
+                        println!("PROBE t{} {:?} {}", w.turn, civ, r.ruin_rewards.get(reward).unwrap().name)
+                    }
                     _ => {}
                 }
             }
@@ -2169,6 +2282,7 @@ mod expansion {
                 production: Vec::new(),
                 border_culture: Vec::new(),
                 purchases: Vec::new(),
+                faith_purchase: None,
                 science: 0,
                 faith: 0,
                 culture: 0,
