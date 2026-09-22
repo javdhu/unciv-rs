@@ -522,6 +522,10 @@ pub struct Speed {
     pub start_year: i32,
     /// 8/8 objects carry this.
     pub turns: Vec<Todo>,
+    /// Last `untilTurn` in the `turns` array (Speed.kt numTotalTurns). The array is nested structure, so schema inference reads it as opaque.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub total_turns: i32,
 }
 
 /// From `Specialists.json` — 8 objects across both shipped rulesets.
@@ -1055,6 +1059,7 @@ impl Speed {
             science_cost_modifier: j.get("scienceCostModifier").and_then(|v| v.as_fixed()).unwrap_or_default(),
             start_year: j.get("startYear").and_then(|v| v.as_i32()).unwrap_or_default(),
             turns: Default::default(),
+            total_turns: Default::default(), // set by ruleset/load.rs
         })
     }
 }

@@ -618,13 +618,69 @@ pub fn road_plan(world: &World, r: &Ruleset, civ: CivId) -> Vec<TileId> {
                     world.grid.unpillaged_road(*t) == RoadLevel::None && !joined.contains(t)
                 })
                 .collect();
-            if !missing.is_empty() {
-                links.push((missing.len(), missing));
+            if missing.is_empty() {
+                continue;
             }
+            // Would the route pay for itself? A road earns the trade route
+            // once and costs its upkeep every turn, and only the stretch
+            // inside our own borders is charged. Building regardless is how
+            // an empire ends up paying seventeen gold a turn for roads that
+            // earn it eight — which is what the long self-play did before
+            // this check existed.
+            if !link_pays(world, r, civ, &connections, *city_id, &missing) {
+                continue;
+            }
+            links.push((missing.len(), missing));
         }
     }
     links.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.first().cmp(&b.1.first())));
     links.into_iter().flat_map(|(_, tiles)| tiles).collect()
+}
+
+/// Is a proposed link worth its upkeep?
+///
+/// The route's gold is worked out as if the city were already connected —
+/// `trade_route_stats` refuses to price an unconnected city, so the formula is
+/// applied directly here rather than pretending the world is other than it is.
+fn link_pays(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    connections: &Connections,
+    city_id: Id<City>,
+    missing: &[TileId],
+) -> bool {
+    let Some(capital) = connections.capital().and_then(|c| world.cities.get(c)) else {
+        return false;
+    };
+    let Some(city) = world.cities.get(city_id) else { return false };
+    let worth = Fixed::permille(150).mul(Fixed::whole(capital.population as i32))
+        + Fixed::permille(1100).mul(Fixed::whole(city.population as i32))
+        - Fixed::whole(1);
+
+    // Only our own ground is charged, and a city we are about to grow into
+    // will claim more of it, so this is an underestimate on purpose — a road
+    // that is marginal today is usually worth it by the time it is finished.
+    let charged = missing
+        .iter()
+        .filter(|t| world.grid.owner[t.0 as usize] == Some(civ))
+        .count() as i32;
+    let Some(road) = r.improvements.by_name("Road") else { return false };
+    let per_tile: Fixed = road
+        .uniques
+        .iter()
+        .filter(|u| {
+            matches!(
+                u.unique_type(),
+                Some(crate::UniqueType::ImprovementMaintenance)
+                    | Some(crate::UniqueType::ImprovementAllMaintenance)
+            )
+        })
+        .filter(|u| u.params.get(1).and_then(|p| Stat::parse(p)) == Some(Stat::Gold))
+        .filter_map(|u| u.params.first().and_then(|p| Fixed::parse(p)))
+        .sum();
+
+    worth > per_tile.mul(Fixed::whole(charged))
 }
 
 /// Dijkstra from a city to the nearest tile of the network, where a tile that

@@ -57,6 +57,9 @@ DERIVED = {
                     "Position in Eras.json. Unciv assigns this at load (Ruleset.kt:425).")],
     "Policy":     [("branch", "Option<Id<PolicyBranch>>",
                     "The branch this policy belongs to (Ruleset.kt:468).")],
+    "Speed":      [("total_turns", "i32",
+                    "Last `untilTurn` in the `turns` array (Speed.kt numTotalTurns). "
+                    "The array is nested structure, so schema inference reads it as opaque.")],
     "Terrain":    [("damage_per_turn", "i32",
                     "Summed from DamagesContainingUnits uniques (Terrain.kt:212).")],
 }

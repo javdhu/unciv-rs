@@ -104,6 +104,9 @@ pub enum TurnEvent {
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
+    /// A soldier the treasury could not pay for. Not a battle loss — a
+    /// bookkeeping one, which is why it is a separate event.
+    UnitDisbanded { civ: CivId, unit: Id<crate::world::entities::Unit> },
     TurnEnded { turn: u32 },
 }
 
@@ -225,7 +228,10 @@ pub fn plan_civ_turn(
                 + c.cities.iter().map(|id| trade_gold(*id).gold.round() as i32).sum::<i32>()
                 - crate::world::connections::transportation_upkeep(world, r, civ)
                     .gold
-                    .round() as i32;
+                    .round() as i32
+                - crate::world::economy::unit_maintenance(
+                    world, r, civ, costs.game_length, difficulty,
+                );
             if let Some(what) =
                 crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants)
             {
@@ -241,9 +247,10 @@ pub fn plan_civ_turn(
         plan.faith += output.faith.round() as i32;
         plan.gold += output.gold.round() as i32 - upkeep;
     }
-    // Roads are charged to the empire, not to a city — a road between two
-    // cities belongs to neither.
+    // Roads and soldiers are charged to the empire, not to a city — a road
+    // between two cities belongs to neither, and an army belongs to none.
     plan.gold -= crate::world::connections::transportation_upkeep(world, r, civ).gold.round() as i32;
+    plan.gold -= crate::world::economy::unit_maintenance(world, r, civ, costs.game_length, difficulty);
     plan
 }
 
@@ -304,6 +311,7 @@ pub fn apply_plan(
     costs: CostModifiers,
     science: ScienceModifiers,
     policies: PolicyModifiers,
+    difficulty: Option<&crate::ruleset::Difficulty>,
 ) -> Vec<TurnEvent> {
     let mut events = Vec::new();
 
@@ -424,6 +432,18 @@ pub fn apply_plan(
     if let Some(civ) = world.civ_mut(plan.civ) {
         civ.gold += plan.gold;
         civ.culture_stored += plan.culture.max(0);
+    }
+    // Debt has to bite, or gold is a number that only falls. This is the one
+    // place the army shrinks without a battle.
+    for unit in crate::world::economy::disband_for_debt(
+        world,
+        r,
+        plan.civ,
+        costs.game_length,
+        difficulty,
+        plan.gold,
+    ) {
+        events.push(TurnEvent::UnitDisbanded { civ: plan.civ, unit });
     }
     events.push(TurnEvent::Happiness { civ: plan.civ, value: plan.happiness });
 
@@ -579,7 +599,7 @@ pub fn advance_turn(
     // Phase 2 — sequential, in id order, which is what makes it reproducible.
     let mut events = Vec::new();
     for plan in &plans {
-        events.extend(apply_plan(world, r, plan, m, costs, science, policies));
+        events.extend(apply_plan(world, r, plan, m, costs, science, policies, difficulty));
     }
 
     // Units get their movement back for the turn that is starting.
@@ -650,6 +670,12 @@ mod tests {
         }
         let ostia = w.found_city(City::found("Ostia", CivId(0), w.grid.id_at(13, 8).unwrap()));
         w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id("The Wheel").unwrap());
+        // Cities big enough for the route to be worth its upkeep. Two size-one
+        // towns four tiles apart genuinely are not — the road would cost four
+        // gold a turn and earn a quarter of one — and the worker is right to
+        // refuse. See `connections::link_pays`.
+        w.cities.get_mut(rome).unwrap().population = 8;
+        w.cities.get_mut(ostia).unwrap().population = 4;
 
         let worker = r
             .units
@@ -1139,6 +1165,7 @@ mod expansion {
             CostModifiers::default(),
             ScienceModifiers::default(),
             PolicyModifiers::default(),
+            None,
         );
 
         assert!(events.iter().any(|e| matches!(e, TurnEvent::CityCompleted { .. })));

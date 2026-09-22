@@ -60,11 +60,25 @@ pub struct CostModifiers {
     /// them — the mechanism Civ uses to keep them from being free wins for
     /// whoever expanded most.
     pub cities: usize,
+    /// How many turns a game at this speed runs for.
+    ///
+    /// Not a cost, but it comes from the same place — the game speed — and
+    /// unit upkeep needs it: Civ makes soldiers dearer as the game wears on,
+    /// as a fraction of the whole game elapsed. Carried here rather than as a
+    /// ninth argument threaded through every turn function.
+    pub game_length: i32,
 }
 
 impl Default for CostModifiers {
     fn default() -> Self {
-        CostModifiers { speed: Fixed::ONE, civ: Fixed::ONE, cities: 1 }
+        CostModifiers {
+            speed: Fixed::ONE,
+            civ: Fixed::ONE,
+            cities: 1,
+            // Standard speed, so a default-constructed game ages at the rate
+            // most of the ruleset was balanced for.
+            game_length: 500,
+        }
     }
 }
 

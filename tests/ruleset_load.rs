@@ -263,3 +263,18 @@ fn global_uniques_are_loaded() {
         "the happiness thresholds should be among them"
     );
 }
+
+/// The year table is nested structure, not a field, so schema inference reads
+/// it as opaque and the loader has to pick the number out by hand.
+#[test]
+fn a_speed_knows_how_long_its_game_runs() {
+    let r = load(GK);
+    let standard = r.speeds.by_name("Standard").expect("Standard exists");
+    assert_eq!(standard.total_turns, 500, "the last untilTurn in the year table");
+    let quick = r.speeds.by_name("Quick").expect("Quick exists");
+    assert!(quick.total_turns < standard.total_turns, "a quick game is shorter");
+    assert!(
+        r.speeds.values().all(|s| s.total_turns > 0),
+        "every speed needs a length, or unit upkeep divides by zero"
+    );
+}

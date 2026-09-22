@@ -109,7 +109,31 @@ impl Ruleset {
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),
                 "Eras.json" => flat(&mut r.eras, &doc, Era::from_json),
-                "Speeds.json" => flat(&mut r.speeds, &doc, Speed::from_json),
+                "Speeds.json" => {
+                    flat(&mut r.speeds, &doc, Speed::from_json);
+                    // How long a game at this speed runs. Unciv reads it as
+                    // the last `untilTurn` of the year table, which is nested
+                    // structure rather than a field, so it has to be picked
+                    // out here where the json is still in hand.
+                    for item in doc.as_array().unwrap_or_default() {
+                        let (Some(name), Some(turns)) =
+                            (item.get("name").and_then(|n| n.as_str()), item.get("turns"))
+                        else {
+                            continue;
+                        };
+                        let last = turns
+                            .as_array()
+                            .unwrap_or_default()
+                            .last()
+                            .and_then(|t| t.get("untilTurn"))
+                            .and_then(|t| t.as_i32());
+                        if let (Some(id), Some(last)) = (r.speeds.id(name), last) {
+                            if let Some(s) = r.speeds.get_mut(id) {
+                                s.total_turns = last;
+                            }
+                        }
+                    }
+                }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
                 "VictoryTypes.json" => flat(&mut r.victories, &doc, Victory::from_json),
                 "CityStateTypes.json" => flat(&mut r.city_state_types, &doc, CityStateType::from_json),

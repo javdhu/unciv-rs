@@ -457,6 +457,11 @@ fn scenario_modifiers(doc: &Json, r: &Ruleset) -> (CostModifiers, ScienceModifie
             speed: speed_prod,
             civ: d.map_or(Fixed::ONE, |d| d.building_cost_modifier),
             cities: doc.get("cities").and_then(|v| v.as_i32()).unwrap_or(1) as usize,
+            game_length: doc
+                .get("speed")
+                .and_then(|v| v.as_str())
+                .and_then(|name| r.speeds.by_name(name))
+                .map_or(500, |s| s.total_turns),
         },
         ScienceModifiers {
             difficulty: d.map_or(Fixed::ONE, |d| d.research_cost_modifier),

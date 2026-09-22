@@ -192,6 +192,39 @@ finished until something in the game actually reaches for it.
 
 ---
 
+## The treasury — unit upkeep, and what debt does — **done**
+
+Implemented in `src/world/economy.rs`. Not on the original list, and it should
+have been: it was found by running the game rather than by reading Unciv.
+
+Three hundred turns of self-play ended with every civ between −474 and −1425
+gold. Two things were missing and one was wrong.
+
+**Missing: unit upkeep.** Charged on a curve, not per soldier —
+`(0.5·units·(1+progress))^(1+progress/3)`, with the first three free. A flat
+price per unit makes a large empire's army free, because income scales with
+cities and the bill scales with units. The fractional power is computed as
+`2^(y·log2 x)` in fixed point, because `powf` differs between machines in the
+last bits and that is what makes a replay diverge.
+
+**Missing: any consequence for debt.** Gold could only fall. Civ disbands
+military units once the treasury is below −200 *and* income is still negative —
+both conditions, so reserves buy time and a balanced budget is left alone. If
+the whole army is worth less than the shortfall the whole army goes and the civ
+is still broke; that is not a bug, it means the money is going somewhere the
+army cannot fix.
+
+**Wrong: the road AI ignored what roads cost.** It connected every city it
+could reach. One civ was paying seventeen gold a turn for roads that earned it
+eight. A link is now built only if the route it opens is worth more than the
+upkeep of the tiles inside our own borders — which means two size-one towns
+four tiles apart correctly refuse to build one.
+
+With all three, the same self-play ends with a clear winner by Domination and
+the defeated civs solvent.
+
+---
+
 ## Victory — an event, not a flag
 
 **The decision.** Victory conditions are predicates over world state. Evaluate
