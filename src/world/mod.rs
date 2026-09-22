@@ -12,6 +12,7 @@ pub mod construction;
 pub mod filters;
 pub mod fog;
 pub mod happiness;
+pub mod improvements;
 pub mod grid;
 pub mod diplomacy;
 pub mod entities;

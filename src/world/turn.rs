@@ -84,6 +84,7 @@ pub enum TurnEvent {
     TechLearned { civ: CivId, tech: Id<Technology> },
     CivDefeated { civ: CivId },
     CityFounded { city: Id<City>, by: CivId },
+    TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
     /// Someone has met every milestone of a victory condition. Emitted once;
     /// what a caller does about it is not this layer's business.
     Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
@@ -125,8 +126,11 @@ pub fn plan_civ_turn(
     plan.policy = crate::world::ai::choose_policy(world, r, civ, policies);
 
     let want_settler = crate::world::ai::wants_settler(world, r, civ);
+    let want_worker = crate::world::ai::wants_worker(world, r, civ);
     for unit in &c.units {
-        if let Some(order) = crate::world::ai::settler_order(world, r, civ, *unit) {
+        let order = crate::world::ai::settler_order(world, r, civ, *unit)
+            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit));
+        if let Some(order) = order {
             plan.orders.push((*unit, order));
         }
     }
@@ -162,7 +166,7 @@ pub fn plan_civ_turn(
                 })
                 .sum::<i32>();
             if let Some(what) =
-                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, want_settler)
+                crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, want_settler, want_worker)
             {
                 plan.construction.push((city_id, what));
             }
@@ -244,6 +248,15 @@ pub fn apply_plan(
         match order {
             UnitOrder::MoveTo(tile) => {
                 let _ = crate::world::movement::move_unit(world, r, *unit, *tile);
+            }
+            UnitOrder::Improve(improvement) => {
+                if let Some(tile) = world.units.get(*unit).map(|u| u.position) {
+                    if let Ok(crate::world::improvements::WorkEvent::Finished { improvement, .. }) =
+                        crate::world::improvements::work_on(world, r, plan.civ, tile, *improvement)
+                    {
+                        events.push(TurnEvent::TileImproved { tile, improvement });
+                    }
+                }
             }
             UnitOrder::FoundCity => {
                 let name = format!("City {}", world.cities.len() + 1);
@@ -696,13 +709,14 @@ mod self_play {
             PolicyModifiers::default(),
         );
 
-        let (mut techs, mut builds, mut growths) = (0, 0, 0);
+        let (mut techs, mut builds, mut growths, mut improved) = (0, 0, 0, 0);
         for _ in 0..100 {
             for e in advance_turn(&mut w, &r, CityFocus::None, m, costs, science, prince, policies) {
                 match e {
                     TurnEvent::TechLearned { .. } => techs += 1,
                     TurnEvent::CityCompleted { .. } => builds += 1,
                     TurnEvent::CityGrew { .. } => growths += 1,
+                    TurnEvent::TileImproved { .. } => improved += 1,
                     _ => {}
                 }
             }
@@ -712,7 +726,7 @@ mod self_play {
         let city = w.cities.get(civ.cities[0]).unwrap();
         println!(
             "after 100 turns: {techs} techs, {builds} buildings, {growths} growths, \
-             {} cities, capital population {}, {} policies, {} gold",
+             {} cities, capital population {}, {} policies, {} gold, {improved} tiles improved",
             civ.cities.len(),
             city.population,
             civ.adopted_policies.len(),
@@ -730,6 +744,7 @@ mod self_play {
         // unit was silently discarded.
         assert!(civ.cities.len() > 1, "it should have expanded, got {}", civ.cities.len());
         assert!(civ.gold >= 0, "and stayed solvent, got {}", civ.gold);
+        assert!(improved > 0, "and improved its land, got {improved}");
     }
 
     /// Civ's answer to bankruptcy: research pays for the debt.

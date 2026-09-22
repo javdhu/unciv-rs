@@ -97,6 +97,10 @@ pub struct TileGrid {
     /// Size of the deposit. Strategic resources supply this many, not one.
     pub resource_amount: Vec<i32>,
     pub improvement: Vec<Option<Id<TileImprovement>>>,
+    /// Work underway: what is being built here and how many turns are done.
+    /// Kept on the tile rather than the worker, as Unciv does, so progress
+    /// survives the worker being killed.
+    pub improvement_progress: Vec<Option<(Id<TileImprovement>, u32)>>,
     pub owner: Vec<Option<CivId>>,
     /// Precomputed once. `None` at the map edge.
     neighbours: Vec<[Option<TileId>; 6]>,
@@ -116,6 +120,7 @@ impl TileGrid {
             resource: vec![None; n],
             resource_amount: vec![1; n],
             improvement: vec![None; n],
+            improvement_progress: vec![None; n],
             owner: vec![None; n],
             neighbours: Vec::new(),
         };

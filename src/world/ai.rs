@@ -67,6 +67,7 @@ pub fn choose_construction(
     m: CostModifiers,
     net_gold: i32,
     want_settler: bool,
+    want_worker: bool,
 ) -> Option<Construction> {
     let civ_ref = world.civ(civ)?;
     let weights = ranking_weights();
@@ -81,6 +82,9 @@ pub fn choose_construction(
                 Construction::Unit(id) if crate::world::settling::is_settler(r, id) && want_settler => {
                     Fixed::whole(400)
                 }
+                // Worth less than a settler — land first, then make it
+                // productive — but more than any single building.
+                Construction::Unit(id) if is_worker(r, id) && want_worker => Fixed::whole(200),
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
                     if b.maintenance.unwrap_or(0) > net_gold.max(0) {
@@ -162,12 +166,116 @@ pub fn settler_order(
     Some(UnitOrder::MoveTo(step))
 }
 
+/// Whether the civ should make a worker.
+///
+/// One per city, and only while there is unimproved land being worked. A
+/// worker with nothing to do is 70 production spent on standing still.
+pub fn wants_worker(world: &World, r: &Ruleset, civ: CivId) -> bool {
+    let Some(c) = world.civ(civ) else { return false };
+    let workers = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| is_worker(r, u.base))
+        .count();
+    if workers >= c.cities.len() {
+        return false;
+    }
+    c.cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .any(|city| !improvable_tiles(world, r, civ, city).is_empty())
+}
+
+/// Does this unit build improvements?
+///
+/// By the unique, not the name — the same reasoning as settlers and the
+/// palace.
+pub fn is_worker(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
+    r.units.get(base).is_some_and(|u| {
+        u.uniques
+            .iter()
+            .any(|x| x.unique_type() == Some(crate::UniqueType::BuildImprovements))
+    })
+}
+
+/// Worked tiles that could be improved and are not, best first.
+///
+/// Worked tiles only: improving land nobody stands on helps nothing this
+/// century.
+pub fn improvable_tiles(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    city: &City,
+) -> Vec<(crate::world::grid::TileId, Id<crate::ruleset::TileImprovement>)> {
+    let mut out: Vec<_> = city
+        .worked
+        .iter()
+        .filter(|t| world.grid.improvement[t.0 as usize].is_none())
+        .filter_map(|t| {
+            // Best by what it yields, weighted as a citizen would weigh it.
+            let weights = ranking_weights();
+            crate::world::improvements::buildable(world, r, civ, *t)
+                .into_iter()
+                .map(|i| {
+                    let stats = crate::ruleset::queries::HasStats::stats(&r.improvements[i]);
+                    let worth: Fixed = Stat::ALL.into_iter().map(|s| stats[s].mul(weights[s])).sum();
+                    (worth, i)
+                })
+                .filter(|(worth, _)| *worth > Fixed::ZERO)
+                .max_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)))
+                .map(|(worth, i)| (worth, *t, i))
+        })
+        .collect();
+    out.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    out.into_iter().map(|(_, t, i)| (t, i)).collect()
+}
+
+/// What a worker should do: walk to the best unimproved tile, or dig.
+pub fn worker_order(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<crate::world::entities::Unit>,
+) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    if !is_worker(r, u.base) {
+        return None;
+    }
+    let c = world.civ(civ)?;
+    let jobs: Vec<_> = c
+        .cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .flat_map(|city| improvable_tiles(world, r, civ, city))
+        .collect();
+
+    // Already standing on a job? Dig.
+    if let Some((_, imp)) = jobs.iter().find(|(t, _)| *t == u.position) {
+        return Some(UnitOrder::Improve(*imp));
+    }
+    // Otherwise head for the nearest one, ties by tile id.
+    let (target, _) = jobs
+        .iter()
+        .min_by_key(|(t, _)| (world.grid.distance(u.position, *t), t.0))?;
+    let reachable =
+        crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    let step = reachable
+        .keys()
+        .copied()
+        .filter(|t| *t != u.position)
+        .min_by_key(|t| (world.grid.distance(*t, *target), t.0))?;
+    Some(UnitOrder::MoveTo(step))
+}
+
 /// What a unit is told to do. Deliberately small: the turn loop applies these,
 /// so anything here has to be expressible as a single reversible step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitOrder {
     MoveTo(crate::world::grid::TileId),
     FoundCity,
+    Improve(Id<crate::ruleset::TileImprovement>),
 }
 
 /// Which policy to adopt, if one is affordable.
@@ -244,7 +352,7 @@ mod tests {
         let r = ruleset();
         let w = world(&r);
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
-        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false)
+        let choice = choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false, false)
             .expect("a new city can build something");
         match choice {
             Construction::Building(id) => println!("chose {}", r.buildings[id].name),
@@ -261,13 +369,13 @@ mod tests {
         let m = CostModifiers::default();
 
         // With no income, only free-to-keep buildings are considered.
-        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, false);
+        let broke = choose_construction(&w, &r, CivId(0), &city, m, 0, false, false);
         if let Some(Construction::Building(id)) = broke {
             assert_eq!(r.buildings[id].maintenance.unwrap_or(0), 0, "{}", r.buildings[id].name);
         }
 
         // With income, upkeep-bearing buildings come into range.
-        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, false);
+        let rich = choose_construction(&w, &r, CivId(0), &city, m, 20, false, false);
         assert!(rich.is_some());
     }
 
@@ -281,8 +389,8 @@ mod tests {
 
         for _ in 0..5 {
             assert_eq!(
-                choose_construction(&w, &r, CivId(0), &city, m, 10, false),
-                choose_construction(&w, &r, CivId(0), &city, m, 10, false)
+                choose_construction(&w, &r, CivId(0), &city, m, 10, false, false),
+                choose_construction(&w, &r, CivId(0), &city, m, 10, false, false)
             );
             assert_eq!(
                 choose_research(&w, &r, CivId(0), s),
@@ -311,7 +419,7 @@ mod tests {
         let before = w.clone();
         let city = City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap());
         choose_research(&w, &r, CivId(0), ScienceModifiers::default());
-        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false);
+        choose_construction(&w, &r, CivId(0), &city, CostModifiers::default(), 10, false, false);
         choose_policy(&w, &r, CivId(0), PolicyModifiers::default());
         assert_eq!(w, before, "every decision is a pure read");
     }

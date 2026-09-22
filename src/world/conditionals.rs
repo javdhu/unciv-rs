@@ -53,6 +53,13 @@ pub struct GameContext<'a> {
     pub opponent: Option<Opponent>,
     /// The civ's current happiness, when it is known.
     pub happiness: Option<i32>,
+    /// What the civ knows, supplied directly.
+    ///
+    /// Tech conditionals otherwise need a whole `World` to look the civ up,
+    /// and a city computing its own yields has a ruleset and a grid but no
+    /// world. Supplying the set directly keeps that call site honest instead
+    /// of forcing it to fabricate one.
+    pub techs: Option<&'a std::collections::BTreeSet<Id<crate::ruleset::Technology>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +88,7 @@ impl<'a> GameContext<'a> {
             combat: None,
             opponent: None,
             happiness: None,
+            techs: None,
         }
     }
 
@@ -110,6 +118,13 @@ impl<'a> GameContext<'a> {
     }
     pub fn with_happiness(mut self, h: i32) -> Self {
         self.happiness = Some(h);
+        self
+    }
+    pub fn knowing(
+        mut self,
+        techs: &'a std::collections::BTreeSet<Id<crate::ruleset::Technology>>,
+    ) -> Self {
+        self.techs = Some(techs);
         self
     }
 }
@@ -278,28 +293,16 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         },
 
         // --- what the civ knows -----------------------------------------
-        UniqueType::ConditionalTech => {
-            let (Some(civ), Some(tech)) = (ctx.civ, p(0)) else { return Verdict::Unknown };
-            let Some(world) = ctx.world else { return Verdict::Unknown };
-            let known = ctx
-                .ruleset
-                .technologies
-                .id(tech)
-                .zip(world.civ(civ))
-                .is_some_and(|(t, c)| c.has_tech(t));
-            if known { Verdict::True } else { Verdict::False }
-        }
-        UniqueType::ConditionalNoTech => {
-            let (Some(civ), Some(tech)) = (ctx.civ, p(0)) else { return Verdict::Unknown };
-            let Some(world) = ctx.world else { return Verdict::Unknown };
-            let known = ctx
-                .ruleset
-                .technologies
-                .id(tech)
-                .zip(world.civ(civ))
-                .is_some_and(|(t, c)| c.has_tech(t));
-            if known { Verdict::False } else { Verdict::True }
-        }
+        UniqueType::ConditionalTech => match knows(ctx, p(0)) {
+            Some(true) => Verdict::True,
+            Some(false) => Verdict::False,
+            None => Verdict::Unknown,
+        },
+        UniqueType::ConditionalNoTech => match knows(ctx, p(0)) {
+            Some(true) => Verdict::False,
+            Some(false) => Verdict::True,
+            None => Verdict::Unknown,
+        },
 
         // --- thresholds on a civ-wide stat ------------------------------
         // Happiness is the one that matters: the growth and production
@@ -321,6 +324,19 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
 
         _ => Verdict::Unknown,
     }
+}
+
+/// Does the civ know this tech? `None` when the context cannot say.
+///
+/// Prefers a directly supplied tech set over a world lookup, so a city can
+/// answer without one.
+fn knows(ctx: &GameContext, tech: Option<&String>) -> Option<bool> {
+    let id = ctx.ruleset.technologies.id(tech?)?;
+    if let Some(techs) = ctx.techs {
+        return Some(techs.contains(&id));
+    }
+    let world = ctx.world?;
+    Some(world.civ(ctx.civ?)?.has_tech(id))
 }
 
 fn threshold(
