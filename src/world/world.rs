@@ -100,8 +100,13 @@ impl World {
         let owner = city.owner;
         let first = self.civ(owner).is_none_or(|c| c.cities.is_empty());
         let id = self.found_city(city);
+        let coastal = self
+            .grid
+            .neighbours(self.cities.get(id).map_or(TileId(0), |c| c.centre))
+            .any(|n| r.terrains.get(self.grid.terrain[n.0 as usize]).is_some_and(|t| t.name == "Coast"));
         if let Some(c) = self.cities.get_mut(id) {
             c.original_capital = first;
+            c.coastal = coastal;
         }
 
         if first {

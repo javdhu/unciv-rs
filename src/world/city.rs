@@ -86,6 +86,10 @@ pub struct City {
     pub demand_countdown: u32,
     /// Turns of celebration left.
     pub wltkd: u32,
+    /// Whether the centre touches the coast (`isCoastal`) — set once, when it
+    /// is founded, since the land does not move. Only a coastal city builds
+    /// ships.
+    pub coastal: bool,
 }
 
 impl City {
@@ -118,6 +122,7 @@ impl City {
             demanded_resource: None,
             demand_countdown: 0,
             wltkd: 0,
+            coastal: false,
         }
     }
 

@@ -152,6 +152,11 @@ pub fn rank_site(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
 
 /// The best legal site within `radius` of `from`, best first.
 pub fn best_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u32) -> Option<(TileId, Fixed)> {
+    ranked_sites(world, r, civ, from, radius).into_iter().next()
+}
+
+/// Every legal site within `radius`, best first, ties by id.
+pub fn ranked_sites(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u32) -> Vec<(TileId, Fixed)> {
     let mut sites: Vec<(TileId, Fixed)> = world
         .grid
         .within(from, radius)
@@ -161,7 +166,7 @@ pub fn best_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u
         .collect();
     // Ties break on id, so the choice is the same on every machine.
     sites.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    sites.into_iter().next()
+    sites
 }
 
 /// Whether anywhere within `radius` of `from` could take a city at all.

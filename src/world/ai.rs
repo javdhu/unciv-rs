@@ -271,14 +271,13 @@ pub fn settler_order(
     if crate::world::settling::can_settle(world, r, civ, u.position).is_ok() {
         return Some(UnitOrder::FoundCity);
     }
-    let (target, _) = crate::world::settling::best_site(world, r, civ, u.position, 8)?;
-    // One step of the way, as far as this turn's movement allows.
-    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
-    let step = reachable
-        .keys()
-        .copied()
-        .filter(|t| *t != u.position)
-        .min_by_key(|t| (world.grid.distance(*t, target), t.0))?;
+    // The best site there is a way to, and one step of that way. A site
+    // behind someone else's closed borders, or over water without Optics, is
+    // no site at all; walking at it only strands the settler at the border.
+    let step = crate::world::settling::ranked_sites(world, r, civ, u.position, 8)
+        .into_iter()
+        .take(6)
+        .find_map(|(site, _)| crate::world::movement::step_toward(world, r, unit, site))?;
     Some(UnitOrder::MoveTo(step))
 }
 
@@ -515,17 +514,14 @@ pub fn worker_order(
         })
         .min_by_key(|t| (world.grid.distance(u.position, *t), t.0));
 
-    // Otherwise head for the nearest one, ties by tile id.
-    let target = &match unfinished {
-        Some(t) => t,
-        None => jobs.iter().min_by_key(|(t, _)| (world.grid.distance(u.position, *t), t.0))?.0,
-    };
-    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
-    let step = reachable
-        .keys()
-        .copied()
-        .filter(|t| *t != u.position)
-        .min_by_key(|t| (world.grid.distance(*t, *target), t.0))?;
+    // Otherwise head for the nearest one there is a way to, ties by tile id.
+    let mut nearest: Vec<crate::world::grid::TileId> = jobs.iter().map(|(t, _)| *t).collect();
+    nearest.sort_by_key(|t| (world.grid.distance(u.position, *t), t.0));
+    nearest.dedup();
+    let step = unfinished
+        .into_iter()
+        .chain(nearest.into_iter().take(5))
+        .find_map(|t| crate::world::movement::step_toward(world, r, unit, t))?;
     Some(UnitOrder::MoveTo(step))
 }
 
@@ -550,7 +546,7 @@ pub fn explore_order(
         return None;
     }
 
-    let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
+    let reachable = crate::world::movement::reachable_for_unit(world, r, unit);
 
     // Step toward whichever reachable tile reveals the most that is unseen.
     // Ties break on tile id, so two machines wander identically.
@@ -993,18 +989,13 @@ pub fn military_order(
         .filter(|(_, c)| c.owner != civ && world.diplomacy.at_war(civ, c.owner))
         .map(|(_, c)| c.centre)
         .collect();
-    if let Some(target) = enemy_cities.iter().min_by_key(|t| (world.grid.distance(u.position, **t), t.0)) {
-        let reachable = crate::world::movement::reachable(&world.grid, r, u.position, u.movement_left, &[]);
-        if let Some(step) = reachable
-            .keys()
-            .copied()
-            .filter(|t| *t != u.position)
-            .min_by_key(|t| (world.grid.distance(*t, *target), t.0))
-        {
-            return Some(UnitOrder::MoveTo(step));
-        }
-    }
-    None
+    let mut targets = enemy_cities;
+    targets.sort_by_key(|t| (world.grid.distance(u.position, *t), t.0));
+    targets
+        .into_iter()
+        .take(3)
+        .find_map(|t| crate::world::movement::step_toward(world, r, unit, t))
+        .map(UnitOrder::MoveTo)
 }
 
 /// What a unit is told to do. Deliberately small: the turn loop applies these,

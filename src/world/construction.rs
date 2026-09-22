@@ -47,6 +47,8 @@ pub enum Rejection {
     NeedsPopulation(u32),
     /// A puppet's governor does not build wonders.
     PuppetWonder,
+    /// A ship needs a city on the coast.
+    NotCoastal,
     /// The id does not resolve in this ruleset.
     Unknown,
 }
@@ -61,6 +63,7 @@ impl std::fmt::Display for Rejection {
             Rejection::NotProducible => write!(f, "cannot be produced"),
             Rejection::NeedsPopulation(n) => write!(f, "needs a city of size {n}"),
             Rejection::PuppetWonder => write!(f, "a puppet does not build wonders"),
+            Rejection::NotCoastal => write!(f, "a ship needs a coastal city"),
             Rejection::Unknown => write!(f, "not in this ruleset"),
         }
     }
@@ -181,6 +184,10 @@ pub fn can_construct(r: &Ruleset, civ: &Civilization, city: &City, what: Constru
             let u = r.units.get(id).ok_or(Rejection::Unknown)?;
             if u.cost.unwrap_or(0) <= 0 {
                 return Err(Rejection::NotProducible);
+            }
+            // `WaterUnitsInCoastalCities`: a ship built inland has no sea.
+            if r.unit_types.by_name(&u.unit_type).is_some_and(|t| t.movement_type == "Water") && !city.coastal {
+                return Err(Rejection::NotCoastal);
             }
             for unique in u.uniques.iter().filter(|x| x.unique_type() == Some(UniqueType::RequiresPopulation)) {
                 let needed = unique.params.first().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);

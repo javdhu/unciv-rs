@@ -575,6 +575,9 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             world.diplomacy.make_peace(plan.civ, *other)
         {
             let (a, b) = pair.civs();
+            // Peace sends each side's armies home (`makePeace`).
+            crate::world::movement::expel(world, r, a, b);
+            crate::world::movement::expel(world, r, b, a);
             events.push(TurnEvent::PeaceMade { a, b });
         }
     }

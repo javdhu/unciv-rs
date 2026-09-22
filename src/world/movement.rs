@@ -20,7 +20,7 @@ use crate::ruleset::Ruleset;
 use crate::stats::Fixed;
 use crate::unique_type::UniqueType;
 use crate::world::entities::Unit;
-use crate::world::grid::{RoadLevel, TileGrid, TileId};
+use crate::world::grid::{CivId, RoadLevel, TileGrid, TileId};
 use crate::world::world::World;
 use std::collections::BTreeMap;
 
@@ -142,8 +142,32 @@ pub fn is_tile_occupied_for(world: &World, r: &Ruleset, tile: TileId, unit: &Uni
     false
 }
 
+/// May a unit of `visitor` enter land `owner` holds (`canPassThroughTiles`)?
+///
+/// Its own, a barbarian's, an enemy's, or one whose borders are open to it.
+/// A human player may also walk through a city-state's land; the AI may not.
+/// Anyone else's is closed — the reason open borders are worth trading for.
+pub fn may_enter_territory(world: &World, visitor: CivId, owner: CivId) -> bool {
+    if visitor == owner {
+        return true;
+    }
+    let barbarian = |c: CivId| world.civ(c).is_some_and(|x| x.is_barbarian);
+    if barbarian(owner) || barbarian(visitor) {
+        return true;
+    }
+    if world.diplomacy.at_war(visitor, owner) || world.diplomacy.may_enter_borders_of(visitor, owner) {
+        return true;
+    }
+    world.civ(visitor).is_some_and(|c| !c.is_ai) && world.civ(owner).is_some_and(|c| c.is_city_state())
+}
+
 /// Whether `unit` can path through `tile`.
 pub fn can_pass_through(world: &World, _r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
+    if let Some(owner) = world.grid.owner[tile.0 as usize] {
+        if !may_enter_territory(world, unit.owner, owner) {
+            return false;
+        }
+    }
     for (_, other) in world.units.iter() {
         if other.position == tile && other.owner != unit.owner && world.diplomacy.at_war(unit.owner, other.owner) {
             return false;
@@ -295,6 +319,120 @@ pub fn reachable_for_unit(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> BTre
     best
 }
 
+/// Whether this unit's civ lets land units take to the water (`Optics`, or
+/// the unit's own unique).
+fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
+    unit.has_unique(r, UniqueType::LandUnitEmbarkation)
+        || world.civ(unit.owner).is_some_and(|c| {
+            c.techs.iter().any(|t| {
+                r.technologies.get(*t).is_some_and(|tech| {
+                    tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::LandUnitEmbarkation))
+                })
+            })
+        })
+}
+
+/// Whether `unit` could ever step from `from` to the adjacent `to` — the
+/// map's standing rules only: terrain, closed borders, land and water.
+///
+/// Who stands where and how far it can go this turn are left out; this is
+/// for planning a route over many turns, which [`reachable_for_unit`] cannot.
+pub fn can_traverse(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> bool {
+    if !is_passable(&world.grid, r, to) {
+        return false;
+    }
+    if let Some(owner) = world.grid.owner[to.0 as usize] {
+        if !may_enter_territory(world, unit.owner, owner) {
+            return false;
+        }
+    }
+    let to_water = world.grid.is_water(r, to);
+    if unit.is_water_unit(r) {
+        return to_water || world.cities.iter().any(|(_, c)| c.centre == to);
+    }
+    if unit.is_land_unit(r) && to_water && !world.grid.is_water(r, from) {
+        return can_embark(world, r, unit);
+    }
+    true
+}
+
+/// Steps from each tile within `radius` of `target` to `target`, for this
+/// unit, by the map's standing rules. Searched outward from the goal, so one
+/// search answers "how far is it from here" for every tile the unit could
+/// reach this turn.
+pub fn distances_to(world: &World, r: &Ruleset, unit: &Unit, target: TileId, radius: u32) -> BTreeMap<TileId, u32> {
+    let mut dist: BTreeMap<TileId, u32> = BTreeMap::new();
+    dist.insert(target, 0);
+    let mut frontier = vec![target];
+    let mut steps = 0;
+    while !frontier.is_empty() && steps < radius * 2 {
+        steps += 1;
+        let mut next = Vec::new();
+        for tile in frontier {
+            for from in world.grid.neighbours(tile) {
+                if dist.contains_key(&from) || world.grid.distance(from, target) > radius {
+                    continue;
+                }
+                // Could the unit step *from* there *to* here?
+                if can_traverse(world, r, unit, from, tile) {
+                    dist.insert(from, steps);
+                    next.push(from);
+                }
+            }
+        }
+        next.sort();
+        frontier = next;
+    }
+    dist
+}
+
+/// The tile to move to this turn to get closer to `target` by a route that
+/// exists — fewest steps left, then lowest tile id. `None` when there is no
+/// route within reach, or nothing this turn gets any closer.
+pub fn step_toward(world: &World, r: &Ruleset, unit_id: Id<Unit>, target: TileId) -> Option<TileId> {
+    let unit = world.units.get(unit_id)?;
+    let radius = world.grid.distance(unit.position, target) + 12;
+    let dist = distances_to(world, r, unit, target, radius);
+    let here = *dist.get(&unit.position)?;
+    reachable_for_unit(world, r, unit_id)
+        .into_keys()
+        .filter(|t| *t != unit.position)
+        .filter_map(|t| dist.get(&t).map(|d| (*d, t)))
+        .filter(|(d, _)| *d < here)
+        .min()
+        .map(|(_, t)| t)
+}
+
+/// Send `visitor`'s units out of `host`'s land, each to the nearest tile it
+/// may stand on (`teleportToClosestMoveableTile`) — what a peace treaty, or
+/// an open-borders agreement running out, does to an army left inside.
+pub fn expel(world: &mut World, r: &Ruleset, visitor: CivId, host: CivId) {
+    let inside: Vec<Id<Unit>> = world
+        .units
+        .iter()
+        .filter(|(_, u)| u.owner == visitor && world.grid.owner[u.position.0 as usize] == Some(host))
+        .map(|(id, _)| id)
+        .collect();
+    for id in inside {
+        let Some(unit) = world.units.get(id).cloned() else { continue };
+        let fits = |t: TileId| {
+            is_passable(&world.grid, r, t)
+                && world.grid.is_water(r, t) == unit.is_water_unit(r)
+                && world.grid.owner[t.0 as usize].is_none_or(|o| may_enter_territory(world, visitor, o))
+                && !is_tile_occupied_for(world, r, t, &unit)
+        };
+        let dest = (1..=30u32).find_map(|d| {
+            let mut ring = world.grid.ring(unit.position, d);
+            ring.sort();
+            ring.into_iter().find(|t| fits(*t))
+        });
+        if let (Some(t), Some(u)) = (dest, world.units.get_mut(id)) {
+            u.position = t;
+            u.embarked = false;
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveRejection {
     /// The unit id no longer resolves.
@@ -345,8 +483,9 @@ pub fn move_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>, to: TileId) 
         return Err(MoveRejection::Impassable);
     }
 
-    let centres: Vec<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
-    let cost = *reachable(&world.grid, r, from, budget, &centres).get(&to).ok_or(MoveRejection::OutOfRange)?;
+    // Every rule of the map — roads, rivers, embarking, zones of control,
+    // closed borders, one unit to a tile — not the terrain alone.
+    let cost = *reachable_for_unit(world, r, unit_id).get(&to).ok_or(MoveRejection::OutOfRange)?;
 
     let unit = world.units.get_mut(unit_id).ok_or(MoveRejection::NoSuchUnit)?;
     let from_water = world.grid.is_water(r, from);
