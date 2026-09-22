@@ -49,6 +49,8 @@ pub struct TurnPlan {
     pub production: Vec<(Id<City>, i32)>,
     /// Science the civ will bank, summed across its cities.
     pub science: i32,
+    /// Faith the civ will bank, toward a pantheon and then a religion.
+    pub faith: i32,
     /// Culture the civ will bank, toward its next policy.
     pub culture: i32,
     /// Net gold: what the cities make, less what their buildings cost to keep.
@@ -94,6 +96,8 @@ pub enum TurnEvent {
     WarDeclared { aggressor: CivId, against: CivId },
     PeaceMade { a: CivId, b: CivId },
     GreatPersonBorn { civ: CivId, kind: String },
+    PantheonFounded { civ: CivId, belief: Id<crate::ruleset::Belief> },
+    ReligionFounded { civ: CivId },
     CityCaptured { city: Id<City>, by: CivId },
     Battle { attacker_died: bool, defender_died: bool },
     TileImproved { tile: crate::world::grid::TileId, improvement: Id<crate::ruleset::TileImprovement> },
@@ -120,6 +124,7 @@ pub fn plan_civ_turn(
         food: Vec::new(),
         production: Vec::new(),
         science: 0,
+        faith: 0,
         culture: 0,
         gold: 0,
         happiness: 0,
@@ -209,6 +214,7 @@ pub fn plan_civ_turn(
         plan.production.push((city_id, output.production.round() as i32));
         plan.science += output.science.round() as i32;
         plan.culture += output.culture.round() as i32;
+        plan.faith += output.faith.round() as i32;
         plan.gold += output.gold.round() as i32 - upkeep;
     }
     plan
@@ -393,6 +399,23 @@ pub fn apply_plan(
         civ.culture_stored += plan.culture.max(0);
     }
     events.push(TurnEvent::Happiness { civ: plan.civ, value: plan.happiness });
+
+    // Faith buys a pantheon, then a religion. Beliefs are uniques, so the
+    // index has to be rebuilt or they do nothing.
+    if plan.faith > 0 {
+        let event = crate::world::religion::apply_faith(world, r, plan.civ, plan.faith, m.speed);
+        match event {
+            crate::world::religion::FaithEvent::PantheonFounded { belief } => {
+                crate::world::policies::rebuild_uniques(world, r, plan.civ);
+                events.push(TurnEvent::PantheonFounded { civ: plan.civ, belief });
+            }
+            crate::world::religion::FaithEvent::ReligionFounded { .. } => {
+                crate::world::policies::rebuild_uniques(world, r, plan.civ);
+                events.push(TurnEvent::ReligionFounded { civ: plan.civ });
+            }
+            crate::world::religion::FaithEvent::Stored { .. } => {}
+        }
+    }
 
     // Great people gather from wonders and specialists.
     let gained = crate::world::great_people::points_per_turn(world, r, plan.civ);
@@ -1011,6 +1034,7 @@ mod expansion {
                 food: Vec::new(),
                 production: Vec::new(),
                 science: 0,
+                faith: 0,
                 culture: 0,
                 gold: 0,
                 happiness: 0,

@@ -31,6 +31,8 @@ pub struct Civilization {
     pub culture_stored: i32,
     /// Ordered, so iteration and serialisation are reproducible.
     pub adopted_policies: std::collections::BTreeSet<Id<crate::ruleset::Policy>>,
+    /// Faith, pantheon and religion.
+    pub faith: crate::world::religion::Faith,
     /// Points toward the next great person of each kind, and what it costs.
     pub great_people: crate::world::great_people::GreatPeople,
     /// Every unique currently in force for this civ, indexed for lookup.
@@ -60,6 +62,7 @@ impl Civilization {
             researching: None,
             culture_stored: 0,
             adopted_policies: Default::default(),
+            faith: Default::default(),
             great_people: Default::default(),
             uniques: Default::default(),
             resources: Default::default(),

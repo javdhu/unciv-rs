@@ -20,6 +20,7 @@ pub mod diplomacy;
 pub mod entities;
 pub mod movement;
 pub mod policies;
+pub mod religion;
 pub mod research;
 pub mod resources;
 pub mod settling;

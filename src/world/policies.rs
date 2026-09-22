@@ -215,6 +215,13 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
             uniques.extend(t.uniques.iter().cloned());
         }
     }
+    // Beliefs are uniques too, so a pantheon has to reach the index or it
+    // grants nothing.
+    uniques.extend(
+        crate::world::religion::belief_uniques(r, &civ.faith)
+            .into_iter()
+            .cloned(),
+    );
 
     let index = UniqueIndex::build(&uniques);
     if let Some(civ) = world.civ_mut(civ_id) {
