@@ -215,6 +215,13 @@ pub fn fingerprint() -> u64 {
             }
             d.add(map.grid.resource[i].map_or(-1, |x| x.index() as i64));
             d.add(map.grid.resource_amount[i] as i64);
+            // Improvements and roads were missing here, which meant barbarian
+            // encampments — placed by generation — were invisible to this
+            // check. Adding camps to the generator left the fingerprint
+            // completely unchanged, which is how the gap was found.
+            d.add(map.grid.improvement[i].map_or(-1, |x| x.index() as i64));
+            d.add(map.grid.road[i] as i64);
+            d.add(map.grid.road_pillaged[i] as i64);
         }
         for start in &map.starts {
             d.add(start.0 as i64);

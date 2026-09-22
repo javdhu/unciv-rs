@@ -791,4 +791,49 @@ mod tests {
         let b = build([("C", 1, 9), ("B", 1, 5), ("Rome", 0, 1)]);
         assert_eq!(a, b, "the same map must spread the same way whatever order it was built in");
     }
+
+    /// A religion outlives the civ that founded it.
+    ///
+    /// An audit proposed wiping a defeated civ's religious pressure from every
+    /// city, on the grounds that a dead civ should not keep influencing the
+    /// game. That is the wrong reading. A religion is not its founder: Rome
+    /// falling does not make Romans stop believing, and in Civ V a religion
+    /// whose founder is gone carries on spreading and is still the majority
+    /// faith of every city that holds it. Wiping the pressure would instantly
+    /// de-convert dozens of cities for a reason no rule states.
+    ///
+    /// Asserted here because it is a deliberate choice that looks like an
+    /// oversight, and the next person to read `spread` may well try to "fix"
+    /// it too.
+    #[test]
+    fn a_religion_outlives_the_civ_that_founded_it() {
+        let r = ruleset();
+        let mut w = World::new(
+            TileGrid::new(20, 8, r.terrain("Grassland").unwrap()),
+            vec![
+                Civilization::new(CivId(0), r.nations.ids().next().unwrap(), true),
+                Civilization::new(CivId(1), r.nations.ids().next().unwrap(), true),
+            ],
+        );
+        let rome = city_at(&mut w, &r, "Rome", CivId(0), 1, 4, 8);
+        let neighbour = city_at(&mut w, &r, "Veii", CivId(1), 5, 4, 6);
+        convert(&mut w, rome, CivId(0));
+
+        // The founder is wiped out; the city it converted changes hands.
+        w.civ_mut(CivId(0)).unwrap().defeated = true;
+        w.cities.get_mut(rome).unwrap().owner = CivId(1);
+
+        for _ in 0..80 {
+            spread(&mut w, &r, 6);
+        }
+        assert_eq!(
+            w.cities.get(rome).unwrap().faith.majority(8),
+            Some(CivId(0)),
+            "the congregation does not disband because the founder did"
+        );
+        assert!(
+            w.cities.get(neighbour).unwrap().faith.pressure_of(Some(CivId(0))) > 0,
+            "and it keeps spreading"
+        );
+    }
 }

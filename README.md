@@ -405,10 +405,10 @@ integer whose meaning is fixed.
 
 ```
 ./tools/check_determinism.sh
-  native         0xd881463324b81ea3
-  wasm32         0xd881463324b81ea3
-  linux/arm64    0xd881463324b81ea3
-  linux/amd64    0xd881463324b81ea3
+  native         0x5ae51a5eaa4d66a1
+  wasm32         0x5ae51a5eaa4d66a1
+  linux/arm64    0x5ae51a5eaa4d66a1
+  linux/amd64    0x5ae51a5eaa4d66a1
 OK: bit-identical across 4 targets
 ```
 

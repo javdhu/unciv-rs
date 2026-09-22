@@ -71,6 +71,16 @@ pub fn choose_construction(
     let Priorities { want_settler, want_worker, want_scout, want_military, happiness } = wants;
     let civ_ref = world.civ(civ)?;
     let weights = ranking_weights();
+    // Computed once per call rather than once per candidate: it walks every
+    // victory's milestone list, and this closure runs for every building in
+    // the ruleset, in every city, every turn.
+    let wins_the_game = victory_buildings(r);
+    // What this city makes in a turn, for deciding whether a victory building
+    // is a plan or a daydream.
+    let production = crate::world::city::city_yield(&world.grid, r, city)
+        .production
+        .floor()
+        .max(0) as i32;
 
     available(r, civ_ref, city)
         .into_iter()
@@ -154,6 +164,29 @@ pub fn choose_construction(
                     let upkeep =
                         Fixed::whole(b.maintenance.unwrap_or(0)).mul(weights.gold).mul(pressure);
                     flat = flat - upkeep;
+
+                    // A building that wins the game is worth building even
+                    // when it yields nothing at all — but only if this city
+                    // can actually finish it.
+                    //
+                    // Scoring is otherwise entirely goal-agnostic: an Apollo
+                    // Program produces no food, no hammers and no science, so
+                    // it scored zero and was never built. A civ two techs from
+                    // a science victory kept making soldiers, because the war
+                    // made soldiers score well and the thing that ends the
+                    // game scored nothing.
+                    //
+                    // The feasibility gate is not a refinement, it is the
+                    // whole difference between working and not. Without it a
+                    // one-hammer town commits to a fifteen-hundred-hammer
+                    // wonder on turn ten and completes nothing at all for the
+                    // rest of the game — which is what the first draft did.
+                    if wins_the_game.contains(&id) && production > 0 {
+                        let turns = cost / production;
+                        if turns <= VICTORY_BUILD_HORIZON {
+                            flat = flat + victory_urgency(world, r, civ, id);
+                        }
+                    }
 
                     // An unhappy empire is not merely poorer, it is stalled.
                     // Weight what fixes that by how bad it has got, so a
@@ -284,6 +317,57 @@ pub fn is_worker(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
 ///
 /// Worked tiles only: improving land nobody stands on helps nothing this
 /// century.
+/// How many turns of production a victory building may take before the AI
+/// treats it as out of reach. Beyond this it is not a goal, it is a way to
+/// build nothing for the rest of the game.
+const VICTORY_BUILD_HORIZON: i32 = 30;
+
+/// How badly this civ wants a building that is a victory milestone.
+///
+/// Scaled by how near the relevant victory already is, and that scaling is the
+/// whole design. A flat bonus is wrong in both directions: large enough to
+/// matter when a civ is one milestone from winning, it also makes a civ with
+/// no progress at all drop everything for a wonder it has no use for; small
+/// enough to be safe early, it never changes the outcome late.
+///
+/// Rising from a nudge at no progress to overwhelming at the last milestone is
+/// what makes it behave like a goal rather than a preference.
+///
+/// The nearness measured is *after* building it, not before. Measuring before
+/// inverts the whole thing: the last milestone of a victory is unbuilt by
+/// definition, so a civ one building from winning scores lowest of all. The
+/// question is not "how close am I", it is "how close would this put me".
+fn victory_urgency(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    building: Id<crate::ruleset::Building>,
+) -> Fixed {
+    let mut best = Fixed::ZERO;
+    for id in crate::world::victory::victories_needing(r, building) {
+        let Some(v) = r.victories.get(id) else { continue };
+        let (met, judgeable) = crate::world::victory::nearness(world, r, civ, v);
+        if judgeable == 0 {
+            continue;
+        }
+        // 50 at no progress, 1050 for the one that finishes it.
+        let after = (met + 1).min(judgeable);
+        let share = Fixed::whole(after as i32)
+            .div(Fixed::whole(judgeable as i32))
+            .unwrap_or(Fixed::ZERO);
+        let value = Fixed::whole(50) + share.mul(Fixed::whole(1000));
+        best = best.max(value);
+    }
+    best
+}
+
+/// Buildings that appear in some victory's milestones, cached per ruleset
+/// pointer so scoring does not re-parse every milestone for every candidate in
+/// every city on every turn.
+fn victory_buildings(r: &Ruleset) -> std::collections::BTreeSet<Id<crate::ruleset::Building>> {
+    crate::world::victory::victory_constructions(r).0.into_iter().collect()
+}
+
 /// How far out a city can work, and so how far a worker will go for it.
 const CITY_WORK_RADIUS: u32 = 3;
 
@@ -931,6 +1015,132 @@ mod tests {
             upkeep(broke) <= upkeep(rich),
             "being in debt should not make dear buildings more attractive"
         );
+    }
+
+    /// A thing that wins the game is worth building — when it can be built.
+    #[test]
+    fn a_city_that_can_finish_a_victory_building_prefers_it() {
+        let r = ruleset();
+        let (wins, _) = crate::world::victory::victory_constructions(&r);
+        assert!(!wins.is_empty(), "the ruleset should name some buildings as milestones");
+
+        let mut w = world(&r);
+        let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap()));
+        // Everything researched, so the victory buildings are actually
+        // available to choose.
+        for t in r.technologies.ids() {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(t);
+        }
+        // A city with enormous production, so any of them is within reach.
+        let hill = r.terrain("Hill").unwrap();
+        let centre = w.cities.get(city_id).unwrap().centre;
+        for t in w.grid.within(centre, 2) {
+            w.grid.features[t.0 as usize].push(hill);
+        }
+        {
+            let c = w.cities.get_mut(city_id).unwrap();
+            c.population = 20;
+            c.worked = w.grid.within(centre, 2).into_iter().take(20).collect();
+        }
+
+        let city = w.cities.get(city_id).unwrap().clone();
+        let pick = |w: &World| {
+            choose_construction(
+                w,
+                &r,
+                CivId(0),
+                &city,
+                CostModifiers::default(),
+                50,
+                Priorities::default(),
+            )
+        };
+
+        // With no progress toward any victory, the nudge is small and ordinary
+        // infrastructure still wins. That is correct: a civ that is nowhere
+        // near winning should build what makes it stronger.
+        let early = pick(&w);
+        assert!(matches!(early, Some(Construction::Building(_))));
+
+        // The building that would finish a victory outright — the one whose
+        // completion takes some condition from unmet to met — should win.
+        // Note "outright": a wonder that is one of several milestones is not
+        // the last thing between this civ and the end of the game, and it is
+        // correct for ordinary infrastructure to beat it.
+        let target = *wins
+            .iter()
+            .max_by_key(|b| victory_urgency(&w, &r, CivId(0), **b).raw())
+            .expect("at least one");
+        assert!(
+            victory_urgency(&w, &r, CivId(0), target) > Fixed::whole(1000),
+            "{} should be a game-ender",
+            r.buildings[target].name
+        );
+
+        let city = w.cities.get(city_id).unwrap().clone();
+        let near = choose_construction(
+            &w,
+            &r,
+            CivId(0),
+            &city,
+            CostModifiers::default(),
+            50,
+            Priorities::default(),
+        );
+        // Any game-ender will do — several victories may each be one
+        // building away, and picking the cheapest of them is correct.
+        match near {
+            Some(Construction::Building(id)) => assert!(
+                victory_urgency(&w, &r, CivId(0), id) > Fixed::whole(1000),
+                "chose {}, which ends nothing, over {} which would have ended the game",
+                r.buildings[id].name,
+                r.buildings[target].name
+            ),
+            other => panic!("expected a victory building, got {other:?}"),
+        }
+
+        // And the urgency really is scaled, not flat: a milestone that only
+        // gets a victory halfway is wanted far less than one that finishes it.
+        if let Some(partial) = wins
+            .iter()
+            .map(|b| victory_urgency(&w, &r, CivId(0), *b))
+            .filter(|u| *u < Fixed::whole(1000))
+            .max()
+        {
+            assert!(
+                partial < victory_urgency(&w, &r, CivId(0), target),
+                "halfway and finished should not be worth the same"
+            );
+        }
+    }
+
+    /// And is not worth starting when it cannot be finished.
+    #[test]
+    fn a_one_hammer_town_does_not_commit_to_a_wonder_it_cannot_build() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(8, 8).unwrap()));
+        for t in r.technologies.ids() {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(t);
+        }
+        let city = w.cities.get(city_id).unwrap().clone();
+        let (wins, _) = crate::world::victory::victory_constructions(&r);
+        let choice = choose_construction(
+            &w,
+            &r,
+            CivId(0),
+            &city,
+            CostModifiers::default(),
+            10,
+            Priorities::default(),
+        );
+        if let Some(Construction::Building(id)) = choice {
+            assert!(
+                !wins.contains(&id),
+                "a size-one city on grassland committed to {}, which it cannot finish",
+                r.buildings[id].name
+            );
+        }
     }
 
     /// An unhappy empire reaches for what fixes that, ahead of what it would

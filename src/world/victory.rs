@@ -182,6 +182,83 @@ pub fn winner(world: &World, r: &Ruleset) -> Option<(CivId, Id<Victory>)> {
     None
 }
 
+/// Buildings and units that are a step toward some victory.
+///
+/// The AI needs this because its construction scoring is otherwise entirely
+/// goal-agnostic: it values a building by its yields, and an Apollo Program
+/// yields nothing at all. A civ two techs from a science victory would keep
+/// building soldiers because the war made soldiers score highly, and the thing
+/// that actually wins the game scored zero.
+///
+/// Both lists are by name, because a milestone names a thing rather than
+/// pointing at one, and a ruleset may not have every name a victory mentions.
+pub fn victory_constructions(r: &Ruleset) -> (Vec<Id<crate::ruleset::Building>>, Vec<String>) {
+    victory_constructions_inner(r)
+}
+
+/// How near a civ is to one victory, as `(met, judgeable)`.
+///
+/// Milestones this engine cannot judge are left out of *both* numbers rather
+/// than counted as unmet: a victory whose conditions are half-unreadable
+/// should not read as "barely started", because that would make every civ look
+/// permanently far from winning and the AI would never reach for any of them.
+pub fn nearness(world: &World, r: &Ruleset, civ: CivId, victory: &Victory) -> (usize, usize) {
+    let mut met = 0;
+    let mut judgeable = 0;
+    for (_, verdict) in progress(world, r, civ, victory) {
+        match verdict {
+            Verdict::Unknown => {}
+            Verdict::True => {
+                met += 1;
+                judgeable += 1;
+            }
+            Verdict::False => judgeable += 1,
+        }
+    }
+    (met, judgeable)
+}
+
+/// The victories a given building is a milestone of.
+pub fn victories_needing(r: &Ruleset, building: Id<crate::ruleset::Building>) -> Vec<Id<Victory>> {
+    let Some(name) = r.buildings.name_of(building) else { return Vec::new() };
+    r.victories
+        .iter()
+        .filter(|(_, v)| {
+            v.milestones.iter().any(|m| {
+                matches!(
+                    parse_milestone(m),
+                    Milestone::BuiltBuilding(ref n) | Milestone::BuildingBuiltGlobally(ref n)
+                        if n == name
+                )
+            })
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+fn victory_constructions_inner(r: &Ruleset) -> (Vec<Id<crate::ruleset::Building>>, Vec<String>) {
+    let mut buildings = Vec::new();
+    let mut spaceship_parts = Vec::new();
+    for (_, v) in r.victories.iter() {
+        for m in &v.milestones {
+            match parse_milestone(m) {
+                Milestone::BuiltBuilding(name) | Milestone::BuildingBuiltGlobally(name) => {
+                    if let Some(id) = r.buildings.id(&name) {
+                        buildings.push(id);
+                    }
+                }
+                _ => {}
+            }
+        }
+        spaceship_parts.extend(v.required_spaceship_parts.iter().cloned());
+    }
+    buildings.sort_by_key(|i| i.index());
+    buildings.dedup();
+    spaceship_parts.sort();
+    spaceship_parts.dedup();
+    (buildings, spaceship_parts)
+}
+
 /// How many of the ruleset's milestones this engine can judge.
 pub fn milestone_coverage(r: &Ruleset) -> (usize, usize) {
     let mut judgeable = 0;
