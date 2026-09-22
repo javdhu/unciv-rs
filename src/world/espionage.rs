@@ -371,6 +371,19 @@ pub fn tick(world: &mut World, r: &Ruleset, science_cost_modifier: Fixed) -> Vec
 /// that is where the most is worth taking. One spy stays home to watch the
 /// capital once there are two, because a stolen tech is worth as much to keep
 /// as to take.
+/// Whether `civ` still honours its promise not to spy on `other`
+/// (`Spy.canDismissAgreementToNotSendSpies`): it does, unless `other` has
+/// pulled ten points or more ahead of it in share of the tech tree.
+pub fn keeps_promise_not_to_spy(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool {
+    use crate::world::diplomacy::{Demand, Flag};
+    if !world.diplomacy.has_flag(other, civ, Flag::Agreed(Demand::DontSpyOnUs)) {
+        return false;
+    }
+    let techs = |c: CivId| world.civ(c).map_or(0, |x| x.techs.len() as i64);
+    let total = r.technologies.len() as i64;
+    100 * techs(other) <= 100 * techs(civ) + 10 * total
+}
+
 pub fn postings(world: &World, r: &Ruleset, civ: CivId) -> Vec<(usize, Id<City>)> {
     let Some(c) = world.civ(civ) else { return Vec::new() };
     let idle: Vec<usize> = c.espionage.idle().collect();
@@ -383,7 +396,7 @@ pub fn postings(world: &World, r: &Ruleset, civ: CivId) -> Vec<(usize, Id<City>)
         if other == civ || !world.civ(other).is_some_and(|x| x.is_major() && x.is_alive()) {
             continue;
         }
-        if stealable(world, civ, other).is_empty() {
+        if stealable(world, civ, other).is_empty() || keeps_promise_not_to_spy(world, r, civ, other) {
             continue;
         }
         for (id, city) in world.cities.iter() {

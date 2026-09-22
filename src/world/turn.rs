@@ -86,6 +86,10 @@ pub struct TurnPlan {
     pub tribute: Vec<(CivId, bool)>,
     /// Trades to offer: to whom, what we give, what we get.
     pub trades: Vec<(CivId, Vec<crate::world::trade::Item>, Vec<crate::world::trade::Item>)>,
+    /// Demands we were made, answered: who asked, what, and whether we agree.
+    pub answers: Vec<(CivId, crate::world::diplomacy::Demand, bool)>,
+    /// Demands to make: of whom, and what.
+    pub demands: Vec<(CivId, crate::world::diplomacy::Demand)>,
 }
 
 /// Something that happened, in the order it happened.
@@ -200,6 +204,31 @@ pub enum TurnEvent {
     Denounced {
         by: CivId,
         target: CivId,
+    },
+    /// One civ asked another to stop doing something.
+    DemandMade {
+        by: CivId,
+        of: CivId,
+        demand: crate::world::diplomacy::Demand,
+    },
+    /// And was answered: `by` agreed, or refused, to do what `to` asked.
+    DemandAnswered {
+        by: CivId,
+        to: CivId,
+        demand: crate::world::diplomacy::Demand,
+        agreed: bool,
+    },
+    /// `by` was caught breaking what it promised `to`.
+    PromiseBroken {
+        by: CivId,
+        to: CivId,
+        demand: crate::world::diplomacy::Demand,
+    },
+    /// Or kept it to the end.
+    PromiseKept {
+        by: CivId,
+        to: CivId,
+        demand: crate::world::diplomacy::Demand,
     },
     /// A conquered city stopped resisting and works again.
     ResistanceEnded {
@@ -359,6 +388,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         denounce: Vec::new(),
         tribute: Vec::new(),
         trades: Vec::new(),
+        answers: Vec::new(),
+        demands: Vec::new(),
         gift: None,
     };
     let Some(c) = world.civ(civ) else { return plan };
@@ -392,6 +423,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     plan.denounce = crate::world::ai::choose_denunciations(world, r, civ);
     plan.tribute = crate::world::ai::choose_tribute(world, r, civ);
     plan.trades = crate::world::ai::choose_trades(world, r, civ);
+    plan.answers = crate::world::ai::answer_demands(world, r, civ);
+    plan.demands = crate::world::ai::choose_demands(world, r, civ);
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
@@ -552,6 +585,20 @@ pub fn growth_modifier(world: &World, r: &Ruleset, civ: CivId, happiness: i32) -
     stack
 }
 
+/// Demands and promises, as turn events.
+fn promise_events(
+    events: impl IntoIterator<Item = crate::world::promises::PromiseEvent>,
+) -> impl Iterator<Item = TurnEvent> {
+    use crate::world::promises::PromiseEvent as P;
+    events.into_iter().map(|e| match e {
+        P::Demanded { by, of, demand } => TurnEvent::DemandMade { by, of, demand },
+        P::Agreed { by, to, demand } => TurnEvent::DemandAnswered { by, to, demand, agreed: true },
+        P::Refused { by, to, demand } => TurnEvent::DemandAnswered { by, to, demand, agreed: false },
+        P::Broken { by, to, demand } => TurnEvent::PromiseBroken { by, to, demand },
+        P::Kept { by, to, demand } => TurnEvent::PromiseKept { by, to, demand },
+    })
+}
+
 /// A quest book's events, as turn events.
 fn quest_events(events: Vec<crate::world::quests::QuestEvent>) -> impl Iterator<Item = TurnEvent> {
     use crate::world::quests::QuestEvent as Q;
@@ -604,6 +651,23 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
     for target in &plan.denounce {
         crate::world::opinion::denounce(world, plan.civ, *target);
         events.push(TurnEvent::Denounced { by: plan.civ, target: *target });
+    }
+
+    // What we were asked, answered; then what we caught others at, judged;
+    // then what we ask in turn.
+    for (by, demand, agree) in &plan.answers {
+        if let Ok((e, war)) = crate::world::promises::answer(world, plan.civ, *by, *demand, *agree) {
+            events.extend(promise_events([e]));
+            if let Some(crate::world::diplomacy::DiplomacyEvent::WarDeclared { aggressor, against }) = war {
+                events.push(TurnEvent::WarDeclared { aggressor, against });
+            }
+        }
+    }
+    events.extend(promise_events(crate::world::promises::review(world, plan.civ)));
+    for (of, demand) in &plan.demands {
+        if let Ok(e) = crate::world::promises::demand(world, plan.civ, *of, *demand) {
+            events.extend(promise_events([e]));
+        }
     }
 
     for (cs, worker) in &plan.tribute {
@@ -671,6 +735,7 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             UnitOrder::FoundCity => {
                 let name = format!("City {}", world.cities.len() + 1);
                 if let Ok(city) = crate::world::settling::found_city_with(world, r, *unit, name) {
+                    crate::world::promises::on_city_founded(world, city);
                     events.push(TurnEvent::CityFounded { city, by: plan.civ });
                 }
             }
@@ -1028,9 +1093,15 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     for e in crate::world::espionage::tick(world, r, science.speed) {
         match e {
             crate::world::espionage::SpyEvent::TechStolen { thief, victim, tech, identified } => {
+                if identified {
+                    crate::world::promises::on_spy_discovered(world, victim, thief, false);
+                }
                 events.push(TurnEvent::TechStolen { thief, victim, tech, identified });
             }
             crate::world::espionage::SpyEvent::Caught { civ, city } => {
+                if let Some(victim) = world.cities.get(city).map(|c| c.owner) {
+                    crate::world::promises::on_spy_discovered(world, victim, civ, true);
+                }
                 events.push(TurnEvent::SpyCaught { civ, city });
             }
             _ => {}
@@ -1113,7 +1184,8 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     events.extend(detect_first_contact(world));
     crate::world::opinion::tick(world, mods.growth.speed);
     crate::world::tribute::tick(world);
-    world.diplomacy.tick();
+    let expired = world.diplomacy.tick();
+    events.extend(promise_events(crate::world::promises::on_flags_expired(world, &expired)));
     world.turn += 1;
 
     // Checked after everything has settled, so a turn that completes the last
@@ -1315,6 +1387,8 @@ mod tests {
                 denounce: Vec::new(),
                 tribute: Vec::new(),
                 trades: Vec::new(),
+                answers: Vec::new(),
+                demands: Vec::new(),
                 gift: None,
             }
         };
@@ -2067,6 +2141,8 @@ mod expansion {
                 denounce: Vec::new(),
                 tribute: Vec::new(),
                 trades: Vec::new(),
+                answers: Vec::new(),
+                demands: Vec::new(),
                 gift: None,
             }
         };

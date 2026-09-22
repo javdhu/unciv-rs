@@ -30,6 +30,7 @@
 //! rather than by maintenance — there is no second copy to disagree with.
 
 use crate::stats::Fixed;
+pub use crate::world::promises::Demand;
 
 /// The floor on city-state influence. Below this there is nothing further to
 /// lose, which is what stops a long war from making a grudge permanent.
@@ -122,11 +123,19 @@ pub enum Sentiment {
     Denunciation,
     DenouncedOurAllies,
     BulliedProtectedMinor,
+    SpiedOnUs,
+    /// Held by whoever was made to promise, against whoever made them.
+    UnacceptableDemands,
+    RefusedDemand(Demand),
+    BetrayedPromise(Demand),
+    /// Held by a bystander who watched a promise not to attack broken.
+    BetrayedPromiseToOthers,
     // Warmth.
     DenouncedOurEnemies,
     YearsOfPeace,
     SharedEnemy,
     OpenBorders,
+    FulfilledPromise(Demand),
 }
 
 /// What one civ thinks of another. Not necessarily mutual.
@@ -224,6 +233,9 @@ pub struct Diplomacy {
     flags: BTreeMap<(CivId, CivId), BTreeMap<Flag, u32>>,
     /// Trades in force; see `trade`.
     pub deals: Vec<crate::world::trade::Deal>,
+    /// Demands made and not yet answered, keyed `(demander, asked)`; see
+    /// `promises`.
+    pub demands: std::collections::BTreeSet<(CivId, CivId, Demand)>,
 }
 
 /// A countdown on a directed relation (`DiplomacyFlags`): in force while
@@ -237,6 +249,12 @@ pub enum Flag {
     Bullied,
     /// The holder protects a city-state the subject bullied.
     RememberBulliedProtectedMinor,
+    /// The subject promised the holder this. Kept to the end, it earns warmth.
+    Agreed(Demand),
+    /// The holder caught the subject doing what this demand forbids.
+    Violated(Demand),
+    /// The holder has given up asking — refused once, or already betrayed.
+    IgnoreViolation(Demand),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -405,17 +423,26 @@ impl Diplomacy {
 
     /// Advance the clock on every relationship. Ordered iteration, so the
     /// result does not depend on map layout.
-    pub fn tick(&mut self) {
+    ///
+    /// Returns the countdowns that ran out, `(holder, subject, flag)`, in key
+    /// order — some of them mean something when they end rather than while
+    /// they run. One cleared early is not reported.
+    pub fn tick(&mut self) -> Vec<(CivId, CivId, Flag)> {
         for pact in self.pacts.values_mut() {
             pact.turns_in_stance = pact.turns_in_stance.saturating_add(1);
         }
-        for flags in self.flags.values_mut() {
-            for turns in flags.values_mut() {
+        let mut expired = Vec::new();
+        for (&(holder, subject), flags) in self.flags.iter_mut() {
+            for (&flag, turns) in flags.iter_mut() {
                 *turns = turns.saturating_sub(1);
+                if *turns == 0 {
+                    expired.push((holder, subject, flag));
+                }
             }
             flags.retain(|_, turns| *turns > 0);
         }
         self.flags.retain(|_, flags| !flags.is_empty());
+        expired
     }
 
     /// Start (or restart) a countdown on `holder`'s relation to `subject`.

@@ -162,6 +162,7 @@ pub fn ranked_sites(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius
         .within(from, radius)
         .into_iter()
         .filter(|t| can_settle(world, r, civ, *t).is_ok())
+        .filter(|t| !crate::world::promises::promised_not_to_settle(world, civ, *t))
         .map(|t| (t, rank_site(world, r, t)))
         .collect();
     // Ties break on id, so the choice is the same on every machine.
@@ -175,7 +176,11 @@ pub fn ranked_sites(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius
 /// the question "is there anywhere left?" is asked of every city, every turn,
 /// most often when the answer is no and every candidate must be looked at.
 pub fn has_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u32) -> bool {
-    world.grid.within(from, radius).into_iter().any(|t| can_settle(world, r, civ, t).is_ok())
+    world
+        .grid
+        .within(from, radius)
+        .into_iter()
+        .any(|t| can_settle(world, r, civ, t).is_ok() && !crate::world::promises::promised_not_to_settle(world, civ, t))
 }
 
 /// Found a city where a settler stands, consuming it.

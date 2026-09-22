@@ -14,7 +14,7 @@
 //! slowly, in turns, as the game is long.
 
 use crate::stats::Fixed;
-use crate::world::diplomacy::{Attitude, Sentiment};
+use crate::world::diplomacy::{Attitude, Demand, Sentiment};
 use crate::world::grid::CivId;
 use crate::world::world::World;
 
@@ -55,9 +55,19 @@ fn fade_rate(s: Sentiment) -> Option<Fixed> {
         Sentiment::DenouncedOurAllies | Sentiment::DenouncedOurEnemies => Fixed::permille(250),
         // As fast as warmongering.
         Sentiment::BulliedProtectedMinor => Fixed::permille(500),
-        // Handled with peace and open borders below; shared enemies are not
+        Sentiment::SpiedOnUs | Sentiment::UnacceptableDemands => Fixed::permille(250),
+        Sentiment::RefusedDemand(Demand::DoNotSettleNearUs) => Fixed::permille(250),
+        Sentiment::RefusedDemand(Demand::DoNotAttackUs) => Fixed::permille(500),
+        // Betrayals are remembered for a long time.
+        Sentiment::BetrayedPromise(_) | Sentiment::BetrayedPromiseToOthers => Fixed::permille(125),
+        // Handled with peace and open borders below. Shared enemies, kept
+        // promises and a refusal to stop spying or preaching are not
         // forgotten at all in Unciv.
-        Sentiment::YearsOfPeace | Sentiment::OpenBorders | Sentiment::SharedEnemy => return None,
+        Sentiment::YearsOfPeace
+        | Sentiment::OpenBorders
+        | Sentiment::SharedEnemy
+        | Sentiment::FulfilledPromise(_)
+        | Sentiment::RefusedDemand(Demand::DontSpyOnUs | Demand::DoNotSpreadReligion) => return None,
     })
 }
 
@@ -113,6 +123,7 @@ fn known_majors(world: &World, civ: CivId) -> Vec<CivId> {
 
 /// A war was declared (`DeclareWar.changeOpinions`).
 pub fn on_war_declared(world: &mut World, aggressor: CivId, victim: CivId) {
+    crate::world::promises::on_war_declared(world, aggressor, victim);
     world.diplomacy.attitude_mut(victim, aggressor).set(Sentiment::DeclaredWarOnUs, DECLARED_WAR);
 
     // Bystanders who thought well enough of the victim hold it against the aggressor.

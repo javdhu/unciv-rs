@@ -20,7 +20,8 @@ use crate::stats::{Fixed, Stat};
 use crate::world::assignment::ranking_weights;
 use crate::world::city::City;
 use crate::world::construction::{available, production_cost, Construction, CostModifiers};
-use crate::world::grid::CivId;
+use crate::world::entities::Unit;
+use crate::world::grid::{CivId, TileId};
 use crate::world::policies::{is_adoptable, policy_cost, PolicyModifiers};
 use crate::world::research::{available_techs, tech_cost, ScienceModifiers};
 use crate::world::world::World;
@@ -731,6 +732,140 @@ pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId
         }
     }
     out
+}
+
+/// How dangerous `assessed` looks to `assessor` (`Automation.threatAssessment`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ThreatLevel {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+    VeryHigh,
+}
+
+/// Their military might over ours: past double is very high, past one and a
+/// half high, under a half very low, under two thirds low.
+pub fn threat(world: &World, r: &Ruleset, assessor: CivId, assessed: CivId) -> ThreatLevel {
+    let (theirs, ours) =
+        (crate::world::tribute::might(world, r, assessed), crate::world::tribute::might(world, r, assessor).max(1));
+    if theirs > 2 * ours {
+        ThreatLevel::VeryHigh
+    } else if 2 * theirs > 3 * ours {
+        ThreatLevel::High
+    } else if 2 * theirs < ours {
+        ThreatLevel::VeryLow
+    } else if 3 * theirs < 2 * ours {
+        ThreatLevel::Low
+    } else {
+        ThreatLevel::Medium
+    }
+}
+
+/// Fewest soldiers on our border, and least share of their army, that is
+/// worth asking a human about (`MIN_UNITS_NEAR_BORDER_TO_ISSUE_DEMAND`,
+/// `MIN_PERCENT_FORCE_VALUE_NEAR_BORDER_TO_ISSUE_DEMAND`).
+const BORDER_UNITS: usize = 8;
+const BORDER_FORCE_PERCENT: i64 = 50;
+
+/// Humans whose armies sit on our border (`checkMilitaryPresenceNearBorder`).
+///
+/// Soldiers we can see, within two tiles of our land but not on it, at
+/// least eight of them and at least half their army by force, from a civ
+/// neither too weak to matter nor too strong to provoke. Friends are not
+/// doubted: not those with a defensive pact, and not those we let in.
+pub fn border_alarm(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId> {
+    use crate::world::diplomacy::{Demand, Flag};
+    let humans: Vec<CivId> = world
+        .civ_ids()
+        .filter(|o| *o != civ && world.civ(*o).is_some_and(|c| c.is_major() && !c.is_ai && c.is_alive()))
+        .filter(|o| world.diplomacy.have_met(civ, *o) && !world.diplomacy.at_war(civ, *o))
+        .filter(|o| !world.diplomacy.has_flag(civ, *o, Flag::Agreed(Demand::DoNotAttackUs)))
+        .filter(|o| !world.diplomacy.pact(civ, *o).is_some_and(|p| p.defensive_pact))
+        .filter(|o| !world.diplomacy.may_enter_borders_of(*o, civ))
+        .collect();
+    if humans.is_empty() || !world.civ(civ).is_some_and(|c| c.is_ai && c.is_major()) {
+        return Vec::new();
+    }
+    let mut near = std::collections::BTreeSet::new();
+    for t in 0..world.grid.len() {
+        let t = TileId(t as u16);
+        if world.grid.owner[t.0 as usize] != Some(civ) {
+            continue;
+        }
+        for n in world.grid.within(t, 2) {
+            if world.grid.owner[n.0 as usize] != Some(civ) && world.visibility.can_see(civ, n) {
+                near.insert(n);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for other in humans {
+        let soldiers: Vec<&Unit> =
+            world.units.iter().map(|(_, u)| u).filter(|u| u.owner == other && u.is_military(r)).collect();
+        let nearby: Vec<&&Unit> = soldiers.iter().filter(|u| near.contains(&u.position)).collect();
+        if nearby.len() < BORDER_UNITS {
+            continue;
+        }
+        if matches!(threat(world, r, civ, other), ThreatLevel::VeryLow | ThreatLevel::VeryHigh) {
+            continue;
+        }
+        let force = |u: &Unit| crate::world::tribute::unit_force(r, u);
+        let nearby_force: i64 = nearby.iter().map(|u| force(u)).sum();
+        let total: i64 = soldiers.iter().map(|u| force(u)).sum();
+        if total * BORDER_FORCE_PERCENT <= nearby_force * 100 {
+            out.push(other);
+        }
+    }
+    out
+}
+
+/// What to ask of whom this turn (`NextTurnAutomation.issueRequests`).
+///
+/// Whatever we caught someone doing that they have not promised against and
+/// we have not given up on — unless they are strong enough that asking would
+/// only anger them. And any human massing troops on our border is asked
+/// what it means.
+pub fn choose_demands(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, crate::world::diplomacy::Demand)> {
+    use crate::world::diplomacy::{Demand, Flag};
+    if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for other in world.civ_ids().filter(|o| *o != civ) {
+        for d in Demand::ALL {
+            let d_flag = |f: Flag| world.diplomacy.has_flag(civ, other, f);
+            if !d_flag(Flag::Violated(d)) || d_flag(Flag::IgnoreViolation(d)) || d_flag(Flag::Agreed(d)) {
+                continue;
+            }
+            if d != Demand::DoNotAttackUs && threat(world, r, civ, other) >= ThreatLevel::High {
+                continue; // "don't piss them off for no reason please"
+            }
+            if crate::world::promises::may_demand(world, civ, other, d).is_ok() {
+                out.push((other, d));
+            }
+        }
+    }
+    for other in border_alarm(world, r, civ) {
+        if !out.contains(&(other, Demand::DoNotAttackUs))
+            && crate::world::promises::may_demand(world, civ, other, Demand::DoNotAttackUs).is_ok()
+        {
+            out.push((other, Demand::DoNotAttackUs));
+        }
+    }
+    out
+}
+
+/// How an AI answers what it was asked (`respondToDemandAlert`): it gives in
+/// to anyone it fears, and to no one else.
+pub fn answer_demands(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, crate::world::diplomacy::Demand, bool)> {
+    if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
+        return Vec::new();
+    }
+    crate::world::promises::asked_of(world, civ)
+        .into_iter()
+        .map(|(by, d)| (by, d, threat(world, r, civ, by) >= ThreatLevel::High))
+        .collect()
 }
 
 /// Whether to burn a city just taken (`Battle.automateCityConquer`).
