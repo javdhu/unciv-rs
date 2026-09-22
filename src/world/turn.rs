@@ -78,6 +78,9 @@ pub enum TurnEvent {
     Happiness { civ: CivId, value: i32 },
     TechLearned { civ: CivId, tech: Id<Technology> },
     CivDefeated { civ: CivId },
+    /// Someone has met every milestone of a victory condition. Emitted once;
+    /// what a caller does about it is not this layer's business.
+    Victory { civ: CivId, condition: Id<crate::ruleset::Victory> },
     TurnEnded { turn: u32 },
 }
 
@@ -345,6 +348,12 @@ pub fn advance_turn(
     crate::world::movement::refresh_movement(world, r);
     update_visibility(world);
     world.turn += 1;
+
+    // Checked after everything has settled, so a turn that completes the last
+    // milestone is the turn it is won on.
+    if let Some((civ, condition)) = crate::world::victory::winner(world, r) {
+        events.push(TurnEvent::Victory { civ, condition });
+    }
     events.push(TurnEvent::TurnEnded { turn: world.turn });
     events
 }
@@ -690,6 +699,40 @@ mod self_play {
         // And it stops short of the last point.
         assert_eq!(treasury_deficit(-50, -10, 5), -4, "5 science becomes 1, not -5");
         assert_eq!(treasury_deficit(-50, -100, 1), 0, "already at one");
+    }
+
+    /// A game can now end. The lone civ owns the only capital, so it has
+    /// already met Domination's single milestone — which is correct rather
+    /// than odd: a Civ game with one player is over before it starts.
+    #[test]
+    fn a_victory_is_detected_and_reported() {
+        let r = ruleset();
+        let mut g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
+        g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(g, vec![Civilization::new(CivId(0), nation, false)]);
+        let centre = w.grid.id_at(8, 8).unwrap();
+        w.found_city_in(&r, City::found("Rome", CivId(0), centre));
+
+        let events = advance_turn(
+            &mut w,
+            &r,
+            CityFocus::None,
+            GrowthModifiers::default(),
+            CostModifiers::default(),
+            ScienceModifiers::default(),
+            r.difficulties.by_name("Prince"),
+            PolicyModifiers::default(),
+        );
+
+        let won = events.iter().find_map(|e| match e {
+            TurnEvent::Victory { civ, condition } => Some((*civ, *condition)),
+            _ => None,
+        });
+        let (civ, condition) = won.expect("the only capital on the map is a domination victory");
+        println!("{:?} wins by {}", civ, r.victories.name_of(condition).unwrap());
+        assert_eq!(civ, CivId(0));
+        assert_eq!(r.victories.name_of(condition), Some("Domination"));
     }
 
     /// And it should do exactly the same thing twice.

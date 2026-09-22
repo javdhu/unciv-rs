@@ -22,6 +22,7 @@ pub mod resources;
 pub mod settling;
 pub mod turn;
 pub mod unique_index;
+pub mod victory;
 pub mod world;
 pub mod yields;
 
