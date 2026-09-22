@@ -552,6 +552,57 @@ It also shows where a rule ends and an opinion begins. The science penalty is a
 rule and belongs in the turn loop; *not committing to upkeep you cannot cover*
 is an opinion and belongs in `ai.rs`.
 
+## What a systematic audit found that self-play had not
+
+Six independent lenses over the engine, each blind to the others, with three
+adversarially-prompted refuters per finding and a two-of-three bar to survive.
+Twenty raised, nine refuted, eleven confirmed.
+
+The lens that paid was **"find systems that are never called"** — the bug class
+this project keeps producing. It found the biggest one left:
+
+**Barbarians never spawned, and could not have.** `barbarians::spawn` was
+written, tested and never called from the turn loop. `place_camp` was never
+called either, so there was nothing to spawn from. A spawner with no camps and
+camps with no spawner are the same omission counted twice, and the ruleset
+ships Brute and Galley marked `uniqueTo: Barbarians` that could never appear in
+a game. The early game had no pressure on it at all.
+
+Two second-order faults in the *fix* are worth naming, because both would have
+shipped silently:
+
+* The barbarian civ has no cities and no units, so `is_alive()` is false for
+  it. Gating the spawn on liveness makes it permanently unable to become alive.
+* Camps a few tiles from a start are a coin flip rather than pressure, so
+  generation keeps them six tiles clear.
+
+The others, in one line each:
+
+| finding | outcome |
+|---|---|
+| Units fitting no AI category scored zero, and zero is filtered out | fixed — `want_*` scales the score instead of gating it |
+| A stale plan fed and built in a city captured earlier the same turn | fixed — plans check ownership at apply time |
+| A sacked city kept the granary of the city it was | fixed |
+| Two dead fields on `Attitude`, both superseded | removed |
+| The AI had no notion of winning | fixed — see the victory-urgency note below |
+| Capture should clear a city's religion | **rejected** — taking Rome does not make you the pope |
+| A defeated civ's religion should stop spreading | **rejected** — a religion is not its founder |
+
+Both rejections now carry tests, because they are deliberate choices that look
+like oversights and the next reader will want to "fix" them too.
+
+**The audit also improved the audit.** Adding camps to map generation left the
+determinism fingerprint completely unchanged, which is how I learned it had
+never folded in tile improvements or roads.
+
+The general lesson is narrower than "run an audit". Two of this project's three
+bug-finding techniques look for different things and neither subsumes the
+other: **self-play finds missing connections between systems that run**, and a
+**reachability sweep finds systems that never run at all**. Barbarians were
+invisible to self-play precisely because their absence looks like a quiet game.
+
+---
+
 ## Suggested order
 
 1. **Happiness**, because growth, policies and city-states all read it, and it
