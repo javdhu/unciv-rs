@@ -219,6 +219,8 @@ pub enum BuyTileRejection {
     OutOfRange,
     /// None of its neighbours is this city's.
     NotContiguous,
+    /// A puppet, a city being razed, or one still resisting buys no land.
+    Unavailable,
     NotEnoughGold {
         cost: i64,
         gold: i32,
@@ -232,6 +234,7 @@ impl std::fmt::Display for BuyTileRejection {
             BuyTileRejection::AlreadyOwned => write!(f, "the tile is already owned"),
             BuyTileRejection::OutOfRange => write!(f, "beyond the city's work range"),
             BuyTileRejection::NotContiguous => write!(f, "the tile does not touch the city's borders"),
+            BuyTileRejection::Unavailable => write!(f, "the city cannot buy land now"),
             BuyTileRejection::NotEnoughGold { cost, gold } => write!(f, "costs {cost} gold, has {gold}"),
         }
     }
@@ -248,6 +251,9 @@ pub fn buy_tile(
     gold_speed: Fixed,
 ) -> Result<i64, BuyTileRejection> {
     let c = world.cities.get(city).ok_or(BuyTileRejection::NoSuchCity)?;
+    if c.puppet || c.razing || c.resistance > 0 {
+        return Err(BuyTileRejection::Unavailable);
+    }
     if world.grid.owner[tile.0 as usize].is_some() {
         return Err(BuyTileRejection::AlreadyOwned);
     }

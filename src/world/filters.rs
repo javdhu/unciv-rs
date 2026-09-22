@@ -193,6 +193,11 @@ pub fn city_matches(
     let _ = r;
     match f {
         "all cities" | "All" | "in all cities" => Verdict::True,
+        // What a conquest made of it (`City.matchesFilter`).
+        "puppeted cities" | "Puppeted" => yes(subject.puppet),
+        "annexed cities" | "Annexed" => yes(subject.founder != subject.owner && !subject.puppet),
+        "resisting cities" | "Resisting" => yes(subject.resistance > 0),
+        "cities being razed" | "Razing" => yes(subject.razing),
         "this city" => match origin {
             // Two cities are the same city when they stand on the same tile —
             // names are not unique and ids are not in hand here.

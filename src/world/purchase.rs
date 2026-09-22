@@ -39,6 +39,10 @@ pub enum PurchaseRejection {
     Cannot(Rejection),
     /// Not for sale for this stat — a wonder for gold, say.
     NotForSale,
+    /// A puppet's governor does the buying, unless a unique says otherwise.
+    Puppet,
+    /// Nothing is bought in a city still resisting its conqueror.
+    InResistance,
     NotEnough {
         cost: i64,
         has: i64,
@@ -51,6 +55,8 @@ impl std::fmt::Display for PurchaseRejection {
             PurchaseRejection::NoSuchCity => write!(f, "no such city"),
             PurchaseRejection::Cannot(why) => write!(f, "cannot be built: {why}"),
             PurchaseRejection::NotForSale => write!(f, "cannot be bought with that"),
+            PurchaseRejection::Puppet => write!(f, "a puppet does its own buying"),
+            PurchaseRejection::InResistance => write!(f, "the city is resisting"),
             PurchaseRejection::NotEnough { cost, has } => write!(f, "costs {cost}, has {has}"),
         }
     }
@@ -312,6 +318,14 @@ pub fn can_purchase(
 ) -> Result<i64, PurchaseRejection> {
     let c = world.cities.get(city).ok_or(PurchaseRejection::NoSuchCity)?;
     let civ = world.civ(c.owner).ok_or(PurchaseRejection::NoSuchCity)?;
+    let puppet_may_buy = c.uniques.has(UniqueType::MayBuyConstructionsInPuppets)
+        || civ.uniques.has(UniqueType::MayBuyConstructionsInPuppets);
+    if c.puppet && !puppet_may_buy {
+        return Err(PurchaseRejection::Puppet);
+    }
+    if c.resistance > 0 {
+        return Err(PurchaseRejection::InResistance);
+    }
     can_construct(r, civ, c, what).map_err(PurchaseRejection::Cannot)?;
     let cost = self::cost(world, r, city, what, stat, m).ok_or(PurchaseRejection::NotForSale)?;
     let has = reserve(world, c.owner, stat);

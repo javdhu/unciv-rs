@@ -612,6 +612,20 @@ impl Priorities {
     }
 }
 
+/// Whether to burn a city just taken (`Battle.automateCityConquer`).
+///
+/// Unciv's rule: a small one — under four citizens — or any city at all if
+/// the conqueror is a city-state, provided it was not the conqueror's own and
+/// may be razed. Everything else is kept as a puppet. Unciv's AI also frees a
+/// city whose founder is a city-state worth allying with; nothing here frees
+/// a city yet, so that one is kept too.
+pub fn should_raze(world: &World, r: &Ruleset, civ: CivId, city: Id<City>) -> bool {
+    let _ = r;
+    let Some(c) = world.cities.get(city) else { return false };
+    let city_state = world.civ(civ).is_some_and(|x| x.is_city_state());
+    (c.population < 4 || city_state) && c.founder != civ && crate::world::conquest::can_raze(world, city).is_ok()
+}
+
 /// What to buy outright with gold this turn (`UseGoldAutomation.useGold`).
 ///
 /// Unciv's rule, kept as it is: after any city-state gift, go through the

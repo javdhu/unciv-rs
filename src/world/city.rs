@@ -68,6 +68,18 @@ pub struct City {
     pub culture_stored: i32,
     /// Citizens working in buildings rather than on tiles, by kind.
     pub specialists: crate::world::specialists::Allocation,
+    /// Who built it. An annexed city is unhappy about anyone else holding it.
+    pub founder: CivId,
+    /// The first city its founder built — never razed, and taken back whole.
+    pub original_capital: bool,
+    /// The turn it was founded or last changed hands.
+    pub turn_acquired: u32,
+    /// Run by its own governor for gold, after a conquest; see `conquest`.
+    pub puppet: bool,
+    /// Burning, a citizen a turn, until nothing is left.
+    pub razing: bool,
+    /// Turns of resistance left after a conquest, during which it makes nothing.
+    pub resistance: u32,
 }
 
 impl City {
@@ -91,6 +103,12 @@ impl City {
             tiles: Vec::new(),
             culture_stored: 0,
             specialists: Default::default(),
+            founder: owner,
+            original_capital: false,
+            turn_acquired: 0,
+            puppet: false,
+            razing: false,
+            resistance: 0,
         }
     }
 
@@ -278,6 +296,16 @@ pub fn city_percent_bonuses(r: &Ruleset, city: &City) -> std::collections::BTree
                 Fixed::whole(*percent),
                 Source::new(SourceKind::Building, b.name.clone()),
             ));
+        }
+    }
+    // A puppet's governor neglects its science and culture
+    // (`getStatPercentBonusesFromPuppetCity`).
+    if city.puppet {
+        for stat in [Stat::Science, Stat::Culture] {
+            stacks
+                .entry(stat)
+                .or_default()
+                .add(Modifier::additive_percent(Fixed::whole(-25), Source::new(SourceKind::Other, "Puppet")));
         }
     }
     stacks

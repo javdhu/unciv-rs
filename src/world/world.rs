@@ -65,8 +65,9 @@ impl World {
     /// Place a city and register it with its owner.
     ///
     /// Without a ruleset the capital gets no palace; see [`found_city_in`].
-    pub fn found_city(&mut self, city: City) -> Id<City> {
+    pub fn found_city(&mut self, mut city: City) -> Id<City> {
         let (owner, centre) = (city.owner, city.centre);
+        city.turn_acquired = self.turn;
         let id = self.cities.insert(city);
         if let Some(c) = self.civ_mut(owner) {
             c.cities.push(id);
@@ -99,6 +100,9 @@ impl World {
         let owner = city.owner;
         let first = self.civ(owner).is_none_or(|c| c.cities.is_empty());
         let id = self.found_city(city);
+        if let Some(c) = self.cities.get_mut(id) {
+            c.original_capital = first;
+        }
 
         if first {
             let palace = r

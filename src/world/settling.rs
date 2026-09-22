@@ -335,12 +335,18 @@ mod tests {
         let site = w.grid.id_at(10, 10).unwrap();
         let s = settler(&mut w, &r, site, CivId(0));
         let rome = found_city_with(&mut w, &r, s, "Rome").expect("a legal site");
-        assert_eq!(crate::world::connections::capital_of(&w, &r, CivId(0)), Some(rome), "the first city has the palace");
+        assert_eq!(
+            crate::world::connections::capital_of(&w, &r, CivId(0)),
+            Some(rome),
+            "the first city has the palace"
+        );
+        assert!(w.cities.get(rome).unwrap().original_capital);
 
         let far = w.grid.id_at(2, 2).unwrap();
         let s2 = settler(&mut w, &r, far, CivId(0));
-        found_city_with(&mut w, &r, s2, "Antium").expect("a legal site");
+        let antium = found_city_with(&mut w, &r, s2, "Antium").expect("a legal site");
         assert_eq!(crate::world::connections::capital_of(&w, &r, CivId(0)), Some(rome), "and the second does not");
+        assert!(!w.cities.get(antium).unwrap().original_capital);
     }
 
     #[test]

@@ -155,6 +155,20 @@ pub enum TurnEvent {
         city: Id<City>,
         by: CivId,
     },
+    /// A conquered city stopped resisting and works again.
+    ResistanceEnded {
+        city: Id<City>,
+    },
+    /// A city being razed lost another citizen to the fire.
+    CityBurned {
+        city: Id<City>,
+        population: u32,
+    },
+    /// A city was razed to the ground. Its id no longer resolves.
+    CityRazed {
+        city: Id<City>,
+        owner: CivId,
+    },
     /// Gold bought a city what it was building.
     Purchased {
         city: Id<City>,
@@ -351,6 +365,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         // are reading at the same time.
         let mut hypothetical = city.clone();
         let bonus = crate::world::specialists::bonus_per_specialist(world, r, city_id);
+        // A puppet's governor works its citizens for gold (`CityTurnManager.startTurn`).
+        let focus = if city.puppet { CityFocus::Single(crate::stats::Stat::Gold) } else { focus };
         crate::world::assignment::release_extra_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         assign_idle_citizens(&world.grid, r, &mut hypothetical, focus, bonus);
         let surplus = food_surplus(&world.grid, r, &hypothetical);
@@ -366,6 +382,16 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
                 output.production = boosted;
             }
         }
+
+        // A city resisting its conqueror makes nothing — not food, not gold,
+        // not science — beyond the one hammer every city keeps so that
+        // something moves (`CityStats`: "newFinalStatList.clear()").
+        let surplus = if city.resistance > 0 {
+            output = Stats { production: Fixed::ONE, ..Stats::ZERO };
+            0
+        } else {
+            surplus
+        };
 
         // An unhappy empire grows slowly or not at all, and the thresholds for
         // that are the ruleset's, not this engine's.
@@ -629,6 +655,17 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         if let Some(tile) = crate::world::expansion::grow(world, r, *city_id, *culture, policies.speed) {
             events.push(TurnEvent::BordersExpanded { city: *city_id, tile });
         }
+    }
+
+    // Conquered cities: resistance runs down, and what is being razed burns.
+    for e in crate::world::conquest::tick(world, r, plan.civ) {
+        events.push(match e {
+            crate::world::conquest::ConquestEvent::ResistanceEnded { city } => TurnEvent::ResistanceEnded { city },
+            crate::world::conquest::ConquestEvent::Burned { city, population } => {
+                TurnEvent::CityBurned { city, population }
+            }
+            crate::world::conquest::ConquestEvent::Razed { city, owner } => TurnEvent::CityRazed { city, owner },
+        });
     }
 
     // Debt is paid out of research before the science is banked.
@@ -2008,7 +2045,9 @@ mod multi_civ {
         println!("total cities on the map: {}", w.cities.len());
 
         assert_eq!(w.civs.len(), 3, "everyone is still in the list, alive or not");
-        assert!(w.cities.len() > 3, "someone should have expanded");
+        // Founded, not standing: a conqueror razes the small cities it takes,
+        // as Unciv's AI does, so the map can end with fewer than were built.
+        assert!(founded > 3, "someone should have expanded");
 
         // Five hundred turns is long enough for the whole arc: expand, meet,
         // fight, conquer. At a hundred the armies never converged — the

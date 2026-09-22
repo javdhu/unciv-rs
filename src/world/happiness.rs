@@ -36,6 +36,12 @@ const UNHAPPINESS_PER_CITY: i32 = -3;
 /// Unhappiness each citizen causes.
 const UNHAPPINESS_PER_CITIZEN: i32 = -1;
 
+/// What an annexed city adds to its unhappiness as a city, before a Courthouse.
+const ANNEXED_CITY_EXTRA: i32 = -2;
+
+/// Unhappiness an annexed city adds for the occupation itself, unscaled.
+const OCCUPIED_CITY: i32 = -2;
+
 /// One line of the happiness tally.
 pub type Contribution = (Source, i32);
 
@@ -68,14 +74,28 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
     let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
     let scale = |n: i32| (Fixed::whole(n) * modifier).floor() as i32;
 
-    let cities = civ.cities.len() as i32;
+    // An annexed city resents its new rulers until a Courthouse stands: it
+    // counts as a city and a half, each citizen twice, and two more on top
+    // for the occupation (`CityStats`, `hasExtraAnnexUnhappiness`).
+    let held: Vec<&crate::world::city::City> = civ.cities.iter().filter_map(|id| world.cities.get(*id)).collect();
+    let occupied = held.iter().filter(|c| crate::world::conquest::annexed_unhappiness(c)).count() as i32;
+
+    let cities = held.len() as i32;
     if cities > 0 {
-        out.push((Source::new(SourceKind::Other, "Cities"), scale(cities * UNHAPPINESS_PER_CITY)));
+        let unhappy = cities * UNHAPPINESS_PER_CITY + occupied * ANNEXED_CITY_EXTRA;
+        out.push((Source::new(SourceKind::Other, "Cities"), scale(unhappy)));
     }
 
-    let citizens: i32 = civ.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.population as i32).sum();
+    let citizens: i32 = held
+        .iter()
+        .map(|c| c.population as i32 * if crate::world::conquest::annexed_unhappiness(c) { 2 } else { 1 })
+        .sum();
     if citizens > 0 {
         out.push((Source::new(SourceKind::Other, "Population"), scale(citizens * UNHAPPINESS_PER_CITIZEN)));
+    }
+
+    if occupied > 0 {
+        out.push((Source::new(SourceKind::Other, "Occupied cities"), occupied * OCCUPIED_CITY));
     }
 
     out

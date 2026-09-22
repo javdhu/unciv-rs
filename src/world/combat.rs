@@ -489,40 +489,27 @@ pub fn attack_city(
     })
 }
 
-/// Hand a city to its conqueror.
+/// Hand a city to its conqueror (`Battle.conquerCity`).
 ///
-/// Population is halved, as Civ does — a sacked city is not the city it was.
-/// Buildings survive here; Unciv destroys some of them on capture, which
-/// needs a per-building rule this crate does not carry yet.
+/// Barbarians burn what they take. Anyone else plunders it and holds it as a
+/// resisting puppet — see [`conquest`](crate::world::conquest) — and an AI
+/// then decides at once whether to keep or raze it, as Unciv's does. A human
+/// player keeps the puppet until they choose.
 pub fn capture_city(
     world: &mut World,
     r: &Ruleset,
     city_id: Id<crate::world::city::City>,
     new_owner: crate::world::grid::CivId,
 ) {
-    let Some(city) = world.cities.get_mut(city_id) else { return };
-    let old_owner = city.owner;
-    city.owner = new_owner;
-    city.population = (city.population / 2).max(1);
-    city.health = crate::world::city::max_health(r, city) / 2;
-    city.worked.clear();
-    city.queue.clear();
-    city.production_stored = 0;
-    // And the granary with it. Halving the population while keeping the food
-    // banked for the larger city means a captured city grows back on the turn
-    // after it falls, which is the opposite of what sacking one should do.
-    city.food_stored = 0;
-
-    if let Some(old) = world.civ_mut(old_owner) {
-        old.cities.retain(|c| *c != city_id);
+    if world.civ(new_owner).is_some_and(|c| c.is_barbarian) {
+        crate::world::conquest::destroy(world, city_id);
+        return;
     }
-    if let Some(new) = world.civ_mut(new_owner) {
-        new.cities.push(city_id);
+    if crate::world::conquest::conquer(world, r, city_id, new_owner).is_none() {
+        return;
     }
-    // Its whole territory changes hands with it — every tile it claimed, not
-    // a ring around the centre (`CityConquestFunctions.conquerCity`).
-    for t in world.cities.get(city_id).map(|c| c.tiles.clone()).unwrap_or_default() {
-        world.grid.owner[t.0 as usize] = Some(new_owner);
+    if world.civ(new_owner).is_some_and(|c| c.is_ai) && crate::world::ai::should_raze(world, r, new_owner, city_id) {
+        let _ = crate::world::conquest::raze(world, city_id);
     }
 }
 
@@ -1489,7 +1476,7 @@ mod siege {
 
         let taken = w.cities.get(city).unwrap();
         assert_eq!(taken.owner, CivId(0));
-        assert_eq!(taken.population, 3, "a sacked city is halved");
+        assert_eq!(taken.population, 4, "six loses one, and one more per four (-1 - pop / 4)");
         assert_eq!(w.civ(CivId(0)).unwrap().cities, vec![city]);
         assert!(w.civ(CivId(1)).unwrap().cities.is_empty(), "and the loser loses it");
         assert_eq!(w.grid.owner[centre.0 as usize], Some(CivId(0)), "the land goes with it");
@@ -1534,8 +1521,8 @@ mod siege {
         let result = attack_city(&mut w, &r, unit, city).expect("legal assault");
         assert!(result.captured);
         let c = w.cities.get(city).unwrap();
-        assert_eq!(c.food_stored, 0, "halved to size four and still holding a size-eight granary");
-        assert_eq!(c.population, 4);
+        assert_eq!(c.food_stored, 0, "cut to size five and still holding a size-eight granary");
+        assert_eq!(c.population, 5);
     }
 
     /// The holy city of a religion stays its holy city whoever holds it.

@@ -11,6 +11,7 @@ pub mod city_states;
 pub mod combat;
 pub mod conditionals;
 pub mod connections;
+pub mod conquest;
 pub mod construction;
 pub mod diplomacy;
 pub mod economy;

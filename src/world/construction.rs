@@ -45,6 +45,8 @@ pub enum Rejection {
     /// The city is too small — a Settler costs two citizens, so a size-1 city
     /// cannot make one without erasing itself.
     NeedsPopulation(u32),
+    /// A puppet's governor does not build wonders.
+    PuppetWonder,
     /// The id does not resolve in this ruleset.
     Unknown,
 }
@@ -58,6 +60,7 @@ impl std::fmt::Display for Rejection {
             Rejection::UniqueToAnother(civ) => write!(f, "unique to {civ}"),
             Rejection::NotProducible => write!(f, "cannot be produced"),
             Rejection::NeedsPopulation(n) => write!(f, "needs a city of size {n}"),
+            Rejection::PuppetWonder => write!(f, "a puppet does not build wonders"),
             Rejection::Unknown => write!(f, "not in this ruleset"),
         }
     }
@@ -158,6 +161,9 @@ pub fn can_construct(r: &Ruleset, civ: &Civilization, city: &City, what: Constru
             }
             if b.cost.unwrap_or(0) <= 0 {
                 return Err(Rejection::NotProducible);
+            }
+            if city.puppet && (b.is_wonder == Some(true) || b.is_national_wonder == Some(true)) {
+                return Err(Rejection::PuppetWonder);
             }
             if let Some(req) = b.required_building.as_deref() {
                 let have = r.buildings.id(req).is_some_and(|rid| city.built.contains(&rid));
