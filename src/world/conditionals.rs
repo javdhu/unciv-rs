@@ -53,6 +53,9 @@ pub struct GameContext<'a> {
     pub opponent: Option<Opponent>,
     /// The civ's current happiness, when it is known.
     pub happiness: Option<i32>,
+    /// Whether religion is turned on for this game. A game setting, not a
+    /// rule, so nothing in the world can answer it.
+    pub religion_enabled: bool,
     /// What the civ knows, supplied directly.
     ///
     /// Tech conditionals otherwise need a whole `World` to look the civ up,
@@ -88,6 +91,7 @@ impl<'a> GameContext<'a> {
             combat: None,
             opponent: None,
             happiness: None,
+            religion_enabled: true,
             techs: None,
         }
     }
@@ -110,6 +114,10 @@ impl<'a> GameContext<'a> {
     }
     pub fn against(mut self, opponent: Opponent) -> Self {
         self.opponent = Some(opponent);
+        self
+    }
+    pub fn in_city(mut self, city: Id<City>) -> Self {
+        self.city = Some(city);
         self
     }
     pub fn for_unit(mut self, unit: Id<Unit>) -> Self {
@@ -292,6 +300,82 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             None => Verdict::Unknown,
         },
 
+        // --- what the civ has done ---------------------------------------
+        UniqueType::ConditionalAfterPolicyOrBelief => match adopted(ctx, p(0)) {
+            Some(true) => Verdict::True,
+            Some(false) => Verdict::False,
+            None => Verdict::Unknown,
+        },
+        UniqueType::ConditionalBeforePolicyOrBelief => match adopted(ctx, p(0)) {
+            Some(true) => Verdict::False,
+            Some(false) => Verdict::True,
+            None => Verdict::Unknown,
+        },
+
+        // --- what has been built -----------------------------------------
+        UniqueType::ConditionalBuildingBuilt => match built_here(ctx, p(0)) {
+            Some(b) => {
+                if b { Verdict::True } else { Verdict::False }
+            }
+            None => Verdict::Unknown,
+        },
+        UniqueType::ConditionalBuildingBuiltAll => {
+            let (Some(world), Some(civ), Some(name)) = (ctx.world, ctx.civ, p(0)) else {
+                return Verdict::Unknown;
+            };
+            let Some(id) = ctx.ruleset.buildings.id(name) else { return Verdict::Unknown };
+            let Some(c) = world.civ(civ) else { return Verdict::Unknown };
+            // Vacuously true with no cities, as "all" always is.
+            let all = c
+                .cities
+                .iter()
+                .filter_map(|cid| world.cities.get(*cid))
+                .all(|city| city.built.contains(&id));
+            if all { Verdict::True } else { Verdict::False }
+        }
+        UniqueType::ConditionalBuildingBuiltByAnybody => {
+            let (Some(world), Some(name)) = (ctx.world, p(0)) else { return Verdict::Unknown };
+            let Some(id) = ctx.ruleset.buildings.id(name) else { return Verdict::Unknown };
+            let anyone = world.cities.iter().any(|(_, c)| c.built.contains(&id));
+            if anyone { Verdict::True } else { Verdict::False }
+        }
+
+        // --- the city itself ----------------------------------------------
+        UniqueType::ConditionalPopulationFilter => {
+            let (Some(world), Some(city), Some(amount)) = (ctx.world, ctx.city, number(p(0)))
+            else {
+                return Verdict::Unknown;
+            };
+            // Only the plain population filter is understood; the rest name
+            // specialists and followers, which are not modelled.
+            if p(1).map(String::as_str) != Some("Population") {
+                return Verdict::Unknown;
+            }
+            match world.cities.get(city) {
+                Some(c) if c.population as i32 >= amount => Verdict::True,
+                Some(_) => Verdict::False,
+                None => Verdict::Unknown,
+            }
+        }
+
+        // --- how far the civ has come -------------------------------------
+        UniqueType::ConditionalStartingFromEra => {
+            let (Some(world), Some(civ), Some(era)) = (ctx.world, ctx.civ, p(0)) else {
+                return Verdict::Unknown;
+            };
+            let Some(target) = ctx.ruleset.eras.by_name(era) else { return Verdict::Unknown };
+            let reached = crate::world::policies::era_number(world, ctx.ruleset, civ);
+            if reached >= target.era_number { Verdict::True } else { Verdict::False }
+        }
+
+        // --- the game's own settings ---------------------------------------
+        UniqueType::ConditionalReligionEnabled => {
+            if ctx.religion_enabled { Verdict::True } else { Verdict::False }
+        }
+        UniqueType::ConditionalReligionDisabled => {
+            if ctx.religion_enabled { Verdict::False } else { Verdict::True }
+        }
+
         // --- what the civ knows -----------------------------------------
         UniqueType::ConditionalTech => match knows(ctx, p(0)) {
             Some(true) => Verdict::True,
@@ -324,6 +408,29 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
 
         _ => Verdict::Unknown,
     }
+}
+
+/// Has the civ adopted this policy or belief? `None` when unanswerable.
+///
+/// One conditional covers both, because Civ treats them the same way: a
+/// belief and a policy are both things a civ has taken.
+fn adopted(ctx: &GameContext, name: Option<&String>) -> Option<bool> {
+    let name = name?;
+    let civ = ctx.world?.civ(ctx.civ?)?;
+    if let Some(p) = ctx.ruleset.policies.id(name) {
+        return Some(civ.adopted_policies.contains(&p));
+    }
+    if let Some(b) = ctx.ruleset.beliefs.id(name) {
+        return Some(civ.faith.beliefs.contains(&b));
+    }
+    None
+}
+
+/// Is this building standing in the city under consideration?
+fn built_here(ctx: &GameContext, name: Option<&String>) -> Option<bool> {
+    let id = ctx.ruleset.buildings.id(name?)?;
+    let city = ctx.world?.cities.get(ctx.city?)?;
+    Some(city.built.contains(&id))
 }
 
 /// Does the civ know this tech? `None` when the context cannot say.
@@ -627,6 +734,86 @@ mod tests {
         assert_eq!(applies(&u, &ctx), Verdict::Unknown);
     }
 
+    #[test]
+    fn policy_and_belief_conditionals_share_one_form() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let before = Unique::parse("before adopting [Tradition]");
+        let after = Unique::parse("after adopting [Tradition]");
+
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0));
+        assert_eq!(evaluate(&before, &ctx), Verdict::True);
+        assert_eq!(evaluate(&after, &ctx), Verdict::False);
+
+        let tradition = r.policies.id("Tradition").unwrap();
+        w.civ_mut(CivId(0)).unwrap().adopted_policies.insert(tradition);
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0));
+        assert_eq!(evaluate(&after, &ctx), Verdict::True);
+
+        // The same conditional answers for beliefs, because Civ treats a
+        // belief and a policy as the same kind of thing: something taken.
+        let belief = r.beliefs.ids().next().unwrap();
+        let name = r.beliefs.name_of(belief).unwrap().to_string();
+        let taken = Unique::parse(&format!("after adopting [{name}]"));
+        assert_eq!(evaluate(&taken, &ctx), Verdict::False);
+        w.civ_mut(CivId(0)).unwrap().faith.beliefs.insert(belief);
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0));
+        assert_eq!(evaluate(&taken, &ctx), Verdict::True);
+    }
+
+    #[test]
+    fn building_conditionals_distinguish_here_from_everywhere() {
+        use crate::world::city::City;
+        let r = ruleset();
+        let mut w = world(&r);
+        let a = w.found_city(City::found("Rome", CivId(0), TileId(20)));
+        let b = w.found_city(City::found("Ostia", CivId(0), TileId(40)));
+        let monument = r.building("Monument").unwrap();
+
+        let here = Unique::parse("if [Monument] is constructed");
+        let everywhere = Unique::parse("if [Monument] is constructed in all [in all cities] cities");
+
+        w.cities.get_mut(a).unwrap().built.insert(monument);
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0)).in_city(a);
+        assert_eq!(evaluate(&here, &ctx), Verdict::True);
+        assert_eq!(evaluate(&everywhere, &ctx), Verdict::False, "Ostia has none");
+
+        w.cities.get_mut(b).unwrap().built.insert(monument);
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0)).in_city(a);
+        assert_eq!(evaluate(&everywhere, &ctx), Verdict::True);
+    }
+
+    #[test]
+    fn a_city_can_be_asked_its_size() {
+        use crate::world::city::City;
+        let r = ruleset();
+        let mut w = world(&r);
+        let city = w.found_city(City::found("Rome", CivId(0), TileId(20)));
+        w.cities.get_mut(city).unwrap().population = 4;
+
+        let u = Unique::parse("in cities with at least [3] [Population]");
+        let ctx = GameContext::new(&r).with_world(&w).for_civ(CivId(0)).in_city(city);
+        assert_eq!(evaluate(&u, &ctx), Verdict::True);
+
+        let bigger = Unique::parse("in cities with at least [9] [Population]");
+        assert_eq!(evaluate(&bigger, &ctx), Verdict::False);
+
+        // Specialists and followers are a different question this cannot answer.
+        let specialists = Unique::parse("in cities with at least [1] [Specialists]");
+        assert_eq!(evaluate(&specialists, &ctx), Verdict::Unknown);
+    }
+
+    #[test]
+    fn a_game_setting_is_not_something_the_world_can_answer() {
+        let r = ruleset();
+        let on = GameContext::new(&r);
+        assert_eq!(evaluate(&Unique::parse("when religion is enabled"), &on), Verdict::True);
+
+        let mut off = GameContext::new(&r);
+        off.religion_enabled = false;
+        assert_eq!(evaluate(&Unique::parse("when religion is enabled"), &off), Verdict::False);
+    }
+
     /// Reported, not asserted at a fixed value — this number should climb.
     /// Measured against a context rich enough to try everything: a civ, a
     /// tile, a unit, an opponent, a combat posture and a happiness figure.
@@ -639,11 +826,13 @@ mod tests {
         let mine = w.place_unit(Unit::new(base, CivId(0), TileId(0), 2));
         let theirs = w.place_unit(Unit::new(base, CivId(0), TileId(1), 2));
 
+        let city = w.found_city(crate::world::city::City::found("Rome", CivId(0), TileId(20)));
         let ctx = GameContext::new(&r)
             .with_world(&w)
             .for_civ(CivId(0))
             .on_tile(TileId(0))
             .for_unit(mine)
+            .in_city(city)
             .against(Opponent::Unit(theirs))
             .in_combat(CombatRole::Attacking)
             .with_happiness(0);
