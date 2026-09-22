@@ -119,7 +119,10 @@ pub enum Sentiment {
     DeclaredWarOnUs,
     WarMongerer,
     CapturedOurCities,
+    Denunciation,
+    DenouncedOurAllies,
     // Warmth.
+    DenouncedOurEnemies,
     YearsOfPeace,
     SharedEnemy,
     OpenBorders,
@@ -134,6 +137,12 @@ pub enum Sentiment {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Attitude {
     pub sentiments: BTreeMap<Sentiment, Fixed>,
+    /// The opinion averaged over the last thirty turns or so, lagging one
+    /// turn behind (`smoothedOpinionOfOtherCiv`). How far the opinion has
+    /// fallen below it is what makes an AI denounce.
+    pub smoothed: Fixed,
+    /// Next turn's `smoothed`, already computed.
+    pub smoothed_next: Fixed,
 }
 
 impl Attitude {
@@ -210,6 +219,16 @@ pub struct Diplomacy {
     /// opinion of you is not your opinion of it — and keyed
     /// `(city_state, major)`, which is the direction Unciv stores it in too.
     influence: BTreeMap<(CivId, CivId), Fixed>,
+    /// Directed countdowns, keyed `(holder, subject)`.
+    flags: BTreeMap<(CivId, CivId), BTreeMap<Flag, u32>>,
+}
+
+/// A countdown on a directed relation (`DiplomacyFlags`): in force while
+/// turns remain, gone when they run out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Flag {
+    /// The holder has publicly denounced the subject.
+    Denunciation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,6 +401,37 @@ impl Diplomacy {
         for pact in self.pacts.values_mut() {
             pact.turns_in_stance = pact.turns_in_stance.saturating_add(1);
         }
+        for flags in self.flags.values_mut() {
+            for turns in flags.values_mut() {
+                *turns = turns.saturating_sub(1);
+            }
+            flags.retain(|_, turns| *turns > 0);
+        }
+        self.flags.retain(|_, flags| !flags.is_empty());
+    }
+
+    /// Start (or restart) a countdown on `holder`'s relation to `subject`.
+    pub fn set_flag(&mut self, holder: CivId, subject: CivId, flag: Flag, turns: u32) {
+        if turns == 0 {
+            self.clear_flag(holder, subject, flag);
+        } else {
+            self.flags.entry((holder, subject)).or_default().insert(flag, turns);
+        }
+    }
+
+    pub fn clear_flag(&mut self, holder: CivId, subject: CivId, flag: Flag) {
+        if let Some(f) = self.flags.get_mut(&(holder, subject)) {
+            f.remove(&flag);
+        }
+    }
+
+    pub fn has_flag(&self, holder: CivId, subject: CivId, flag: Flag) -> bool {
+        self.flag_turns(holder, subject, flag) > 0
+    }
+
+    /// Turns left on a countdown, zero if it is not running.
+    pub fn flag_turns(&self, holder: CivId, subject: CivId, flag: Flag) -> u32 {
+        self.flags.get(&(holder, subject)).and_then(|f| f.get(&flag)).copied().unwrap_or(0)
     }
 
     /// Every civ this one is at war with, in id order.

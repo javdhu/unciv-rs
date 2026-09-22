@@ -50,6 +50,9 @@ fn fade_rate(s: Sentiment) -> Option<Fixed> {
         Sentiment::DeclaredWarOnUs => Fixed::permille(125),
         Sentiment::WarMongerer => Fixed::permille(500),
         Sentiment::CapturedOurCities => Fixed::permille(250),
+        // Personal, so slow to fade.
+        Sentiment::Denunciation => Fixed::permille(125),
+        Sentiment::DenouncedOurAllies | Sentiment::DenouncedOurEnemies => Fixed::permille(250),
         // Handled with peace and open borders below; shared enemies are not
         // forgotten at all in Unciv.
         Sentiment::YearsOfPeace | Sentiment::OpenBorders | Sentiment::SharedEnemy => return None,
@@ -177,6 +180,51 @@ pub fn on_city_captured(world: &mut World, conqueror: CivId, loser: CivId, popul
     }
 }
 
+/// How long a denunciation stands (`DiplomacyFlags.Denunciation`), in turns,
+/// whatever the speed — Unciv does not scale it either.
+pub const DENUNCIATION_TURNS: u32 = 30;
+
+/// The sting of the first denunciation; each later one stings less.
+const DENOUNCED: Fixed = Fixed::whole(-35);
+
+/// `from` publicly denounces `to` (`DiplomacyManager.activateDenounceEffects`).
+///
+/// The target's opinion of the accuser drops by 35 — less if others already
+/// denounce it: −35, −25, −18, −12, halving every two denouncers. Everyone who
+/// knows both then judges the accuser by what they think of the target.
+pub fn denounce(world: &mut World, from: CivId, to: CivId) {
+    use crate::world::diplomacy::Flag;
+    let already =
+        known_majors(world, to).into_iter().filter(|c| world.diplomacy.has_flag(*c, to, Flag::Denunciation)).count();
+    let sting = DENOUNCED * Fixed::permille(-500 * already as i64).exp2();
+    world.diplomacy.attitude_mut(to, from).set(Sentiment::Denunciation, sting);
+    world.diplomacy.set_flag(from, to, Flag::Denunciation, DENUNCIATION_TURNS);
+
+    for third in known_majors(world, from) {
+        if third == to || !world.diplomacy.have_met(third, to) {
+            continue;
+        }
+        let (s, amount) = match relationship(world, third, to) {
+            RelationshipLevel::Unforgivable => (Sentiment::DenouncedOurEnemies, 15),
+            RelationshipLevel::Enemy => (Sentiment::DenouncedOurEnemies, 5),
+            RelationshipLevel::Friend => (Sentiment::DenouncedOurAllies, -5),
+            RelationshipLevel::Ally => (Sentiment::DenouncedOurAllies, -15),
+            _ => continue,
+        };
+        world.diplomacy.attitude_mut(third, from).add(s, Fixed::whole(amount), None);
+    }
+}
+
+/// How far `holder`'s opinion of `subject` has fallen below its recent
+/// average (`smoothedOpinionDelta`). Negative is a sudden souring.
+pub fn smoothed_delta(world: &World, holder: CivId, subject: CivId) -> Fixed {
+    let a = world.diplomacy.attitude(holder, subject);
+    a.opinion() - a.smoothed
+}
+
+/// Turns the opinion average spans at standard speed (`EMA_PERIOD`).
+const SMOOTHING_PERIOD: i32 = 30;
+
 /// One turn of feelings settling (`nextTurnDiplomaticModifiers`).
 pub fn tick(world: &mut World, speed: Fixed) {
     // `0.67 × rate / speed` as one ratio, so thousandths are not lost twice.
@@ -211,6 +259,13 @@ pub fn tick(world: &mut World, speed: Fixed) {
                 if let Some(rate) = fade_rate(s) {
                     a.fade(s, scale(rate));
                 }
+            }
+            // The average moves a period's share toward today's opinion, one
+            // turn behind (`saveSmoothedOpinionOfOtherCiv`).
+            let period = Fixed::whole(SMOOTHING_PERIOD) * speed;
+            a.smoothed = a.smoothed_next;
+            if let Some(next) = (a.opinion() + a.smoothed * (period - Fixed::ONE)).checked_div(period) {
+                a.smoothed_next = next;
             }
         }
     }
@@ -291,6 +346,71 @@ mod tests {
         let a = w.diplomacy.attitude(CivId(0), CivId(1));
         assert_eq!(a.get(Sentiment::YearsOfPeace), Fixed::whole(30));
         assert_eq!(relationship(&w, CivId(0), CivId(1)), RelationshipLevel::Favorable);
+    }
+
+    #[test]
+    fn a_denunciation_stings_less_the_more_there_are() {
+        let r = ruleset();
+        let g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
+        let nation = r.nations.ids().next().unwrap();
+        let mut w = World::new(g, (0..4).map(|i| Civilization::new(CivId(i), nation, true)).collect());
+        for a in 0..4 {
+            for b in a + 1..4 {
+                w.diplomacy.meet(CivId(a), CivId(b));
+            }
+        }
+        let sting = |w: &World, by: u8| w.diplomacy.attitude(CivId(0), CivId(by)).get(Sentiment::Denunciation);
+        denounce(&mut w, CivId(1), CivId(0));
+        denounce(&mut w, CivId(2), CivId(0));
+        denounce(&mut w, CivId(3), CivId(0));
+        // -35, -35·2^-0.5, -35·2^-1.
+        assert_eq!(sting(&w, 1), Fixed::whole(-35));
+        assert!((Fixed::permille(-24_800)..=Fixed::permille(-24_700)).contains(&sting(&w, 2)), "{}", sting(&w, 2));
+        assert_eq!(sting(&w, 3), Fixed::permille(-17_500));
+        assert!(w.diplomacy.has_flag(CivId(1), CivId(0), crate::world::diplomacy::Flag::Denunciation));
+        assert_eq!(w.diplomacy.flag_turns(CivId(1), CivId(0), crate::world::diplomacy::Flag::Denunciation), 30);
+    }
+
+    #[test]
+    fn denouncing_a_friends_enemy_wins_the_friend() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.attitude_mut(CivId(2), CivId(1)).set(Sentiment::CapturedOurCities, Fixed::whole(-90));
+        denounce(&mut w, CivId(0), CivId(1));
+        assert_eq!(w.diplomacy.attitude(CivId(2), CivId(0)).get(Sentiment::DenouncedOurEnemies), Fixed::whole(15));
+
+        let mut w = world(&r);
+        w.diplomacy.attitude_mut(CivId(2), CivId(1)).set(Sentiment::YearsOfPeace, Fixed::whole(85));
+        denounce(&mut w, CivId(0), CivId(1));
+        assert_eq!(w.diplomacy.attitude(CivId(2), CivId(0)).get(Sentiment::DenouncedOurAllies), Fixed::whole(-15));
+    }
+
+    #[test]
+    fn the_average_trails_the_opinion_by_a_turn() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.declare_war(CivId(1), CivId(2)); // keep peace from moving 0→1
+        w.diplomacy.attitude_mut(CivId(0), CivId(1)).set(Sentiment::SharedEnemy, Fixed::whole(30));
+        tick(&mut w, Fixed::ONE);
+        let a = w.diplomacy.attitude(CivId(0), CivId(1));
+        assert_eq!(a.smoothed, Fixed::ZERO, "the first turn only computes");
+        tick(&mut w, Fixed::ONE);
+        let a = w.diplomacy.attitude(CivId(0), CivId(1));
+        assert!(a.smoothed > Fixed::ZERO && a.smoothed < Fixed::whole(3), "{}", a.smoothed);
+        assert!(smoothed_delta(&w, CivId(0), CivId(1)) > Fixed::whole(25));
+    }
+
+    #[test]
+    fn a_sudden_souring_is_denounced_and_a_slow_one_is_not() {
+        let r = ruleset();
+        let mut w = world(&r);
+        // Opinion has crashed from nothing to -70 in a turn: well past -65·1.005^-70 ≈ -46.
+        w.diplomacy.attitude_mut(CivId(0), CivId(1)).set(Sentiment::CapturedOurCities, Fixed::whole(-70));
+        assert_eq!(crate::world::ai::choose_denunciations(&w, &r, CivId(0)), vec![CivId(1)]);
+
+        // The same opinion, long held, is no news.
+        w.diplomacy.attitude_mut(CivId(0), CivId(1)).smoothed = Fixed::whole(-70);
+        assert!(crate::world::ai::choose_denunciations(&w, &r, CivId(0)).is_empty());
     }
 
     #[test]

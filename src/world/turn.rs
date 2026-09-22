@@ -80,6 +80,8 @@ pub struct TurnPlan {
     pub gift: Option<(CivId, i32)>,
     /// Civs to settle with, where both sides want it.
     pub make_peace_with: Vec<CivId>,
+    /// Civs to denounce publicly.
+    pub denounce: Vec<CivId>,
 }
 
 /// Something that happened, in the order it happened.
@@ -167,6 +169,11 @@ pub enum TurnEvent {
     },
     WeLoveTheKingDayEnded {
         city: Id<City>,
+    },
+    /// One civ publicly denounced another.
+    Denounced {
+        by: CivId,
+        target: CivId,
     },
     /// A conquered city stopped resisting and works again.
     ResistanceEnded {
@@ -323,6 +330,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         orders: Vec::new(),
         declare_war_on: Vec::new(),
         make_peace_with: Vec::new(),
+        denounce: Vec::new(),
         gift: None,
     };
     let Some(c) = world.civ(civ) else { return plan };
@@ -353,6 +361,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
             plan.make_peace_with.push(other);
         }
     }
+    plan.denounce = crate::world::ai::choose_denunciations(world, r, civ);
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
@@ -545,6 +554,11 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
             let (a, b) = pair.civs();
             events.push(TurnEvent::PeaceMade { a, b });
         }
+    }
+
+    for target in &plan.denounce {
+        crate::world::opinion::denounce(world, plan.civ, *target);
+        events.push(TurnEvent::Denounced { by: plan.civ, target: *target });
     }
 
     // Orders first: a settler that founds this turn should be counted as a
@@ -1222,6 +1236,7 @@ mod tests {
                 orders: Vec::new(),
                 declare_war_on: Vec::new(),
                 make_peace_with: Vec::new(),
+                denounce: Vec::new(),
                 gift: None,
             }
         };
@@ -1971,6 +1986,7 @@ mod expansion {
                 orders: Vec::new(),
                 declare_war_on: Vec::new(),
                 make_peace_with: Vec::new(),
+                denounce: Vec::new(),
                 gift: None,
             }
         };

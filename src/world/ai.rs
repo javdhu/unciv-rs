@@ -612,6 +612,43 @@ impl Priorities {
     }
 }
 
+/// Whom to denounce this turn (`DiplomacyAutomation.denounce`).
+///
+/// Unciv's rule: denounce a civ whose standing with us has fallen fast — the
+/// opinion against its thirty-turn average — by more than
+/// `65 × 1.005^opinion × 1.1^(denunciations we already have running)`. The
+/// first factor makes a friend's fall need to be steeper and an enemy's
+/// shallower; the second makes an AI slow to denounce everyone at once. So a
+/// civ drops from 65 to nothing, or from nothing to −50, before it speaks up.
+/// Not at war, and not twice at once.
+pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId> {
+    use crate::stats::Precise;
+    use crate::world::diplomacy::Flag;
+    let _ = r;
+    if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
+        return Vec::new();
+    }
+    let known: Vec<CivId> = world
+        .civ_ids()
+        .filter(|o| *o != civ && world.civ(*o).is_some_and(|c| c.is_major()) && world.diplomacy.have_met(civ, *o))
+        .collect();
+    let mut active = known.iter().filter(|o| world.diplomacy.has_flag(civ, **o, Flag::Denunciation)).count() as u32;
+    let mut out = Vec::new();
+    for other in known {
+        if world.diplomacy.at_war(civ, other) || world.diplomacy.has_flag(civ, other, Flag::Denunciation) {
+            continue;
+        }
+        let opinion = crate::world::opinion::opinion(world, civ, other);
+        let Some(friendliness) = Precise::from_ratio(1005, 1000).pow(opinion) else { continue };
+        let required = Precise::whole(-65) * friendliness * Precise::from_ratio(11, 10).powi(active);
+        if Precise::from_fixed(crate::world::opinion::smoothed_delta(world, civ, other)) <= required {
+            out.push(other);
+            active += 1;
+        }
+    }
+    out
+}
+
 /// Whether to burn a city just taken (`Battle.automateCityConquer`).
 ///
 /// Unciv's rule: a small one — under four citizens — or any city at all if
