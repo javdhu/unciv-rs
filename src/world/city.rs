@@ -80,6 +80,12 @@ pub struct City {
     pub razing: bool,
     /// Turns of resistance left after a conquest, during which it makes nothing.
     pub resistance: u32,
+    /// The luxury this city wants, for a We Love The King Day; see `wltkd`.
+    pub demanded_resource: Option<Id<crate::ruleset::TileResource>>,
+    /// Turns until the city tires of waiting and asks for something else.
+    pub demand_countdown: u32,
+    /// Turns of celebration left.
+    pub wltkd: u32,
 }
 
 impl City {
@@ -109,6 +115,9 @@ impl City {
             puppet: false,
             razing: false,
             resistance: 0,
+            demanded_resource: None,
+            demand_countdown: 0,
+            wltkd: 0,
         }
     }
 

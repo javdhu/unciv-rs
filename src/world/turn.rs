@@ -155,6 +155,19 @@ pub enum TurnEvent {
         city: Id<City>,
         by: CivId,
     },
+    /// A city named the luxury it wants.
+    ResourceDemanded {
+        city: Id<City>,
+        resource: Id<crate::ruleset::TileResource>,
+    },
+    /// A city has what it asked for, and celebrates.
+    WeLoveTheKingDay {
+        city: Id<City>,
+        resource: Id<crate::ruleset::TileResource>,
+    },
+    WeLoveTheKingDayEnded {
+        city: Id<City>,
+    },
     /// A conquered city stopped resisting and works again.
     ResistanceEnded {
         city: Id<City>,
@@ -396,7 +409,10 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         // An unhappy empire grows slowly or not at all, and the thresholds for
         // that are the ruleset's, not this engine's.
         let growth = growth_modifier(world, r, civ, plan.happiness);
-        let effective = if growth.is_empty() { surplus } else { growth.evaluate(Fixed::whole(surplus)).floor() as i32 };
+        let grown = if growth.is_empty() { Fixed::whole(surplus) } else { growth.evaluate(Fixed::whole(surplus)) };
+        // A celebrating city's surplus is a quarter larger, added after the
+        // other growth modifiers rather than multiplied with them.
+        let effective = (grown + crate::world::wltkd::food_bonus(city, surplus, plan.happiness)).floor() as i32;
 
         if hypothetical.queue.is_empty() {
             // What the civ nets now, so it does not commit to upkeep it
@@ -665,6 +681,19 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
                 TurnEvent::CityBurned { city, population }
             }
             crate::world::conquest::ConquestEvent::Razed { city, owner } => TurnEvent::CityRazed { city, owner },
+        });
+    }
+
+    // Cities that want a luxury, and those celebrating one.
+    for e in crate::world::wltkd::tick(world, r, plan.civ, m.speed) {
+        events.push(match e {
+            crate::world::wltkd::WltkdEvent::Demanded { city, resource } => {
+                TurnEvent::ResourceDemanded { city, resource }
+            }
+            crate::world::wltkd::WltkdEvent::Started { city, resource } => {
+                TurnEvent::WeLoveTheKingDay { city, resource }
+            }
+            crate::world::wltkd::WltkdEvent::Ended { city } => TurnEvent::WeLoveTheKingDayEnded { city },
         });
     }
 

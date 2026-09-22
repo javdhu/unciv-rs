@@ -37,6 +37,7 @@ pub mod specialists;
 pub mod turn;
 pub mod unique_index;
 pub mod victory;
+pub mod wltkd;
 pub mod world;
 pub mod yields;
 

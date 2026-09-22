@@ -338,6 +338,14 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         }
 
         // --- the city itself ----------------------------------------------
+        UniqueType::ConditionalWLTKD => match (ctx.world, ctx.city) {
+            (Some(world), Some(city)) => match world.cities.get(city) {
+                Some(c) if c.wltkd > 0 => Verdict::True,
+                Some(_) => Verdict::False,
+                None => Verdict::Unknown,
+            },
+            _ => Verdict::Unknown,
+        },
         UniqueType::ConditionalPopulationFilter => {
             let (Some(world), Some(city), Some(amount)) = (ctx.world, ctx.city, number(p(0))) else {
                 return Verdict::Unknown;
