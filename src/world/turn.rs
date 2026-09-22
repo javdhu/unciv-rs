@@ -84,6 +84,8 @@ pub struct TurnPlan {
     pub denounce: Vec<CivId>,
     /// City-states to demand tribute of, and whether a worker rather than gold.
     pub tribute: Vec<(CivId, bool)>,
+    /// Trades to offer: to whom, what we give, what we get.
+    pub trades: Vec<(CivId, Vec<crate::world::trade::Item>, Vec<crate::world::trade::Item>)>,
 }
 
 /// Something that happened, in the order it happened.
@@ -171,6 +173,21 @@ pub enum TurnEvent {
     },
     WeLoveTheKingDayEnded {
         city: Id<City>,
+    },
+    /// Two civs made a trade.
+    TradeMade {
+        a: CivId,
+        b: CivId,
+    },
+    /// A trade ran its course.
+    TradeEnded {
+        a: CivId,
+        b: CivId,
+    },
+    /// A trade was called off: a side could no longer give what it promised.
+    TradeCancelled {
+        a: CivId,
+        b: CivId,
     },
     /// A city-state paid tribute: gold, or a worker when `worker` is set.
     TributePaid {
@@ -341,6 +358,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         make_peace_with: Vec::new(),
         denounce: Vec::new(),
         tribute: Vec::new(),
+        trades: Vec::new(),
         gift: None,
     };
     let Some(c) = world.civ(civ) else { return plan };
@@ -373,6 +391,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
     }
     plan.denounce = crate::world::ai::choose_denunciations(world, r, civ);
     plan.tribute = crate::world::ai::choose_tribute(world, r, civ);
+    plan.trades = crate::world::ai::choose_trades(world, r, civ);
     // Worked out on the first worker's turn and shared by the rest.
     let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
@@ -603,6 +622,18 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         if let Ok(gold) = paid {
             events.push(TurnEvent::TributePaid { city_state: *cs, to: plan.civ, gold, worker: *worker });
             events.extend(quest_events(crate::world::quests::on_bullied(world, r, *cs, plan.civ)));
+        }
+    }
+
+    // Offers go to the other side, who judges them now, against the world
+    // as it stands after everything applied so far.
+    for (other, give, get) in &plan.trades {
+        let turns = costs.deal_duration;
+        if crate::world::trade::acceptability(world, r, *other, plan.civ, get, give, turns) < 0 {
+            continue;
+        }
+        if crate::world::trade::accept(world, plan.civ, *other, give, get, turns).is_ok() {
+            events.push(TurnEvent::TradeMade { a: plan.civ, b: *other });
         }
     }
 
@@ -1058,6 +1089,16 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
             c.resources = stock;
         }
     }
+    // Traded resources move from the stock of the giver to the receiver's,
+    // and then the deals run a turn: gold a turn paid, clocks down, and
+    // anything a side can no longer give called off.
+    crate::world::trade::apply_to_stock(world);
+    for e in crate::world::trade::tick(world, r) {
+        events.push(match e {
+            crate::world::trade::TradeEvent::Ended { a, b } => TurnEvent::TradeEnded { a, b },
+            crate::world::trade::TradeEvent::Cancelled { a, b } => TurnEvent::TradeCancelled { a, b },
+        });
+    }
 
     // Religions spread once the whole map has moved, not inside any one civ's
     // turn — a missionary does not care whose turn it is, and doing it per civ
@@ -1273,6 +1314,7 @@ mod tests {
                 make_peace_with: Vec::new(),
                 denounce: Vec::new(),
                 tribute: Vec::new(),
+                trades: Vec::new(),
                 gift: None,
             }
         };
@@ -2024,6 +2066,7 @@ mod expansion {
                 make_peace_with: Vec::new(),
                 denounce: Vec::new(),
                 tribute: Vec::new(),
+                trades: Vec::new(),
                 gift: None,
             }
         };

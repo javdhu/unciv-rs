@@ -222,6 +222,8 @@ pub struct Diplomacy {
     influence: BTreeMap<(CivId, CivId), Fixed>,
     /// Directed countdowns, keyed `(holder, subject)`.
     flags: BTreeMap<(CivId, CivId), BTreeMap<Flag, u32>>,
+    /// Trades in force; see `trade`.
+    pub deals: Vec<crate::world::trade::Deal>,
 }
 
 /// A countdown on a directed relation (`DiplomacyFlags`): in force while

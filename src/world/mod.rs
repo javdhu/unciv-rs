@@ -35,6 +35,7 @@ pub mod research;
 pub mod resources;
 pub mod settling;
 pub mod specialists;
+pub mod trade;
 pub mod tribute;
 pub mod turn;
 pub mod unique_index;

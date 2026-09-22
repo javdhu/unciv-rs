@@ -641,6 +641,61 @@ pub fn choose_tribute(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, boo
     out
 }
 
+/// Trades to propose this turn: what we would give, and get, from whom.
+///
+/// Two of Unciv's AI habits (`TradeAutomation.exchangeLuxuries`,
+/// `DiplomacyAutomation.offerOpenBorders`): a spare luxury for one we lack,
+/// one for one, with anyone not an enemy; and open borders both ways with
+/// anyone we think well of. Only other AIs are asked — a human answers
+/// through the trade functions directly, not by being proposed to.
+pub fn choose_trades(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+) -> Vec<(CivId, Vec<crate::world::trade::Item>, Vec<crate::world::trade::Item>)> {
+    use crate::world::opinion::{relationship, RelationshipLevel};
+    use crate::world::trade::Item;
+    let _ = r;
+    let Some(c) = world.civ(civ).filter(|c| c.is_major() && c.is_ai) else { return Vec::new() };
+    let luxury =
+        |id: &Id<crate::ruleset::TileResource>| r.resources.get(*id).is_some_and(|x| x.resource_type == "Luxury");
+    let held = |civ: CivId, res: Id<crate::ruleset::TileResource>| {
+        world.civ(civ).and_then(|c| c.resources.get(&res)).copied().unwrap_or(0)
+    };
+    let mut out = Vec::new();
+    for other in world.civ_ids() {
+        let Some(o) = world.civ(other) else { continue };
+        if other == civ || !o.is_major() || !o.is_ai || !o.is_alive() || !world.diplomacy.have_met(civ, other) {
+            continue;
+        }
+        if world.diplomacy.at_war(civ, other) || relationship(world, civ, other) <= RelationshipLevel::Enemy {
+            continue;
+        }
+        let spare: Vec<_> = c
+            .resources
+            .keys()
+            .copied()
+            .filter(|res| luxury(res) && held(civ, *res) > 1 && held(other, *res) == 0)
+            .collect();
+        let wanted: Vec<_> = o
+            .resources
+            .keys()
+            .copied()
+            .filter(|res| luxury(res) && held(other, *res) > 1 && held(civ, *res) == 0)
+            .collect();
+        if let (Some(give), Some(get)) = (spare.first(), wanted.first()) {
+            out.push((other, vec![Item::Luxury(*give)], vec![Item::Luxury(*get)]));
+        }
+        let both_may = c.uniques.has(crate::UniqueType::EnablesOpenBorders)
+            && o.uniques.has(crate::UniqueType::EnablesOpenBorders);
+        let open = world.diplomacy.may_enter_borders_of(civ, other) || world.diplomacy.may_enter_borders_of(other, civ);
+        if both_may && !open && relationship(world, civ, other) >= RelationshipLevel::Favorable {
+            out.push((other, vec![Item::OpenBorders], vec![Item::OpenBorders]));
+        }
+    }
+    out
+}
+
 /// Whom to denounce this turn (`DiplomacyAutomation.denounce`).
 ///
 /// Unciv's rule: denounce a civ whose standing with us has fallen fast — the
