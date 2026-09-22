@@ -111,11 +111,80 @@ pub struct Pact {
     pub turns_in_stance: u32,
 }
 
+/// A named reason one civ feels a certain way about another
+/// (`DiplomaticModifiers`). Each carries a signed amount; see [`Attitude`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Sentiment {
+    // Grievances.
+    DeclaredWarOnUs,
+    WarMongerer,
+    CapturedOurCities,
+    // Warmth.
+    YearsOfPeace,
+    SharedEnemy,
+    OpenBorders,
+}
+
 /// What one civ thinks of another. Not necessarily mutual.
+///
+/// Kept as the reasons rather than a running total, as Unciv keeps them: each
+/// fades at its own pace — a declaration of war over a hundred and sixty
+/// turns, warmongering in forty — and a total cannot remember which part of
+/// itself is which.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Attitude {
-    /// Positive is warmth. Unciv sums named modifiers into the same figure.
-    pub opinion: i32,
+    pub sentiments: BTreeMap<Sentiment, Fixed>,
+}
+
+impl Attitude {
+    /// The sum of every reason (`opinionOfOtherCiv`). Positive is warmth.
+    pub fn opinion(&self) -> Fixed {
+        self.sentiments.values().copied().sum()
+    }
+
+    pub fn get(&self, s: Sentiment) -> Fixed {
+        self.sentiments.get(&s).copied().unwrap_or(Fixed::ZERO)
+    }
+
+    pub fn has(&self, s: Sentiment) -> bool {
+        self.sentiments.contains_key(&s)
+    }
+
+    pub fn set(&mut self, s: Sentiment, amount: Fixed) {
+        self.sentiments.insert(s, amount);
+    }
+
+    /// Add to a reason, held within `limit` if one is given (`addModifier`).
+    pub fn add(&mut self, s: Sentiment, amount: Fixed, limit: Option<Fixed>) {
+        let mut v = self.get(s) + amount;
+        if let Some(limit) = limit {
+            v = if limit < Fixed::ZERO { v.max(limit) } else { v.min(limit) };
+        }
+        self.sentiments.insert(s, v);
+    }
+
+    /// Fade a reason toward nothing by `step`, dropping it once it would pass
+    /// zero (`revertToZero`).
+    pub fn fade(&mut self, s: Sentiment, step: Fixed) {
+        let Some(v) = self.sentiments.get(&s).copied() else { return };
+        if step >= if v < Fixed::ZERO { -v } else { v } {
+            self.sentiments.remove(&s);
+        } else if v > Fixed::ZERO {
+            self.sentiments.insert(s, v - step);
+        } else {
+            self.sentiments.insert(s, v + step);
+        }
+    }
+
+    /// Grow a reason by `step`, never past `max` (`accumulateToAtMost`).
+    pub fn grow(&mut self, s: Sentiment, step: Fixed, max: Option<Fixed>) {
+        let v = self.get(s);
+        match max {
+            Some(max) if v >= max => {}
+            Some(max) if step >= max - v => self.set(s, max),
+            _ => self.add(s, step, None),
+        }
+    }
 }
 
 // `Attitude` used to carry `grants_open_borders` and `influence` as well.
@@ -360,11 +429,25 @@ mod tests {
     #[test]
     fn opinion_is_directed_and_may_disagree() {
         let mut d = Diplomacy::new();
-        d.attitude_mut(A, B).opinion = 40;
-        d.attitude_mut(B, A).opinion = -30;
+        d.attitude_mut(A, B).set(Sentiment::YearsOfPeace, Fixed::whole(40));
+        d.attitude_mut(B, A).set(Sentiment::DeclaredWarOnUs, Fixed::whole(-30));
 
-        assert_eq!(d.attitude(A, B).opinion, 40);
-        assert_eq!(d.attitude(B, A).opinion, -30, "resentment need not be mutual");
+        assert_eq!(d.attitude(A, B).opinion(), Fixed::whole(40));
+        assert_eq!(d.attitude(B, A).opinion(), Fixed::whole(-30), "resentment need not be mutual");
+    }
+
+    #[test]
+    fn a_reason_fades_to_nothing_and_is_forgotten() {
+        let mut a = Attitude::default();
+        a.set(Sentiment::WarMongerer, Fixed::whole(-1));
+        a.fade(Sentiment::WarMongerer, Fixed::permille(400));
+        assert_eq!(a.get(Sentiment::WarMongerer), Fixed::permille(-600));
+        a.fade(Sentiment::WarMongerer, Fixed::permille(700));
+        assert!(!a.has(Sentiment::WarMongerer), "past zero is gone, not flipped");
+
+        a.grow(Sentiment::YearsOfPeace, Fixed::whole(25), Some(Fixed::whole(30)));
+        a.grow(Sentiment::YearsOfPeace, Fixed::whole(25), Some(Fixed::whole(30)));
+        assert_eq!(a.get(Sentiment::YearsOfPeace), Fixed::whole(30), "and warmth stops at its cap");
     }
 
     #[test]

@@ -533,6 +533,7 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
         if let Some(crate::world::diplomacy::DiplomacyEvent::WarDeclared { aggressor, against }) =
             world.diplomacy.declare_war(plan.civ, *other)
         {
+            crate::world::opinion::on_war_declared(world, aggressor, against);
             events.push(TurnEvent::WarDeclared { aggressor, against });
         }
     }
@@ -1021,6 +1022,7 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     crate::world::movement::refresh_movement(world, r);
     update_visibility(world);
     events.extend(detect_first_contact(world));
+    crate::world::opinion::tick(world, mods.growth.speed);
     world.diplomacy.tick();
     world.turn += 1;
 

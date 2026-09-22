@@ -26,6 +26,7 @@ pub mod happiness;
 pub mod improvements;
 pub mod mapgen;
 pub mod movement;
+pub mod opinion;
 pub mod policies;
 pub mod purchase;
 pub mod quests;

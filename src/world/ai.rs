@@ -808,7 +808,21 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
         return false;
     }
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
-    if mine < (theirs * Fixed::permille(1_500)) || mine.is_zero() {
+    // How much stronger we must be depends on what we think of them: half
+    // again for a neutral, as much as twice for an ally, merely equal for the
+    // unforgivable. Unciv adds the same ten-to-minus-ten relationship term to
+    // its war motivation (`MotivationToAttackAutomation.getRelationshipModifier`).
+    use crate::world::opinion::RelationshipLevel as L;
+    let needed = match crate::world::opinion::relationship(world, civ, other) {
+        L::Unforgivable => Fixed::ONE,
+        L::Enemy => Fixed::permille(1_250),
+        L::Competitor => Fixed::permille(1_400),
+        L::Neutral => Fixed::permille(1_500),
+        L::Favorable => Fixed::permille(1_600),
+        L::Friend => Fixed::permille(1_750),
+        L::Ally => Fixed::whole(2),
+    };
+    if mine < theirs * needed || mine.is_zero() {
         return false;
     }
     // Something of theirs must be within reach, or the war is a gesture.

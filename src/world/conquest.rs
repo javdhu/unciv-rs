@@ -89,6 +89,13 @@ fn burn_buildings(r: &Ruleset, city: &City, rng: &mut Rng) -> Vec<Id<crate::rule
 pub fn conquer(world: &mut World, r: &Ruleset, city_id: Id<City>, conqueror: CivId) -> Option<Conquest> {
     let city = world.cities.get(city_id)?;
     let old_owner = city.owner;
+    // The loser's anger is weighed before the conquest takes its toll.
+    let loser_population: u32 = world
+        .civ(old_owner)
+        .map(|c| c.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.population).sum())
+        .unwrap_or(0);
+    crate::world::opinion::on_city_captured(world, conqueror, old_owner, city.population, loser_population);
+    let city = world.cities.get(city_id)?;
     let mut rng = Rng::from_parts(&[0xC0_4E57, city.centre.0 as u64, world.turn as u64]);
     let plundered = plunder(world, city, conqueror, &mut rng);
     let buildings_lost = burn_buildings(r, city, &mut rng);
