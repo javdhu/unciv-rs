@@ -59,6 +59,13 @@ pub struct City {
     pub uniques: crate::world::unique_index::UniqueIndex,
     /// What this city believes. Pressure is stored, followers are derived.
     pub faith: crate::world::religion::CityFaith,
+    /// The tiles inside this city's borders, sorted. `TileGrid::owner` says
+    /// which civ holds a tile; this says which of its cities claimed it,
+    /// which is what border growth is priced by and what a conqueror takes.
+    pub tiles: Vec<TileId>,
+    /// Culture banked toward the next border tile. Separate from the civ's
+    /// policy pool: the same culture fills both.
+    pub culture_stored: i32,
 }
 
 impl City {
@@ -79,6 +86,8 @@ impl City {
             // A new city is atheist, and atheism is a positive quantity here
             // rather than the absence of one.
             faith: crate::world::religion::CityFaith::new(),
+            tiles: Vec::new(),
+            culture_stored: 0,
         }
     }
 

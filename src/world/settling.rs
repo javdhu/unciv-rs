@@ -164,6 +164,15 @@ pub fn best_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u
     sites.into_iter().next()
 }
 
+/// Whether anywhere within `radius` of `from` could take a city at all.
+///
+/// [`best_site`] answers this too, but by ranking every candidate first — and
+/// the question "is there anywhere left?" is asked of every city, every turn,
+/// most often when the answer is no and every candidate must be looked at.
+pub fn has_site(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius: u32) -> bool {
+    world.grid.within(from, radius).into_iter().any(|t| can_settle(world, r, civ, t).is_ok())
+}
+
 /// Found a city where a settler stands, consuming it.
 pub fn found_city_with(
     world: &mut World,
@@ -181,7 +190,7 @@ pub fn found_city_with(
     // A new city claims its immediate surroundings.
     for t in world.grid.within(tile, 1) {
         if world.grid.owner[t.0 as usize].is_none() {
-            world.grid.owner[t.0 as usize] = Some(civ);
+            world.claim_tile(id, t);
         }
     }
     Ok(id)

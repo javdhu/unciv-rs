@@ -682,6 +682,25 @@ impl Precise {
         (o.0 != 0).then(|| Precise((self.0 << 32) / o.0))
     }
 
+    /// `num / den` to within one Q32 step — for constants with more decimals
+    /// than a `Fixed` holds, like the 1.4813 in the border curve.
+    pub fn from_ratio(num: i64, den: i64) -> Precise {
+        Precise(((num as i128) << 32) / den as i128)
+    }
+
+    /// Real powers, as `exp2(exponent * log2(self))`, without a round trip
+    /// through thousandths on the way in. `None` for a negative base.
+    pub fn pow(self, exponent: Fixed) -> Option<Precise> {
+        if self.0 < 0 {
+            return None;
+        }
+        if self.0 == 0 {
+            return Some(if exponent.is_zero() { Precise::ONE } else { Precise(0) });
+        }
+        let l = log2_q32(self.0 as u128)?;
+        Some(Precise(exp2_q32((l * exponent.raw() as i128) / SCALE as i128) as i128))
+    }
+
     /// Integer powers by repeated squaring.
     ///
     /// Far more accurate than routing through `log2`/`exp2`, and the exponents

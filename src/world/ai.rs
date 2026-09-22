@@ -253,7 +253,7 @@ pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
     c.cities
         .iter()
         .filter_map(|id| world.cities.get(*id))
-        .any(|city| crate::world::settling::best_site(world, r, civ, city.centre, 6).is_some())
+        .any(|city| crate::world::settling::has_site(world, r, civ, city.centre, 6))
 }
 
 /// What a settler should do this turn: walk toward the best site, or found.
@@ -440,11 +440,45 @@ pub fn improvable_tiles(
 }
 
 /// What a worker should do: walk to the best unimproved tile, or dig.
+/// A job for a worker: a tile, and what to build on it.
+pub type WorkerJob = (crate::world::grid::TileId, Id<crate::ruleset::TileImprovement>);
+
+/// Every job this civ's workers could take, in no particular order.
+///
+/// The same list for every worker of the civ — planning reads one world — so
+/// the turn loop works it out once per civ and hands it to each
+/// [`worker_order`], rather than each worker rebuilding it. With borders that
+/// grow, a city has five times the tiles it was founded with, and rebuilding
+/// the list per worker was most of the cost of a turn.
+pub fn worker_jobs(world: &World, r: &Ruleset, civ: CivId) -> Vec<WorkerJob> {
+    // Connecting a city comes before improving tiles, and replaces the list
+    // rather than joining the end of it.
+    //
+    // A trade route is worth several gold every turn for the rest of the
+    // game; one farm is worth one food. Leaving roads as the job of last
+    // resort means they are never done at all, because a growing city always
+    // has one more unimproved tile — measured at 110 turns to join two cities
+    // five tiles apart, against 19 — the optimum — once roads come first.
+    if let Some(road) = r.improvements.id("Road") {
+        let wanted = crate::world::connections::road_plan(world, r, civ);
+        if !wanted.is_empty() {
+            return wanted.into_iter().map(|t| (t, road)).collect();
+        }
+    }
+    let Some(c) = world.civ(civ) else { return Vec::new() };
+    c.cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .flat_map(|city| improvable_tiles(world, r, civ, city))
+        .collect()
+}
+
 pub fn worker_order(
     world: &World,
     r: &Ruleset,
     civ: CivId,
     unit: Id<crate::world::entities::Unit>,
+    jobs: &std::cell::OnceCell<Vec<WorkerJob>>,
 ) -> Option<UnitOrder> {
     let u = world.units.get(unit)?;
     if !is_worker(r, u.base) {
@@ -460,28 +494,7 @@ pub fn worker_order(
         }
     }
 
-    let c = world.civ(civ)?;
-    let mut jobs: Vec<_> = c
-        .cities
-        .iter()
-        .filter_map(|id| world.cities.get(*id))
-        .flat_map(|city| improvable_tiles(world, r, civ, city))
-        .collect();
-
-    // Connecting a city comes before improving tiles, and replaces the list
-    // rather than joining the end of it.
-    //
-    // A trade route is worth several gold every turn for the rest of the
-    // game; one farm is worth one food. Leaving roads as the job of last
-    // resort means they are never done at all, because a growing city always
-    // has one more unimproved tile — measured at 110 turns to join two cities
-    // five tiles apart, against 19 — the optimum — once roads come first.
-    if let Some(road) = r.improvements.id("Road") {
-        let wanted = crate::world::connections::road_plan(world, r, civ);
-        if !wanted.is_empty() {
-            jobs = wanted.into_iter().map(|t| (t, road)).collect();
-        }
-    }
+    let jobs = jobs.get_or_init(|| worker_jobs(world, r, civ));
 
     // Already standing on a job? Dig.
     if let Some((_, imp)) = jobs.iter().find(|(t, _)| *t == u.position) {

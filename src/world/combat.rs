@@ -512,7 +512,6 @@ pub fn capture_city(
     // banked for the larger city means a captured city grows back on the turn
     // after it falls, which is the opposite of what sacking one should do.
     city.food_stored = 0;
-    let centre = city.centre;
 
     if let Some(old) = world.civ_mut(old_owner) {
         old.cities.retain(|c| *c != city_id);
@@ -520,11 +519,10 @@ pub fn capture_city(
     if let Some(new) = world.civ_mut(new_owner) {
         new.cities.push(city_id);
     }
-    // The land around it changes hands with it.
-    for t in world.grid.within(centre, 1) {
-        if world.grid.owner[t.0 as usize] == Some(old_owner) {
-            world.grid.owner[t.0 as usize] = Some(new_owner);
-        }
+    // Its whole territory changes hands with it — every tile it claimed, not
+    // a ring around the centre (`CityConquestFunctions.conquerCity`).
+    for t in world.cities.get(city_id).map(|c| c.tiles.clone()).unwrap_or_default() {
+        world.grid.owner[t.0 as usize] = Some(new_owner);
     }
 }
 

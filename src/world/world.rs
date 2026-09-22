@@ -72,8 +72,20 @@ impl World {
             c.cities.push(id);
         }
         // A city owns its centre outright.
-        self.grid.owner[centre.0 as usize] = Some(owner);
+        self.claim_tile(id, centre);
         id
+    }
+
+    /// Bring a tile inside a city's borders, for the city's owner.
+    ///
+    /// The one place a tile changes hands to a city, so the civ-level owner
+    /// column and the city's own list cannot disagree about it.
+    pub fn claim_tile(&mut self, city: Id<City>, tile: TileId) {
+        let Some(c) = self.cities.get_mut(city) else { return };
+        if let Err(at) = c.tiles.binary_search(&tile) {
+            c.tiles.insert(at, tile);
+        }
+        self.grid.owner[tile.0 as usize] = Some(c.owner);
     }
 
     /// Found a city, granting the capital its palace.

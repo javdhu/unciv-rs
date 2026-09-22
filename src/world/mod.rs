@@ -16,6 +16,7 @@ pub mod diplomacy;
 pub mod economy;
 pub mod entities;
 pub mod espionage;
+pub mod expansion;
 pub mod filters;
 pub mod fog;
 pub mod great_people;

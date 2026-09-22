@@ -47,6 +47,9 @@ pub struct TurnPlan {
     pub food: Vec<(Id<City>, i32)>,
     /// Production each city will bank.
     pub production: Vec<(Id<City>, i32)>,
+    /// Culture each city banks toward its next border tile — the same culture
+    /// that also goes to the civ's policies.
+    pub border_culture: Vec<(Id<City>, i32)>,
     /// Science the civ will bank, summed across its cities.
     pub science: i32,
     /// Faith the civ will bank, toward a pantheon and then a religion.
@@ -147,6 +150,11 @@ pub enum TurnEvent {
     CityCaptured {
         city: Id<City>,
         by: CivId,
+    },
+    /// A city's culture bought it another tile.
+    BordersExpanded {
+        city: Id<City>,
+        tile: TileId,
     },
     Battle {
         attacker_died: bool,
@@ -264,6 +272,7 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         assignments: Vec::new(),
         food: Vec::new(),
         production: Vec::new(),
+        border_culture: Vec::new(),
         science: 0,
         faith: 0,
         culture: 0,
@@ -305,9 +314,11 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
             plan.make_peace_with.push(other);
         }
     }
+    // Worked out on the first worker's turn and shared by the rest.
+    let worker_jobs = std::cell::OnceCell::new();
     for unit in &c.units {
         let order = crate::world::ai::settler_order(world, r, civ, *unit)
-            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit))
+            .or_else(|| crate::world::ai::worker_order(world, r, civ, *unit, &worker_jobs))
             .or_else(|| crate::world::ai::military_order(world, r, civ, *unit))
             .or_else(|| crate::world::ai::explore_order(world, r, civ, *unit));
         if let Some(order) = order {
@@ -366,6 +377,8 @@ pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, m
         plan.assignments.push((city_id, std::mem::take(&mut hypothetical.worked)));
         plan.food.push((city_id, effective));
         plan.production.push((city_id, output.production.round() as i32));
+        // Truncated, not rounded: `cultureStored += culture.toInt()`.
+        plan.border_culture.push((city_id, output.culture.floor() as i32));
         plan.science += output.science.round() as i32;
         plan.culture += output.culture.round() as i32;
         plan.faith += output.faith.round() as i32;
@@ -574,6 +587,16 @@ pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnMod
                 let movement = r.units.get(base).map_or(2, |u| u.movement);
                 world.place_unit(Unit::new(base, owner, centre, movement));
             }
+        }
+    }
+
+    // Borders grow after production, as `CityTurnManager.endTurn` orders it.
+    for (city_id, culture) in &plan.border_culture {
+        if !still_ours(world, plan, *city_id) {
+            continue;
+        }
+        if let Some(tile) = crate::world::expansion::grow(world, r, *city_id, *culture, policies.speed) {
+            events.push(TurnEvent::BordersExpanded { city: *city_id, tile });
         }
     }
 
@@ -1076,6 +1099,7 @@ mod tests {
                 assignments: Vec::new(),
                 food: Vec::new(),
                 production: Vec::new(),
+                border_culture: Vec::new(),
                 science: 0,
                 faith: 0,
                 culture: 0,
@@ -1822,6 +1846,7 @@ mod expansion {
                 assignments: Vec::new(),
                 food: Vec::new(),
                 production: Vec::new(),
+                border_culture: Vec::new(),
                 science: 0,
                 faith: 0,
                 culture: 0,
