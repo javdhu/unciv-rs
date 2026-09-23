@@ -10,8 +10,8 @@ pub struct RuleTables {
     pub terrains: Vec<TerrainRow>,
     pub units: Vec<UnitRow>,
     pub nations: Vec<NationRow>,
-    pub resources: Vec<Named>,
-    pub improvements: Vec<Named>,
+    pub resources: Vec<ResourceRow>,
+    pub improvements: Vec<ImprovementRow>,
     pub buildings: Vec<BuildingRow>,
     pub technologies: Vec<TechRow>,
     pub victories: Vec<Named>,
@@ -29,6 +29,44 @@ pub struct TerrainRow {
     /// `Land`, `Water`, `TerrainFeature` or `NaturalWonder`.
     pub kind: String,
     pub impassable: bool,
+    /// Movement points to enter; features add theirs to the base terrain's.
+    pub movement_cost: i32,
+    /// Base yields; a feature with `overrideStats` replaces the base terrain's.
+    pub yields: Yields,
+    pub override_stats: bool,
+}
+
+/// A stats object's six tile yields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Yields {
+    pub food: i32,
+    pub production: i32,
+    pub gold: i32,
+    pub science: i32,
+    pub culture: i32,
+    pub faith: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceRow {
+    pub id: u32,
+    pub name: String,
+    /// `Strategic`, `Luxury` or `Bonus`.
+    pub kind: String,
+    pub yields: Yields,
+    /// The improvement that works it, by name.
+    pub improvement: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImprovementRow {
+    pub id: u32,
+    pub name: String,
+    pub yields: Yields,
+    pub turns_to_build: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -112,6 +150,19 @@ pub struct BeliefRow {
     pub kind: String,
     pub effects: Vec<String>,
 }
+macro_rules! yields {
+    ($x:expr) => {
+        Yields {
+            food: $x.food.unwrap_or(0),
+            production: $x.production.unwrap_or(0),
+            gold: $x.gold.unwrap_or(0),
+            science: $x.science.unwrap_or(0),
+            culture: $x.culture.unwrap_or(0),
+            faith: $x.faith.unwrap_or(0),
+        }
+    };
+}
+
 fn rule_text(u: &civ_core::Unique) -> String {
     let mut text = u.text.clone();
     for c in &u.conditionals {
@@ -205,6 +256,9 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 name: t.name.clone(),
                 kind: t.r#type.clone(),
                 impassable: t.impassable.unwrap_or(false),
+                movement_cost: t.movement_cost.unwrap_or(1),
+                yields: yields!(t),
+                override_stats: t.override_stats.unwrap_or(false),
             })
             .collect(),
         units: r
@@ -238,17 +292,22 @@ pub fn tables(r: &Ruleset) -> RuleTables {
         resources: r
             .resources
             .iter()
-            .map(|(id, x)| Named {
+            .map(|(id, x)| ResourceRow {
                 id: id.index(),
                 name: x.name.clone(),
+                kind: x.resource_type.clone(),
+                yields: yields!(x),
+                improvement: x.improvement.clone(),
             })
             .collect(),
         improvements: r
             .improvements
             .iter()
-            .map(|(id, x)| Named {
+            .map(|(id, x)| ImprovementRow {
                 id: id.index(),
                 name: x.name.clone(),
+                yields: yields!(x),
+                turns_to_build: x.turns_to_build.unwrap_or(0),
             })
             .collect(),
         buildings: r
@@ -290,5 +349,13 @@ mod tests {
         assert!(tech("Bronze Working").unlocks.iter().any(|u| u.kind == "wonder"));
         let spearman = t.units.iter().find(|u| u.name == "Spearman").unwrap();
         assert!(spearman.strength > 0 && spearman.cost > 0 && spearman.ranged_strength == 0);
+        let resource = |name: &str| t.resources.iter().find(|x| x.name == name).unwrap();
+        assert_eq!(resource("Iron").kind, "Strategic");
+        assert_eq!(resource("Wheat").kind, "Bonus");
+        assert_eq!(resource("Silk").kind, "Luxury");
+        let terrain = |name: &str| t.terrains.iter().find(|x| x.name == name).unwrap();
+        assert_eq!(terrain("Grassland").yields.food, 2);
+        assert_eq!(terrain("Hill").movement_cost, 2);
+        assert!(t.improvements.iter().any(|i| i.name == "Farm" && i.yields.food == 1));
     }
 }
