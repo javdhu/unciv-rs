@@ -6,7 +6,7 @@ const MAJOR: CivId = CivId(0);
 const OTHER: CivId = CivId(1);
 const CS: CivId = CivId(2);
 fn setup(kind: &str) -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut civs = vec![
         Civilization::new(MAJOR, r.nations.id("Austria").unwrap(), false),
         Civilization::new(OTHER, r.nations.id("Rome").unwrap(), false),

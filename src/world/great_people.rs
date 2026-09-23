@@ -378,7 +378,7 @@ mod tests {
         use crate::world::entities::Civilization;
         use crate::world::grid::TileGrid;
 
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
         let mut w = World::new(g, vec![Civilization::new(CivId(0), nation, false)]);

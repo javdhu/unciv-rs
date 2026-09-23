@@ -428,7 +428,7 @@ mod tests {
     use crate::world::mapgen::{generate, MapParameters};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap()
+        Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap()
     }
 
     fn world(r: &Ruleset, nations: &[&str]) -> World {

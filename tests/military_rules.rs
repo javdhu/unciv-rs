@@ -4,7 +4,7 @@ use civ_core::stats::Fixed;
 use civ_core::world::{ai, air, combat, military, City, CivId, Civilization, TileGrid, TileId, Unit, World};
 
 fn fixture() -> (Ruleset, World) {
-    let mut r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let mut r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     for id in r.units.ids().collect::<Vec<_>>() {
         r.units.get_mut(id).unwrap().required_resource = None;
     }

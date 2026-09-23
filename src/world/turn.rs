@@ -1815,7 +1815,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn two_civ_world(r: &Ruleset) -> World {
@@ -2563,7 +2563,7 @@ mod self_play {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     /// A civilization left alone should get on with it: research, build, grow
@@ -2723,7 +2723,7 @@ mod expansion {
     /// existed. Self-play found it; no unit test would have.
     #[test]
     fn a_finished_unit_is_placed_on_the_map() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let mut g = TileGrid::new(8, 8, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let nation = r.nations.ids().next().unwrap();
@@ -2786,7 +2786,7 @@ mod multi_civ {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     /// Three civs on one map, left to themselves. Everything up to now has
@@ -2912,7 +2912,7 @@ mod contact {
 
     #[test]
     fn seeing_a_neighbour_is_meeting_them() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         let nation = r.nations.ids().next().unwrap();
         let mut w =
@@ -2954,7 +2954,7 @@ mod warfare {
     /// loop rather than by calling combat directly.
     #[test]
     fn armies_at_war_actually_fight() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let nation = r.nations.ids().next().unwrap();

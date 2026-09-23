@@ -9,7 +9,7 @@ use civ_core::world::world::World;
 
 #[test]
 fn stored_faith_reaches_prophets_enhancement_and_missionaries_in_actual_turns() {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(22, 10, r.terrain("Grassland").unwrap()),
         vec![Civilization::new(CivId(0), r.nations.id("Rome").unwrap(), true)],
@@ -77,7 +77,7 @@ fn stored_faith_reaches_prophets_enhancement_and_missionaries_in_actual_turns() 
 fn pantheon_cities_keep_the_original_benefits_until_the_full_religion_arrives() {
     use civ_core::stats::Fixed;
     use civ_core::world::{city, religion};
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(24, 8, r.terrain("Desert").unwrap()),
         vec![Civilization::new(CivId(0), r.nations.id("Rome").unwrap(), true)],

@@ -19,7 +19,7 @@ use civ_core::world::world::World;
 use std::time::Instant;
 
 fn ruleset() -> Ruleset {
-    Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+    Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
 }
 
 fn game(r: &Ruleset, width: u16, height: u16, civs: usize) -> World {

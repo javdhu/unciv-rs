@@ -9,7 +9,7 @@ use civ_core::world::world::World;
 use civ_core::Unique;
 
 fn ruleset() -> Ruleset {
-    let mut r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let mut r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     // A single reward makes route behavior independent of reward selection.
     r.ruin_rewards = Registry::new();
     r.ruin_rewards.insert(

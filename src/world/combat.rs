@@ -1672,7 +1672,7 @@ mod tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {
@@ -1837,7 +1837,7 @@ mod peace_tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     /// Meeting someone makes peace the default, and peace forbids attacking.
@@ -1879,7 +1879,7 @@ mod siege {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn besieged(r: &Ruleset) -> (World, Id<Unit>, Id<City>) {
@@ -2024,7 +2024,7 @@ mod military_tests {
     use crate::world::grid::{CivId, TileGrid};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {

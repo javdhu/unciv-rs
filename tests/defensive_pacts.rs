@@ -14,7 +14,7 @@ const A: CivId = CivId(0);
 const B: CivId = CivId(1);
 const C: CivId = CivId(2);
 fn setup() -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(30, 12, r.terrain("Grassland").unwrap()),
         (0..4).map(|i| Civilization::new(CivId(i), r.nations.id("Rome").unwrap(), false)).collect(),

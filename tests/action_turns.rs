@@ -8,7 +8,7 @@ use civ_core::world::turn::{finish_round, plan_economy, update_visibility, TurnE
 use civ_core::world::{City, CityFocus, CivId, Civilization, TileGrid, World};
 
 fn fixture() -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let nation = r.nations.id("Rome").unwrap();
     let civs = vec![Civilization::new(CivId(0), nation, false), Civilization::new(CivId(1), nation, false)];
     let mut w = World::new(TileGrid::new(24, 18, r.terrain("Grassland").unwrap()), civs);

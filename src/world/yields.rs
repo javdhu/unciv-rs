@@ -178,7 +178,7 @@ mod tests {
     use crate::stats::{Fixed, Stat};
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn one_tile(r: &Ruleset, terrain: &str) -> TileGrid {

@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn enclosed_small_water_becomes_a_lake_but_open_seas_do_not() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let mut grid = TileGrid::new(10, 10, r.terrain("Grassland").unwrap());
         let enclosed = grid.id_at(4, 4).unwrap();
         let sea = grid.id_at(0, 4).unwrap();
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn generated_rivers_are_deterministic_symmetric_and_reach_water() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         for wrap_x in [false, true] {
             let p = crate::world::mapgen::MapParameters { seed: 16, wrap_x, ..Default::default() };
             let a = crate::world::mapgen::generate(&r, p, 4);

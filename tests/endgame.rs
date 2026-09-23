@@ -9,7 +9,7 @@ use civ_core::world::turn::{finish_round, TurnEvent, TurnModifiers};
 use civ_core::world::{victory, victory_actions as va, CityFocus, World};
 
 fn setup(n: u8) -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(20, 20, r.terrain("Grassland").unwrap()),
         (0..n).map(|i| Civilization::new(CivId(i), r.nations.ids().next().unwrap(), false)).collect(),

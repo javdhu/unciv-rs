@@ -199,7 +199,7 @@ mod tests {
     use crate::Unique;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn world(r: &Ruleset) -> World {

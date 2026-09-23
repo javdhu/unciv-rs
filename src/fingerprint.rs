@@ -25,11 +25,11 @@ use crate::world::grid::{CivId, TileGrid, TileId};
 use crate::world::movement::reachable;
 use crate::world::yields::tile_yield;
 
-const RULESET: &str = "../android/assets/jsons/Civ V - Gods & Kings/";
+const RULESET: &str = "rules/gods-and-kings/";
 
 macro_rules! embed {
     ($($f:literal),* $(,)?) => {
-        &[$(($f, include_str!(concat!("../../android/assets/jsons/Civ V - Gods & Kings/", $f)))),*]
+        &[$(($f, include_str!(concat!("../rules/gods-and-kings/", $f)))),*]
     };
 }
 

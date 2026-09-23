@@ -163,7 +163,7 @@ mod tests {
     use crate::world::{CityFocus, Civilization, TileGrid};
 
     fn fixture() -> (Ruleset, World) {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let nation = r.nations.id("Rome").unwrap();
         let civs = (0..3).map(|i| Civilization::new(CivId(i), nation, false)).collect();
         let mut world = World::new(TileGrid::new(16, 10, r.terrain("Grassland").unwrap()), civs);

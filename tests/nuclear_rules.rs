@@ -5,7 +5,7 @@ use civ_core::{
     world::{self, City, CivId, Civilization, TileGrid, TileId, Unit, World},
 };
 fn fixture() -> (Ruleset, World, Id<City>) {
-    let mut r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let mut r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     for name in ["Atomic Bomb", "Nuclear Missile"] {
         let id = r.unit(name).unwrap();
         let unit = r.units.get_mut(id).unwrap();

@@ -10,7 +10,7 @@ use civ_core::world::entities::Unit;
 use civ_core::world::{City, CivId, Civilization, TileGrid, World};
 
 fn fixture() -> (Ruleset, World, Id<City>) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let nation = r.nations.id("Rome").unwrap();
     let mut w = World::new(
         TileGrid::new(12, 12, r.terrain("Grassland").unwrap()),

@@ -568,7 +568,7 @@ mod tests {
     use crate::world::grid::{TileGrid, TileId};
 
     fn populated() -> (Ruleset, World, Id<Unit>) {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
         let nation = r.nations.ids().next().unwrap();
         let mut world = World::new(
             TileGrid::new(16, 12, r.terrain("Grassland").unwrap()),

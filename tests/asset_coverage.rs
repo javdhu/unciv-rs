@@ -10,7 +10,7 @@ use civ_core::icons;
 use common::read_json;
 use std::path::Path;
 
-const RULESET: &str = "../android/assets/jsons/Civ V - Gods & Kings";
+const RULESET: &str = "rules/gods-and-kings";
 
 /// Every object carrying a `name`, paired with its enclosing json object.
 fn objects(file: &str) -> Vec<serde_json::Map<String, serde_json::Value>> {

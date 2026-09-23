@@ -7,7 +7,7 @@ use civ_core::world::religious_units::{self, ReligiousAction};
 use civ_core::world::{City, CivId, Civilization, TileGrid, TileId, Unit, World};
 
 fn setup() -> (Ruleset, World, Id<City>, Id<City>) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(30, 12, r.terrain("Grassland").unwrap()),
         vec![Civilization::new(CivId(0), r.nations.id("Rome").unwrap(), false)],

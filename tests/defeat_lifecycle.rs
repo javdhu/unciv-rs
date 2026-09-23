@@ -7,7 +7,7 @@ use civ_core::world::turn::{update_visibility, TurnEvent};
 use civ_core::world::{conquest, World};
 
 fn setup(count: usize) -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let nation = r.nations.id("Rome").unwrap();
     let w = World::new(
         TileGrid::new(16, 16, r.terrain("Grassland").unwrap()),

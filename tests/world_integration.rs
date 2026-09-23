@@ -4,7 +4,7 @@
 use civ_core::ruleset::Ruleset;
 use civ_core::world::{CivId, TileGrid, TileId, Visibility};
 
-const GK: &str = "../android/assets/jsons/Civ V - Gods & Kings";
+const GK: &str = "rules/gods-and-kings";
 
 fn ruleset() -> Ruleset {
     Ruleset::load_dir(GK).expect("readable").expect("loads")

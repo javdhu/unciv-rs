@@ -6,7 +6,7 @@ use civ_core::world::commands::{execute, Command};
 use civ_core::world::{City, CityFocus, CivId, Civilization, TileGrid, TileId, Unit, World};
 
 fn fixture() -> (Ruleset, World) {
-    let mut r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let mut r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     // These tests isolate missions from the separate strategic-stock rules.
     for id in r.units.ids().collect::<Vec<_>>() {
         r.units.get_mut(id).unwrap().required_resource = None;

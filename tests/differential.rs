@@ -20,7 +20,7 @@ use civ_core::ruleset::{queries::SortGroup, Ruleset};
 use std::path::Path;
 
 const REFERENCE: &str = "tests/data/unciv_ruleset.json";
-const GK: &str = "../android/assets/jsons/Civ V - Gods & Kings";
+const GK: &str = "rules/gods-and-kings";
 
 /// Unciv's answers, or `None` if the dump has not been generated.
 fn reference() -> Option<Json> {

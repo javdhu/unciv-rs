@@ -309,7 +309,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> crate::ruleset::Ruleset {
-        crate::ruleset::Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings")
+        crate::ruleset::Ruleset::load_dir("rules/gods-and-kings")
             .expect("readable")
             .expect("loads")
     }

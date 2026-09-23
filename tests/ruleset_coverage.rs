@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 mod common;
 use common::{read_json, ruleset_files};
 
-const JSONS: &str = "../android/assets/jsons";
+const JSONS: &str = "rules";
 const UNIQUE_KEYS: [&str; 3] = ["uniques", "conditionals", "startingUniques"];
 
 fn collect(v: &serde_json::Value, out: &mut Vec<String>) {

@@ -7,8 +7,8 @@ use civ_core::ruleset::Ruleset;
 use civ_core::stats::Fixed;
 use civ_core::UniqueKind;
 
-const GK: &str = "../android/assets/jsons/Civ V - Gods & Kings";
-const VANILLA: &str = "../android/assets/jsons/Civ V - Vanilla";
+const GK: &str = "rules/gods-and-kings";
+const VANILLA: &str = "rules/vanilla";
 
 fn load(dir: &str) -> Ruleset {
     Ruleset::load_dir(dir).expect("directory is readable").unwrap_or_else(|e| panic!("ruleset failed to load: {e}"))

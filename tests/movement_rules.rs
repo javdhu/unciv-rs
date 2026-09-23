@@ -6,7 +6,7 @@ use civ_core::{
     world::{grid::TileGrid, movement as m, CivId, Unit, World},
 };
 fn fixture(nation: &str) -> (Ruleset, World) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut w = World::new(
         TileGrid::new(8, 8, r.terrain("Grassland").unwrap()),
         vec![Civilization::new(CivId(0), r.nations.id(nation).unwrap(), false)],

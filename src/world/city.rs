@@ -704,7 +704,7 @@ mod tests {
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn owned_grid(r: &Ruleset, terrain: &str, owner: CivId) -> TileGrid {
@@ -849,7 +849,7 @@ mod building_tests {
     use crate::world::grid::CivId;
 
     fn ruleset() -> Ruleset {
-        Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
+        Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads")
     }
 
     fn grid(r: &Ruleset) -> TileGrid {
@@ -973,7 +973,7 @@ mod library_test {
     /// all unless that unique is evaluated.
     #[test]
     fn a_library_gives_science_per_two_citizens() {
-        let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads");
+        let r = Ruleset::load_dir("rules/gods-and-kings").expect("readable").expect("loads");
         let mut g = TileGrid::new(16, 16, r.terrain("Grassland").unwrap());
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
 

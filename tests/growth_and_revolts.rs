@@ -10,7 +10,7 @@ use civ_core::{
     },
 };
 fn fixture() -> (Ruleset, World, civ_core::arena::Id<City>) {
-    let r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
+    let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
     let mut barb = Civilization::new(CivId(1), r.nations.id("Barbarians").unwrap(), true);
     barb.is_barbarian = true;
     let mut w = World::new(
