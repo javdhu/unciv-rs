@@ -1,6 +1,7 @@
 # Playable plan: wire the UI to the engine and finish the game
 
-Status 2026-09-23: P0 and P1 done; P2 is next. This is the UI track. The art track (procedural graphics) runs
+Status 2026-09-23: P0 and P1 done. P2 waits at its HUD checkpoint: `/hud-mock.html?v=a|b|c` shows three
+directions (A glass, B ink and paper, C in the world) over the live diorama, on desktop and phone. This is the UI track. The art track (procedural graphics) runs
 in parallel under [PROCEDURAL.md](PROCEDURAL.md).
 
 ## Goal
