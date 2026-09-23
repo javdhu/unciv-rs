@@ -11,8 +11,8 @@ in every empty seat and historical leader encounters.
 
 ## Run it
 
-Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, Node 20+, the engine checked out at
-`~/Downloads/Unciv-master/civ-core-rs`.
+Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Node 20+. The rules engine is
+`crates/civ-core`.
 
 ```sh
 cargo test --workspace                # facade and local multiplayer host

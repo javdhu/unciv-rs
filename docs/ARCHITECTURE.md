@@ -55,9 +55,8 @@ web/src/state/
   session.ts       live match stores; the UI's only path to the session
 ```
 
-The engine remains a path dependency at `~/Downloads/Unciv-master/civ-core-rs`. Its default build has no
-runtime dependencies; optional `serde`/`save` features support authoritative persistence. Moving or
-publishing the engine is not part of the current local integration.
+The engine is the workspace crate `crates/civ-core`. Its default build has no runtime dependencies;
+optional `serde`/`save` features support authoritative persistence.
 
 ## Information boundary
 
