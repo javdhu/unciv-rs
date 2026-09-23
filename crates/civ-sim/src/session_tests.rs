@@ -1374,3 +1374,170 @@ fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
     }
     assert!(shown > 0, "thirty rounds with nothing to replay");
 }
+
+/// Seat 0 is human; civ 1 is an AI that is not a seat. Seat 2 is a second
+/// human who must never learn about the other pair's diplomacy.
+fn ai_session() -> Session {
+    let mut s = Session::new(
+        Settings {
+            majors: 3,
+            city_states: 0,
+            ..Settings::default()
+        },
+        "ai-offers".into(),
+        vec![0, 2],
+    )
+    .unwrap();
+    s.world.diplomacy.meet(CivId(0), CivId(1));
+    s.refresh(&[], None).unwrap();
+    s
+}
+fn settle_capital(s: Session, seat: u8) -> Session {
+    let settler = own_unit(&s, seat, true);
+    apply(
+        s,
+        seat,
+        "settle",
+        Action::FoundCity {
+            unit: settler,
+            name: "Capital".into(),
+        },
+    )
+}
+fn offers_from_ai(s: &Session, seat: u8) -> Vec<DiplomaticOffer> {
+    s.current_update(seat)
+        .unwrap()
+        .offers
+        .into_iter()
+        .filter(|o| o.from == 1)
+        .collect()
+}
+/// Rounds until the AI offers these terms, holding the scripted situation.
+fn await_offer(
+    mut s: Session,
+    rounds: u32,
+    hold: impl Fn(&mut Session),
+    wanted: impl Fn(&AgreementTerms) -> bool,
+) -> (Session, DiplomaticOffer) {
+    for _ in 0..rounds {
+        hold(&mut s);
+        s = s.stage_timeout(s.turn()).unwrap().unwrap().next;
+        if let Some(offer) = offers_from_ai(&s, 0).into_iter().find(|o| wanted(&o.terms)) {
+            return (s, offer);
+        }
+    }
+    panic!("no such offer in {rounds} rounds");
+}
+fn warm(s: &mut Session) {
+    s.world.diplomacy.attitude_mut(CivId(1), CivId(0)).set(
+        civ_core::world::diplomacy::Sentiment::YearsOfPeace,
+        civ_core::stats::Fixed::whole(80),
+    );
+}
+fn answer(s: Session, id: &str, offer: &DiplomaticOffer, accept: bool) -> Session {
+    apply(
+        s,
+        0,
+        id,
+        Action::AnswerOffer {
+            offer: offer.id.clone(),
+            accept,
+        },
+    )
+}
+
+#[test]
+fn an_ai_offers_a_human_friendship_and_waits_after_a_refusal() {
+    let (s, offer) = await_offer(ai_session(), 60, warm, |t| *t == AgreementTerms::Friendship);
+    assert_eq!((offer.from, offer.to, offer.turn), (1, 0, s.world.turn));
+    // The other human sees nothing of it.
+    assert!(s.current_update(2).unwrap().offers.is_empty());
+    // A pending AI offer survives save and restore.
+    let s = Session::restore(&s.save().unwrap()).unwrap();
+
+    // Accepting signs it.
+    let accepted = answer(s.clone(), "yes", &offer, true);
+    assert!(accepted
+        .world
+        .diplomacy
+        .pact(CivId(0), CivId(1))
+        .is_some_and(|p| p.friendship_turns > 0));
+
+    // Refusing is private, and the AI does not ask again for a while.
+    let t = s
+        .stage_command(0, request(&s, 0, "no", Action::AnswerOffer { offer: offer.id.clone(), accept: false }))
+        .unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Applied);
+    assert!(t.updates.iter().all(|(seat, _)| *seat != 2), "the other human learns nothing");
+    let mut s = t.next;
+    assert!(offers_from_ai(&s, 0).is_empty());
+    for _ in 0..15 {
+        warm(&mut s);
+        s = s.stage_timeout(s.turn()).unwrap().unwrap().next;
+        assert!(
+            offers_from_ai(&s, 0).iter().all(|o| o.terms != AgreementTerms::Friendship),
+            "asked again on turn {}",
+            s.world.turn
+        );
+    }
+}
+
+#[test]
+fn an_ai_losing_a_war_to_a_human_offers_peace() {
+    let mut s = ai_session();
+    s.world.diplomacy.declare_war(CivId(1), CivId(0));
+    // Disarm the AI so it is losing; it sues once the war is ten turns old.
+    let disarm = |s: &mut Session| {
+        let soldiers: Vec<_> = s
+            .world
+            .units
+            .iter()
+            .filter(|(_, u)| u.owner == CivId(1) && u.is_military(&s.rules))
+            .map(|(id, _)| id)
+            .collect();
+        for id in soldiers {
+            s.world.remove_unit(id);
+        }
+    };
+    let (s, offer) = await_offer(s, 30, disarm, |t| *t == AgreementTerms::Peace);
+    assert!(s.world.turn >= 10);
+    // Refusing keeps the war; accepting ends it.
+    let refused = answer(s.clone(), "no", &offer, false);
+    assert!(refused.world.diplomacy.at_war(CivId(0), CivId(1)));
+    let accepted = answer(s, "yes", &offer, true);
+    assert!(!accepted.world.diplomacy.at_war(CivId(0), CivId(1)));
+}
+
+#[test]
+fn an_ai_offers_a_human_a_trade_of_embassies() {
+    let mut s = settle_capital(ai_session(), 0);
+    let writing = s.rules.technologies.id("Writing").unwrap();
+    for civ in [CivId(0), CivId(1)] {
+        s.world.civ_mut(civ).unwrap().techs.insert(writing);
+        civ_core::world::effects::on_technology_researched(
+            &mut s.world,
+            &s.rules,
+            civ,
+            writing,
+            civ_core::stats::Fixed::ONE,
+        );
+        civ_core::world::policies::rebuild_uniques(&mut s.world, &s.rules, civ);
+    }
+    let (s, offer) = await_offer(s, 40, |_| {}, |t| {
+        matches!(t, AgreementTerms::Trade { give, get } if give == &[TradeItem::Embassy] && get == &[TradeItem::Embassy])
+    });
+    let refused = answer(s.clone(), "no", &offer, false);
+    assert!(!refused.world.diplomacy.has_embassy(CivId(1), CivId(0)));
+    let accepted = answer(s, "yes", &offer, true);
+    assert!(accepted.world.diplomacy.has_embassy(CivId(1), CivId(0)));
+    assert!(accepted.world.diplomacy.has_embassy(CivId(0), CivId(1)));
+}
+
+#[test]
+fn a_human_cannot_forge_an_ai_offer_id() {
+    let s = negotiating_session();
+    let t = s
+        .stage_command(0, request(&s, 0, "ai:7", Action::OfferFriendship { target: 1 }))
+        .unwrap();
+    assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
+}
