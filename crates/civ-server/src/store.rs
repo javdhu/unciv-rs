@@ -73,6 +73,16 @@ impl Store {
             _owner_lock: owner_lock,
         })
     }
+    /// Folds the WAL back into the database file, so a stopped host leaves one self-contained file.
+    /// Every commit is already durable; this only makes the file tidy for a copy or a volume snapshot.
+    pub fn checkpoint(&self) -> Result<(), HostError> {
+        let db = self.lock()?;
+        let busy: i64 = db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        if busy != 0 {
+            return Err(HostError::Conflict);
+        }
+        Ok(())
+    }
     fn lock(&self) -> Result<MutexGuard<'_, Connection>, HostError> {
         self.db.lock().map_err(|_| HostError::Internal)
     }
