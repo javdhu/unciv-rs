@@ -232,6 +232,9 @@ impl Session {
             Query::View => QueryResult::View {
                 view: Box::new(player_view(&self.world, &self.rules, CivId(seat))),
             },
+            Query::CombatPreview { unit, target } => QueryResult::CombatPreview {
+                preview: crate::queries::combat_preview(&self.world, &self.rules, CivId(seat), unit, &target),
+            },
             Query::Rules => QueryResult::Rules {
                 content_hash: content::hash(),
                 tables: crate::tables(&self.rules),

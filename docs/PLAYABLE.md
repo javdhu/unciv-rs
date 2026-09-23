@@ -1,8 +1,10 @@
 # Playable plan: wire the UI to the engine and finish the game
 
-Status 2026-09-23: P0 and P1 done. P2 waits at its HUD checkpoint: `/hud-mock.html?v=a|b|c` shows three
-directions (A glass, B ink and paper, C in the world) over the live diorama, on desktop and phone. This is the UI track. The art track (procedural graphics) runs
-in parallel under [PROCEDURAL.md](PROCEDURAL.md).
+Status 2026-09-23: P0 and P1 done; P2 in progress. The user chose B, ink and paper, at the HUD checkpoint.
+P2a is done: the HUD kit (`hud/paper.css`), RhosGFX pack icons (`hud/icons/`), all basic unit orders, the
+policy sheet, the notice feed and the `project`/`panTo`/`refocus` scene hooks. The combat preview and the
+`attacked` event are done too. Next: the full rule tables (tech web), tile yields and the city sheet. This is
+the UI track; the art track (procedural graphics) runs in parallel under [PROCEDURAL.md](PROCEDURAL.md).
 
 ## Goal
 
@@ -163,7 +165,7 @@ Each stays knowledge-safe like the rest of the protocol and gets its hidden-stat
 5. **An `attacked` event.** For battles the viewer fought in, it carries the attacker, defender, damage
    and deaths.
 
-## Engine needs (civ-core; ask before editing)
+## Engine needs (civ-core; the user allowed engine edits on 2026-09-23)
 
 - Worker automation and auto-explore for human units. The bot routines exist, but human seats cannot use
   them.

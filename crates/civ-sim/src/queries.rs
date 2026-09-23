@@ -1,13 +1,15 @@
 //! Advisory options derived from owned state and public rules. Queries do not
 //! probe hidden world-wide uniqueness or resource conditions to explain why an
 //! action might fail; execution remains authoritative.
-use crate::protocol::{ConstructionRef, EntityRef};
+use crate::protocol::{AttackTarget, ConstructionRef, EntityRef};
 use civ_core::arena::{Arena, Id};
 use civ_core::ruleset::Ruleset;
 use civ_core::stats::Stat;
 use civ_core::world::commands::{self, Command};
 use civ_core::world::construction::{self, Construction, CostModifiers, Rejection};
-use civ_core::world::{combat, policies, purchase, research, CivId, World};
+use civ_core::modifiers::Layer;
+use civ_core::stats::Fixed;
+use civ_core::world::{air, combat, policies, purchase, research, CivId, World};
 use civ_core::{Unique, UniqueType};
 use serde::{Deserialize, Serialize};
 
@@ -157,6 +159,92 @@ pub struct CivOptions {
     pub free_great_people: Vec<u32>,
     pub pantheon_cost: i32,
     pub pantheons: Vec<u32>,
+}
+
+/// A modifier on a previewed strength: a label and percentage points (25 means +25%).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModifierLine {
+    pub label: String,
+    pub percent: i32,
+}
+
+/// One side of a previewed attack. Strengths are tenths: 165 means 16.5.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CombatSideView {
+    pub strength: i32,
+    pub base: i32,
+    pub modifiers: Vec<ModifierLine>,
+    pub health: i32,
+    pub max_health: i32,
+    /// Damage taken at the lowest and the highest attack roll.
+    pub damage_min: i32,
+    pub damage_max: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CombatPreviewView {
+    pub ranged: bool,
+    /// A melee attack on a civilian, or on a city at one health, captures it outright.
+    pub capture: bool,
+    pub attacker: CombatSideView,
+    pub defender: CombatSideView,
+}
+
+/// The engine's attack preview, for the attacker's owner and a target it can see now. It spans the attack
+/// roll rather than giving the seeded outcome, and states the modifiers the fight itself will apply.
+pub fn combat_preview(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: EntityRef,
+    target: &AttackTarget,
+) -> Option<CombatPreviewView> {
+    let (attacker, _) = entity(&world.units, unit.id, unit.gen).filter(|(_, u)| u.owner == civ)?;
+    let target = match target {
+        AttackTarget::Unit { unit } => {
+            let (id, _) = entity(&world.units, unit.id, unit.gen)?;
+            civ_core::world::fog::can_see_unit(world, r, civ, id).then_some(air::Target::Unit(id))?
+        }
+        AttackTarget::City { city } => {
+            let (id, c) = entity(&world.cities, city.id, city.gen)?;
+            world.visibility.can_see(civ, c.centre).then_some(air::Target::City(id))?
+        }
+    };
+    let p = combat::preview_attack(world, r, attacker, target)?;
+    Some(CombatPreviewView { ranged: p.ranged, capture: p.capture, attacker: preview_side(&p.attacker), defender: preview_side(&p.defender) })
+}
+
+fn preview_side(s: &combat::PreviewSide) -> CombatSideView {
+    let tenths = |v: Fixed| (v * Fixed::whole(10)).round() as i32;
+    CombatSideView {
+        strength: tenths(s.strength),
+        base: tenths(s.base),
+        modifiers: s
+            .modifiers
+            .iter()
+            .filter(|m| matches!(m.layer, Layer::Additive | Layer::Multiplicative) && m.amount != Fixed::ZERO)
+            .map(|m| ModifierLine { label: modifier_label(&m.source.name), percent: m.amount.round() as i32 })
+            .collect(),
+        health: s.health,
+        max_health: s.max_health,
+        damage_min: s.damage.0,
+        damage_max: s.damage.1,
+    }
+}
+
+/// Engine sources are short phrases ("Flanking") or ability text with bracketed parameters
+/// ("+[50]% Strength vs [Mounted] units"). The percentage travels separately, so drop it here.
+fn modifier_label(name: &str) -> String {
+    let plain: String = name.chars().filter(|c| !matches!(c, '[' | ']')).collect();
+    let plain = plain.trim_start_matches(|c: char| c == '+' || c == '-' || c.is_ascii_digit()).trim_start_matches('%').trim();
+    match plain {
+        "Tile" => "Terrain".into(),
+        "" => "Other".into(),
+        p => p.to_string(),
+    }
 }
 
 fn entity<T>(arena: &Arena<T>, index: u32, generation: u32) -> Option<(Id<T>, &T)> {

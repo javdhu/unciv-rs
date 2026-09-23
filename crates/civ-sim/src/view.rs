@@ -899,6 +899,20 @@ pub enum PresentationEvent {
         damage: u8,
         died: bool,
     },
+    /// A fight this player took part in, as either side.
+    Attacked {
+        /// This player struck the blow.
+        viewer_attacked: bool,
+        attacker: EntityRef,
+        target: crate::protocol::AttackTarget,
+        from: u16,
+        at: u16,
+        ranged: bool,
+        damage_to_attacker: i32,
+        damage_to_defender: i32,
+        attacker_died: bool,
+        defender_died: bool,
+    },
     CampCleared {
         tile: u16,
         gold: i32,
@@ -947,6 +961,46 @@ pub enum NoticeKind {
     GoldenAgeEnded,
 }
 
+/// A fight in the player's words: "Your Warrior hit a Brute for 40", "A Brute destroyed your Warrior".
+fn battle_text(
+    before: &World,
+    r: &Ruleset,
+    me: CivId,
+    b: &civ_core::world::combat::BattleReport,
+    attacker_died: bool,
+    defender_died: bool,
+) -> String {
+    let a = r.units[b.attacker_base].name.as_str();
+    let defender = match (b.target, b.defender_base) {
+        (civ_core::world::air::Target::City(id), _) => before.cities.get(id).map_or("a city".to_string(), |c| c.name.clone()),
+        (_, Some(base)) => r.units[base].name.clone(),
+        _ => "a unit".to_string(),
+    };
+    let city = matches!(b.target, civ_core::world::air::Target::City(_));
+    let an = |name: &str| if name.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
+    let d = if city { defender.clone() } else { format!("{} {defender}", an(&defender)) };
+    if b.attacker_owner == me {
+        if defender_died {
+            format!("Your {a} destroyed {d}")
+        } else if attacker_died {
+            format!("Your {a} fell attacking {d}")
+        } else {
+            format!("Your {a} hit {d} for {}", b.damage_to_defender)
+        }
+    } else {
+        let yours = if city { defender.clone() } else { format!("your {defender}") };
+        let them = format!("{} {a}", an(a));
+        let them = them[..1].to_uppercase() + &them[1..];
+        if defender_died {
+            format!("{them} destroyed {yours}")
+        } else if attacker_died {
+            format!("{} destroyed {} {a}", if city { defender.clone() } else { format!("Your {defender}") }, an(a))
+        } else {
+            format!("{them} attacked {yours} for {}", b.damage_to_defender)
+        }
+    }
+}
+
 fn presentation(kind: &str, text: String, event: PresentationEvent) -> EventView {
     EventView {
         kind: kind.into(),
@@ -976,6 +1030,29 @@ pub fn report_for(
     let mut out = Vec::new();
     for event in events {
         let (kind, text, payload) = match event {
+            TurnEvent::Battle { attacker_died, defender_died, report: Some(b) }
+                if b.attacker_owner == me || b.defender_owner == me =>
+            {
+                ("Attacked", battle_text(before, r, me, b, *attacker_died, *defender_died), PresentationEvent::Attacked {
+                    viewer_attacked: b.attacker_owner == me,
+                    attacker: b.attacker.into(),
+                    target: match b.target {
+                        civ_core::world::air::Target::Unit(id) => crate::protocol::AttackTarget::Unit {
+                            unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+                        },
+                        civ_core::world::air::Target::City(id) => crate::protocol::AttackTarget::City {
+                            city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+                        },
+                    },
+                    from: b.from.0,
+                    at: b.at.0,
+                    ranged: b.ranged,
+                    damage_to_attacker: b.damage_to_attacker,
+                    damage_to_defender: b.damage_to_defender,
+                    attacker_died: *attacker_died,
+                    defender_died: *defender_died,
+                })
+            }
             TurnEvent::UnitMoved(m) if own_unit(m.unit) => (
                 "UnitMoved",
                 "Unit moved".into(),
@@ -1421,6 +1498,7 @@ mod tests {
             TurnEvent::Battle {
                 attacker_died: true,
                 defender_died: false,
+                report: None,
             },
             TurnEvent::RuinsExplored {
                 civ: foreign.owner,

@@ -413,6 +413,8 @@ pub enum Query {
     CivOptions,
     View,
     Rules,
+    /// What attacking a visible target would do, across the attack roll.
+    CombatPreview { unit: EntityRef, target: AttackTarget },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -437,6 +439,9 @@ pub enum QueryResult {
         #[serde(rename = "contentHash")]
         content_hash: String,
         tables: crate::RuleTables,
+    },
+    CombatPreview {
+        preview: Option<crate::queries::CombatPreviewView>,
     },
 }
 

@@ -1053,3 +1053,22 @@ fn compensated_peace_keeps_private_saved_consent_and_commits_atomically() {
     assert!(s.current_update(0).unwrap().offers.is_empty());
     assert!(Session::restore(&s.save().unwrap()).is_ok());
 }
+
+#[test]
+fn combat_previews_need_an_own_attacker_and_a_visible_target() {
+    let mut s = session();
+    let mine = own_unit(&s, 0, false);
+    let theirs = own_unit(&s, 1, false);
+    let target = AttackTarget::Unit { unit: theirs };
+    let their_tile = s.world.units.iter().find(|(id, _)| id.index() == theirs.id).unwrap().1.position;
+    let ask = |s: &Session, seat: u8, unit: EntityRef| match s.query(seat, Query::CombatPreview { unit, target: target.clone() }).unwrap().result {
+        QueryResult::CombatPreview { preview } => preview,
+        other => panic!("unexpected {other:?}"),
+    };
+    s.world.visibility.clear_visible(CivId(0));
+    assert_eq!(ask(&s, 0, mine), None, "an unseen target reveals nothing");
+    s.world.visibility.observe(CivId(0), their_tile);
+    let p = ask(&s, 0, mine).expect("a visible target");
+    assert!(p.attacker.strength > 0 && p.defender.damage_min <= p.defender.damage_max, "{p:?}");
+    assert_eq!(ask(&s, 1, mine), None, "only the attacker's owner may ask");
+}
