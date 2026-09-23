@@ -25,9 +25,13 @@ pub struct Settings {
     /// The turn limit. Absent uses the speed's length (Speed.kt numTotalTurns): 330 on Quick,
     /// 500 on Standard.
     pub max_turns: Option<u32>,
-    /// Game speed by name; Standard when absent.
+    /// Game speed by name; the ruleset's own when absent (Standard, or Blitz
+    /// for the Blitz ruleset).
     #[ts(optional)]
     pub speed: Option<String>,
+    /// `gods-and-kings` (the default) or `blitz`.
+    #[ts(optional)]
+    pub ruleset: Option<String>,
     /// Absent enables every bundled victory. Names are validated against the ruleset.
     pub victories: Option<Vec<String>>,
     /// The local player's nation by name; the first major in seeded order when absent.
@@ -45,18 +49,25 @@ impl Default for Settings {
             wrap_x: false,
             max_turns: None,
             speed: None,
+            ruleset: None,
             victories: None,
             nation: None,
         }
     }
 }
 
-const DEFAULT_SPEED: &str = "Standard";
-
 impl Settings {
+    /// The chosen ruleset's name.
+    pub fn ruleset_name(&self) -> &str {
+        self.ruleset.as_deref().unwrap_or(content::DEFAULT_RULESET)
+    }
+
     /// The chosen speed, validated against the ruleset.
     pub fn speed_in(&self, r: &Ruleset) -> Result<Id<Speed>, String> {
-        let name = self.speed.as_deref().unwrap_or(DEFAULT_SPEED);
+        let name = self
+            .speed
+            .as_deref()
+            .unwrap_or_else(|| content::default_speed(self.ruleset_name()));
         r.speeds.id(name).ok_or_else(|| format!("unknown speed: {name}"))
     }
 
@@ -83,8 +94,21 @@ fn seeded_order<T: Copy>(items: &[T], seed: u64) -> Vec<T> {
 }
 
 pub fn new_game(s: &Settings) -> Result<(World, Ruleset, CivId), String> {
+    new_game_for(s, &[])
+}
+
+/// [`new_game`], knowing which major civilizations humans will play: they
+/// start with the difficulty's `playerBonusStartingUnits`, the other majors
+/// with its `aiMajorCivBonusStartingUnits` (GameStarter.kt:454).
+pub fn new_game_for(s: &Settings, humans: &[u8]) -> Result<(World, Ruleset, CivId), String> {
     validate_settings(s)?;
-    let rules = content::load()?;
+    new_game_in(s, humans, content::load_ruleset(s.ruleset_name())?)
+}
+
+/// [`new_game_for`] with rules the caller loaded, for trusted tools such as
+/// the balance runner trying out a ruleset before it is bundled.
+pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World, Ruleset, CivId), String> {
+    validate_settings(s)?;
     let wanted = usize::from(s.majors) + usize::from(s.city_states);
 
     let majors: Vec<_> = rules
@@ -246,8 +270,16 @@ pub fn new_game(s: &Settings) -> Result<(World, Ruleset, CivId), String> {
         }
         civ_core::world::policies::rebuild_uniques(&mut world, &rules, civ);
     }
+    let difficulty = world.game_difficulty(&rules);
     for (i, start) in map.starts.iter().take(count).enumerate() {
         let kit: Vec<_> = if i < n_majors {
+            let bonus = difficulty.map_or(&[][..], |d| {
+                if humans.contains(&(i as u8)) {
+                    &d.player_bonus_starting_units[..]
+                } else {
+                    &d.ai_major_civ_bonus_starting_units[..]
+                }
+            });
             std::iter::repeat_n(settler, era.starting_settler_count.max(0) as usize)
                 .chain(std::iter::repeat_n(
                     worker,
@@ -257,6 +289,14 @@ pub fn new_game(s: &Settings) -> Result<(World, Ruleset, CivId), String> {
                     warrior,
                     era.starting_military_unit_count.max(0) as usize,
                 ))
+                // `Constants.eraSpecificUnit` stands for the era's military unit.
+                .chain(bonus.iter().map(|name| {
+                    if name == "Era Starting Unit" {
+                        warrior
+                    } else {
+                        unit(name)
+                    }
+                }))
                 .collect()
         } else {
             vec![settler]
@@ -295,6 +335,9 @@ pub fn validate_settings(s: &Settings) -> Result<(), String> {
     }
     if s.seed > 9_007_199_254_740_991 {
         return Err("seed exceeds the exact JSON integer range".into());
+    }
+    if !content::RULESETS.contains(&s.ruleset_name()) {
+        return Err(format!("unknown ruleset: {}", s.ruleset_name()));
     }
     if s.speed.as_ref().is_some_and(|n| n.len() > 100) {
         return Err("speed name is too long".into());

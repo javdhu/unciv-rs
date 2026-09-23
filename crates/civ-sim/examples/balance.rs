@@ -12,14 +12,16 @@
 //! ```
 //!
 //! Options (defaults in brackets):
-//!   --ruleset NAME     rules to play [gods-and-kings]
-//!   --speed NAME       game speed [Standard]
+//!   --ruleset NAME     gods-and-kings | blitz [gods-and-kings]
+//!   --speed NAME       game speed [the ruleset's: Standard, or Blitz]
 //!   --map SIZE         tiny | small | medium | large | huge, or WxH [small]
 //!   --civs N           major civilizations [4]
 //!   --city-states N    [2]
 //!   --max-turns N      turn limit; the speed's length when absent
 //!   --seeds A..B       seed range, `A..B` or `A..=B` [1..=20]
 //!   --threads N        worker threads [available cores]
+//!   --overlay DIR      also layer DIR's *.json over the ruleset, to try
+//!                      changes before bundling them
 //!   --out PATH         write every game as JSON
 //!   --quiet            no per-game lines
 //!
@@ -31,7 +33,7 @@ use civ_core::ruleset::Ruleset;
 use civ_core::world::construction::Construction;
 use civ_core::world::policies::era_number;
 use civ_core::world::{finish_round, CityFocus, CivId, TurnEvent, TurnModifiers, World};
-use civ_sim::{new_game, Settings};
+use civ_sim::Settings;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -44,7 +46,7 @@ const SAMPLES: [u32; 3] = [25, 50, 75];
 #[derive(Clone)]
 struct Options {
     ruleset: String,
-    speed: String,
+    speed: Option<String>,
     width: u16,
     height: u16,
     civs: u8,
@@ -54,6 +56,7 @@ struct Options {
     threads: usize,
     out: Option<String>,
     quiet: bool,
+    overlay: Option<String>,
 }
 
 fn usage(error: &str) -> ! {
@@ -89,8 +92,8 @@ fn seeds(range: &str) -> Vec<u64> {
 
 fn options() -> Options {
     let mut o = Options {
-        ruleset: "gods-and-kings".into(),
-        speed: "Standard".into(),
+        ruleset: civ_sim::content::DEFAULT_RULESET.into(),
+        speed: None,
         width: 33,
         height: 21,
         civs: 4,
@@ -100,6 +103,7 @@ fn options() -> Options {
         threads: std::thread::available_parallelism().map_or(1, |n| n.get()),
         out: None,
         quiet: false,
+        overlay: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -111,7 +115,7 @@ fn options() -> Options {
         let number = |v: &str| v.parse::<u32>().unwrap_or_else(|_| usage(&format!("{flag} needs a number")));
         match flag.as_str() {
             "--ruleset" => o.ruleset = value,
-            "--speed" => o.speed = value,
+            "--speed" => o.speed = Some(value),
             "--map" => (o.width, o.height) = map_size(&value),
             "--civs" => o.civs = number(&value) as u8,
             "--city-states" => o.city_states = number(&value) as u8,
@@ -119,11 +123,12 @@ fn options() -> Options {
             "--seeds" => o.seeds = seeds(&value),
             "--threads" => o.threads = number(&value).max(1) as usize,
             "--out" => o.out = Some(value),
+            "--overlay" => o.overlay = Some(value),
             _ => usage(&format!("unknown option {flag}")),
         }
     }
-    if o.ruleset != "gods-and-kings" {
-        usage("only the gods-and-kings ruleset is bundled");
+    if !civ_sim::content::RULESETS.contains(&o.ruleset.as_str()) {
+        usage(&format!("unknown ruleset {}; bundled: {:?}", o.ruleset, civ_sim::content::RULESETS));
     }
     o
 }
@@ -175,7 +180,7 @@ struct GameRecord {
 #[serde(rename_all = "camelCase")]
 struct Report<'a> {
     ruleset: &'a str,
-    speed: &'a str,
+    speed: String,
     width: u16,
     height: u16,
     civs: u8,
@@ -199,13 +204,33 @@ fn settings(o: &Options, seed: u64) -> Settings {
         majors: o.civs,
         city_states: o.city_states,
         max_turns: o.max_turns,
-        speed: Some(o.speed.clone()),
+        speed: o.speed.clone(),
+        ruleset: Some(o.ruleset.clone()),
         ..Settings::default()
     }
 }
 
+/// The ruleset to play: the bundled one, plus any `--overlay` files.
+fn ruleset(o: &Options) -> Result<Ruleset, String> {
+    let Some(dir) = &o.overlay else { return civ_sim::content::load_ruleset(&o.ruleset) };
+    let mut sources: Vec<(String, String)> = civ_sim::content::SOURCES
+        .iter()
+        .map(|(n, d)| (n.to_string(), d.to_string()))
+        .collect();
+    if o.ruleset == civ_sim::content::BLITZ {
+        sources.extend(civ_sim::content::BLITZ_SOURCES.iter().map(|(n, d)| (n.to_string(), d.to_string())));
+    }
+    let mut files: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).collect();
+    files.sort();
+    for p in files.into_iter().filter(|p| p.extension().is_some_and(|x| x == "json")) {
+        let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        sources.push((name, std::fs::read_to_string(&p).map_err(|e| e.to_string())?));
+    }
+    Ruleset::from_sources(&sources).map_err(|e| e.to_string())
+}
+
 fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
-    let (mut world, rules, _) = new_game(&settings(o, seed))?;
+    let (mut world, rules, _) = civ_sim::new_game_in(&settings(o, seed), &[], ruleset(o)?)?;
     let r = &rules;
     let majors: Vec<CivId> = (0..o.civs).map(CivId).collect();
     let mut civs: Vec<CivRecord> = majors
@@ -289,6 +314,11 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     })
 }
 
+fn speed_name(o: &Options, rules: &Ruleset) -> String {
+    let id = settings(o, 0).speed_in(rules).unwrap_or_else(|e| usage(&e));
+    rules.speeds[id].name.clone()
+}
+
 fn nation(world: &World, r: &Ruleset, civ: CivId) -> String {
     world.civ(civ).map_or_else(String::new, |c| r.nations[c.nation].name.clone())
 }
@@ -323,7 +353,7 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
         n,
         panics.len(),
         o.ruleset,
-        o.speed,
+        speed_name(o, rules),
         o.width,
         o.height,
         o.civs,
@@ -430,7 +460,7 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
 
 fn main() {
     let o = options();
-    let rules = civ_sim::content::load().unwrap_or_else(|e| usage(&e));
+    let rules = ruleset(&o).unwrap_or_else(|e| usage(&e));
     let next = AtomicUsize::new(0);
     let results: Mutex<Vec<GameRecord>> = Mutex::new(Vec::new());
     let panics: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
@@ -479,7 +509,7 @@ fn main() {
     if let Some(path) = &o.out {
         let report = Report {
             ruleset: &o.ruleset,
-            speed: &o.speed,
+            speed: speed_name(&o, &rules),
             width: o.width,
             height: o.height,
             civs: o.civs,

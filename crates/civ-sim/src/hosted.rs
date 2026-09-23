@@ -1,5 +1,5 @@
 //! Wasm adapter for the shared session; IndexedDB commit stays in its Worker host.
-use crate::{content, js, protocol, session, tables};
+use crate::{js, protocol, session, tables};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -45,7 +45,7 @@ impl HostedGame {
             .map_err(|e| JsError::new(&e.to_string()))?;
         js(&protocol::ServerMessage::Welcome {
             version: protocol::PROTOCOL_VERSION,
-            content_hash: content::hash(),
+            content_hash: self.session.content_hash(),
             update,
         })
     }

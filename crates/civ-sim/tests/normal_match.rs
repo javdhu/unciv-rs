@@ -360,3 +360,98 @@ fn standard_speed_changes_nothing_from_the_defaults() {
     assert_eq!(standard.science, default.science);
     assert_eq!(standard.policies, default.policies);
 }
+
+#[test]
+fn blitz_layers_over_the_full_game() {
+    use civ_sim::content;
+    let full = content::load().unwrap();
+    let blitz = content::load_ruleset(content::BLITZ).unwrap();
+    // Its own speed, eighty turns long; the full game's speeds are still there.
+    let speed = blitz.speeds.by_name("Blitz").unwrap();
+    assert_eq!(speed.total_turns, 80);
+    assert!(blitz.speeds.by_name("Standard").is_some() && full.speeds.by_name("Blitz").is_none());
+    // No diplomatic victory, and no United Nations to build towards one.
+    assert!(blitz.victories.by_name("Diplomatic").is_none() && full.victories.by_name("Diplomatic").is_some());
+    assert!(blitz.building("United Nations").is_none() && full.building("United Nations").is_some());
+    assert!(blitz.dangling_refs().len() <= full.dangling_refs().len(), "{:?}", blitz.dangling_refs());
+    // Everything not overridden is the full game's.
+    assert_eq!(blitz.technologies.len(), full.technologies.len());
+    assert_eq!(content::hash_of(content::DEFAULT_RULESET).unwrap(), content::hash());
+    assert_ne!(content::hash_of(content::BLITZ).unwrap(), content::hash());
+    assert!(content::load_ruleset("chess").is_err());
+}
+
+#[test]
+fn a_blitz_game_starts_small_and_fast() {
+    let settings = Settings {
+        ruleset: Some("blitz".into()),
+        ..Settings::default()
+    };
+    let (world, rules, me) = civ_sim::new_game_for(&settings, &[0]).unwrap();
+    assert_eq!(world.endgame.max_turns, 80);
+    assert_eq!(world.speed, rules.speeds.id("Blitz"));
+    let names = |civ: CivId| {
+        let mut v: Vec<_> = world
+            .civ(civ)
+            .unwrap()
+            .units
+            .iter()
+            .map(|id| rules.units[world.units.get(*id).unwrap().base].name.clone())
+            .collect();
+        v.sort();
+        v
+    };
+    // Settler, warrior, worker and scout (or their national replacements), for the human and the AI alike.
+    for civ in [me, CivId(1)] {
+        let units = names(civ);
+        assert_eq!(units.len(), 4, "{units:?}");
+        assert!(units.iter().any(|u| u == "Worker") && units.iter().any(|u| u == "Settler"), "{units:?}");
+    }
+    // The full game's start is untouched.
+    let (full, full_rules, _) = civ_sim::new_game_for(&Settings::default(), &[0]).unwrap();
+    assert_eq!(full.civ(CivId(0)).unwrap().units.len(), 2);
+    assert_eq!(full.endgame.max_turns, 500);
+    assert!(full_rules.victories.by_name("Diplomatic").is_some());
+}
+
+#[test]
+fn a_blitz_save_never_loads_as_the_full_game() {
+    let session = Session::new(
+        Settings {
+            ruleset: Some("blitz".into()),
+            majors: 2,
+            city_states: 0,
+            ..Settings::default()
+        },
+        "blitz".into(),
+        vec![0],
+    )
+    .unwrap();
+    let save = session.save().unwrap();
+    assert!(Session::restore(&save).is_ok());
+    // Relabel it as a full game: the content hash no longer matches.
+    let mut json: serde_json::Value = serde_json::from_str(&save).unwrap();
+    json["settings"]["ruleset"] = serde_json::Value::Null;
+    assert!(Session::restore(&json.to_string()).is_err());
+    // And the world snapshot itself names Blitz's rules.
+    let full = civ_sim::content::load().unwrap();
+    let world = civ_core::save::encode(session.world(), session.rules()).unwrap();
+    assert!(civ_core::save::decode(&world, &full).is_err());
+}
+
+#[test]
+#[ignore = "long match gate: cargo test --release -p civ-sim --test normal_match a_blitz_game_plays_to_a_victory -- --ignored"]
+fn a_blitz_game_plays_to_a_victory() {
+    let (mut world, rules, _) = civ_sim::new_game(&Settings {
+        ruleset: Some("blitz".into()),
+        seed: 3,
+        ..Settings::default()
+    })
+    .unwrap();
+    while world.winner.is_none() && world.turn <= 81 {
+        let mods = TurnModifiers::for_world(&world, &rules);
+        civ_core::world::finish_round(&mut world, &rules, civ_core::world::CityFocus::default(), mods);
+    }
+    let (_, victory) = world.winner.expect("a Blitz game ends by its turn limit");
+    assert!(world.victory_turn.is_some_and(|t| t <= 80), "{:?} {}", world.victory_turn, rules.victories[victory].name);
+}

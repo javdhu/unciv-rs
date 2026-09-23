@@ -1,0 +1,9 @@
+{
+    "isBaseRuleset": false,
+    "victoryTypesToRemove": [
+        "Diplomatic"
+    ],
+    "buildingsToRemove": [
+        "United Nations"
+    ]
+}

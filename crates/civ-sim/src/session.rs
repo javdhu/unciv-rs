@@ -1,7 +1,7 @@
 //! Transport-independent authoritative session. Prepare on a clone, persist, then publish the replacement.
 use crate::protocol::*;
 use crate::view::report_for;
-use crate::{content, new_game, player_view, reachable, Settings};
+use crate::{content, player_view, reachable, Settings};
 use civ_core::arena::{Arena, Id, Registry};
 use civ_core::ruleset::Ruleset;
 use civ_core::stats::Stat;
@@ -121,7 +121,8 @@ impl Session {
                 "human seats must be distinct major civilizations".into(),
             ));
         }
-        let (mut world, rules, _) = new_game(&settings).map_err(SessionError::InvalidSettings)?;
+        let (mut world, rules, _) =
+            crate::setup::new_game_for(&settings, &humans).map_err(SessionError::InvalidSettings)?;
         let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let seats: Vec<_> = unique
             .into_iter()
@@ -153,6 +154,10 @@ impl Session {
         Ok(session)
     }
 
+    /// The content hash of this match's ruleset, as clients compare it.
+    pub fn content_hash(&self) -> String {
+        content::hash_of(self.settings.ruleset_name()).unwrap_or_else(|_| content::hash())
+    }
     pub fn epoch(&self) -> &str {
         &self.epoch
     }
@@ -239,7 +244,7 @@ impl Session {
                 preview: crate::queries::combat_preview(&self.world, &self.rules, CivId(seat), unit, &target),
             },
             Query::Rules => QueryResult::Rules {
-                content_hash: content::hash(),
+                content_hash: self.content_hash(),
                 tables: crate::tables(&self.rules),
             },
         };
@@ -539,7 +544,7 @@ impl Session {
         let encoded = serde_json::to_string(&Save {
             version: SAVE_VERSION,
             engine: content::ENGINE_VERSION.into(),
-            content: content::hash(),
+            content: self.content_hash(),
             settings: self.settings.clone(),
             epoch: self.epoch.clone(),
             original_seats: self.original_seats.clone(),
@@ -564,7 +569,7 @@ impl Session {
             serde_json::from_str(data).map_err(|_| invalid("malformed session save"))?;
         if save.version != SAVE_VERSION
             || save.engine != content::ENGINE_VERSION
-            || save.content != content::hash()
+            || content::hash_of(save.settings.ruleset_name()).ok().as_ref() != Some(&save.content)
         {
             return Err(invalid("incompatible session version or content"));
         }
@@ -575,7 +580,9 @@ impl Session {
         {
             return Err(invalid("invalid session history"));
         }
-        let rules = Arc::new(content::load().map_err(SessionError::InvalidSave)?);
+        let rules = Arc::new(
+            content::load_ruleset(save.settings.ruleset_name()).map_err(SessionError::InvalidSave)?,
+        );
         let world =
             civ_core::save::decode(&save.world, &rules).map_err(|e| invalid(&e.to_string()))?;
         let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);

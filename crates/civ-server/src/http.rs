@@ -145,6 +145,7 @@ struct RoomRequest {
     wrap_x: bool,
     max_turns: Option<u32>,
     speed: Option<String>,
+    ruleset: Option<String>,
     victories: Option<Vec<String>>,
     turn_seconds: u32,
 }
@@ -159,6 +160,7 @@ impl Default for RoomRequest {
             wrap_x: false,
             max_turns: None,
             speed: None,
+            ruleset: None,
             victories: None,
             turn_seconds: 120,
         }
@@ -186,6 +188,7 @@ struct RoomResponse {
     /// The effective limit: explicit, or the speed's length.
     max_turns: u32,
     speed: String,
+    ruleset: String,
     victories: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     invite: Option<String>,
@@ -198,7 +201,7 @@ fn room_response(room: Room, guest: &str) -> Result<Json<RoomResponse>, HostErro
         .find_map(|(s, g)| (g == guest).then_some(*s))
         .ok_or(HostError::Forbidden)?;
     let is_owner = room.owner == guest;
-    let rules = civ_sim::content::shared().map_err(|_| HostError::Internal)?;
+    let rules = civ_sim::content::shared_ruleset(room.settings.ruleset_name()).map_err(|_| HostError::Internal)?;
     Ok(Json(RoomResponse {
         room_id: room.id,
         own_seat,
@@ -220,6 +223,7 @@ fn room_response(room: Room, guest: &str) -> Result<Json<RoomResponse>, HostErro
             .map_err(|_| HostError::Invalid)?]
         .name
         .clone(),
+        ruleset: room.settings.ruleset_name().to_string(),
         victories: room.settings.victories,
         invite: is_owner.then_some(room.invite),
         match_id: room.match_id,
@@ -243,6 +247,7 @@ async fn create_room(
         wrap_x: request.wrap_x,
         max_turns: request.max_turns,
         speed: request.speed,
+        ruleset: request.ruleset,
         victories: request.victories,
     };
     room_response(
@@ -335,6 +340,7 @@ async fn socket_loop(mut socket: WebSocket, host: Arc<Host>, id: String, guest: 
         seat,
         generation,
         update,
+        content_hash,
         mut updates,
         mut fence,
     } = lease;
@@ -343,7 +349,7 @@ async fn socket_loop(mut socket: WebSocket, host: Arc<Host>, id: String, guest: 
         &mut socket,
         ServerMessage::Welcome {
             version: PROTOCOL_VERSION,
-            content_hash: content::hash(),
+            content_hash,
             update,
         },
     )

@@ -98,8 +98,20 @@ fn flat<T>(reg: &mut Registry<T>, doc: &Json, read: impl Fn(&Json) -> Option<T>)
 impl Ruleset {
     /// Parse a ruleset from `(filename, contents)` pairs. Unknown filenames are
     /// ignored, so a ruleset carrying extra files still loads.
+    ///
+    /// Later sources override earlier ones object by object, by name, the way
+    /// an Unciv mod layers over its base ruleset: pass the base files, then a
+    /// mod's. A mod's `ModOptions.json` may also remove objects by name with
+    /// Unciv's `buildingsToRemove`, `unitsToRemove` and `nationsToRemove`,
+    /// and with `victoryTypesToRemove`.
     pub fn from_sources(sources: &[(String, String)]) -> Result<Ruleset, LoadError> {
         let mut r = Ruleset::default();
+        let mut removals: [(&str, Vec<String>); 4] = [
+            ("buildingsToRemove", Vec::new()),
+            ("unitsToRemove", Vec::new()),
+            ("nationsToRemove", Vec::new()),
+            ("victoryTypesToRemove", Vec::new()),
+        ];
         for (file, text) in sources {
             let doc = Json::parse(text).map_err(|error| LoadError::Json { file: file.clone(), error })?;
             let stem = file.rsplit('/').next().unwrap_or(file);
@@ -154,6 +166,11 @@ impl Ruleset {
                                     .collect();
                             }
                         }
+                    }
+                }
+                "ModOptions.json" => {
+                    for (key, names) in &mut removals {
+                        names.extend(doc.get(key).map(|v| v.strings()).unwrap_or_default());
                     }
                 }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
@@ -218,6 +235,13 @@ impl Ruleset {
                 _ => {}
             }
         }
+        // Nothing has stored an id from these registries yet: references
+        // between rules are still names until `derive`.
+        let [(_, buildings), (_, units), (_, nations), (_, victories)] = &removals;
+        r.buildings.remove_names(buildings);
+        r.units.remove_names(units);
+        r.nations.remove_names(nations);
+        r.victories.remove_names(victories);
         r.derive();
         Ok(r)
     }

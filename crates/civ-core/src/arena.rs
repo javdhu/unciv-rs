@@ -113,6 +113,23 @@ impl<T> Registry<T> {
         Registry::default()
     }
 
+    /// Drop these names. Every later entry's id moves down, so this is only
+    /// for registries whose ids nothing has stored yet: at load, before any
+    /// cross-reference is resolved.
+    pub(crate) fn remove_names(&mut self, names: &[String]) {
+        if !names.iter().any(|n| self.by_name.contains_key(n)) {
+            return;
+        }
+        let items = std::mem::take(&mut self.items);
+        let old = std::mem::take(&mut self.names);
+        self.by_name.clear();
+        for (name, item) in old.into_iter().zip(items) {
+            if !names.contains(&name) {
+                self.insert(name, item);
+            }
+        }
+    }
+
     /// Returns the existing id if `name` was already registered, so a mod
     /// redefining an object replaces it instead of shadowing it.
     pub fn insert(&mut self, name: impl Into<String>, value: T) -> Id<T> {
