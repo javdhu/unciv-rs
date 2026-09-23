@@ -1,0 +1,313 @@
+use civ_core::world::{CivId, TurnModifiers};
+use civ_sim::session::Session;
+use civ_sim::{new_game, player_view, Settings};
+
+#[test]
+fn initial_world_grants_starting_rules_and_national_units_in_legal_slots() {
+    let (world, rules, me) = new_game(&Settings {
+        nation: Some("Polynesia".into()),
+        wrap_x: true,
+        ..Settings::default()
+    })
+    .unwrap();
+    let civ = world.civ(me).unwrap();
+    assert!(civ.has_tech(rules.technologies.id("Agriculture").unwrap()));
+    assert!(civ
+        .units
+        .iter()
+        .any(|id| rules.units[world.units.get(*id).unwrap().base].name == "Maori Warrior"));
+    assert_eq!(
+        civ.units.len(),
+        2,
+        "the bundled Ancient era starts with one Settler and one military unit"
+    );
+    for a in &civ.units {
+        for b in &civ.units {
+            if a >= b {
+                continue;
+            }
+            let a = world.units.get(*a).unwrap();
+            let b = world.units.get(*b).unwrap();
+            assert!(a.position != b.position || a.is_civilian(&rules) != b.is_civilian(&rules));
+        }
+    }
+    assert!(player_view(&world, &rules, me).wrap_x);
+    let save = civ_core::save::encode(&world, &rules).unwrap();
+    let restored = civ_core::save::decode(&save, &rules).unwrap();
+    assert_eq!(restored, world);
+}
+
+#[test]
+fn chosen_victory_and_turn_limit_survive_session_save_and_replay() {
+    let rules = civ_sim::content::load().unwrap();
+    let time = rules
+        .victories
+        .iter()
+        .find(|(_, v)| v.milestones.iter().any(|m| m.contains("highest score")))
+        .unwrap();
+    let mut session = Session::new(
+        Settings {
+            majors: 2,
+            city_states: 0,
+            wrap_x: true,
+            max_turns: 2,
+            victories: Some(vec![time.1.name.clone()]),
+            ..Settings::default()
+        },
+        "time-match".into(),
+        vec![0, 1],
+    )
+    .unwrap();
+    for _ in 0..2 {
+        session = session.stage_timeout(session.turn()).unwrap().unwrap().next;
+        session = Session::restore(&session.save().unwrap()).unwrap();
+    }
+    assert!(session.finished());
+    let update = session.current_update(0).unwrap();
+    assert_eq!(
+        update.view.result.as_ref().unwrap().condition,
+        time.0.index()
+    );
+    assert_eq!(update.view.endgame.max_turns, 2);
+    assert_eq!(update.view.endgame.enabled_victories, vec![time.0.index()]);
+    session.verify_replay().unwrap();
+    assert!(session.stage_timeout(session.turn()).unwrap().is_none());
+}
+
+#[test]
+fn worker_progress_survives_rounds_and_a_world_save() {
+    use civ_core::world::{
+        commands::{execute, Command},
+        City, Unit,
+    };
+    let (mut w, r, me) = new_game(&Settings {
+        majors: 2,
+        city_states: 0,
+        ..Settings::default()
+    })
+    .unwrap();
+    let start = w.units.get(w.civ(me).unwrap().units[0]).unwrap().position;
+    let city = w.found_city_in(&r, City::found("Home", me, start));
+    let tile = w
+        .grid
+        .neighbours(start)
+        .find(|tile| {
+            !w.grid.is_water(&r, *tile)
+                && civ_core::world::movement::is_passable(&w.grid, &r, *tile)
+        })
+        .unwrap();
+    w.grid.terrain[tile.0 as usize] = r.terrain("Grassland").unwrap();
+    w.grid.features[tile.0 as usize].clear();
+    w.grid.set_improvement(tile, None);
+    w.grid.owner[tile.0 as usize] = Some(me);
+    w.cities.get_mut(city).unwrap().tiles.push(tile);
+    w.cities.get_mut(city).unwrap().tiles.sort();
+    w.cities.get_mut(city).unwrap().tiles.dedup();
+    let worker = w.place_unit(Unit::new(r.units.id("Worker").unwrap(), me, tile, 2));
+    let farm = r.improvements.id("Farm").unwrap();
+    execute(
+        &mut w,
+        &r,
+        me,
+        Command::Improve {
+            unit: worker,
+            improvement: farm,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        w.grid.improvement_progress[tile.0 as usize],
+        Some((farm, 1))
+    );
+    w.civ_mut(CivId(0)).unwrap().is_ai = false;
+    w.civ_mut(CivId(1)).unwrap().is_ai = false;
+    for round in 0..7 {
+        civ_core::world::turn::finish_round(
+            &mut w,
+            &r,
+            Default::default(),
+            TurnModifiers::default(),
+        );
+        if round == 3 {
+            w = civ_core::save::decode(&civ_core::save::encode(&w, &r).unwrap(), &r).unwrap();
+        }
+    }
+    assert_eq!(w.grid.unpillaged_improvement(tile), Some(farm));
+}
+
+#[test]
+fn expanded_owner_state_does_not_expose_foreign_city_unit_or_spy_details() {
+    use civ_core::world::{espionage::Spy, City};
+    let (mut w, r, me) = new_game(&Settings {
+        majors: 2,
+        city_states: 0,
+        ..Settings::default()
+    })
+    .unwrap();
+    let ours = w.units.get(w.civ(me).unwrap().units[0]).unwrap().position;
+    let other = CivId(1);
+    let theirs = w
+        .units
+        .get(w.civ(other).unwrap().units[0])
+        .unwrap()
+        .position;
+    let own_city = w.found_city_in(&r, City::found("Home", me, ours));
+    let foreign_city = w.found_city_in(&r, City::found("Away", other, theirs));
+    let city = w.cities.get_mut(own_city).unwrap();
+    city.faith.add_pantheon_pressure(me, 500);
+    city.faith.recount(city.population);
+    w.cities.get_mut(foreign_city).unwrap().food_stored = 9321;
+    w.civ_mut(me).unwrap().espionage.spies.push(Spy::new());
+    w.civ_mut(other)
+        .unwrap()
+        .espionage
+        .spies
+        .extend([Spy::new(), Spy::new(), Spy::new()]);
+    for tile in w.grid.within(theirs, 2) {
+        w.visibility.observe(me, tile);
+    }
+    civ_core::world::fog::capture_observations(&mut w, &r);
+    let view = player_view(&w, &r, me);
+    assert_eq!(view.spies.len(), 1);
+    let home = view
+        .cities
+        .iter()
+        .find(|c| c.id == own_city.index())
+        .unwrap();
+    let religion = &home.own.as_ref().unwrap().religion;
+    assert_eq!(religion.majority, None);
+    assert_eq!(religion.majority_pantheon, Some(me.0));
+    assert!(religion
+        .followers
+        .iter()
+        .any(|f| f.pantheon && f.founder == me.0 && f.followers > 0));
+    let away = view
+        .cities
+        .iter()
+        .find(|c| c.id == foreign_city.index())
+        .unwrap();
+    assert!(away.own.is_none());
+    assert!(away.food_stored.is_none());
+    assert!(away.queue.is_none());
+    assert!(view
+        .units
+        .iter()
+        .filter(|u| u.owner == other.0)
+        .all(|u| u.own.is_none()));
+    assert!(view
+        .units
+        .iter()
+        .filter(|u| u.owner == me.0)
+        .all(|u| u.own.is_some()));
+    assert!(!serde_json::to_string(&view).unwrap().contains("9321"));
+}
+
+#[test]
+fn city_state_view_shares_only_our_quests_and_relationship() {
+    use civ_core::world::{
+        quests::{Assigned, Target},
+        City,
+    };
+    let (mut w, r, me) = new_game(&Settings {
+        majors: 2,
+        city_states: 1,
+        ..Settings::default()
+    })
+    .unwrap();
+    let cs = CivId(2);
+    let position = w.units.get(w.civ(cs).unwrap().units[0]).unwrap().position;
+    w.found_city_in(&r, City::found("State", cs, position));
+    civ_core::world::city_state_actions::initialize(&mut w, &r);
+    let q = r.quests.id("Acquire Great Person").unwrap();
+    let make = |assignee, target| Assigned {
+        quest: q,
+        assignee,
+        target,
+        contest: None,
+        assigned_on: 0,
+        expires_on: 25,
+        baseline: 0,
+    };
+    let artist = r.units.id("Great Artist").unwrap();
+    let scientist = r.units.id("Great Scientist").unwrap();
+    w.civ_mut(cs).unwrap().quests.active.extend([
+        make(me, Target::Unit(artist)),
+        make(CivId(1), Target::Unit(scientist)),
+    ]);
+    assert!(player_view(&w, &r, me).city_states.is_empty());
+    w.diplomacy.meet(me, cs);
+    w.diplomacy
+        .set_influence(cs, CivId(1), civ_core::stats::Fixed::whole(73));
+    let view = player_view(&w, &r, me);
+    let state = &view.city_states[0];
+    assert_eq!(state.quests.len(), 1);
+    assert_eq!(state.known_ally, None);
+    assert!(state.has_ally);
+    assert_eq!(
+        serde_json::to_value(&state.quests[0].target).unwrap(),
+        serde_json::json!({"kind":"unit","id":artist.index()})
+    );
+    let before = serde_json::to_value(&view).unwrap();
+    w.civ_mut(cs).unwrap().quests.active[1].baseline = 98273;
+    w.diplomacy
+        .set_influence(cs, CivId(1), civ_core::stats::Fixed::whole(79));
+    assert_eq!(
+        before,
+        serde_json::to_value(player_view(&w, &r, me)).unwrap()
+    );
+}
+
+/// Full-match persistence gate, run explicitly in release mode.
+#[test]
+#[ignore = "long match gate: cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --nocapture"]
+fn complete_matches_save_and_replay() {
+    for (seed, nation) in [(1, "The Maya"), (7, "Austria"), (19, "Songhai")] {
+        let mut s = Session::new(
+            Settings {
+                seed,
+                nation: Some(nation.into()),
+                majors: 4,
+                city_states: 2,
+                ..Settings::default()
+            },
+            format!("complete-{seed}"),
+            vec![0, 1, 2, 3],
+        )
+        .unwrap();
+        for seat in 0..4 {
+            s = s.stage_controller(seat, false).unwrap().next;
+        }
+        let mut restores = 0;
+        while !s.finished() && s.turn() < 500 {
+            s = s.stage_timeout(s.turn()).unwrap().unwrap().next;
+            if s.turn().is_multiple_of(25) {
+                let snapshot = s.save().unwrap_or_else(|error| {
+                    let path = std::env::temp_dir().join("civ-failed-world.json");
+                    std::fs::write(&path, serde_json::to_vec_pretty(s.world()).unwrap()).unwrap();
+                    panic!(
+                        "seed={seed} turn={} save failed: {error:?}; world={}",
+                        s.turn(),
+                        path.display()
+                    );
+                });
+                let restored = Session::restore(&snapshot).unwrap_or_else(|error| {
+                    let path = std::env::temp_dir().join("civ-failed-match.json");
+                    std::fs::write(&path, &snapshot).unwrap();
+                    panic!(
+                        "seed={seed} turn={} restore failed: {error:?}; snapshot={}",
+                        s.turn(),
+                        path.display()
+                    );
+                });
+                assert_eq!(s.world(), restored.world());
+                s = restored;
+                restores += 1;
+            }
+        }
+        assert!(s.finished(), "seed{seed} did not finish by the turn limit");
+        s.verify_replay().unwrap();
+        assert!(s.stage_timeout(s.turn()).unwrap().is_none());
+        let (winner, condition) = s.world().winner.unwrap();
+        println!("seed={seed} nation={nation} turn={} victory={} winner={} restores={restores} replay=ok",s.turn(),s.rules().victories[condition].name,winner.0);
+    }
+}

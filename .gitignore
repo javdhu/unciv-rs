@@ -1,0 +1,7 @@
+.DS_Store
+web/node_modules
+web/dist
+target
+__pycache__/
+# output of `npm --prefix web run art -- bake`
+assets/procgen/
