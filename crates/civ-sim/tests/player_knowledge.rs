@@ -318,3 +318,20 @@ fn automated_units_decide_the_same_whatever_the_fog_hides() {
     }
     assert!(caught, "the rewritten fog never changed even a whole-map routine's answer");
 }
+
+#[test]
+fn scores_and_attitudes_are_published_only_for_met_civilizations() {
+    let (mut w, r, _, city) = fixture();
+    let before = player_view(&w, &r, ME);
+    assert!(before.relations.is_empty(), "no one is met yet");
+    // an unmet rival's growth stays out of the view
+    w.cities.get_mut(city).unwrap().population = 12;
+    assert_eq!(player_view(&w, &r, ME).relations, before.relations);
+    assert_eq!(before.endgame.score, 0, "no cities and no technologies yet");
+    let _ = w.diplomacy.meet(ME, OTHER);
+    let met = player_view(&w, &r, ME);
+    let other = met.relations.iter().find(|x| x.civ == OTHER.0).expect("a met civ is listed");
+    assert!(other.score > 0);
+    assert!(["unforgivable", "enemy", "competitor", "neutral", "favorable", "friend", "ally"].contains(&other.attitude.as_str()));
+    assert!(met.relations.iter().all(|x| x.civ != 2), "Egypt is still unmet");
+}
