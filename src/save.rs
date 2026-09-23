@@ -95,12 +95,27 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     hash(input.as_bytes())
 }
 
+/// Precomputed identity for an immutable ruleset used by repeated snapshots.
+#[derive(Clone)]
+pub struct RulesetIdentity(String);
+
+impl RulesetIdentity {
+    pub fn new(ruleset: &Ruleset) -> Self {
+        Self(ruleset_identity(ruleset))
+    }
+}
+
 pub fn encode(world: &World, ruleset: &Ruleset) -> Result<String, SaveError> {
+    encode_with_identity(world, ruleset, &RulesetIdentity::new(ruleset))
+}
+
+/// The identity must have been made from `ruleset`, which must remain immutable.
+pub fn encode_with_identity(world: &World, ruleset: &Ruleset, identity: &RulesetIdentity) -> Result<String, SaveError> {
     validate(world, ruleset)?;
     let value = serde_json::to_value(world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     let bytes = serde_json::to_vec(&value).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     let envelope =
-        Envelope { version: FORMAT_VERSION, ruleset: ruleset_identity(ruleset), checksum: hash(&bytes), world: value };
+        Envelope { version: FORMAT_VERSION, ruleset: identity.0.clone(), checksum: hash(&bytes), world: value };
     let text = serde_json::to_string(&envelope).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     if text.len() > MAX_SNAPSHOT_BYTES {
         return Err(SaveError::TooLarge);
@@ -681,6 +696,7 @@ mod tests {
     fn full_world_roundtrip_preserves_generations_maps_caches_and_reuse_order() {
         let (r, mut world, stale) = populated();
         let text = encode(&world, &r).unwrap();
+        assert_eq!(encode_with_identity(&world, &r, &RulesetIdentity::new(&r)).unwrap(), text);
         assert_eq!(encode(&world, &r).unwrap(), text, "snapshots must have canonical ordering");
         let mut restored = decode(&text, &r).unwrap();
         assert_eq!(restored, world);
