@@ -92,7 +92,7 @@ pub fn offer_to_human(world: &World, r: &Ruleset, ai: CivId, human: CivId, mods:
     // Declaration of friendship: two in ten turns for a civ that wants one.
     if ra::can_friend(world, ai, human)
         && !waiting(world, ai, human, Proposal::Friendship)
-        && ra::wants_friendship(world, ai, human)
+        && ra::wants_friendship(world, r, ai, human)
         && level >= RelationshipLevel::Favorable
         && roll(world, ai, human, 1) <= 2
     {

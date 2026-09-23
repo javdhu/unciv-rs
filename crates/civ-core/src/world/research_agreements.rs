@@ -165,8 +165,17 @@ pub fn take_science(world: &mut World, r: &Ruleset, civ: CivId) -> i32 {
 
 /// Conservative deterministic diplomacy policy; strategic desirability is
 /// separate from the rules and from the other party's consent.
-pub fn wants_friendship(world: &World, holder: CivId, other: CivId) -> bool {
-    world.diplomacy.attitude(holder, other).opinion() >= Fixed::whole(30)
+///
+/// A diplomatic leader befriends sooner: the opinion needed is scaled by
+/// `inverseModifierFocus(Diplomacy, 0.5)`, 15 at 10 and 45 at 0. Unciv reaches
+/// the same place by other means (a friendship roll of `2 * scaledFocus
+/// (Diplomacy)` in ten, and a target number of friends scaled the same way,
+/// DiplomacyAutomation.kt:43 and :89).
+pub fn wants_friendship(world: &World, r: &Ruleset, holder: CivId, other: CivId) -> bool {
+    let leader = crate::world::personality::of(world, r, holder);
+    let needed = Fixed::whole(30)
+        * leader.inverse_modifier(crate::world::personality::Trait::Diplomacy, Fixed::permille(500));
+    world.diplomacy.attitude(holder, other).opinion() >= needed
 }
 
 pub fn automate(world: &mut World, r: &Ruleset, mods: TurnModifiers, all_ai: bool) -> Vec<TurnEvent> {
@@ -180,7 +189,7 @@ pub fn automate(world: &mut World, r: &Ruleset, mods: TurnModifiers, all_ai: boo
             if !world.diplomacy.have_met(a, b) || world.diplomacy.at_war(a, b) {
                 continue;
             }
-            if can_friend(world, a, b) && wants_friendship(world, a, b) && wants_friendship(world, b, a) {
+            if can_friend(world, a, b) && wants_friendship(world, r, a, b) && wants_friendship(world, r, b, a) {
                 if let Ok(out) = agreements::accept(world, r, a, b, &Terms::Friendship, mods) {
                     events.extend(out.events);
                 }

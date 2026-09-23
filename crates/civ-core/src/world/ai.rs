@@ -66,7 +66,16 @@ pub fn choose_construction(
 ) -> Option<Construction> {
     let Priorities { want_settler, want_worker, want_scout, want_military, happiness } = wants;
     let civ_ref = world.civ(civ)?;
+    let leader = crate::world::personality::of(world, r, civ);
     let weights = ranking_weights();
+    // A leader values each yield by its focus on it (ConstructionAutomation.kt:359:
+    // `buildingStats[stat] *= personality.scaledFocus(PersonalityValue[stat])`).
+    let mut focused = weights;
+    for stat in Stat::ALL {
+        if let Some(t) = crate::world::personality::Trait::of_stat(stat) {
+            focused[stat] = weights[stat] * leader.scaled(t);
+        }
+    }
     // Computed once per call rather than once per candidate: it walks every
     // victory's milestone list, and this closure runs for every building in
     // the ruleset, in every city, every turn.
@@ -172,7 +181,9 @@ pub fn choose_construction(
                         // well as its cost; raw strength/cost ties Scout with
                         // Warrior and otherwise keeps obsolete armies forever.
                         if want_military {
+                            // ConstructionAutomation.kt:178.
                             military_value(strength)
+                                * leader.modifier(crate::world::personality::Trait::Military, Fixed::permille(300))
                         } else {
                             return None;
                         }
@@ -197,7 +208,7 @@ pub fn choose_construction(
                     for stat in Stat::ALL {
                         stats[stat] = output[stat] - current_output[stat];
                     }
-                    let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * focused[s]).sum();
 
                     // Upkeep is priced, not gated.
                     //
@@ -288,7 +299,7 @@ pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
     if crate::world::happiness::happiness(world, r, civ, None) < 0 {
         return false;
     }
-    if c.cities.len() >= TARGET_CITIES {
+    if c.cities.len() >= city_target(crate::world::personality::of(world, r, civ)) {
         return false;
     }
     // One in flight at a time.
@@ -854,10 +865,17 @@ pub fn choose_trades(
 pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId> {
     use crate::stats::Precise;
     use crate::world::diplomacy::Flag;
-    let _ = r;
     if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
         return Vec::new();
     }
+    // DiplomacyAutomation.kt:588-591: willingness 0 never denounces; otherwise
+    // the opinion drop needed scales by `1 / scaledFocus(DenounceWillingness)`.
+    let leader = crate::world::personality::of(world, r, civ);
+    let willingness = leader.scaled(crate::world::personality::Trait::DenounceWillingness);
+    if willingness.is_zero() {
+        return Vec::new();
+    }
+    let personality = Precise::from_fixed(Fixed::ONE.checked_div(willingness).unwrap_or(Fixed::ONE));
     let known: Vec<CivId> = world
         .civ_ids()
         .filter(|o| *o != civ && world.civ(*o).is_some_and(|c| c.is_major()) && world.diplomacy.have_met(civ, *o))
@@ -870,7 +888,7 @@ pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId
         }
         let opinion = crate::world::opinion::opinion(world, civ, other);
         let Some(friendliness) = Precise::from_ratio(1005, 1000).pow(opinion) else { continue };
-        let required = Precise::whole(-65) * friendliness * Precise::from_ratio(11, 10).powi(active);
+        let required = Precise::whole(-65) * personality * friendliness * Precise::from_ratio(11, 10).powi(active);
         if Precise::from_fixed(crate::world::opinion::smoothed_delta(world, civ, other)) <= required {
             out.push(other);
             active += 1;
@@ -1384,6 +1402,46 @@ pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
         < Fixed::whole(strength) * Fixed::whole(target_military(world, r, civ) as i32)
 }
 
+/// How many times the other's strength a leader wants before a war.
+///
+/// Half again for a neutral, as much as twice for an ally, merely equal for
+/// the unforgivable: Unciv adds the same ten-to-minus-ten relationship term to
+/// its war motivation (`MotivationToAttackAutomation.getRelationshipModifier`).
+/// Personality, in the threshold's terms (MotivationToAttackAutomation.kt):
+/// - the relationship term is scaled by Loyal (:214), so a loyal leader needs
+///   even more to turn on a friend and a disloyal one hardly cares;
+/// - the base motivation is `-15 * inverseScaledFocus(DeclareWar)` (:48), so
+///   an eager leader needs less of an edge and a reluctant one more.
+pub fn war_ratio_needed(
+    leader: crate::world::personality::Leader,
+    level: crate::world::opinion::RelationshipLevel,
+) -> Fixed {
+    use crate::world::opinion::RelationshipLevel as L;
+    use crate::world::personality::Trait;
+    let base = match level {
+        L::Unforgivable => Fixed::ONE,
+        L::Enemy => Fixed::permille(1_250),
+        L::Competitor => Fixed::permille(1_400),
+        L::Neutral => Fixed::permille(1_500),
+        L::Favorable => Fixed::permille(1_600),
+        L::Friend => Fixed::permille(1_750),
+        L::Ally => Fixed::whole(2),
+    };
+    let neutral = Fixed::permille(1_500);
+    (neutral + (base - neutral) * leader.scaled(Trait::Loyal))
+        * (Fixed::permille(700) + Fixed::permille(300) * leader.inverse(Trait::DeclareWar))
+}
+
+/// How many cities a leader aims for: 3 at Expansion 0, 5 at 5, 7 at 10.
+/// Unciv reads no personality value when training settlers; this is our own
+/// use of the trait it names for exactly this.
+pub fn city_target(leader: crate::world::personality::Leader) -> usize {
+    (Fixed::whole(TARGET_CITIES as i32)
+        * leader.modifier(crate::world::personality::Trait::Expansion, Fixed::permille(400)))
+    .round()
+    .max(1) as usize
+}
+
 /// Whether to declare war on a civ already met.
 ///
 /// Only with a clear advantage and something to take. An AI that declares war
@@ -1394,25 +1452,25 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
     if !world.diplomacy.have_met(civ, other) || !world.diplomacy.can_declare_war(civ, other) {
         return false;
     }
+    use crate::world::personality::Trait;
+    let leader = crate::world::personality::of(world, r, civ);
+    // DiplomacyAutomation.kt:365: a leader with no will to declare war never does.
+    if leader.value(Trait::DeclareWar) == 0 {
+        return false;
+    }
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
     // How much stronger we must be depends on what we think of them: half
     // again for a neutral, as much as twice for an ally, merely equal for the
     // unforgivable. Unciv adds the same ten-to-minus-ten relationship term to
     // its war motivation (`MotivationToAttackAutomation.getRelationshipModifier`).
-    use crate::world::opinion::RelationshipLevel as L;
-    let needed = match crate::world::opinion::relationship(world, civ, other) {
-        L::Unforgivable => Fixed::ONE,
-        L::Enemy => Fixed::permille(1_250),
-        L::Competitor => Fixed::permille(1_400),
-        L::Neutral => Fixed::permille(1_500),
-        L::Favorable => Fixed::permille(1_600),
-        L::Friend => Fixed::permille(1_750),
-        L::Ally => Fixed::whole(2),
-    };
+    let needed = war_ratio_needed(leader, crate::world::opinion::relationship(world, civ, other));
     if mine < theirs * needed || mine.is_zero() {
         return false;
     }
-    // Something of theirs must be within reach, or the war is a gesture.
+    // Something of theirs must be within reach, or the war is a gesture. How
+    // far counts as reach depends on aggression (`Far away cities` and
+    // `Close cities`, :73-83, both scaled by inverseScaledFocus(Aggressive)).
+    let reach = (Fixed::whole(8) * leader.modifier(Trait::Aggressive, Fixed::permille(500))).floor().max(3) as u32;
     let their_cities: Vec<_> = world.cities.iter().filter(|(_, c)| c.owner == other).map(|(_, c)| c.centre).collect();
     world
         .civ(civ)
@@ -1420,7 +1478,7 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
             c.units
                 .iter()
                 .filter_map(|u| world.units.get(*u))
-                .any(|u| their_cities.iter().any(|t| world.grid.distance(u.position, *t) <= 8))
+                .any(|u| their_cities.iter().any(|t| world.grid.distance(u.position, *t) <= reach))
         })
         .unwrap_or(false)
 }
@@ -1579,7 +1637,19 @@ pub fn choose_policy(world: &World, r: &Ruleset, civ: CivId, m: PolicyModifiers)
     if c.culture_stored < cost && c.pending_rewards.free_policies == 0 {
         return None;
     }
-    r.policies.ids().filter(|p| is_adoptable(world, r, civ, *p).is_ok()).min()
+    // Every policy costs the same, so "cheapest" was the lowest id. A leader
+    // prefers its favourite branches (`priorities`, PolicyManager.kt:52).
+    let leader = crate::world::personality::of(world, r, civ);
+    let priority = |p: Id<Policy>| {
+        r.policies[p]
+            .branch
+            .and_then(|b| r.policy_branches.name_of(b))
+            .map_or(0, |name| leader.branch_priority(name))
+    };
+    r.policies
+        .ids()
+        .filter(|p| is_adoptable(world, r, civ, *p).is_ok())
+        .min_by(|a, b| priority(*b).cmp(&priority(*a)).then(a.cmp(b)))
 }
 
 /// What a city should work toward, given what its owner lacks.
