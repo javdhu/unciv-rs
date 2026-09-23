@@ -1374,3 +1374,155 @@ fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
     }
     assert!(shown > 0, "thirty rounds with nothing to replay");
 }
+
+fn warrior_of(s: &Session, seat: u8) -> (Id<civ_core::world::Unit>, EntityRef) {
+    let (id, _) = s
+        .world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == CivId(seat) && u.is_military(&s.rules))
+        .unwrap();
+    (id, EntityRef { id: id.index(), gen: id.generation() })
+}
+/// A neighbouring land tile whose view is already ours: a friendly civilian
+/// stands there, so a move onto it shows nothing new.
+fn covered_step(s: &mut Session, seat: u8, unit: Id<civ_core::world::Unit>) -> u16 {
+    let at = s.world.units.get(unit).unwrap().position;
+    let to = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+                && s.world.grid.features[t.0 as usize].is_empty()
+        })
+        .unwrap();
+    let settler = s.rules.units.id("Settler").unwrap();
+    s.world
+        .place_unit(civ_core::world::Unit::new(settler, CivId(seat), to, 2));
+    civ_core::world::turn::update_visibility_in(&mut s.world, &s.rules);
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    s.refresh(&[], None).unwrap();
+    to.0
+}
+fn rejected(s: &Session, seat: u8, id: &str, action: Action) -> UndoRefusal {
+    let t = s.stage_command(seat, request(s, seat, id, action)).unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Rejected { code: RejectionCode::Unavailable }, "{id}");
+    t.receipt.undo_refusal.expect("an undo refusal says why")
+}
+
+#[test]
+fn a_move_that_showed_nothing_new_can_be_taken_back() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "undo".into(), vec![0]).unwrap();
+    assert_eq!(rejected(&s, 0, "early", Action::Undo), UndoRefusal::NothingToUndo);
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    let before = s.world.clone();
+    let s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    assert_eq!(s.world.units.get(id).unwrap().position.0, to);
+    let t = s.stage_command(0, request(&s, 0, "undo", Action::Undo)).unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Applied);
+    assert_eq!(t.next.world, before, "the world is exactly as it was");
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    assert!(update.view.units.iter().any(|u| u.id == warrior.id && u.tile == before.units.get(id).unwrap().position.0));
+    // Only the last command, and only once.
+    assert_eq!(rejected(&t.next, 0, "again", Action::Undo), UndoRefusal::NothingToUndo);
+    // Solo, a production or research choice can be taken back too.
+    let s = t.next;
+    let tech = s.rules.technologies.iter().find(|(id, _)| !s.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    let s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    let s = apply(s, 0, "unresearch", Action::Undo);
+    assert_ne!(s.world.civ(CivId(0)).unwrap().researching, Some(tech));
+
+    // Replaying the log, undo included, reaches the same world.
+    let s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "undo-replay".into(), vec![0]).unwrap();
+    let s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    let s = apply(s, 0, "unresearch", Action::Undo);
+    s.verify_replay().unwrap();
+}
+
+#[test]
+fn an_undo_cannot_be_used_to_peek_at_hidden_tiles() {
+    let s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "peek".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let at = s.world.units.get(id).unwrap().position;
+    let explored = |s: &Session| s.world.grid.ids().filter(|t| s.world.visibility.has_explored(CivId(0), *t)).count();
+    let seen_before = explored(&s);
+    // Step outward: the move shows new ground.
+    let out = s
+        .world
+        .grid
+        .neighbours(at)
+        .filter(|t| !s.world.grid.is_water(&s.rules, *t) && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t))
+        .find(|t| {
+            let mut probe = s.world.clone();
+            civ_core::world::commands::execute(&mut probe, &s.rules, CivId(0), civ_core::world::commands::Command::MoveUnit { unit: id, to: *t })
+                .is_ok()
+                && probe.grid.ids().filter(|x| probe.visibility.has_explored(CivId(0), *x)).count() > seen_before
+        })
+        .unwrap();
+    let s = apply(s, 0, "scout", Action::MoveUnit { unit: warrior, to: out.0 });
+    let after = s.world.clone();
+    assert!(explored(&s) > seen_before);
+    assert_eq!(rejected(&s, 0, "take-back", Action::Undo), UndoRefusal::Revealed);
+    // Refused means refused: the unit stays where the look cost it.
+    let t = s.stage_command(0, request(&s, 0, "take-back-2", Action::Undo)).unwrap();
+    assert_eq!(t.next.world, after);
+}
+
+#[test]
+fn rooms_undo_only_moves_and_only_before_anything_else_happens() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "room".into(), vec![0, 1]).unwrap();
+    let tech = s.rules.technologies.iter().find(|(id, _)| !s.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    assert_eq!(rejected(&s, 0, "u1", Action::Undo), UndoRefusal::NotAllowed);
+
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    // The other player acts in the meantime: the world is not ours to rewind.
+    let other = own_unit(&s, 1, false);
+    let later = apply(s.clone(), 1, "their-skip", Action::SkipUnit { unit: other });
+    assert_eq!(rejected(&later, 0, "u2", Action::Undo), UndoRefusal::OthersActed);
+    // Without that, the move comes back.
+    let s = apply(s, 0, "u3", Action::Undo);
+    assert_ne!(s.world.units.get(id).unwrap().position.0, to);
+}
+
+#[test]
+fn a_turn_end_or_a_fight_makes_a_move_final() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "final".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    let s = s.stage_timeout(s.turn()).unwrap().unwrap().next;
+    assert_eq!(rejected(&s, 0, "late", Action::Undo), UndoRefusal::TurnEnded);
+
+    // An attack is never taken back.
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "fight".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let at = s.world.units.get(id).unwrap().position;
+    let spot = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            s.world.visibility.can_see(CivId(0), *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+        })
+        .unwrap();
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    let brute = s.world.place_unit(civ_core::world::Unit::new(s.rules.units.id("Brute").unwrap(), barbarians, spot, 1));
+    s.refresh(&[], None).unwrap();
+    s = apply(
+        s,
+        0,
+        "hit",
+        Action::Attack { unit: warrior, target: AttackTarget::Unit { unit: EntityRef { id: brute.index(), gen: brute.generation() } } },
+    );
+    assert_eq!(rejected(&s, 0, "unhit", Action::Undo), UndoRefusal::Combat);
+}

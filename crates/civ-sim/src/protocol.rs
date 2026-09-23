@@ -340,6 +340,9 @@ pub enum Action {
         worker: bool,
     },
     FinishTurn,
+    /// Take back this seat's last command, if it may be (see the `undo…`
+    /// rejection codes). Rooms allow only a unit's move.
+    Undo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -368,6 +371,26 @@ pub enum RejectionCode {
     IllegalAction,
 }
 
+/// Why an `undo` was refused. Its receipt's code is `unavailable`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum UndoRefusal {
+    /// No command of this seat's to take back.
+    NothingToUndo,
+    /// That kind of command cannot be taken back (in rooms, only moves can).
+    NotAllowed,
+    /// It showed tiles, units or cities not in sight before, or met a civ.
+    Revealed,
+    /// It involved combat.
+    Combat,
+    /// It involved chance, such as ancient ruins.
+    Chance,
+    /// The turn has ended since.
+    TurnEnded,
+    /// Something else has changed the world since.
+    OthersActed,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum CommandStatus {
@@ -389,6 +412,10 @@ pub struct CommandReceipt {
     pub command_id: String,
     pub result: CommandStatus,
     pub cursor: ViewCursor,
+    /// Set when an `undo` was refused, saying why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub undo_refusal: Option<UndoRefusal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]

@@ -11,7 +11,7 @@ use civ_core::world::construction::Construction;
 use civ_core::world::turn::TurnModifiers;
 use civ_core::world::{CivId, TileId, World};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 const SAVE_VERSION: u32 = 3;
@@ -94,6 +94,24 @@ pub struct Session {
     /// The last round's AI commands, for the next refresh's replays. Not saved:
     /// a replay is shown once, as the round closes.
     replay: Vec<civ_core::world::ReplayStep>,
+    /// Each seat's last command, for `undo`. Not saved: a restored session
+    /// has nothing to take back.
+    undo: BTreeMap<u8, UndoPoint>,
+    /// Counts every change to the world, so an undo can tell that nothing
+    /// else happened after the command it takes back.
+    version: u64,
+    /// Why the command being staged, an undo, was refused; read into its receipt.
+    undo_refused: Option<UndoRefusal>,
+}
+
+#[derive(Clone)]
+struct UndoPoint {
+    /// The world before the command, kept only when it may be taken back.
+    before: Option<World>,
+    /// `Session::version` right after it.
+    version: u64,
+    /// Why it may not be taken back.
+    refusal: Option<UndoRefusal>,
 }
 
 /// The old session stays authoritative until its owner has persisted `next` successfully.
@@ -152,6 +170,9 @@ impl Session {
             inputs: Vec::new(),
             offers: crate::offers::Offers::default(),
             replay: Vec::new(),
+            undo: BTreeMap::new(),
+            version: 0,
+            undo_refused: None,
         };
         session.refresh(&[], None)?;
         Ok(session)
@@ -307,6 +328,18 @@ impl Session {
                 .map(|outcome| events = outcome);
             match applied {
                 Ok(()) => {
+                    next.version += 1;
+                    if request.action != Action::Undo {
+                        let refusal = next.undo_refusal(seat, &self.world, &request.action, &events);
+                        next.undo.insert(
+                            seat,
+                            UndoPoint {
+                                before: refusal.is_none().then(|| self.world.clone()),
+                                version: next.version,
+                                refusal,
+                            },
+                        );
+                    }
                     next.inputs.push(Input::Command {
                         seat,
                         request: request.clone(),
@@ -329,6 +362,7 @@ impl Session {
             command_id: request.command_id.clone(),
             result,
             cursor: next.cursor(seat)?,
+            undo_refusal: next.undo_refused.take(),
         };
         // Malformed requests are never retained: an attacker cannot fill durable history with oversized strings.
         if receipt.result
@@ -360,6 +394,7 @@ impl Session {
             command_id: request.command_id.clone(),
             result: CommandStatus::Rejected { code },
             cursor: self.cursor(seat)?,
+            undo_refusal: None,
         })
     }
     fn apply_action(
@@ -419,6 +454,13 @@ impl Session {
                 self.offers.withdraw(seat, offer)?;
                 Ok(Vec::new())
             }
+            Action::Undo => match self.take_back(seat) {
+                Ok(()) => Ok(Vec::new()),
+                Err(reason) => {
+                    self.undo_refused = Some(reason);
+                    Err(RejectionCode::Unavailable)
+                }
+            },
             action => {
                 let command = self.translate(action)?;
                 commands::execute(&mut self.world, &self.rules, CivId(seat), command)
@@ -434,7 +476,77 @@ impl Session {
             .filter(|s| s.human && !self.world.civs[usize::from(s.civ)].defeated)
             .all(|s| s.ready)
     }
+    /// Restore the world from before `seat`'s last command.
+    fn take_back(&mut self, seat: u8) -> Result<(), UndoRefusal> {
+        let point = self.undo.get(&seat).ok_or(UndoRefusal::NothingToUndo)?;
+        if let Some(reason) = point.refusal {
+            return Err(reason);
+        }
+        if point.version != self.version {
+            return Err(UndoRefusal::OthersActed);
+        }
+        self.world = point.before.clone().ok_or(UndoRefusal::NothingToUndo)?;
+        self.undo.remove(&seat);
+        Ok(())
+    }
+    /// Why `seat`'s just-applied command may not be taken back, if it may not.
+    /// It must be a kind that touches only the seat's own affairs (in a room,
+    /// a unit's move), and must have shown the seat nothing new, fought
+    /// nothing and rolled nothing: taking it back must not be a way to peek.
+    fn undo_refusal(
+        &self,
+        seat: u8,
+        before: &World,
+        action: &Action,
+        events: &[civ_core::world::TurnEvent],
+    ) -> Option<UndoRefusal> {
+        use civ_core::world::TurnEvent as E;
+        let room = self.original_seats.len() > 1;
+        let kind_ok = match action {
+            Action::MoveUnit { .. } => true,
+            Action::Fortify { .. }
+            | Action::SkipUnit { .. }
+            | Action::SetUp { .. }
+            | Action::SetProduction { .. }
+            | Action::SetProductionConversion { .. }
+            | Action::SetAvoidGrowth { .. }
+            | Action::SetResearch { .. }
+            | Action::AssignCitizens { .. } => !room,
+            _ => false,
+        };
+        if events.iter().any(|e| matches!(e, E::Battle { .. } | E::UnitDamaged { .. } | E::CityCaptured { .. })) {
+            return Some(UndoRefusal::Combat);
+        }
+        if events.iter().any(|e| matches!(e, E::RuinsExplored { .. } | E::RuinsCleared { .. })) {
+            return Some(UndoRefusal::Chance);
+        }
+        let me = CivId(seat);
+        let (was, now) = (&before.visibility, &self.world.visibility);
+        let tiles = self.world.grid.ids().any(|t| {
+            (now.can_see(me, t) && !was.can_see(me, t)) || (now.has_explored(me, t) && !was.has_explored(me, t))
+        });
+        let seen = |w: &World| -> BTreeSet<_> {
+            w.units
+                .iter()
+                .filter(|(id, u)| u.owner != me && civ_core::world::fog::can_see_unit(w, &self.rules, me, *id))
+                .map(|(id, _)| id)
+                .collect()
+        };
+        let units = !seen(&self.world).is_subset(&seen(before));
+        let cities = now.known_cities(me).count() != was.known_cities(me).count();
+        let met = events.iter().any(|e| matches!(e, E::CivsMet { .. } | E::NaturalWonderDiscovered(_)));
+        if tiles || units || cities || met {
+            return Some(UndoRefusal::Revealed);
+        }
+        (!kind_ok).then_some(UndoRefusal::NotAllowed)
+    }
     fn resolve_round(&mut self) -> Vec<civ_core::world::TurnEvent> {
+        // A turn end is final for every command before it.
+        self.version += 1;
+        for point in self.undo.values_mut() {
+            point.before = None;
+            point.refusal = Some(UndoRefusal::TurnEnded);
+        }
         self.replay.clear();
         let events = civ_core::world::finish_round_recorded(
             &mut self.world,
@@ -693,6 +805,9 @@ impl Session {
             inputs: save.inputs,
             offers: save.offers,
             replay: Vec::new(),
+            undo: BTreeMap::new(),
+            version: 0,
+            undo_refused: None,
         };
         for s in &session.seats {
             let view = player_view(&session.world, &session.rules, CivId(s.civ));
@@ -1035,7 +1150,10 @@ impl Session {
                 target: CivId(*target),
                 worker: *worker,
             },
-            Action::FinishTurn | Action::AnswerOffer { .. } | Action::WithdrawOffer { .. } => {
+            Action::FinishTurn
+            | Action::Undo
+            | Action::AnswerOffer { .. }
+            | Action::WithdrawOffer { .. } => {
                 return Err(RejectionCode::InvalidRequest)
             }
         })

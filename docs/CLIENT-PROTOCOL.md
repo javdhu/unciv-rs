@@ -111,6 +111,14 @@ A disconnect/timeout means the outcome is unknown, not rejected. Retry the same 
 Sequence dependent intentions: finish-turn must not race a preceding move or purchase. Deduplication
 does not repair reordered requests.
 
+`{ type: "undo" }` takes back the seat's last applied command by restoring the world from just before
+it. It is itself a recorded command, so replays reproduce it. When refused, the receipt's code is
+`unavailable` and its optional `undoRefusal` says why: `nothingToUndo` (also after a restore),
+`notAllowed` (solo: a move, fortify, skip, set-up, production, research or citizen change; in rooms,
+a unit's move only), `revealed` (it showed tiles, units or cities not in sight before, or met a civ, so
+an undo is never a free look), `combat`, `chance` (e.g. ruins), `turnEnded`, or `othersActed` (anything
+else has changed the world since).
+
 ## Turn access and ordering
 
 | Identifier | Purpose |
