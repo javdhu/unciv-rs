@@ -1072,3 +1072,18 @@ fn combat_previews_need_an_own_attacker_and_a_visible_target() {
     assert!(p.attacker.strength > 0 && p.defender.damage_min <= p.defender.damage_max, "{p:?}");
     assert_eq!(ask(&s, 1, mine), None, "only the attacker's owner may ask");
 }
+
+#[test]
+fn city_options_list_workable_tiles_with_yields() {
+    let s = session();
+    let settler = own_unit(&s, 0, true);
+    let s = apply(s, 0, "found", Action::FoundCity { unit: settler, name: "Pasargadae".into() });
+    let (id, city) = s.world.cities.iter().find(|(_, c)| c.owner == CivId(0)).unwrap();
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), id.index(), id.generation()).unwrap();
+    assert!(!options.workable_tiles.is_empty());
+    assert!(options.workable_tiles.iter().all(|t| t.tile != city.centre.0), "the centre works for free");
+    let worked: Vec<u16> = options.workable_tiles.iter().filter(|t| t.worked).map(|t| t.tile).collect();
+    assert_eq!(worked, city.worked.iter().map(|t| t.0).collect::<Vec<_>>());
+    assert!(options.workable_tiles.iter().any(|t| t.food > 0));
+    assert!(crate::queries::city_options(&s.world, &s.rules, CivId(1), id.index(), id.generation()).is_none());
+}

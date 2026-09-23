@@ -118,6 +118,29 @@ pub struct CityOptions {
     pub sellable_buildings: Vec<SellBuildingChoice>,
     pub purchasable_tiles: Vec<TilePurchaseChoice>,
     pub production_conversions: Vec<crate::protocol::ProductionConversion>,
+    /// Tiles the city may work (its centre always works for free), with their yields to the owner.
+    pub workable_tiles: Vec<WorkableTile>,
+    pub specialist_slots: Vec<SpecialistSlot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+pub struct WorkableTile {
+    pub tile: u16,
+    pub food: i32,
+    pub production: i32,
+    pub gold: i32,
+    pub science: i32,
+    pub culture: i32,
+    pub faith: i32,
+    pub worked: bool,
+    /// Another of the owner's cities works it.
+    pub taken: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+pub struct SpecialistSlot {
+    pub specialist: u32,
+    pub slots: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -616,6 +639,27 @@ pub fn city_options(
             gen: generation,
         },
         choices,
+        workable_tiles: civ_core::world::city::workable_tiles(&world.grid, city)
+            .into_iter()
+            .map(|tile| {
+                let y = civ_core::world::yields::tile_yield_for(&world.grid, r, tile, owner);
+                WorkableTile {
+                    tile: tile.0,
+                    food: y.food.round() as i32,
+                    production: y.production.round() as i32,
+                    gold: y.gold.round() as i32,
+                    science: y.science.round() as i32,
+                    culture: y.culture.round() as i32,
+                    faith: y.faith.round() as i32,
+                    worked: city.worked.contains(&tile),
+                    taken: world.cities.iter().any(|(other, c)| other != id && c.worked.contains(&tile)),
+                }
+            })
+            .collect(),
+        specialist_slots: civ_core::world::specialists::slots(r, city)
+            .into_iter()
+            .map(|(specialist, slots)| SpecialistSlot { specialist: specialist.index(), slots })
+            .collect(),
         sellable_buildings: r
             .buildings
             .ids()
