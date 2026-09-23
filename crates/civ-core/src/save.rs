@@ -159,6 +159,9 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
     if let Some(id) = world.difficulty {
         rule(&r.difficulties, id, "difficulty")?;
     }
+    if let Some(id) = world.speed {
+        rule(&r.speeds, id, "speed")?;
+    }
     world.grid.validate_snapshot().map_err(SaveError::InvalidWorld)?;
     crate::world::barbarians::validate(world, r).map_err(SaveError::InvalidWorld)?;
     world.cities.validate_snapshot().map_err(SaveError::InvalidWorld)?;

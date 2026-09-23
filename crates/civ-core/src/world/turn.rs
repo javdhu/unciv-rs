@@ -459,6 +459,35 @@ pub struct TurnModifiers<'a> {
     pub difficulty: Option<&'a crate::ruleset::Difficulty>,
 }
 
+impl TurnModifiers<'_> {
+    /// Everything a game speed scales (Speed.kt). `None` is Standard, whose
+    /// values are the defaults, so an unset speed changes nothing.
+    pub fn for_speed(r: &Ruleset, speed: Option<Id<crate::ruleset::Speed>>) -> Self {
+        let mut m = Self::default();
+        let Some(s) = speed.and_then(|id| r.speeds.get(id)) else { return m };
+        // BarbarianEncampment.kt:64 scales the spawn countdown by barbarianModifier.
+        m.barbarian.speed = s.barbarian_modifier;
+        m.growth.speed = s.modifier;
+        m.costs.speed = s.production_cost_modifier;
+        m.costs.game_length = s.total_turns;
+        m.costs.religious_pressure = s.religious_pressure_adjacent_city;
+        m.costs.gold_gift_modifier = s.gold_gift_modifier;
+        m.costs.gold_cost = s.gold_cost_modifier;
+        m.costs.faith_cost = s.faith_cost_modifier;
+        m.costs.tribute_interval = s.city_state_tribute_scaling_interval;
+        m.costs.deal_duration = s.deal_duration.max(1) as u32;
+        m.costs.golden_age_length = s.golden_age_length_modifier;
+        m.science.speed = s.science_cost_modifier;
+        m.policies.speed = s.culture_cost_modifier;
+        m
+    }
+
+    /// The modifiers of the world's own speed.
+    pub fn for_world(world: &World, r: &Ruleset) -> Self {
+        Self::for_speed(r, world.speed)
+    }
+}
+
 pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, mods: TurnModifiers) -> TurnPlan {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
     plan_civ(world, r, civ, focus, mods, true)

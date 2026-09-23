@@ -33,7 +33,7 @@ stored in SQLite. Losing the cookie loses access to that guest's seats.
 
 1. `POST /api/guest` creates a guest and sets its cookie, or reuses the authenticated
    guest. Its JSON response contains only `guestId`.
-2. `POST /api/rooms` accepts optional `width`, `height`, `majors`, `cityStates`,
+2. `POST /api/rooms` accepts optional `width`, `height`, `majors`, `cityStates`, `speed`, `maxTurns`,
    `nation`, and `turnSeconds`. The map seed is generated and retained by the host.
    The owner receives `roomId`, its `invite`, and its assigned `ownSeat`.
 3. Another guest posts `{ "invite": "..." }` to `/api/rooms/join`. The host assigns

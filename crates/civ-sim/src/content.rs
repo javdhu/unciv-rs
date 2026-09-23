@@ -41,6 +41,12 @@ pub fn load() -> Result<Ruleset, String> {
     Ruleset::from_sources(&sources).map_err(|e| format!("ruleset failed to load: {e}"))
 }
 
+/// One parsed copy of the bundled rules, for callers that only read them.
+pub fn shared() -> Result<&'static Ruleset, String> {
+    static RULES: OnceLock<Result<Ruleset, String>> = OnceLock::new();
+    RULES.get_or_init(load).as_ref().map_err(Clone::clone)
+}
+
 pub fn hash() -> String {
     static HASH: OnceLock<String> = OnceLock::new();
     HASH.get_or_init(compute_hash).clone()
