@@ -94,8 +94,11 @@ hydrate a fresh view, and recover the outbox before queued commands resume. Fenc
 
 The observer demo retains the Svelte stores (`rules`, current/previous `view`, selection, busy) and the
 Three.js renderer. The renderer does not calculate game rules. Terrain, cities, units and overlays have
-separate owners; art bindings map ruleset names to model assets. Static geometry is instanced and units
-use individual animated meshes. No human-control UI, layout, artwork or leader media was changed in
+separate owners; art entries map ruleset names to procedural recipes (docs/PROCEDURAL.md). Static
+geometry is instanced, and each unit is a skinned mesh over shared geometry with its own skeleton. The
+observer's views carry no combat events, so `world/combat.ts` infers fights from consecutive views. A
+presentation event that names attacker and defender, and whether the attack was ranged, would replace that
+inference. No human-control UI, layout, artwork or leader media was changed in
 this integration.
 
 New controls should use `openSolo`/`openRemote` and remove the old observer adapter when that UI is
