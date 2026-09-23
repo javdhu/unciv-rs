@@ -12,8 +12,8 @@ pub struct RuleTables {
     pub nations: Vec<NationRow>,
     pub resources: Vec<Named>,
     pub improvements: Vec<Named>,
-    pub buildings: Vec<Named>,
-    pub technologies: Vec<Named>,
+    pub buildings: Vec<BuildingRow>,
+    pub technologies: Vec<TechRow>,
     pub victories: Vec<Named>,
     pub policies: Vec<Named>,
     pub promotions: Vec<Named>,
@@ -38,6 +38,52 @@ pub struct UnitRow {
     pub name: String,
     pub unit_type: String,
     pub movement: i32,
+    /// Melee strength; 0 for civilians.
+    pub strength: i32,
+    /// 0 for units without a ranged attack.
+    pub ranged_strength: i32,
+    pub range: i32,
+    /// Base production cost; 0 when it cannot be built.
+    pub cost: i32,
+    /// The nation whose unique unit this is, by name.
+    pub unique_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildingRow {
+    pub id: u32,
+    pub name: String,
+    /// Base production cost; 0 when it cannot be built.
+    pub cost: i32,
+    pub wonder: bool,
+    pub national_wonder: bool,
+}
+
+/// A technology's place in the tree (Unciv's column and row) and what it opens.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TechRow {
+    pub id: u32,
+    pub name: String,
+    pub era: String,
+    pub column: i32,
+    pub row: i32,
+    /// Base science cost before map and speed scaling; the real cost of a choice is in `civOptions`.
+    pub cost: i32,
+    pub prerequisites: Vec<u32>,
+    pub unlocks: Vec<Unlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Unlock {
+    /// `unit`, `building`, `wonder` or `improvement`.
+    pub kind: String,
+    pub id: u32,
+    pub name: String,
+    /// Set for a nation's unique unit or building, by nation name.
+    pub unique_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -72,6 +118,39 @@ fn rule_text(u: &civ_core::Unique) -> String {
         text.push_str(&format!(" <{}>", rule_text(c)));
     }
     text
+}
+
+fn tech_row(r: &Ruleset, id: civ_core::arena::Id<civ_core::ruleset::Technology>, t: &civ_core::ruleset::Technology) -> TechRow {
+    let column = t.column.and_then(|c| r.tech_columns.get(c));
+    let opens = |required: &Option<String>| required.as_deref() == Some(t.name.as_str());
+    let mut unlocks: Vec<Unlock> = r
+        .units
+        .iter()
+        .filter(|(_, u)| opens(&u.required_tech))
+        .map(|(id, u)| Unlock { kind: "unit".into(), id: id.index(), name: u.name.clone(), unique_to: u.unique_to.clone() })
+        .collect();
+    unlocks.extend(r.buildings.iter().filter(|(_, b)| opens(&b.required_tech)).map(|(id, b)| Unlock {
+        kind: if b.is_wonder.unwrap_or(false) { "wonder" } else { "building" }.into(),
+        id: id.index(),
+        name: b.name.clone(),
+        unique_to: b.unique_to.clone(),
+    }));
+    unlocks.extend(r.improvements.iter().filter(|(_, i)| opens(&i.tech_required)).map(|(id, i)| Unlock {
+        kind: "improvement".into(),
+        id: id.index(),
+        name: i.name.clone(),
+        unique_to: i.unique_to.clone(),
+    }));
+    TechRow {
+        id: id.index(),
+        name: t.name.clone(),
+        era: column.map(|c| c.era.clone()).unwrap_or_default(),
+        column: column.map_or(0, |c| c.column_number),
+        row: t.row,
+        cost: t.cost.or(column.map(|c| c.tech_cost)).unwrap_or(0),
+        prerequisites: t.prerequisites.iter().filter_map(|name| r.technologies.id(name)).map(|p| p.index()).collect(),
+        unlocks,
+    }
 }
 
 pub fn tables(r: &Ruleset) -> RuleTables {
@@ -136,6 +215,11 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 name: u.name.clone(),
                 unit_type: u.unit_type.clone(),
                 movement: u.movement,
+                strength: u.strength.unwrap_or(0),
+                ranged_strength: u.ranged_strength.unwrap_or(0),
+                range: u.range.unwrap_or(0),
+                cost: u.cost.unwrap_or(0),
+                unique_to: u.unique_to.clone(),
             })
             .collect(),
         nations: r
@@ -170,18 +254,41 @@ pub fn tables(r: &Ruleset) -> RuleTables {
         buildings: r
             .buildings
             .iter()
-            .map(|(id, x)| Named {
+            .map(|(id, x)| BuildingRow {
                 id: id.index(),
                 name: x.name.clone(),
+                cost: x.cost.unwrap_or(0),
+                wonder: x.is_wonder.unwrap_or(false),
+                national_wonder: x.is_national_wonder.unwrap_or(false),
             })
             .collect(),
-        technologies: r
-            .technologies
-            .iter()
-            .map(|(id, x)| Named {
-                id: id.index(),
-                name: x.name.clone(),
-            })
-            .collect(),
+        technologies: r.technologies.iter().map(|(id, t)| tech_row(r, id, t)).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tech_tree_is_laid_out_with_prerequisites_and_unlocks() {
+        let r = crate::content::load().unwrap();
+        let t = tables(&r);
+        let tech = |name: &str| t.technologies.iter().find(|x| x.name == name).unwrap();
+        let ids: std::collections::BTreeSet<u32> = t.technologies.iter().map(|x| x.id).collect();
+        for row in &t.technologies {
+            assert!(!row.era.is_empty() && row.cost > 0, "{}", row.name);
+            assert!(row.prerequisites.iter().all(|p| ids.contains(p)), "{}", row.name);
+            let later = row.prerequisites.iter().all(|p| t.technologies.iter().find(|x| x.id == *p).unwrap().column < row.column);
+            assert!(later, "{} sits right of its prerequisites", row.name);
+        }
+        assert!(tech("Agriculture").prerequisites.is_empty());
+        assert_eq!(tech("Agriculture").column, 0);
+        let opens = |t: &TechRow, name: &str| t.unlocks.iter().any(|u| u.name == name);
+        assert!(opens(tech("Mining"), "Mine"));
+        assert!(opens(tech("Bronze Working"), "Spearman"));
+        assert!(tech("Bronze Working").unlocks.iter().any(|u| u.kind == "wonder"));
+        let spearman = t.units.iter().find(|u| u.name == "Spearman").unwrap();
+        assert!(spearman.strength > 0 && spearman.cost > 0 && spearman.ranged_strength == 0);
     }
 }
