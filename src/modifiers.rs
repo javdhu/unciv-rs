@@ -114,6 +114,11 @@ impl ModifierStack {
         self
     }
 
+    /// Every contribution, in the order added.
+    pub fn modifiers(&self) -> &[Modifier] {
+        &self.modifiers
+    }
+
     /// The result will not go below `v`. Applied in [`Layer::Clamp`].
     pub fn floor_at(&mut self, v: Fixed) -> &mut Self {
         self.floor = Some(match self.floor {

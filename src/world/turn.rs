@@ -325,6 +325,8 @@ pub enum TurnEvent {
     Battle {
         attacker_died: bool,
         defender_died: bool,
+        /// Participants and damage, where one unit attacked one target.
+        report: Option<crate::world::combat::BattleReport>,
     },
     TileImproved {
         tile: crate::world::grid::TileId,
@@ -987,6 +989,8 @@ fn apply_plan_inner(
             }
             UnitOrder::Attack(target) => {
                 let defender_before = world.units.get(*target).map(|u| u.position);
+                let watch =
+                    crate::world::combat::BattleWatch::before(world, r, *unit, crate::world::air::Target::Unit(*target));
                 let result = if world.units.get(*unit).is_some_and(|u| u.is_air(r)) {
                     crate::world::air::strike(world, r, *unit, crate::world::air::Target::Unit(*target))
                         .map_err(Into::into)
@@ -1025,10 +1029,13 @@ fn apply_plan_inner(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
+                        report: watch.map(|w| w.report(world)),
                     });
                 }
             }
             UnitOrder::Assault(city) => {
+                let watch =
+                    crate::world::combat::BattleWatch::before(world, r, *unit, crate::world::air::Target::City(*city));
                 if world.units.get(*unit).is_some_and(|u| u.is_air(r)) {
                     if let Ok(result) =
                         crate::world::air::strike(world, r, *unit, crate::world::air::Target::City(*city))
@@ -1036,6 +1043,7 @@ fn apply_plan_inner(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: result.defender_died,
+                            report: watch.map(|w| w.report(world)),
                         });
                     }
                     continue;
@@ -1046,6 +1054,11 @@ fn apply_plan_inner(
                     crate::world::combat::attack_city(world, r, *unit, *city)
                 };
                 if let Ok(result) = result {
+                    events.push(TurnEvent::Battle {
+                        attacker_died: result.attacker_died,
+                        defender_died: false,
+                        report: watch.map(|w| w.report(world)),
+                    });
                     if result.captured {
                         events.push(TurnEvent::CityCaptured { city: *city, by: plan.civ });
                         if let (Some((from, movement)), Some(after)) = (before, world.units.get(*unit)) {
@@ -2818,7 +2831,7 @@ mod multi_civ {
                     TurnEvent::WarDeclared { .. } => wars += 1,
                     TurnEvent::PeaceMade { .. } => peaces += 1,
                     TurnEvent::CityCaptured { .. } => captures += 1,
-                    TurnEvent::Battle { attacker_died, defender_died } => {
+                    TurnEvent::Battle { attacker_died, defender_died, .. } => {
                         battles += 1;
                         losses += attacker_died as u32 + defender_died as u32;
                     }
@@ -2965,7 +2978,7 @@ mod warfare {
             for e in
                 advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
             {
-                if let TurnEvent::Battle { attacker_died, defender_died } = e {
+                if let TurnEvent::Battle { attacker_died, defender_died, .. } = e {
                     battles += 1;
                     deaths += attacker_died as u32 + defender_died as u32;
                 }

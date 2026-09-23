@@ -1,7 +1,7 @@
 use civ_core::arena::Id;
 use civ_core::ruleset::Ruleset;
 use civ_core::stats::Fixed;
-use civ_core::world::{ai, combat, military, City, CivId, Civilization, TileGrid, TileId, Unit, World};
+use civ_core::world::{ai, air, combat, military, City, CivId, Civilization, TileGrid, TileId, Unit, World};
 
 fn fixture() -> (Ruleset, World) {
     let mut r = Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").unwrap().unwrap();
@@ -521,4 +521,79 @@ fn mounted_victory_advance_ignores_zoc_but_ordinary_movement_does_not() {
     let horse = w.units.get(a).unwrap();
     assert_eq!(horse.position, to);
     assert_eq!(horse.movement_left, Fixed::whole(3));
+}
+
+#[test]
+fn attack_previews_bracket_every_rolled_outcome() {
+    let (r, original) = fixture();
+    for (attacker, defender, ranged) in [("Warrior", "Warrior", false), ("Spearman", "Horseman", false), ("Archer", "Spearman", true)] {
+        let mut w = original.clone();
+        let a = unit(&mut w, &r, 0, attacker, 4, 4);
+        let d = unit(&mut w, &r, 1, defender, 5, 4);
+        let p = combat::preview_attack(&w, &r, a, air::Target::Unit(d)).unwrap();
+        assert_eq!(p.ranged, ranged, "{attacker}");
+        assert!(!p.capture);
+        assert!(p.defender.damage.0 <= p.defender.damage.1 && p.defender.damage.1 > 0, "{attacker}: {p:?}");
+        if ranged {
+            assert_eq!(p.attacker.damage, (0, 0));
+        }
+        for turn in 0..24 {
+            let mut t = w.clone();
+            t.turn = turn;
+            let at = tile(&t, 5, 4);
+            let result = if ranged {
+                combat::resolve_ranged_attack(&mut t, &r, a, at)
+            } else {
+                combat::resolve_attack(&mut t, &r, a, d)
+            }
+            .unwrap();
+            // Healthy units survive one exchange, so each rolled figure sits inside the previewed range.
+            let (low, high) = p.defender.damage;
+            assert!((low..=high).contains(&result.damage_to_defender), "{attacker} turn {turn}: {result:?} vs {p:?}");
+            let (low, high) = p.attacker.damage;
+            assert!((low..=high).contains(&result.damage_to_attacker), "{attacker} turn {turn}: {result:?} vs {p:?}");
+        }
+    }
+}
+
+#[test]
+fn attack_previews_show_captures_and_city_limits() {
+    let (r, mut w) = fixture();
+    let a = unit(&mut w, &r, 0, "Warrior", 4, 4);
+    let worker = unit(&mut w, &r, 1, "Worker", 5, 4);
+    let p = combat::preview_attack(&w, &r, a, air::Target::Unit(worker)).unwrap();
+    assert!(p.capture);
+    assert_eq!(p.defender.damage, (0, 0));
+
+    let city = w.found_city_in(&r, City::found("Walls", CivId(1), tile(&w, 4, 5)));
+    let p = combat::preview_attack(&w, &r, a, air::Target::City(city)).unwrap();
+    let c = w.cities.get(city).unwrap();
+    assert_eq!((p.defender.health, p.defender.max_health), (c.health, civ_core::world::city::max_health(&r, c)));
+    assert!(p.defender.damage.1 < c.health, "a city never drops below one health: {p:?}");
+    assert!(p.defender.modifiers.is_empty() && !p.capture);
+}
+
+#[test]
+fn attack_commands_report_who_fought_and_what_it_cost() {
+    use civ_core::world::commands::{self, AttackTarget, Command};
+    use civ_core::world::turn::TurnEvent;
+    let (r, mut w) = fixture();
+    let a = unit(&mut w, &r, 0, "Warrior", 4, 4);
+    let d = unit(&mut w, &r, 1, "Warrior", 5, 4);
+    let seen = tile(&w, 5, 4);
+    w.visibility.observe(CivId(0), seen);
+    let outcome = commands::execute(&mut w, &r, CivId(0), Command::Attack { unit: a, target: AttackTarget::Unit(d) }).unwrap();
+    let report = outcome
+        .events
+        .iter()
+        .find_map(|e| match e {
+            TurnEvent::Battle { report: Some(b), .. } => Some(*b),
+            _ => None,
+        })
+        .expect("the attack reports its participants");
+    assert_eq!((report.attacker, report.attacker_owner, report.defender_owner), (a, CivId(0), CivId(1)));
+    assert_eq!((report.target, report.from, report.at, report.ranged), (air::Target::Unit(d), tile(&w, 4, 4), tile(&w, 5, 4), false));
+    assert_eq!(report.damage_to_attacker, 100 - i32::from(w.units.get(a).map_or(0, |u| u.health)));
+    assert_eq!(report.damage_to_defender, 100 - i32::from(w.units.get(d).map_or(0, |u| u.health)));
+    assert!(report.damage_to_defender > 0);
 }

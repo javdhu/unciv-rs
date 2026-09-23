@@ -344,6 +344,10 @@ fn apply(
             }
             .ok_or(InvalidTarget)?;
             enemy(world, civ, owner, tile)?;
+            let watch = crate::world::combat::BattleWatch::before(world, r, unit, match target {
+                AttackTarget::Unit(id) => crate::world::air::Target::Unit(id),
+                AttackTarget::City(id) => crate::world::air::Target::City(id),
+            });
             match target {
                 AttackTarget::Unit(target) => {
                     // Tile-based helpers choose the first defender. Require
@@ -371,6 +375,7 @@ fn apply(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
+                        report: watch.map(|w| w.report(world)),
                     });
                     if let Some(after) = world.units.get(target).filter(|u| u.position != tile) {
                         events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
@@ -389,6 +394,7 @@ fn apply(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: result.defender_died,
+                            report: watch.map(|w| w.report(world)),
                         });
                     } else {
                         let result = if ranged {
@@ -397,6 +403,11 @@ fn apply(
                             crate::world::combat::attack_city(world, r, unit, city)
                         }
                         .map_err(|_| NotAllowed)?;
+                        events.push(TurnEvent::Battle {
+                            attacker_died: result.attacker_died,
+                            defender_died: false,
+                            report: watch.map(|w| w.report(world)),
+                        });
                         if result.captured {
                             events.push(TurnEvent::CityCaptured { city, by: civ });
                         }
@@ -458,7 +469,7 @@ fn apply(
         AirSweep { unit, target } => {
             target_tile(world, target)?;
             let result = crate::world::air::sweep(world, r, unit, target).map_err(|_| NotAllowed)?;
-            events.push(TurnEvent::Battle { attacker_died: result.attacker_died, defender_died: result.defender_died });
+            events.push(TurnEvent::Battle { attacker_died: result.attacker_died, defender_died: result.defender_died, report: None });
         }
         Paradrop { unit, to } => {
             target_tile(world, to)?;
@@ -480,7 +491,7 @@ fn apply(
             enemy(world, civ, u.owner, u.position)?;
             let result = crate::world::combat::city_bombard(world, r, city, target).map_err(|_| NotAllowed)?;
             world.cities.get_mut(city).expect("validated city").attacks_left -= 1;
-            events.push(TurnEvent::Battle { attacker_died: false, defender_died: result.defender_died });
+            events.push(TurnEvent::Battle { attacker_died: false, defender_died: result.defender_died, report: None });
         }
         FoundCity { unit, name } => {
             moving(world, unit)?;

@@ -412,6 +412,19 @@ pub(crate) fn combat_strength_with_bonus(
     defending: bool,
     bonus: i32,
 ) -> Option<Fixed> {
+    let (base, stack) = combat_breakdown(world, r, id, target, defending, bonus)?;
+    Some(stack.evaluate(base))
+}
+
+/// A unit's strength against a specific target, and where each part of it came from.
+pub fn combat_breakdown(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    target: crate::world::air::Target,
+    defending: bool,
+    bonus: i32,
+) -> Option<(Fixed, ModifierStack)> {
     let unit = world.units.get(id)?;
     let (opponent, tile, enemy_ranged) = match target {
         crate::world::air::Target::Unit(other) => {
@@ -425,7 +438,195 @@ pub(crate) fn combat_strength_with_bonus(
     let ranged = unit.is_ranged(r) && (!defending || enemy_ranged);
     let (base, mut stack) = strength_breakdown_full(world, r, id, Some(tile), defending, Some(opponent), ranged)?;
     stack.add(Modifier::additive_percent(Fixed::whole(bonus), Source::new(SourceKind::Other, "Mission")));
-    Some(stack.evaluate(base))
+    Some((base, stack))
+}
+
+/// One side of a previewed attack.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreviewSide {
+    /// Strength after every modifier.
+    pub strength: Fixed,
+    /// Strength before percentage modifiers. Cities list no modifiers.
+    pub base: Fixed,
+    pub modifiers: Vec<Modifier>,
+    pub health: i32,
+    pub max_health: i32,
+    /// Damage this side takes at the lowest and the highest attack roll.
+    pub damage: (i32, i32),
+}
+
+/// What an attack would do, across the whole attack roll.
+///
+/// The roll is seeded by the turn and both tiles, so the exact outcome is knowable in advance. A preview
+/// gives its range instead: players weigh the odds without learning which tile rolls best. The figures
+/// use the same formulas as [`resolve_attack`], [`resolve_ranged_attack`], [`attack_city`] and
+/// [`attack_city_ranged`]; a death ends a melee exchange early, so a fatal fight can deal less than the
+/// lower figure.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttackPreview {
+    pub ranged: bool,
+    /// A melee attack on a civilian or a city at one health captures it outright.
+    pub capture: bool,
+    pub attacker: PreviewSide,
+    pub defender: PreviewSide,
+}
+
+pub fn preview_attack(
+    world: &World,
+    r: &Ruleset,
+    attacker: Id<Unit>,
+    target: crate::world::air::Target,
+) -> Option<AttackPreview> {
+    use crate::world::air::Target;
+    let a = world.units.get(attacker)?;
+    let ranged = a.is_ranged(r);
+    let a_health = i32::from(a.health);
+    let (a_base, a_stack) = combat_breakdown(world, r, attacker, target, false, 0)?;
+    let att = a_stack.evaluate(a_base);
+    let wounded_attacker = Precise::from_fixed(unit_health_ratio(world, r, attacker));
+    let span = |f: &dyn Fn(Fixed) -> i32| (f(Fixed::ZERO), f(Fixed::ONE));
+    let cap = |(low, high): (i32, i32), limit: i32| (low.clamp(0, limit.max(0)), high.clamp(0, limit.max(0)));
+    let mut capture = false;
+    let (defender, to_attacker) = match target {
+        Target::Unit(id) => {
+            let d = world.units.get(id)?;
+            let d_health = i32::from(d.health);
+            if d.is_civilian(r) {
+                // Ranged fire deals a flat 40 to civilians; melee captures them without a fight.
+                let damage = if ranged { 40.min(d_health) } else { 0 };
+                capture = !ranged;
+                let side = PreviewSide {
+                    strength: Fixed::ZERO,
+                    base: Fixed::ZERO,
+                    modifiers: Vec::new(),
+                    health: d_health,
+                    max_health: 100,
+                    damage: (damage, damage),
+                };
+                (side, (0, 0))
+            } else {
+                let (d_base, d_stack) = combat_breakdown(world, r, id, Target::Unit(attacker), true, 0)?;
+                let def = d_stack.evaluate(d_base);
+                let ratio = strength_ratio(att, def);
+                let wounded_defender = Precise::from_fixed(unit_health_ratio(world, r, id));
+                let to_d = span(&|roll| (damage_modifier_precise(ratio, false, roll) * wounded_attacker).round().max(0) as i32);
+                let to_a = if ranged {
+                    (0, 0)
+                } else {
+                    span(&|roll| (damage_modifier_precise(ratio, true, roll) * wounded_defender).round().max(0) as i32)
+                };
+                let side = PreviewSide {
+                    strength: def,
+                    base: d_base,
+                    modifiers: d_stack.modifiers().to_vec(),
+                    health: d_health,
+                    max_health: 100,
+                    damage: cap(to_d, d_health),
+                };
+                (side, to_a)
+            }
+        }
+        Target::City(id) => {
+            let c = world.cities.get(id)?;
+            let def = city_combat_strength(world, r, id, Some(attacker), false);
+            let ratio = strength_ratio(att, def);
+            let to_d = span(&|roll| (damage_modifier_precise(ratio, false, roll) * wounded_attacker).round().max(0) as i32);
+            let to_a = if ranged { (0, 0) } else { span(&|roll| damage_modifier_precise(ratio, true, roll).round().max(0) as i32) };
+            capture = !ranged && c.health <= 1;
+            // Cities stop at one health; the melee blow that finds them there takes the city.
+            let side = PreviewSide {
+                strength: def,
+                base: def,
+                modifiers: Vec::new(),
+                health: c.health,
+                max_health: crate::world::city::max_health(r, c),
+                damage: cap(to_d, c.health - 1),
+            };
+            (side, to_a)
+        }
+    };
+    let attacker = PreviewSide {
+        strength: att,
+        base: a_base,
+        modifiers: a_stack.modifiers().to_vec(),
+        health: a_health,
+        max_health: 100,
+        damage: cap(to_attacker, a_health),
+    };
+    Some(AttackPreview { ranged, capture, attacker, defender })
+}
+
+/// Who fought whom, from where, and what the blow cost each side. Presentation shows it to the two sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleReport {
+    pub attacker: Id<Unit>,
+    pub attacker_base: Id<BaseUnit>,
+    pub attacker_owner: crate::world::grid::CivId,
+    pub target: crate::world::air::Target,
+    /// The defending unit's type; none when a city defends.
+    pub defender_base: Option<Id<BaseUnit>>,
+    pub defender_owner: crate::world::grid::CivId,
+    /// Where the attacker stood, and where the blow landed.
+    pub from: TileId,
+    pub at: TileId,
+    pub ranged: bool,
+    pub damage_to_attacker: i32,
+    pub damage_to_defender: i32,
+}
+
+/// Both sides as they stood before a blow. [`BattleWatch::report`] reads what changed, so every kind of
+/// attack (melee, ranged, air, on a city) reports alike.
+#[derive(Debug, Clone, Copy)]
+pub struct BattleWatch {
+    report: BattleReport,
+    attacker_health: i32,
+    defender_health: i32,
+}
+
+impl BattleWatch {
+    pub fn before(world: &World, r: &Ruleset, attacker: Id<Unit>, target: crate::world::air::Target) -> Option<BattleWatch> {
+        use crate::world::air::Target;
+        let a = world.units.get(attacker)?;
+        let (owner, at, base, health) = match target {
+            Target::Unit(id) => {
+                let d = world.units.get(id)?;
+                (d.owner, d.position, Some(d.base), i32::from(d.health))
+            }
+            Target::City(id) => {
+                let c = world.cities.get(id)?;
+                (c.owner, c.centre, None, c.health)
+            }
+        };
+        let report = BattleReport {
+            attacker,
+            attacker_base: a.base,
+            attacker_owner: a.owner,
+            target,
+            defender_base: base,
+            defender_owner: owner,
+            from: a.position,
+            at,
+            ranged: a.is_ranged(r) || a.is_air(r),
+            damage_to_attacker: 0,
+            damage_to_defender: 0,
+        };
+        Some(BattleWatch { report, attacker_health: i32::from(a.health), defender_health: health })
+    }
+
+    /// A side that is gone lost all of its health; a captured civilian lost none.
+    pub fn report(self, world: &World) -> BattleReport {
+        use crate::world::air::Target;
+        let attacker = world.units.get(self.report.attacker).map_or(0, |u| i32::from(u.health));
+        let defender = match self.report.target {
+            Target::Unit(id) => world.units.get(id).map_or(0, |u| i32::from(u.health)),
+            Target::City(id) => world.cities.get(id).map_or(0, |c| c.health),
+        };
+        BattleReport {
+            damage_to_attacker: self.attacker_health - attacker,
+            damage_to_defender: self.defender_health - defender,
+            ..self.report
+        }
+    }
 }
 
 pub fn unit_health_ratio(world: &World, r: &Ruleset, id: Id<Unit>) -> Fixed {
