@@ -445,7 +445,7 @@ fn moves(raw: i64) -> f64 {
 
 pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
     let economy =
-        civ_core::world::turn::plan_economy(w, r, me, CityFocus::None, TurnModifiers::default());
+        civ_core::world::turn::plan_economy(w, r, me, CityFocus::None, TurnModifiers::for_world(w, r));
     let tiles = w
         .visibility
         .known_tiles(me)
@@ -589,7 +589,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     .collect(),
                 health: c.health,
                 max_health: civ_core::world::city::max_health(r, c),
-                food_to_grow: civ_core::world::city::food_to_next_population(c.population, TurnModifiers::default().growth),
+                food_to_grow: civ_core::world::city::food_to_next_population(c.population, TurnModifiers::for_world(w, r).growth),
                 attacks_left: c.attacks_left,
                 resistance: c.resistance,
                 puppet: c.puppet,
@@ -686,8 +686,8 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             happiness: economy.happiness,
         },
         turn: w.turn,
-        // the session plays at the default speed, so the calendar reads the same modifier the turns use
-        year: civ_core::world::great_people::calendar_year(r, TurnModifiers::default().costs.speed, w.turn),
+        // the calendar reads the same speed modifier the turns use
+        year: civ_core::world::great_people::calendar_year(r, TurnModifiers::for_world(w, r).costs.speed, w.turn),
         width: w.grid.width(),
         height: w.grid.height(),
         wrap_x: w.grid.wraps_x(),
@@ -1613,7 +1613,8 @@ pub fn report_for(
 pub fn advance(w: &mut World, r: &Ruleset) -> TurnReport {
     capture_observations(w, r);
     let before = w.clone();
-    let events = advance_turn(w, r, CityFocus::None, TurnModifiers::default());
+    let mods = TurnModifiers::for_world(w, r);
+    let events = advance_turn(w, r, CityFocus::None, mods);
     capture_observations(w, r);
     let mut reports = Vec::new();
     for me in w.civ_ids() {
@@ -1628,7 +1629,8 @@ pub fn advance(w: &mut World, r: &Ruleset) -> TurnReport {
 pub fn advance_for(w: &mut World, r: &Ruleset, me: CivId) -> TurnReport {
     capture_observations(w, r);
     let before = w.clone();
-    let events = advance_turn(w, r, CityFocus::None, TurnModifiers::default());
+    let mods = TurnModifiers::for_world(w, r);
+    let events = advance_turn(w, r, CityFocus::None, mods);
     capture_observations(w, r);
     report_for(&before, w, r, me, &events)
 }

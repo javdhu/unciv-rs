@@ -27,6 +27,9 @@ pub struct World {
     pub turn: u32,
     /// Match difficulty. None uses the bundled Prince default.
     pub difficulty: Option<Id<crate::ruleset::Difficulty>>,
+    /// Game speed. None is Standard. Absent from older saves, which were all Standard.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub speed: Option<Id<crate::ruleset::Speed>>,
     /// Who has won, once someone has. A game is won once; without this the
     /// victory event fires again every turn afterwards.
     pub winner: Option<(CivId, Id<crate::ruleset::Victory>)>,
@@ -50,6 +53,7 @@ impl World {
             diplomacy: Default::default(),
             turn: 0,
             difficulty: None,
+            speed: None,
             winner: None,
             victory_turn: None,
             endgame: Default::default(),

@@ -73,7 +73,7 @@ impl Offers {
             CivId(offer.from),
             CivId(offer.to),
             &terms,
-            TurnModifiers::default(),
+            TurnModifiers::for_world(world, r),
         )
         .map_err(|_| RejectionCode::IllegalAction)?;
         // Replacing one's outgoing offer never changes the terms of an old ID.
@@ -104,7 +104,7 @@ impl Offers {
                 CivId(offer.from),
                 CivId(offer.to),
                 &terms,
-                TurnModifiers::default(),
+                TurnModifiers::for_world(world, r),
             )
             .map_err(|_| RejectionCode::IllegalAction)?
             .events

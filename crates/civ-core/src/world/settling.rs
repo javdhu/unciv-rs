@@ -144,7 +144,10 @@ pub fn can_found_on(world: &World, r: &Ruleset, u: &Unit, tile: TileId) -> Resul
         });
         crate::world::conditionals::applies(&rule, &ctx).holds()
     });
-    if !u.can_move() || !allowed {
+    // Barbarians keep a captured settler only so it can be taken back
+    // (BattleUnitCapture.kt:192); BarbarianAutomation never settles with it.
+    let barbarian = world.civ(u.owner).is_some_and(|c| c.is_barbarian);
+    if !u.can_move() || !allowed || barbarian {
         return Err(SettleRejection::CannotFound);
     }
     can_settle(world, r, u.owner, tile)
@@ -322,6 +325,18 @@ mod tests {
         }
         let far = w.grid.ring(centre, MINIMAL_CITY_DISTANCE + 1)[0];
         assert_eq!(can_settle(&w, &r, CivId(0), far), Ok(()), "one step further is fine");
+    }
+
+    #[test]
+    fn barbarians_keep_a_captured_settler_but_never_settle() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.civ_mut(CivId(1)).unwrap().is_barbarian = true;
+        let at = w.grid.id_at(10, 10).unwrap();
+        let captive = settler(&mut w, &r, at, CivId(1));
+        assert_eq!(can_found_with(&w, &r, captive), Err(SettleRejection::CannotFound));
+        let own = settler(&mut w, &r, at, CivId(0));
+        assert_eq!(can_found_with(&w, &r, own), Ok(()));
     }
 
     #[test]

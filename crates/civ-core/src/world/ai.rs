@@ -1362,7 +1362,7 @@ pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
                 .filter_map(|id| {
                     let city = world.cities.get(*id)?;
                     crate::world::construction::can_construct_in(world, r, civ, city, what).ok()?;
-                    production_cost_in(world, r, *id, what, CostModifiers::default())
+                    production_cost_in(world, r, *id, what, crate::world::turn::TurnModifiers::for_world(world, r).costs)
                 })
                 .min()?;
             Some((military_value(unit_strength(r, base)).checked_div(Fixed::whole(cost.max(1)))?, base))

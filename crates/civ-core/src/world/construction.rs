@@ -55,6 +55,8 @@ pub enum Rejection {
     NeedsPopulation(u32),
     /// A puppet's governor does not build wonders.
     PuppetWonder,
+    /// City-states build no wonders (Building.kt:385, `CityStateWonder`).
+    CityStateWonder,
     /// A ship needs a city on the coast.
     NotCoastal,
     /// The id does not resolve in this ruleset.
@@ -77,6 +79,7 @@ impl std::fmt::Display for Rejection {
             Rejection::NotProducible => write!(f, "cannot be produced"),
             Rejection::NeedsPopulation(n) => write!(f, "needs a city of size {n}"),
             Rejection::PuppetWonder => write!(f, "a puppet does not build wonders"),
+            Rejection::CityStateWonder => write!(f, "city-states do not build wonders"),
             Rejection::NotCoastal => write!(f, "a ship needs a coastal city"),
             Rejection::Unknown => write!(f, "not in this ruleset"),
             Rejection::NotAvailable => write!(f, "not available in this city"),
@@ -260,6 +263,9 @@ fn can_construct_impl(
             }
             if city.puppet && (b.is_wonder == Some(true) || b.is_national_wonder == Some(true)) {
                 return Err(Rejection::PuppetWonder);
+            }
+            if civ.city_state_type.is_some() && (b.is_wonder == Some(true) || b.is_national_wonder == Some(true)) {
+                return Err(Rejection::CityStateWonder);
             }
             if let Some(req) = b.required_building.as_deref() {
                 let have = r.buildings.id(req).is_some_and(|rid| city.built.contains(&rid));

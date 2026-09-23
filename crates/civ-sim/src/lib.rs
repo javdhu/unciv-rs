@@ -17,7 +17,7 @@ mod setup;
 mod view;
 
 pub use rules::{tables, RuleTables};
-pub use setup::{new_game, Settings};
+pub use setup::{new_game, new_game_for, new_game_in, Settings};
 pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnReport};
 
 use civ_core::ruleset::Ruleset;
@@ -29,6 +29,12 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(js_name = ruleTables)]
 pub fn rule_tables() -> Result<JsValue, JsError> {
     js(&tables(&content::load().map_err(|e| JsError::new(&e))?))
+}
+
+/// The rule tables of a bundled ruleset: `gods-and-kings` or `blitz`.
+#[wasm_bindgen(js_name = ruleTablesFor)]
+pub fn rule_tables_for(ruleset: &str) -> Result<JsValue, JsError> {
+    js(&tables(&content::load_ruleset(ruleset).map_err(|e| JsError::new(&e))?))
 }
 
 /// A game hosted in the browser. Every method returns plain JS objects (camelCase, JSON-compatible).

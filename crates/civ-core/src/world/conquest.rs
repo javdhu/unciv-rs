@@ -731,4 +731,18 @@ mod tests {
             Err(crate::world::construction::Rejection::PuppetWonder)
         );
     }
+
+    #[test]
+    fn city_states_build_no_wonders() {
+        let r = ruleset();
+        let (mut w, city) = world(&r);
+        let owner = w.cities.get(city).unwrap().owner;
+        let pyramids = crate::world::construction::Construction::Building(r.buildings.id("The Pyramids").unwrap());
+        w.civ_mut(owner).unwrap().city_state_type = r.city_state_types.ids().next();
+        let (civ, c) = (w.civ(owner).unwrap(), w.cities.get(city).unwrap());
+        assert_eq!(
+            crate::world::construction::can_construct(&r, civ, c, pyramids),
+            Err(crate::world::construction::Rejection::CityStateWonder)
+        );
+    }
 }

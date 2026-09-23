@@ -172,6 +172,8 @@ pub(crate) struct ConnectionLease {
     pub seat: u8,
     pub generation: u64,
     pub update: GameUpdate,
+    /// The match's ruleset content hash, for the welcome.
+    pub content_hash: String,
     pub updates: broadcast::Receiver<GameUpdate>,
     pub fence: watch::Receiver<u64>,
 }
@@ -383,6 +385,7 @@ impl Host {
             seat,
             generation,
             update: game.decorate(game.session.current_update(seat)?),
+            content_hash: game.session.content_hash(),
             updates: channels.updates.subscribe(),
             fence: channels.generation.subscribe(),
         })

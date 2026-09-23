@@ -116,7 +116,7 @@ pub fn execute(
     civ: CivId,
     command: Command,
 ) -> Result<ActionOutcome, CommandRejection> {
-    execute_with(world, r, civ, command, TurnModifiers::default())
+    execute_with(world, r, civ, command, TurnModifiers::for_world(world, r))
 }
 
 pub fn execute_with(
