@@ -1,6 +1,7 @@
 //! Complete, versioned base rules. Gameplay must never load the fingerprint fixture subset.
 use civ_core::ruleset::Ruleset;
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 
 pub const ENGINE_VERSION: &str = "civ-core/0.1-session-4";
 
@@ -41,6 +42,11 @@ pub fn load() -> Result<Ruleset, String> {
 }
 
 pub fn hash() -> String {
+    static HASH: OnceLock<String> = OnceLock::new();
+    HASH.get_or_init(compute_hash).clone()
+}
+
+fn compute_hash() -> String {
     let mut digest = Sha256::new();
     for (name, data) in SOURCES {
         digest.update((name.len() as u64).to_le_bytes());

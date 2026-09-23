@@ -83,6 +83,7 @@ struct Save {
 pub struct Session {
     world: World,
     rules: Arc<Ruleset>,
+    ruleset_identity: civ_core::save::RulesetIdentity,
     settings: Settings,
     epoch: String,
     original_seats: Vec<u8>,
@@ -121,6 +122,7 @@ impl Session {
             ));
         }
         let (mut world, rules, _) = new_game(&settings).map_err(SessionError::InvalidSettings)?;
+        let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let seats: Vec<_> = unique
             .into_iter()
             .map(|civ| {
@@ -138,6 +140,7 @@ impl Session {
         let mut session = Self {
             world,
             rules: Arc::new(rules),
+            ruleset_identity,
             settings,
             epoch,
             original_seats: humans,
@@ -534,8 +537,9 @@ impl Session {
     }
 
     pub fn save(&self) -> Result<String, SessionError> {
-        let world = civ_core::save::encode(&self.world, &self.rules)
-            .map_err(|e| SessionError::InvalidSave(e.to_string()))?;
+        let world =
+            civ_core::save::encode_with_identity(&self.world, &self.rules, &self.ruleset_identity)
+                .map_err(|e| SessionError::InvalidSave(e.to_string()))?;
         let encoded = serde_json::to_string(&Save {
             version: SAVE_VERSION,
             engine: content::ENGINE_VERSION.into(),
@@ -578,6 +582,7 @@ impl Session {
         let rules = Arc::new(content::load().map_err(SessionError::InvalidSave)?);
         let world =
             civ_core::save::decode(&save.world, &rules).map_err(|e| invalid(&e.to_string()))?;
+        let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let expected: BTreeSet<_> = save.original_seats.iter().copied().collect();
         let actual: BTreeSet<_> = save.seats.iter().map(|s| s.civ).collect();
         if expected.is_empty()
@@ -667,6 +672,7 @@ impl Session {
         let session = Self {
             world,
             rules,
+            ruleset_identity,
             settings: save.settings,
             epoch: save.epoch,
             original_seats: save.original_seats,

@@ -17,7 +17,7 @@ Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, Node 20+, the 
 ```sh
 cargo test --workspace                # facade and local multiplayer host
 npm --prefix web install
-npm --prefix web run wasm              # civ-sim → web/src/engine/pkg
+npm --prefix web run wasm              # civ-sim → web/src/engine/pkg, then refresh title rule tables
 npm --prefix web run dev               # http://localhost:5199
 ```
 
