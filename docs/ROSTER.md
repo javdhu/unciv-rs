@@ -1,7 +1,8 @@
 # The ideal roster
 
-Status: exploration, 2026-09-23. A roster designed from scratch, ignoring the current selections and
-engine civs. It follows from [ORIGINALITY.md](ORIGINALITY.md). Abilities are design sketches, not balanced
+Status: exploration, 2026-09-23. An ambitious roster designed from scratch, ignoring the current selections
+and engine civs: 72 civs, each with two leaders, plus four consultation slots. The core 24 are described in
+detail; the other 48 are in compact tables. It follows from [ORIGINALITY.md](ORIGINALITY.md). Abilities are design sketches, not balanced
 numbers. Dates are reigns unless noted, and most early ones are approximate.
 
 ## Criteria
@@ -11,7 +12,8 @@ numbers. Dates are reigns unless noted, and most early ones are approximate.
 2. **One polity, one period.** The civ is a specific state at the leader's time, such as "Maurya", not
    "India". City names come from that period. Names that change with the era can come later.
 3. **Balance across the world.** No region gets more than about a fifth of the slots.
-4. **Women who ruled.** About a third, all heads of state in their own right, not consorts.
+4. **Women who ruled.** Aim for a third. Each is a head of state, or a regent who actually held power,
+   never a consort.
 5. **Every era.** Leaders are spread from the Bronze Age to about 1800.
 6. **A distinct way to play.** Each ability comes from a documented institution or practice and does
    roughly what that institution did. Across the roster, every playstyle is covered at least twice.
@@ -21,7 +23,7 @@ numbers. Dates are reigns unless noted, and most early ones are approximate.
 8. **Different from Civ.** Where Civ always uses the same leader or unit, prefer an equally good
    alternative.
 
-## The 24
+## The core 24
 
 | # | Civ | Leader | Reign | Region | Playstyle | Face |
 |---|---|---|---|---|---|---|
@@ -176,7 +178,7 @@ His 1797 law protecting non-combatants cuts unhappiness from war. · UU Peleleu 
 UI Loko iʻa (fishpond) · Kailua-Kona, Lahaina, Hilo, Kawaihae, Waikīkī · ʻŌlelo Hawaiʻi · Louis Choris
 drew him from life in 1816. Consult Native Hawaiian organisations.
 
-### The consultation slot: North America
+### North America
 
 There is no candidate here that a studio should cast alone. The strongest civ is the **Haudenosaunee
 Confederacy** (the Great Law of Peace suggests an ability built around councils and alliances), but its
@@ -184,35 +186,215 @@ Grand Council has no single head. The **Powhatan paramount chiefdom** under Wahu
 option. Cahokia fits a city-state better, because no ruler is named. Approach the nations first and design
 with them. If that doesn't happen, leave the slot empty rather than invent a leader.
 
+## The full roster: 48 more
+
+With these, the roster has 72 civs and four consultation slots. The rule "one polity, one period"
+means a long history gets more than one civ: two Egypts, three Chinas and two Maya kingdoms that were
+rivals. None of them is a "Maya" or "China" that spans 3,000 years. Each row gives the civ, its leader
+(with an alternative), the reign, an ability hook, and how much evidence survives for the face.
+
+### Africa (+8, 12 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Ptolemaic Egypt | Cleopatra VII (Ptolemy II) | 51–30 BCE | Grain fleets to Rome and the Museum of Alexandria: food trade buys science | medium |
+| Kush (Meroë) | Amanirenas (Piye) | c. 40–10 BCE | Meroë's ironworks and "land of the bow" archers; fought Rome to a treaty | weak |
+| Carthage | Hannibal Barca, as suffete (Hanno the Navigator) | 196–195 BCE | The Cothon naval harbour and mercenary armies hired with trade gold | weak |
+| Solomonic Ethiopia | Zara Yaqob (Menelik II, at Adwa 1896) | 1434–1468 | Land grants to monasteries and a manuscript culture | weak |
+| Songhai | Askia Muhammad I (Sonni Ali) | 1493–1528 | A war fleet on the Niger and provincial governors | weak |
+| Benin | Ewuare (Esigie) | c. 1440–1473 | City walls and moats (iya) and brass-casters' guilds | medium (brass heads) |
+| Kongo | Afonso I (Garcia II) | 1509–1542 | Literacy and diplomacy by letter; nzimbu shell currency | weak |
+| Kilwa | al-Hasan ibn Sulaiman | c. 1310s–1333 | Monsoon trade, copper coinage and the Husuni Kubwa palace | weak |
+
+### West Asia (+8, 11 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Akkad | Sargon (Naram-Sin) | c. 2334–2279 BCE | The first standing army and standard measures across conquered cities | medium |
+| Hittites | Suppiluliuma I (Muwatalli II) | c. 1350–1322 BCE | Treaties: the oldest surviving peace treaty (Kadesh) is theirs. Do not use the "iron monopoly" myth. | weak |
+| Assyria | Ashurbanipal (Sammu-ramat, regent) | 669–c. 631 BCE | The library at Nineveh and a royal messenger network | medium (reliefs) |
+| Armenia | Tigranes II | 95–55 BCE | Founding Tigranocerta by resettlement; a buffer between empires | medium (coins) |
+| Palmyra | Zenobia | c. 267–272 | Caravan tariffs (the Palmyrene tax law) and a breakaway empire | medium (coins) |
+| Sasanian Persia | Khosrow I (Boran) | 531–579 | Tax reform, the Gondishapur academy and the Taq Kasra | medium (coins, plate) |
+| Abbasid Caliphate | al-Ma'mun (Harun al-Rashid) | 813–833 | House of Wisdom: translating another civ's knowledge speeds its techs | weak (aniconic tradition, see flags) |
+| Georgia | Tamar | 1184–1213 | A golden age: mountain monasteries and cave towns such as Vardzia | medium (contemporary frescoes) |
+
+### Central Asia and the steppe (+3, 4 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Göktürks | Bilge Khagan | 716–734 | The Orkhon inscriptions: the first written Turkic; steppe diplomacy with Tang | medium (memorial head) |
+| Kushan | Kanishka | c. 127–150 | The Silk Road crossroads: trade routes carry religion and art both ways (Gandhara) | medium (coins, statue) |
+| Timurids | Timur (Ulugh Beg) | 1370–1405 | Moving captured artisans to Samarkand; Ulugh Beg's observatory as the alternative's science | medium (skull reconstruction) |
+
+### South Asia (+4, 7 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Gupta | Chandragupta II (Samudragupta) | c. 375–415 | Patronage of poets and metalworkers: a culture engine | medium (coins) |
+| Kakatiya | Rudrama Devi | c. 1263–1289 | Tank irrigation and the Warangal fort | weak |
+| Vijayanagara | Krishnadevaraya | 1509–1529 | Hampi's markets, the horse trade and waterworks | medium (Tirumala bronze) |
+| Polonnaruwa (Sri Lanka) | Parakramabahu I | 1153–1186 | Huge reservoirs (Parakrama Samudra): no rain lost to the sea | medium (attributed statue) |
+
+### East Asia (+5, 8 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Qin | Qin Shi Huang | 221–210 BCE as emperor | Standard script, coins, axle widths and roads: every city counts as connected | weak |
+| Ming | Yongle Emperor | 1402–1424 | The treasure fleets and the Yongle Encyclopedia | strong (court portrait) |
+| Joseon | Sejong | 1418–1450 | Hangul spreads literacy, and rain gauges improve farms | weak |
+| Ryukyu | Shō Hashi | 1429–1439 (unified) | Go-between trade: bonuses from routes between two other civs | weak |
+| Tibetan Empire | Songtsen Gampo | c. 618–649 | High-plateau empire, marriage diplomacy and a written script. See flags. | weak |
+
+### Southeast Asia (+5, 6 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Đại Việt | Lê Thánh Tông (Lê Lợi) | 1460–1497 | The Hồng Đức legal code and land allotment | weak |
+| Pagan | Anawrahta | 1044–1077 | Thousands of temples and the Kyaukse irrigation | weak |
+| Majapahit | Tribhuwana Wijayatunggadewi (Hayam Wuruk) | 1328–1350 | Archipelago vassals held by sea (Gajah Mada's Palapa oath) | weak |
+| Ayutthaya | Naresuan | 1590–1605 | Independence regained; the elephant duel of 1593 | weak |
+| Malacca | Parameswara | c. 1400–1414 | A straits port that taxes passing trade | weak |
+
+### Europe (+7, 12 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Macedon | Philip II (Alexander III) | 359–336 BCE | The sarissa phalanx and a league imposed on the Greek cities | medium |
+| Eastern Rome | Justinian I (Basil II) | 527–565 | The legal code, the Hagia Sophia and reconquest | strong (Ravenna mosaic) |
+| Caliphate of Córdoba | Abd al-Rahman III | 912–961 | Córdoba's libraries, irrigation and Madinat al-Zahra | weak |
+| North Sea Empire | Cnut | 1016–1035 | Kingdoms joined across the sea: coastal cities share yields | weak |
+| Hungary | Matthias Corvinus | 1458–1490 | The Black Army of paid soldiers and the Corvina library | strong (reliefs, portraits) |
+| Poland | Jadwiga (Casimir III) | 1384–1399 | Union with Lithuania by marriage, and a refounded university at Kraków | weak |
+| Castile | Isabella I | 1474–1504 | Crown finance of voyages. See flags. | strong (portraits) |
+
+### Americas (+6, 9 in all)
+
+| Civ | Leader (alt) | Reign | Hook | Face |
+|---|---|---|---|---|
+| Palenque (Lakamha') | K'inich Janaab' Pakal (Lady Sak K'uk') | 615–683 | The Temple of the Inscriptions and a city of aqueducts | strong (stucco portrait head) |
+| Texcoco | Nezahualcoyotl | 1431–1472 | The poet-engineer: the Mexico lake dike and aqueducts | weak |
+| Purépecha | Tzitzipandácuare | c. 1454–1479 | Copper-bronze metallurgy; the empire that defeated the Mexica | weak |
+| Mixtec (Tilantongo) | Eight Deer Jaguar Claw (Lady Six Monkey of Jaltepec) | 1063–1115 | Marriage and alliance politics recorded in the codices | medium (codices) |
+| Chimú | Minchancaman | c. 1460s–1470 | Chan Chan, desert canals and metalwork | weak |
+| Haiti | Toussaint Louverture (Jean-Jacques Dessalines) | 1797–1802 | Abolition, and a colony that held off three empires | medium (near-period portraits) |
+
+Taíno (Xaragua) under Anacaona, a cacica who died in 1503, was also considered. Treat it as a
+consultation slot, as below.
+
+### Oceania (+2, 3 in all)
+
+| Civ | Leader | Reign | Hook | Face |
+|---|---|---|---|---|
+| Tonga | Tuʻitātui | 12th century (tradition) | The Tuʻi Tonga maritime network and the Haʻamonga ʻa Maui trilithon | weak |
+| Samoa | Salamasina | c. 1500 (tradition) | The first holder of all four paramount titles: rule by uniting titles | weak |
+
+## Second leaders for the core 24
+
+Choosing a leader picks one of two abilities for the same civ. The second leader comes from the same
+polity and period band.
+
+| Civ | Second leader | Civ | Second leader |
+|---|---|---|---|
+| New Kingdom Egypt | Thutmose III | Tokugawa Japan | Tokugawa Iemitsu |
+| Aksum | Kaleb | Mongol Empire | Mandukhai (regent) |
+| Mali | Sundiata Keita | Khmer | Suryavarman II (Angkor Wat relief) |
+| Ndongo & Matamba | Ngola Kiluanji | Rome | Augustus |
+| Babylon | Nebuchadnezzar II | Athens | Cleisthenes |
+| Achaemenid Persia | Cyrus II | Franks | Clovis I |
+| Ottomans | Suleiman I (or Kösem, regent) | Tudor England | Henry VII |
+| Maurya | Chandragupta Maurya | Kalmar Union | Eric of Pomerania |
+| Chola | Rajaraja I | Inca | Topa Inca Yupanqui |
+| Mughal | Nur Jahan | Mexica | Itzcoatl |
+| Tang–Zhou China | Taizong | Maya (Saal) | K'ak' Tiliw Chan Chaak |
+| Silla | Munmu | Hawaiʻi | Kaʻahumanu (kuhina nui) |
+
+## Consultation slots
+
+Four slots stay open until a people's own institutions take part in the design: two in North America
+(the Haudenosaunee Confederacy and the Powhatan paramount chiefdom are the obvious first approaches) and
+one in Aotearoa (Māori, whose iwi were never one state), and one for the Taíno of the Caribbean. Aboriginal
+Australia never formed states. Don't force it into a "civ"; ask whether and how people want to be
+represented at all. Budget for paid cultural advisers and credit them in the game. An empty slot is
+better than an invented leader.
+
+## Systems that make a roster this size worth it
+
+1. **Rivals in the same era.** The roster is built in rival pairs that met in history: Rome and Carthage,
+   the Mexica and Purépecha, the Inca and Chimú, Palenque and Saal, the Ottomans and Eastern Rome, Tang and
+   Silla, and Mali and Songhai. Each pair gets a short scenario on a true-start map.
+2. **One civ, two leaders.** The pairs above give every civ two playstyles without inventing leaders.
+3. **Rising peoples.** An independent people or city-state that grows strong enough can become a playable
+   civ mid-game, as the Mongols did. The roster's smaller polities (Palmyra, Malacca, Kilwa) suit this.
+4. **Names that change with the era**, as ORIGINALITY.md proposes. They matter more when there are
+   three Chinas and two Egypts.
+5. **"What we know" cards.** Every face in the tables above has an evidence rating. Show it.
+6. **Voices in each leader's own language,** with credited academic linguists for reconstructed languages.
+
+## Sensitivity flags
+
+Handle these civs deliberately rather than by accident:
+
+- **Tibetan Empire:** Songtsen Gampo is revered in Tibetan Buddhism, and Tibet's status is a live
+  political question with market consequences. Present the 7th-century empire factually; decide early
+  whether to ship it.
+- **Abbasids:** there are no portraits, and depicting a caliph matters to some players. Consider a
+  voice and a setting without a photoreal face, or an evidence-led stylised portrait.
+- **Castile:** Isabella's reign includes the Inquisition, the 1492 expulsion of the Jews and the start
+  of colonisation in the Americas. Her text must not celebrate them. The alternative is to leave her
+  on the bench.
+- **Benin:** the Benin Bronzes are at the centre of a restitution debate. Consult the Oba's court and
+  Edo scholars before using that imagery.
+- **Timur, Genghis Khan and Ashurbanipal:** mass killing is documented. Don't glorify it.
+- **Njinga, Kongo, Kilwa and Songhai:** each was involved in the slave trade. Tell that plainly.
+- **Haiti:** Toussaint governed a colony rather than an independent state, and fits only the "in
+  practice" test. Dessalines led the independent state.
+- **Bench, not roster:** Kyivan Rus' and Muscovy, because of the Russia–Ukraine war; the Marathas
+  (Shivaji), who are a live political symbol in India; and Asante, whose Golden Stool is sacred today.
+  Each can join after consultation.
+
 ## Release waves
 
 | Wave | Civs | Why this order |
 |---|---|---|
 | Launch 8 | Rome, Tudor England, Egypt, Mali, Maurya, Tang–Zhou, Mongols, Inca | Africa, Asia, Europe and South America, recognisable names, three women, all eras, and distinct playstyles |
 | +8 | Persia, Mexica, Hawaiʻi, Khmer, Ottomans, Silla, Babylon, Athens | Completes West Asia, the Americas, Oceania and Southeast Asia |
-| +8 | Aksum, Ndongo, Chola, Mughal, Tokugawa, Franks, Kalmar, Maya | Deeper cuts |
+| +8 | Aksum, Ndongo, Chola, Mughal, Tokugawa, Franks, Kalmar, Maya | Completes the core 24 |
+| Seasons 1–8 | Six civs a season, released as rival pairs: Carthage with Ptolemaic Egypt, Purépecha with Texcoco, Chimú with Palenque, Eastern Rome with Macedon, and so on | 48 civs over about two years, each season with a scenario |
+
+Second leaders ship with their civ's season or later, as free updates.
 
 ## Checks
 
-- **Regions:** Africa 4, West Asia 3, South Asia 3, East and Southeast Asia 5, Europe 5, Americas 3
-  (+1 consultation slot), Oceania 1. Europe falls from about 13 of 34 in the inherited rules to 5 of 24.
-- **Women:** 7 of 24 (Hatshepsut, Njinga, Wu Zetian, Seondeok, Elizabeth, Margaret, Lady Six Sky). Swap in
-  Tamar of Georgia, Rudrama Devi or Jadwiga to reach a third.
-- **Eras:** Bronze Age 2, classical 5, medieval 11, early modern 6.
+For the core 24:
+
+- **Regions:** Africa 4, West Asia 3, South Asia 3, East and Southeast Asia 5, Europe 5, Americas 3,
+  Oceania 1. Europe falls from about 13 of 34 in the inherited rules to 5 of 24.
+- **Women:** 7 of 24 (Hatshepsut, Njinga, Wu Zetian, Seondeok, Elizabeth, Margaret, Lady Six Sky).
 - **Playstyles covered at least twice:** trade (Aksum, Mali, Egypt), naval (Chola, England, Hawaiʻi),
   conquest (Mongols, Ottomans, Mexica), diplomacy (Ndongo, Kalmar, Athens), science (Tang, Silla, Franks),
   faith and welfare (Maurya, Khmer, Akbar), administration and roads (Persia, Inca, Rome), wonders and culture
   (Egypt, Athens, England).
-- **Faces:** 6 strong, 10 medium, 8 weak. The weak ones need the attested / reconstructed label on
-  their card from day one.
+
+For the full 72:
+
+- **Regions:** Africa 12, West Asia 11, Europe 12, East Asia 8, South Asia 7, Southeast Asia 6, the Americas 9,
+  Central Asia 4, Oceania 3, plus four consultation slots. No region has more than a sixth.
+- **Eras:** 4 before 1200 BCE, 17 from 1200 BCE to 600 CE, 25 from 600 to 1400, and 26 from 1400 to 1820.
+- **Women:** 16 of 72 first leaders (22%) and 8 more among the second leaders, so 24 of 144. That misses
+  the one-third aim. In many polities, reigning women are hard to document. The honest route is more
+  women-led polities, not weaker picks: Jindeok of Silla, Empress Suiko (Asuka Japan), Christina of
+  Sweden, Maria Theresa of Austria and Catherine II (on the bench while Russia is).
+- **Faces:** 11 strong, 27 medium, 34 weak. Nearly half are reconstructions, so the "What we know" card
+  is a requirement, not polish.
 
 ## Bench
 
-Strong alternatives if a slot changes: Cyrus the Great (Persia), Sejong (Joseon), Pakal (Palenque),
-Tamar (Georgia), Rudrama Devi (Kakatiya), Jadwiga (Poland), Nezahualcoyotl (Texcoco), Askia Muhammad
-(Songhai), Ewuare (Benin), Menelik II (Ethiopia), Justinian or Basil II (Eastern Rome),
-Tribhuwana Wijayatunggadewi (Majapahit), Kublai Khan (Yuan), Cleopatra VII (Ptolemaic Egypt),
-Alexander (Macedon).
+Good civs that did not make the 72: Asante (Osei Tutu), Mutapa, Kanem-Bornu (Idris Alooma), the
+Marathas (Shivaji), the Sikh Empire (Ranjit Singh), Kyivan Rus' and Muscovy, Venice, Wessex (Alfred),
+Gaul (Vercingetorix), Yuan (Kublai Khan), Asuka Japan (Suiko), the Xiongnu (Modu Chanyu), Srivijaya,
+the Trưng sisters' rising (Trưng Trắc), Muisca and Nabataea (Aretas IV). The sensitivity flags explain
+why several are held back.
 
 ## Language note
 
