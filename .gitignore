@@ -7,3 +7,9 @@ __pycache__/
 assets/procgen/
 # paid Polyperfect sources for tools/animals.ts (converted output lives in web/src/art/pack)
 assets/pack/
+# wrangler local state
+.wrangler/
+# leader portrait media (61 MB); kept out of git until it gets a home (LFS or R2)
+content/leaders/**/*.png
+content/leaders/**/*.jpg
+content/leaders/**/*.mp4
