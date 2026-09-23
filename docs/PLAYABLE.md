@@ -1,14 +1,12 @@
 # Playable plan: wire the UI to the engine and finish the game
 
-Status 2026-09-23: P0 and P1 done; P2 in progress. The user chose B, ink and paper, at the HUD checkpoint.
-P2a is done: the HUD kit (`hud/paper.css`), RhosGFX pack icons (`hud/icons/`), all basic unit orders, the
-policy sheet, the notice feed and the `project`/`panTo`/`refocus` scene hooks. The combat preview, the
-`attacked` event, the full rule tables and the tech web with research goals are done too, and so is the city
-sheet (build queue, citizens with tile yields and specialists, buildings for sale, tiles to buy, the capture
-prompt). Human cities now put idle citizens to work, as Unciv's governor does. A scripted 100-turn soak game
-reached the end screen with no errors (the slowest round took 102 ms). P2 still needs city bombard, the free great person
-claim and growth bars on the banners, then your playtest to a victory on a laptop. This is
-the UI track; the art track (procedural graphics) runs in parallel under [PROCEDURAL.md](PROCEDURAL.md).
+Status 2026-09-23: P0, P1 and P2 are built; P2 waits for your playtest to a victory on a laptop. P2 covered the
+ink-and-paper HUD with RhosGFX icons, every basic unit order, the combat preview and `attacked` events, the
+tech web with research goals, the city sheet (queue, citizens, specialists, buildings, tiles, bombard), the
+capture prompt, policies and free claims, banner growth bars, and the engine fix that puts human cities'
+idle citizens to work. A scripted 100-turn soak game reached the end screen with no errors. Next: P3,
+diplomacy and the rest of Gods & Kings. This is the UI track; the art track (procedural graphics) runs in
+parallel under [PROCEDURAL.md](PROCEDURAL.md).
 
 ## Goal
 
