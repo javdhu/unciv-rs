@@ -8,6 +8,9 @@ idle citizens to work. A scripted 100-turn soak game reached the end screen with
 diplomacy and the rest of Gods & Kings. This is the UI track; the art track (procedural graphics) runs in
 parallel under [PROCEDURAL.md](PROCEDURAL.md).
 
+Since 2026-09-23 the order of work after P2 follows the Plan in [GAPS.md](GAPS.md): diplomacy (G1), then
+victory paths and the end screen, then rooms. A new Blitz track and the art track run beside it.
+
 ## Goal
 
 Someone opens civ.game, plays a full Gods & Kings game from the 3D map against AIs or friends, and

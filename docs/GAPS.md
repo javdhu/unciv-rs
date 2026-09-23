@@ -99,3 +99,65 @@ standard-length G&K game, which runs 6–20 hours.
 We go group by group: G, then F, then X, then A and P. For each gap we pick one of four answers: **now**
 (it joins the next phase), **later** (dated), **cut**, or **redesign** (the Civ V answer doesn't fit
 a phone-first evening game). Decisions are recorded here beside each row.
+
+## Decisions
+
+1. **2026-09-23: both at once.** One track specs and tunes Blitz (P1). The UI track builds what both
+   games need, starting with diplomacy (G1).
+2. **2026-09-23: the Blitz shape.** About 60 minutes, start to victory. The full tech tree stays, with
+   cheap techs, so air and nukes (G6) are in scope for Blitz too. Victories: domination, score at the
+   turn limit, a short culture victory, and a new **wonder race** (first to N wonders). That last one is
+   a new engine victory type. **Science is also allowed**, as a short race with fewer, cheaper parts.
+3. **2026-09-23: the UI track's order.** G1 diplomacy, then G2 victory paths with X4 (end screen and play
+   again).
+4. **2026-09-23: AI turns (F1) are a fast, capped replay.** Only what the player can see, with every
+   civ moving at once, capped near 3 s. The camera cuts to battles involving the player.
+5. **2026-09-23: diplomacy (G1) uses a placeholder portrait.** An engraved Almanac plate with the video
+   slot left open, so leader clips drop in later.
+6. **2026-09-23: learning.** X1 is a guided first game: prompts through the first 15 turns of a normal
+   game, then first-time hints. X2 is tap-anything encyclopedia plates; a full index screen comes later.
+7. **2026-09-23: AI.** The Blitz track takes A1 (the AI approaches the human), A2 (personalities) and A3
+   (tactics).
+8. **2026-09-23: the art track's next feel work.** F7 readability, F3 combat numbers, F4 growth moments,
+   F5 milestone moments.
+9. **2026-09-23: rooms (X12) come after victory paths.**
+10. **2026-09-23: friction fixes join the UI track now:** X7 (threat alerts, lenses, minimap), X3
+    (empire overview), X8 (undo, confirm raze, keys) and G7 (worker automation and explore).
+11. **2026-09-23: leader media lives in Cloudflare R2.** It is kept out of git (`.gitignore`); the repo
+    holds manifests only. This is a devops task.
+12. **2026-09-23: World Congress resolutions (A4) are for the full game only,** after P4.
+
+## Plan
+
+Three tracks run at once; sizes are agent-days. The UI track's G and X panels are independent once G1's
+screen kit exists, so parallel sessions can split them.
+
+**UI track** (`web/src/{hud,state}`, `crates/civ-sim`), about 26 days alone:
+1. G1 diplomacy with a placeholder portrait (3–4)
+2. G2 and X4: victory progress, spaceship and vote buttons, end screen with play again (2.5)
+3. X12 rooms: create, invite link, lobby, readiness and deadline clock (3–4)
+4. X7, X3, X8 and G7: threat alerts, lenses, minimap, empire overview, undo, confirm raze, keys, worker
+   automation and explore (5.5)
+5. F1, civ-sim half: per-civ event batches for the capped replay (1)
+6. G3–G6: religion, city-states, great people and spies, air and nukes. All are in Blitz because the
+   full tree stays (6)
+7. X1 guided first game, then X2 tap-anything plates (4–5)
+
+**Blitz track** (new; `crates/civ-core`, new `rulesets/blitz/`), about 13 days:
+1. Spec: turn count (~100 at ~30 s), map size, tech cost curve, victory thresholds (1)
+2. The Blitz ruleset: compressed full tree, speed and turn limit; also fix A5 so the limit follows speed
+   (5)
+3. Victories: the new wonder race, short culture, short science with fewer parts (1.5)
+4. A1 the AI approaches you, A2 personalities, A3 tactics (5)
+
+**Art track** (renderer), about 7 days:
+1. F7 readability: units and capitals visible in forest (1)
+2. F3 combat numbers, hit-stop, lingering deaths (1)
+3. F1, renderer half: the capped replay queue and cuts to battles involving you (1.5)
+4. F4 growth moments, then F5 milestone moments (3.5)
+
+**Devops:** move leader media to R2 (0.5).
+
+**After P4 or in the P5 phone pass:** X5 new-game options, X6 save slots, X9 settings, X10 offline,
+localisation and ARIA, X11 phone details, F2 camera reactions, F6 path preview, F8 a living world, F9
+transitions, G8 coverage test, A4 Congress (full game), P3 leader encounters.
