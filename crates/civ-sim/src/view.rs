@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct PlayerView {
     pub turn: u32,
+    /// The calendar year the turn falls in, negative for BC, from the game speed's table of years per turn.
+    pub year: i32,
     pub width: u16,
     pub height: u16,
     pub wrap_x: bool,
@@ -669,6 +671,8 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             happiness: economy.happiness,
         },
         turn: w.turn,
+        // the session plays at the default speed, so the calendar reads the same modifier the turns use
+        year: civ_core::world::great_people::calendar_year(r, TurnModifiers::default().costs.speed, w.turn),
         width: w.grid.width(),
         height: w.grid.height(),
         wrap_x: w.grid.wraps_x(),
