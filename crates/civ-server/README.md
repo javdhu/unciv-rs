@@ -5,6 +5,12 @@ From the repository root, run `cargo run -p civ-server`. The server listens on
 clock/controller state in `civ-server.sqlite3`. Only one host may open a database
 at a time; its canonical `.host-lock` file remains on disk after shutdown.
 
+Ctrl-C (SIGINT) and SIGTERM both stop the host gracefully: it stops accepting
+requests, drains open HTTP requests for at most five seconds (match sockets are
+not waited on), stops the match clock, checkpoints the SQLite WAL into the
+database file, and exits 0. Every commit is already durable before that; the
+checkpoint only leaves one self-contained file behind.
+
 The existing Vite development server proxies `/api` and its WebSocket upgrade.
 The exact loopback origins on ports 3001 and 5199 are allowed by default.
 

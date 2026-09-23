@@ -538,6 +538,17 @@ impl Host {
         }
         Ok(())
     }
+    /// Call once the server and clock have stopped: takes every match's lock, so no command or
+    /// clock decision is mid-commit, then checkpoints the store.
+    pub async fn flush(&self) -> Result<(), HostError> {
+        let _lobby = self.lobby.lock().await;
+        let matches: Vec<_> = self.matches.read().await.values().cloned().collect();
+        let mut held = Vec::with_capacity(matches.len());
+        for game in &matches {
+            held.push(game.lock().await);
+        }
+        self.store.checkpoint()
+    }
     /// Run this alongside the HTTP server. Dropping/aborting the task stops the clock.
     pub async fn run_clock(self: Arc<Self>) {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
