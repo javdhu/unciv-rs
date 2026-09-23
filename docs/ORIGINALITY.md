@@ -27,6 +27,8 @@ the launch list, gather sourced examples for the ones we act on.
 
 ## The launch roster
 
+A from-scratch alternative that ignores these selections is in [ROSTER.md](ROSTER.md).
+
 Current 8 ([roster options v3](../content/leaders/roster-options.v3.json)): Egypt–Cleopatra VII,
 Rome–Marcus Aurelius, England–Elizabeth I, China–Wu Zetian, Mongolia–Genghis Khan, Persia–Cyrus the Great,
 India–Ashoka, Greece–Alexander the Great.
