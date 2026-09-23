@@ -5,3 +5,5 @@ target
 __pycache__/
 # output of `npm --prefix web run art -- bake`
 assets/procgen/
+# paid Polyperfect sources for tools/animals.ts (converted output lives in web/src/art/pack)
+assets/pack/
