@@ -555,6 +555,30 @@ pub fn worker_order(
     unit: Id<crate::world::entities::Unit>,
     jobs: &std::cell::OnceCell<Vec<WorkerJob>>,
 ) -> Option<UnitOrder> {
+    let step = |target| crate::world::movement::step_toward(world, r, unit, target);
+    worker_order_with(world, r, civ, unit, jobs, WorkerSight { job: &|_| true, dig: &|_| true, step: &step })
+}
+
+/// What a worker may base its choice on. The AI reads the whole map; a
+/// human's automated worker reads only what its civ knows
+/// ([`crate::world::automation`]).
+pub struct WorkerSight<'a> {
+    /// Whether a job's tile may be considered.
+    pub job: &'a dyn Fn(crate::world::grid::TileId) -> bool,
+    /// Whether a half-dug tile may be seen as one.
+    pub dig: &'a dyn Fn(crate::world::grid::TileId) -> bool,
+    /// This turn's move toward a target, if there is one.
+    pub step: &'a dyn Fn(crate::world::grid::TileId) -> Option<crate::world::grid::TileId>,
+}
+
+pub fn worker_order_with(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    unit: Id<crate::world::entities::Unit>,
+    jobs: &std::cell::OnceCell<Vec<WorkerJob>>,
+    sight: WorkerSight,
+) -> Option<UnitOrder> {
     let u = world.units.get(unit)?;
     if r.units[u.base]
         .uniques
@@ -564,7 +588,7 @@ pub fn worker_order(
         let mut targets: Vec<_> = world
             .grid
             .ids()
-            .filter(|tile| world.grid.is_water(r, *tile))
+            .filter(|tile| world.grid.is_water(r, *tile) && (sight.job)(*tile))
             .filter_map(|tile| {
                 world.grid.resource[tile.0 as usize]
                     .and_then(|res| r.resources[res].improvement.as_deref())
@@ -578,7 +602,7 @@ pub fn worker_order(
             if tile == u.position {
                 Some(UnitOrder::Improve(imp))
             } else {
-                crate::world::movement::step_toward(world, r, unit, tile).map(UnitOrder::MoveTo)
+                (sight.step)(tile).map(UnitOrder::MoveTo)
             }
         });
     }
@@ -598,8 +622,9 @@ pub fn worker_order(
     let jobs = jobs.get_or_init(|| worker_jobs(world, r, civ));
 
     // Already standing on a job? Dig.
-    if let Some((_, imp)) =
-        jobs.iter().find(|(t, imp)| *t == u.position && crate::world::improvements::can_work(world, r, unit, *imp))
+    if let Some((_, imp)) = jobs
+        .iter()
+        .find(|(t, imp)| *t == u.position && (sight.job)(*t) && crate::world::improvements::can_work(world, r, unit, *imp))
     {
         return Some(UnitOrder::Improve(*imp));
     }
@@ -611,7 +636,7 @@ pub fn worker_order(
     let unfinished = world
         .grid
         .ids()
-        .filter(|t| world.grid.improvement_progress[t.0 as usize].is_some())
+        .filter(|t| world.grid.improvement_progress[t.0 as usize].is_some() && (sight.dig)(*t))
         .filter(|t| {
             world.grid.improvement_progress[t.0 as usize]
                 .is_some_and(|(what, _)| crate::world::improvements::can_build(world, r, civ, *t, what).is_ok())
@@ -620,13 +645,13 @@ pub fn worker_order(
 
     // Otherwise head for the nearest one there is a way to, ties by tile id.
     let mut nearest: Vec<crate::world::grid::TileId> =
-        jobs.iter().filter(|(t, _)| !world.grid.is_water(r, *t)).map(|(t, _)| *t).collect();
+        jobs.iter().filter(|(t, _)| !world.grid.is_water(r, *t) && (sight.job)(*t)).map(|(t, _)| *t).collect();
     nearest.sort_by_key(|t| (world.grid.distance(u.position, *t), t.0));
     nearest.dedup();
     let step = unfinished
         .into_iter()
         .chain(nearest.into_iter().take(5))
-        .find_map(|t| crate::world::movement::step_toward(world, r, unit, t))?;
+        .find_map(|t| (sight.step)(t))?;
     Some(UnitOrder::MoveTo(step))
 }
 

@@ -1087,3 +1087,167 @@ fn city_options_list_workable_tiles_with_yields() {
     assert!(options.workable_tiles.iter().any(|t| t.food > 0));
     assert!(crate::queries::city_options(&s.world, &s.rules, CivId(1), id.index(), id.generation()).is_none());
 }
+
+fn found_capital(s: Session, seat: u8) -> Session {
+    let settler = own_unit(&s, seat, true);
+    apply(
+        s,
+        seat,
+        &format!("found-{seat}"),
+        Action::FoundCity {
+            unit: settler,
+            name: format!("Capital {seat}"),
+        },
+    )
+}
+fn add_unit(s: &mut Session, seat: u8, name: &str) -> EntityRef {
+    let base = s.rules.units.id(name).unwrap();
+    let city = s.world.civ(CivId(seat)).unwrap().cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    let unit = civ_core::world::construction::prepare_unit_near(
+        &s.world,
+        &s.rules,
+        CivId(seat),
+        base,
+        centre,
+        Some(city),
+    )
+    .unwrap();
+    let id = s.world.place_unit(unit);
+    EntityRef {
+        id: id.index(),
+        gen: id.generation(),
+    }
+}
+fn clear_barbarians(s: &mut Session) {
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    s.world.barbarian_camps.clear();
+    let theirs: Vec<_> = s
+        .world
+        .units
+        .iter()
+        .filter(|(_, u)| u.owner == barbarians)
+        .map(|(id, _)| id)
+        .collect();
+    for id in theirs {
+        s.world.remove_unit(id);
+    }
+}
+fn next_round(s: Session) -> Session {
+    s.stage_timeout(s.turn()).unwrap().unwrap().next
+}
+fn automation_of(s: &Session, seat: u8, unit: EntityRef) -> Option<crate::view::UnitAutomation> {
+    s.current_update(seat)
+        .unwrap()
+        .view
+        .units
+        .iter()
+        .find(|u| u.id == unit.id && u.gen == unit.gen)
+        .and_then(|u| u.own.as_ref()?.automation)
+}
+fn unit_actions(s: &Session, seat: u8, unit: EntityRef) -> Vec<crate::queries::UnitActionKind> {
+    let reply = s.query(seat, Query::UnitOptions { unit }).unwrap();
+    let QueryResult::UnitOptions { options } = reply.result else {
+        panic!("unit options")
+    };
+    options.map_or_else(Vec::new, |o| o.actions.into_iter().map(|a| a.action).collect())
+}
+fn improved_tiles(s: &Session, seat: u8) -> usize {
+    s.world
+        .grid
+        .ids()
+        .filter(|t| {
+            s.world.grid.owner[t.0 as usize] == Some(CivId(seat))
+                && s.world.grid.improvement[t.0 as usize].is_some()
+        })
+        .count()
+}
+
+#[test]
+fn an_automated_worker_improves_tiles_over_twenty_rounds() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, worker);
+    assert!(offered.contains(&K::Automate) && !offered.contains(&K::Explore), "{offered:?}");
+    let before = improved_tiles(&s, 0);
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    assert!(!unit_actions(&s, 0, worker).contains(&K::Automate), "already automated");
+    // Barbarians wandering up would rightly stop the worker; keep them away.
+    for _ in 0..20 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(improved_tiles(&s, 0) >= before + 2, "{} tiles improved in 20 rounds", improved_tiles(&s, 0) - before);
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    // Other seats never learn about the standing order.
+    let theirs = s.current_update(1).unwrap().view;
+    assert!(theirs.units.iter().filter(|u| u.owner == 0).all(|u| u.own.is_none()));
+}
+
+#[test]
+fn an_explorer_reveals_tiles_and_a_manual_order_cancels_it() {
+    let s = session();
+    let warrior = own_unit(&s, 0, false);
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, warrior);
+    assert!(offered.contains(&K::Explore) && !offered.contains(&K::Automate), "{offered:?}");
+    let explored = |s: &Session| {
+        s.world
+            .grid
+            .ids()
+            .filter(|t| s.world.visibility.has_explored(CivId(0), *t))
+            .count()
+    };
+    let before = explored(&s);
+    let mut s = apply(s, 0, "explore", Action::ExploreUnit { unit: warrior });
+    let moved = explored(&s);
+    assert!(moved > before, "the order acts as soon as it is given");
+    for _ in 0..5 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(explored(&s) > moved, "exploring continued over the next rounds");
+    assert_eq!(automation_of(&s, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // A save keeps the order.
+    let restored = Session::restore(&s.save().unwrap()).unwrap();
+    assert_eq!(automation_of(&restored, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // Any manual order ends it.
+    let s = apply(restored, 0, "skip", Action::SkipUnit { unit: warrior });
+    assert_eq!(automation_of(&s, 0, warrior), None);
+}
+
+#[test]
+fn a_visible_enemy_next_to_an_automated_unit_stops_it() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    let id = s
+        .world
+        .units
+        .iter()
+        .find(|(id, _)| id.index() == worker.id)
+        .unwrap()
+        .0;
+    let at = s.world.units.get(id).unwrap().position;
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    let brute = s.rules.units.id("Brute").or_else(|| s.rules.units.id("Warrior")).unwrap();
+    let spot = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            s.world.visibility.can_see(CivId(0), *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+        })
+        .unwrap();
+    s.world
+        .place_unit(civ_core::world::entities::Unit::new(brute, barbarians, spot, 1));
+    s = next_round(s);
+    assert_eq!(automation_of(&s, 0, worker), None);
+}

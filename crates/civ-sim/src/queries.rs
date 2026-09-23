@@ -43,6 +43,10 @@ pub enum UnitActionKind {
     Disband,
     SetUp,
     Gift,
+    /// `automateUnit`: work tiles on its own.
+    Automate,
+    /// `exploreUnit`: explore on its own.
+    Explore,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -360,6 +364,15 @@ pub fn unit_options(
             if commands::execute(&mut world.clone(), r, civ, command).is_ok() {
                 offer(kind, Availability::Available);
             }
+        }
+    }
+    // Standing orders need no movement now; the unit acts when it next has some.
+    for (kind, mode) in [
+        (UnitActionKind::Automate, civ_core::world::automation::Automation::Work),
+        (UnitActionKind::Explore, civ_core::world::automation::Automation::Explore),
+    ] {
+        if unit.automation != Some(mode) && civ_core::world::automation::can_automate(world, r, id, mode) {
+            offer(kind, Availability::Available);
         }
     }
     let promotions = if combat::can_promote(unit) {

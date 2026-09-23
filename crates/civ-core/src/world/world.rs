@@ -181,6 +181,8 @@ impl World {
         }
         if let Some(u) = self.units.get_mut(id) {
             u.owner = to;
+            // BattleUnitCapture.kt:117: a captured unit takes no standing orders along.
+            u.automation = None;
         }
         let carrier = self.units.get(id).and_then(|u| u.transport);
         if carrier.is_some_and(|carrier| self.units.get(carrier).is_none_or(|u| u.owner != to)) {

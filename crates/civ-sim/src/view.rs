@@ -309,6 +309,17 @@ pub struct UnitStateView {
     pub carrier: Option<crate::protocol::EntityRef>,
     pub religion: Option<u8>,
     pub religious_uses_left: u8,
+    /// The unit's standing order, if it has one (`automateUnit`/`exploreUnit`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub automation: Option<UnitAutomation>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum UnitAutomation {
+    Work,
+    Explore,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -486,6 +497,10 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                 }),
                 religion: u.religion.map(|c| c.0),
                 religious_uses_left: u.religious_uses_left,
+                automation: u.automation.map(|a| match a {
+                    civ_core::world::automation::Automation::Work => UnitAutomation::Work,
+                    civ_core::world::automation::Automation::Explore => UnitAutomation::Explore,
+                }),
             }),
         })
         .collect();

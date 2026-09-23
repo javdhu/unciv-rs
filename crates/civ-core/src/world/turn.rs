@@ -1520,6 +1520,12 @@ pub fn finish_round(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
             }
         }
     }
+    // Humans' automated units use what movement they have left, as Unciv
+    // moves them when the turn ends.
+    let humans: Vec<_> = world.living_civs().filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai)).collect();
+    for civ in humans {
+        events.extend(crate::world::automation::run(world, r, civ, mods));
+    }
     // Derive every civilization's economy from the same post-action state.
     let economies: Vec<_> = world.living_civs().map(|id| plan_economy(world, r, id, focus, mods)).collect();
     for plan in &economies {

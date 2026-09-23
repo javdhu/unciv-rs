@@ -806,6 +806,14 @@ impl Session {
                 improvement: registry(&r.improvements, *improvement)?,
             },
             Action::Fortify { unit: u } => Command::Fortify { unit: unit(*u)? },
+            Action::AutomateUnit { unit: u } => Command::Automate {
+                unit: unit(*u)?,
+                mode: civ_core::world::automation::Automation::Work,
+            },
+            Action::ExploreUnit { unit: u } => Command::Automate {
+                unit: unit(*u)?,
+                mode: civ_core::world::automation::Automation::Explore,
+            },
             Action::SkipUnit { unit: u } => Command::SkipUnit { unit: unit(*u)? },
             Action::Promote { unit: u, promotion } => Command::Promote {
                 unit: unit(*u)?,

@@ -8,6 +8,7 @@ pub mod agreements;
 pub mod ai;
 pub mod air;
 pub mod assignment;
+pub mod automation;
 pub mod barbarians;
 pub mod city;
 pub mod city_effects;

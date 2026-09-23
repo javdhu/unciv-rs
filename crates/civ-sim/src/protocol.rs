@@ -168,6 +168,15 @@ pub enum Action {
     Fortify {
         unit: EntityRef,
     },
+    /// Hand a worker to automation: it improves tiles on its own until given
+    /// another order or an enemy appears next to it.
+    AutomateUnit {
+        unit: EntityRef,
+    },
+    /// Send a unit exploring on its own, with the same stopping rules.
+    ExploreUnit {
+        unit: EntityRef,
+    },
     SkipUnit {
         unit: EntityRef,
     },
