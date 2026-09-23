@@ -14,6 +14,8 @@
 #   linux/amd64    a different instruction set as well
 #
 # The Linux targets need Docker and are skipped without it, loudly.
+# CHECK_DETERMINISM_DOCKER=0 skips them on purpose: CI's host is already
+# linux/amd64 with glibc, so there the native leg covers that libm.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -54,7 +56,9 @@ results=("native $native" "wasm32 $wasm")
 # at ~0% CPU. So the emulated leg is time-limited and its absence is reported
 # rather than waited on.
 native_platform="linux/$(uname -m | sed 's/arm64/arm64/;s/aarch64/arm64/;s/x86_64/amd64/')"
-if docker info >/dev/null 2>&1; then
+if [ "${CHECK_DETERMINISM_DOCKER:-1}" = 0 ]; then
+  echo "  (CHECK_DETERMINISM_DOCKER=0 — Linux containers skipped on purpose)" >&2
+elif docker info >/dev/null 2>&1; then
   for platform in "$native_platform" linux/amd64 linux/arm64; do
     case " ${results[*]} " in *" $platform "*) continue ;; esac
     [ "$platform" = "$native_platform" ] && limit=900 || limit=600
