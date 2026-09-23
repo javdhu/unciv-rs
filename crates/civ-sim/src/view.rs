@@ -139,6 +139,11 @@ pub struct RelationView {
     pub peace_treaty_turns: u32,
     pub research_agreement_turns: Option<u32>,
     pub protecting: bool,
+    /// How they feel about this player: `unforgivable`, `enemy`, `competitor`, `neutral`, `favorable`,
+    /// `friend` or `ally`. Another human always reads `neutral`.
+    pub attitude: String,
+    /// Their public score, rounded, as a met civilization's score is shown in Civ V.
+    pub score: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -158,6 +163,8 @@ pub struct EndgameView {
     pub victories: Vec<VictoryProgressView>,
     pub spaceship_parts: Vec<SpaceshipPartView>,
     pub voting: Option<VotingView>,
+    /// This player's own score, rounded.
+    pub score: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -196,6 +203,25 @@ pub struct VoteResultView {
 pub struct VoteTotalView {
     pub candidate: u8,
     pub votes: u32,
+}
+
+fn attitude(w: &World, holder: CivId, subject: CivId) -> String {
+    use civ_core::world::opinion::{relationship, RelationshipLevel as L};
+    match relationship(w, holder, subject) {
+        L::Unforgivable => "unforgivable",
+        L::Enemy => "enemy",
+        L::Competitor => "competitor",
+        L::Neutral => "neutral",
+        L::Favorable => "favorable",
+        L::Friend => "friend",
+        L::Ally => "ally",
+    }
+    .into()
+}
+
+fn rounded_score(w: &World, r: &Ruleset, civ: CivId) -> i32 {
+    let (num, den) = civ_core::world::victory::score_fraction(w, r, civ);
+    ((num + den / 2) / den.max(1)) as i32
 }
 
 fn endgame_view(w: &World, r: &Ruleset, me: CivId) -> EndgameView {
@@ -250,6 +276,7 @@ fn endgame_view(w: &World, r: &Ruleset, me: CivId) -> EndgameView {
                     .collect(),
             }),
         }),
+        score: rounded_score(w, r, me),
     }
 }
 
@@ -720,6 +747,8 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                         .and_then(|p| p.research.as_ref())
                         .map(|p| p.turns_left),
                     protecting: w.diplomacy.is_protector(me, c.id),
+                    attitude: attitude(w, c.id, me),
+                    score: rounded_score(w, r, c.id),
                 }
             })
             .collect(),
