@@ -97,7 +97,8 @@ hydrate a fresh view, and recover the outbox before queued commands resume. Fenc
 `state/session.ts` holds the Svelte stores (rules, the latest update and view, the selected unit, the
 open city, civ options) beside the Three.js renderer. The renderer does not calculate game rules. Terrain, cities, units and overlays have
 separate owners; art entries map ruleset names to procedural recipes (docs/PROCEDURAL.md). Static
-geometry is instanced, and each unit is a skinned mesh over shared geometry with its own skeleton. An
+geometry is instanced, and so are units: every unit of one shape is a slot in one instanced mesh, posed in
+the vertex shader from its state (`world/troupe.ts`). Quality follows the device (`world/perf.ts`). An
 `attacked` presentation event names the attacker, the target, both tiles, whether it was ranged, the damage and
 any deaths; it reaches the owners of both sides, and `world/combat.ts` animates fights from it instead of
 inferring them from consecutive views. Fights between third parties still wait for event-time observation.
