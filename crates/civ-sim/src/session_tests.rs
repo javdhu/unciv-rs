@@ -1251,3 +1251,126 @@ fn a_visible_enemy_next_to_an_automated_unit_stops_it() {
     s = next_round(s);
     assert_eq!(automation_of(&s, 0, worker), None);
 }
+
+#[test]
+fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
+    let mut s = Session::new(
+        Settings {
+            majors: 3,
+            city_states: 0,
+            ..Settings::default()
+        },
+        "replay".into(),
+        vec![0],
+    )
+    .unwrap();
+    for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+        s.world.diplomacy.meet(CivId(a), CivId(b));
+    }
+    s.world.diplomacy.declare_war(CivId(1), CivId(2));
+    let here = s
+        .world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == CivId(0))
+        .unwrap()
+        .1
+        .position;
+    let land: Vec<_> = s
+        .world
+        .grid
+        .within(here, 2)
+        .into_iter()
+        .filter(|t| {
+            *t != here
+                && s.world.visibility.can_see(CivId(0), *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+        })
+        .collect();
+    let (x, y) = land
+        .iter()
+        .flat_map(|x| land.iter().map(move |y| (*x, *y)))
+        .find(|(x, y)| s.world.grid.distance(*x, *y) == 1)
+        .expect("two adjacent visible land tiles");
+    let unit = |name: &str| s.rules.units.id(name).unwrap();
+    let strong = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Swordsman"), CivId(1), x, 2));
+    let weak = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Warrior"), CivId(2), y, 2));
+    s.refresh(&[], None).unwrap();
+
+    let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    let replay = update.replay.as_ref().expect("the round had something to replay");
+    let actors: Vec<u8> = replay.iter().map(|b| b.civ).collect();
+    let mut sorted = actors.clone();
+    sorted.sort();
+    assert_eq!(actors, sorted, "batches follow the order civs acted in");
+    assert!(actors.iter().all(|c| *c != 0), "never our own turn");
+    let fight = replay
+        .iter()
+        .flat_map(|b| b.events.iter().map(move |e| (b.civ, e)))
+        .find(|(_, e)| {
+            matches!(&e.event, crate::view::PresentationEvent::Attacked { attacker, .. }
+                if (attacker.id, attacker.gen) == (strong.index(), strong.generation())
+                    || (attacker.id, attacker.gen) == (weak.index(), weak.generation()))
+        })
+        .expect("the fight in view is in the replay");
+    assert!(fight.0 == 1 || fight.0 == 2);
+    let crate::view::PresentationEvent::Attacked { from, at, viewer_attacked, .. } = &fight.1.event else {
+        unreachable!()
+    };
+    assert!(!viewer_attacked);
+    assert!([x.0, y.0].contains(from) && [x.0, y.0].contains(at));
+
+    // Old clients: the field is optional on the wire.
+    let mut json = serde_json::to_value(update).unwrap();
+    json.as_object_mut().unwrap().remove("replay");
+    let old: GameUpdate = serde_json::from_value(json).unwrap();
+    assert!(old.replay.is_none());
+    let quiet = t.next.current_update(0).unwrap();
+    assert!(serde_json::to_value(&quiet).unwrap().get("replay").is_none());
+}
+
+#[test]
+fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
+    let mut s = Session::new(
+        Settings {
+            majors: 4,
+            city_states: 2,
+            ..Settings::default()
+        },
+        "replay-game".into(),
+        vec![0],
+    )
+    .unwrap();
+    let mut shown = 0;
+    for _ in 0..30 {
+        let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+        s = t.next;
+        for (seat, update) in &t.updates {
+            for batch in update.replay.iter().flatten() {
+                assert_ne!(batch.civ, *seat);
+                for e in &batch.events {
+                    let tiles: Vec<u16> = match &e.event {
+                        crate::view::PresentationEvent::UnitMoved { from, to, .. } => vec![*from, *to],
+                        crate::view::PresentationEvent::Attacked { from, at, .. } => vec![*from, *at],
+                        _ => Vec::new(),
+                    };
+                    for t in tiles {
+                        assert!(
+                            s.world.visibility.has_explored(CivId(*seat), civ_core::world::TileId(t)),
+                            "replayed tile {t} was never seen"
+                        );
+                    }
+                    shown += 1;
+                }
+            }
+        }
+    }
+    assert!(shown > 0, "thirty rounds with nothing to replay");
+}

@@ -1027,6 +1027,162 @@ fn battle_text(
     }
 }
 
+/// Another civilization's share of a round, as this player saw it happen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayBatch {
+    pub civ: u8,
+    /// In the order they happened: `unitMoved` steps and `attacked`,
+    /// `cityFounded` and `cityCaptured` events.
+    pub events: Vec<EventView>,
+    /// Who moves and fights in these events, so the renderer can draw units
+    /// that are no longer in the final view.
+    pub units: Vec<ReplayUnit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayUnit {
+    pub unit: EntityRef,
+    pub owner: u8,
+    pub base: u32,
+}
+
+/// The other civilizations' turns as `me` saw them happen: an event is kept
+/// only if its tiles were in `me`'s sight when it happened (each step's
+/// `seen`), never by what is visible once the round is over. Units that hide
+/// (`Invisible`, `InvisibleToNonAdjacent`) appear only if `me` still sees them
+/// at the end. Battles `me` fought in are always kept; they are also in its
+/// ordinary events.
+pub fn replay_for(
+    before: &World,
+    after: &World,
+    r: &Ruleset,
+    me: CivId,
+    steps: &[civ_core::world::ReplayStep],
+) -> Vec<ReplayBatch> {
+    use civ_core::world::air::Target;
+    let unit_of = |id: Id<civ_core::world::Unit>| after.units.get(id).or_else(|| before.units.get(id));
+    let hides = |id: Id<civ_core::world::Unit>| {
+        unit_of(id).is_some_and(|u| {
+            u.all_uniques(r).any(|x| {
+                matches!(
+                    x.unique_type(),
+                    Some(civ_core::UniqueType::Invisible | civ_core::UniqueType::InvisibleToNonAdjacent)
+                )
+            })
+        }) && !civ_core::world::fog::can_see_unit(after, r, me, id)
+    };
+    let centre = |id| after.cities.get(id).or_else(|| before.cities.get(id)).map(|c| c.centre);
+    let nation = |c: CivId| {
+        after.civ(c).map_or_else(
+            || "Someone".to_string(),
+            |c| {
+                let n = &r.nations[c.nation];
+                n.adjective.first().cloned().unwrap_or_else(|| n.name.clone())
+            },
+        )
+    };
+    let mut batches: Vec<ReplayBatch> = Vec::new();
+    for step in steps.iter().filter(|s| s.actor != me) {
+        let Some((_, seen)) = step.seen.iter().find(|(civ, _)| *civ == me) else { continue };
+        let sees = |t: civ_core::world::TileId| seen.get(t.0 as usize).copied().unwrap_or(false);
+        let mut events = Vec::new();
+        let mut units = Vec::new();
+        let note = |units: &mut Vec<ReplayUnit>, id: Id<civ_core::world::Unit>| {
+            if let Some(u) = unit_of(id) {
+                let entry = ReplayUnit { unit: id.into(), owner: u.owner.0, base: u.base.index() };
+                if !units.contains(&entry) {
+                    units.push(entry);
+                }
+            }
+        };
+        for event in &step.events {
+            match event {
+                TurnEvent::UnitMoved(m)
+                    if sees(m.from) && sees(m.to) && !hides(m.unit) && unit_of(m.unit).is_some_and(|u| u.owner != me) =>
+                {
+                    note(&mut units, m.unit);
+                    events.push(presentation(
+                        "UnitMoved",
+                        "Unit moved".into(),
+                        PresentationEvent::UnitMoved { unit: m.unit.into(), from: m.from.0, to: m.to.0 },
+                    ));
+                }
+                TurnEvent::Battle { attacker_died, defender_died, report: Some(b) } => {
+                    let ours = b.attacker_owner == me || b.defender_owner == me;
+                    let target_hides = matches!(b.target, Target::Unit(id) if hides(id));
+                    if !ours && !(sees(b.from) && sees(b.at) && !hides(b.attacker) && !target_hides) {
+                        continue;
+                    }
+                    note(&mut units, b.attacker);
+                    if let Target::Unit(id) = b.target {
+                        note(&mut units, id);
+                    }
+                    let text = if ours {
+                        battle_text(before, r, me, b, *attacker_died, *defender_died)
+                    } else {
+                        format!("{} {} attacked {}", nation(b.attacker_owner), r.units[b.attacker_base].name, nation(b.defender_owner))
+                    };
+                    events.push(presentation(
+                        "Attacked",
+                        text,
+                        PresentationEvent::Attacked {
+                            viewer_attacked: b.attacker_owner == me,
+                            attacker: b.attacker.into(),
+                            target: match b.target {
+                                Target::Unit(id) => crate::protocol::AttackTarget::Unit {
+                                    unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+                                },
+                                Target::City(id) => crate::protocol::AttackTarget::City {
+                                    city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+                                },
+                            },
+                            from: b.from.0,
+                            at: b.at.0,
+                            ranged: b.ranged,
+                            damage_to_attacker: b.damage_to_attacker,
+                            damage_to_defender: b.damage_to_defender,
+                            attacker_died: *attacker_died,
+                            defender_died: *defender_died,
+                        },
+                    ));
+                }
+                TurnEvent::CityFounded { city, by } if *by != me && centre(*city).is_some_and(sees) => {
+                    events.push(presentation(
+                        "CityFounded",
+                        "City founded".into(),
+                        PresentationEvent::CityFounded { city: (*city).into(), by: by.0 },
+                    ));
+                }
+                TurnEvent::CityCaptured { city, by } if centre(*city).is_some_and(sees) => {
+                    events.push(presentation(
+                        "CityCaptured",
+                        "City changed hands".into(),
+                        PresentationEvent::CityCaptured { city: (*city).into(), by: by.0 },
+                    ));
+                }
+                _ => {}
+            }
+        }
+        if events.is_empty() {
+            continue;
+        }
+        match batches.last_mut() {
+            Some(last) if last.civ == step.actor.0 => {
+                last.events.extend(events);
+                for u in units {
+                    if !last.units.contains(&u) {
+                        last.units.push(u);
+                    }
+                }
+            }
+            _ => batches.push(ReplayBatch { civ: step.actor.0, events, units }),
+        }
+    }
+    batches
+}
+
 fn presentation(kind: &str, text: String, event: PresentationEvent) -> EventView {
     EventView {
         kind: kind.into(),
@@ -1036,8 +1192,8 @@ fn presentation(kind: &str, text: String, event: PresentationEvent) -> EventView
 }
 
 /// Project only explicitly supported events. Before/after snapshots establish
-/// ownership, not historical visibility: foreign movement is omitted until
-/// the action executor supplies event-time observer records.
+/// ownership, not historical visibility, so foreign movement is omitted here;
+/// [`replay_for`] reports it from event-time sight records.
 pub fn report_for(
     before: &World,
     after: &World,
@@ -1498,6 +1654,70 @@ pub fn reachable(w: &World, r: &Ruleset, me: CivId, index: u32, generation: u32)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A replay keeps what the viewer saw when it happened: not what is
+    /// visible when the round is over, and not what was hidden at the time.
+    #[test]
+    fn replays_follow_sight_at_event_time_not_at_the_end() {
+        use civ_core::world::combat::BattleReport;
+        use civ_core::world::ReplayStep;
+        let (before, r, me) = crate::new_game(&crate::Settings::default()).unwrap();
+        let (unit, foreign) = before.units.iter().find(|(_, u)| u.owner != me && u.is_military(&r)).unwrap();
+        let actor = foreign.owner;
+        let (a, b) = (foreign.position, before.grid.neighbours(foreign.position).next().unwrap());
+        let (c, d) = (
+            before.grid.ids().find(|t| before.grid.distance(*t, a) > 4).unwrap(),
+            before.grid.ids().find(|t| before.grid.distance(*t, a) > 6).unwrap(),
+        );
+        let moved = |from, to| {
+            TurnEvent::UnitMoved(civ_core::world::movement::MoveEvent { unit, from, to, spent: civ_core::stats::Fixed::ONE })
+        };
+        let battle = |from, at| TurnEvent::Battle {
+            attacker_died: false,
+            defender_died: true,
+            report: Some(BattleReport {
+                attacker: unit,
+                attacker_base: foreign.base,
+                attacker_owner: actor,
+                target: civ_core::world::air::Target::Unit(unit),
+                defender_base: Some(foreign.base),
+                defender_owner: CivId(99),
+                from,
+                at,
+                ranged: false,
+                damage_to_attacker: 3,
+                damage_to_defender: 100,
+            }),
+        };
+        let sight = |tiles: &[civ_core::world::TileId]| {
+            let mut v = vec![false; before.grid.len()];
+            for t in tiles {
+                v[t.0 as usize] = true;
+            }
+            vec![(me, v)]
+        };
+        // Seen then: a and b. By the end, only c and d are visible.
+        let mut after = before.clone();
+        after.visibility.clear_visible(me);
+        after.visibility.observe(me, c);
+        after.visibility.observe(me, d);
+        let steps = vec![
+            ReplayStep { actor, events: vec![moved(a, b), battle(a, b)], seen: sight(&[a, b]) },
+            ReplayStep { actor, events: vec![moved(c, d), battle(c, d)], seen: sight(&[a, b]) },
+            // Half in view is not in view.
+            ReplayStep { actor, events: vec![moved(b, c)], seen: sight(&[b]) },
+        ];
+        let replay = replay_for(&before, &after, &r, me, &steps);
+        assert_eq!(replay.len(), 1, "one batch for one acting civ");
+        let kinds: Vec<_> = replay[0].events.iter().map(|e| (e.kind.as_str(), &e.event)).collect();
+        assert_eq!(kinds.len(), 2, "{kinds:?}");
+        assert!(matches!(kinds[0].1, PresentationEvent::UnitMoved { from, to, .. } if *from == a.0 && *to == b.0));
+        assert!(matches!(kinds[1].1, PresentationEvent::Attacked { from, at, viewer_attacked: false, .. } if *from == a.0 && *at == b.0));
+        assert_eq!(replay[0].units, vec![ReplayUnit { unit: unit.into(), owner: actor.0, base: foreign.base.index() }]);
+        // Our own share of the round is never replayed back to us.
+        let own = vec![ReplayStep { actor: me, events: vec![moved(a, b)], seen: sight(&[a, b]) }];
+        assert!(replay_for(&before, &after, &r, me, &own).is_empty());
+    }
 
     #[test]
     fn foreign_and_unattributed_events_never_fall_through_as_debug_text() {
