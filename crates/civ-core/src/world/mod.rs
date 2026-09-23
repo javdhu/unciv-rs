@@ -6,6 +6,7 @@
 pub mod administration;
 pub mod agreements;
 pub mod ai;
+pub mod ai_offers;
 pub mod air;
 pub mod assignment;
 pub mod barbarians;

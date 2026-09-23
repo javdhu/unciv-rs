@@ -1,5 +1,5 @@
 //! Private, immutable offers. This owns consent and expiry; core owns legality.
-use crate::protocol::{Action, AgreementTerms, CommandRequest, DiplomaticOffer, RejectionCode};
+use crate::protocol::{Action, AgreementTerms, CommandRequest, DiplomaticOffer, RejectionCode, TradeItem};
 use civ_core::ruleset::Ruleset;
 use civ_core::world::{agreements, CivId, TurnEvent, TurnModifiers, World};
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,81 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Offers(Vec<DiplomaticOffer>);
 
+/// An AI's offer to a human. Its id names the AI and the turn, and only an AI
+/// civilization can have made one; a human's offers are keyed by their
+/// command and backed by its recorded consent.
+pub(crate) fn is_ai_offer(world: &World, offer: &DiplomaticOffer) -> bool {
+    offer.id == ai_offer_id(offer.from, offer.turn)
+        && world.civ(CivId(offer.from)).is_some_and(|c| c.is_ai && c.is_major())
+}
+
+pub(crate) fn ai_offer_id(from: u8, turn: u32) -> String {
+    format!("{from}:ai:{turn}")
+}
+
+/// Core terms as the protocol states them, for the kinds an AI offers.
+fn protocol_terms(terms: &agreements::Terms) -> Option<AgreementTerms> {
+    use civ_core::world::trade::Item;
+    let item = |i: &Item| {
+        Some(match i {
+            Item::Luxury(id) => TradeItem::Luxury { resource: id.index() },
+            Item::Embassy => TradeItem::Embassy,
+            Item::OpenBorders => TradeItem::OpenBorders,
+            _ => return None,
+        })
+    };
+    Some(match terms {
+        agreements::Terms::Peace => AgreementTerms::Peace,
+        agreements::Terms::Friendship => AgreementTerms::Friendship,
+        agreements::Terms::ResearchAgreement => AgreementTerms::ResearchAgreement,
+        agreements::Terms::DefensivePact => AgreementTerms::DefensivePact,
+        agreements::Terms::Trade { give, get } => AgreementTerms::Trade {
+            give: give.iter().map(item).collect::<Option<_>>()?,
+            get: get.iter().map(item).collect::<Option<_>>()?,
+        },
+        agreements::Terms::PeaceTreaty { .. } => return None,
+    })
+}
+
 impl Offers {
+    /// Each AI's one question to each human this turn (`ai_offers`). Runs
+    /// after the round closes and expired offers are gone.
+    pub fn propose_from_ais(&mut self, world: &World, r: &Ruleset, humans: &[u8]) {
+        let mods = TurnModifiers::default();
+        let ais: Vec<u8> = world
+            .civs
+            .iter()
+            .filter(|c| c.is_ai && c.is_major() && c.is_alive())
+            .map(|c| c.id.0)
+            .collect();
+        for &ai in &ais {
+            for &human in humans {
+                let Some(terms) =
+                    civ_core::world::ai_offers::offer_to_human(world, r, CivId(ai), CivId(human), mods)
+                else {
+                    continue;
+                };
+                let Some(terms) = protocol_terms(&terms) else { continue };
+                let offer = DiplomaticOffer { id: ai_offer_id(ai, world.turn), from: ai, to: human, turn: world.turn, terms };
+                // Validation is the same as for a human's proposal; a refusal here just means no offer.
+                let _ = self.propose(world, r, offer);
+            }
+        }
+    }
+
+    /// Close the turn's offers. An AI whose offer lapsed unanswered takes it
+    /// as a refusal and waits before asking again.
+    pub fn expire(&mut self, world: &mut World, r: &Ruleset) {
+        let lapsed: Vec<_> =
+            self.0.iter().filter(|o| o.turn != world.turn && is_ai_offer(world, o)).cloned().collect();
+        for offer in lapsed {
+            if let Ok(terms) = core_terms(r, &offer.terms) {
+                civ_core::world::ai_offers::declined(world, CivId(offer.from), CivId(offer.to), &terms);
+            }
+        }
+        self.prune(world);
+    }
+
     /// A matching original proposal is insufficient: later successful input
     /// can withdraw, replace, decline or consume that consent.
     pub fn consent_is_active<'a>(
@@ -49,6 +123,7 @@ impl Offers {
         }
         self.0
             .iter()
+            .filter(|offer| !offer.id.contains(":ai:"))
             .all(|offer| active.get(&(offer.from, offer.to)) == Some(&offer.id))
     }
 
@@ -109,6 +184,10 @@ impl Offers {
             .map_err(|_| RejectionCode::IllegalAction)?
             .events
         } else {
+            if is_ai_offer(world, &offer) {
+                let terms = core_terms(r, &offer.terms)?;
+                civ_core::world::ai_offers::declined(world, CivId(offer.from), CivId(offer.to), &terms);
+            }
             Vec::new()
         };
         self.0
@@ -150,9 +229,11 @@ impl Offers {
         }
         self.0.iter().all(|o| {
             let prefix = format!("{}:", o.from);
-            seats.contains(&o.from)
+            let from_ai = is_ai_offer(world, o);
+            (seats.contains(&o.from) || from_ai)
                 && seats.contains(&o.to)
                 && o.from != o.to
+                && (!o.id.contains(":ai:") || from_ai)
                 && o.id
                     .strip_prefix(&prefix)
                     .is_some_and(crate::session::valid_identifier)

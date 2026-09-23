@@ -767,8 +767,8 @@ pub fn choose_tribute(world: &World, r: &Ruleset, civ: CivId) -> Vec<(CivId, boo
 /// Two of Unciv's AI habits (`TradeAutomation.exchangeLuxuries`,
 /// `DiplomacyAutomation.offerOpenBorders`): a spare luxury for one we lack,
 /// one for one, with anyone not an enemy; and open borders both ways with
-/// anyone we think well of. Only other AIs are asked — a human answers
-/// through the trade functions directly, not by being proposed to.
+/// anyone we think well of. Only other AIs are asked here; a human is asked
+/// through their inbox, one offer at a time ([`crate::world::ai_offers`]).
 pub fn choose_trades(
     world: &World,
     r: &Ruleset,
