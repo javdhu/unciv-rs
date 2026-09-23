@@ -432,6 +432,10 @@ impl Session {
         };
         if let Some((target, terms)) = proposal {
             if self.seats.iter().any(|s| s.civ == target && s.human) {
+                // `ai:` ids belong to AI offers (`offers::ai_offer_id`).
+                if request.command_id.starts_with("ai:") || request.command_id.contains(":ai:") {
+                    return Err(RejectionCode::InvalidRequest);
+                }
                 self.offers.propose(
                     &self.world,
                     &self.rules,
@@ -568,7 +572,14 @@ impl Session {
             }
             self.world.civs[usize::from(s.civ)].is_ai = !s.human;
         }
-        self.offers.prune(&self.world);
+        self.offers.expire(&mut self.world, &self.rules);
+        let humans: Vec<u8> = self
+            .seats
+            .iter()
+            .filter(|s| s.human && !self.world.civs[usize::from(s.civ)].defeated)
+            .map(|s| s.civ)
+            .collect();
+        self.offers.propose_from_ais(&self.world, &self.rules, &humans);
         events
     }
     /// The executor compares the recorded deadline's turn before issuing this host decision.
@@ -757,7 +768,7 @@ impl Session {
                 .offers
                 .visible(*seat)
                 .into_iter()
-                .filter(|o| o.from == *seat)
+                .filter(|o| o.from == *seat && !crate::offers::is_ai_offer(&world, o))
             {
                 let recorded = save.records.iter().any(|record| {
                     record.seat == offer.from

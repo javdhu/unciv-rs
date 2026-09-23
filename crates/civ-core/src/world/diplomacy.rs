@@ -285,6 +285,22 @@ pub enum Flag {
     Violated(Demand),
     /// The holder has given up asking — refused once, or already betrayed.
     IgnoreViolation(Demand),
+    /// The subject turned down the holder's offer of this kind; the holder
+    /// waits before asking again (`DiplomacyFlags.Declined*`, Trade.kt:60).
+    Declined(Proposal),
+}
+
+/// Kinds of offer an AI makes, each with its own wait after a refusal.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Proposal {
+    Peace,
+    Friendship,
+    Embassy,
+    OpenBorders,
+    ResearchAgreement,
+    DefensivePact,
+    LuxuryExchange,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
