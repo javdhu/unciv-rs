@@ -239,6 +239,19 @@ fn assign_idle(
 /// famine, say — the worst tile and the worst specialist are compared and the
 /// weaker let go. Without this a city that starved kept working the tile of
 /// the citizen it lost.
+/// Put a city's idle citizens to work, leaving the ones already placed where they are. Human cities call
+/// this when they are founded and when they grow, as Unciv's governor does.
+pub fn place_idle_citizens(world: &mut crate::world::World, r: &Ruleset, id: crate::arena::Id<City>) {
+    let Some(mut city) = world.cities.get(id).cloned() else { return };
+    let Some(civ) = world.civ(city.owner) else { return };
+    let bonus = crate::world::specialists::bonus_per_specialist(world, r, id);
+    assign_idle_citizens_for(&world.grid, r, &mut city, CityFocus::None, bonus, civ);
+    if let Some(c) = world.cities.get_mut(id) {
+        c.worked = city.worked;
+        c.specialists = city.specialists;
+    }
+}
+
 pub fn release_extra_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
     release_extra(grid, r, city, focus, bonus, None)
 }

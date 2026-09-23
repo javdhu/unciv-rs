@@ -597,3 +597,14 @@ fn attack_commands_report_who_fought_and_what_it_cost() {
     assert_eq!(report.damage_to_defender, 100 - i32::from(w.units.get(d).map_or(0, |u| u.health)));
     assert!(report.damage_to_defender > 0);
 }
+
+#[test]
+fn human_cities_put_their_first_citizen_to_work() {
+    use civ_core::world::commands::{self, Command};
+    let (r, mut w) = fixture();
+    let settler = unit(&mut w, &r, 0, "Settler", 8, 6);
+    commands::execute(&mut w, &r, CivId(0), Command::FoundCity { unit: settler, name: "Pasargadae".into() }).unwrap();
+    let city = w.cities.iter().find(|(_, c)| c.owner == CivId(0)).unwrap().1;
+    assert!(!w.civ(CivId(0)).unwrap().is_ai);
+    assert_eq!((city.population, city.worked.len()), (1, 1), "the founding citizen works a tile at once");
+}

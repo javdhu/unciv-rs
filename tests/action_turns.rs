@@ -307,7 +307,8 @@ fn human_choices_stay_pending_while_ai_plays() {
     assert!(c.faith.stored >= 100);
     assert!(c.gold >= human_gold);
     assert!(w.cities.get(human).unwrap().queue.is_empty());
-    assert!(w.cities.get(human).unwrap().worked.is_empty());
+    // Like Unciv's governor, the round puts idle citizens to work; every other choice waits for the player.
+    assert!(!w.cities.get(human).unwrap().worked.is_empty());
     assert!(w.civ(CivId(1)).unwrap().researching.is_some());
     assert!(!w.cities.get(ai).unwrap().queue.is_empty());
 }
@@ -585,7 +586,7 @@ fn two_human_seats_keep_their_choices_while_a_bot_plays_shared_rounds() {
             assert!(w.units.get(units[seat]).unwrap().fortified);
             assert_eq!(w.civ(civ).unwrap().researching, Some(pottery));
             assert_eq!(w.cities.get(cities[seat]).unwrap().queue, vec![build]);
-            assert!(w.cities.get(cities[seat]).unwrap().worked.is_empty());
+            assert!(!w.cities.get(cities[seat]).unwrap().worked.is_empty(), "idle citizens are placed");
         }
     }
     assert!(w.civ(CivId(2)).unwrap().researching.is_some());

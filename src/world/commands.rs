@@ -500,6 +500,10 @@ fn apply(
             }
             let city = crate::world::settling::found_city_with(world, r, unit, name).map_err(|_| NotAllowed)?;
             crate::world::promises::on_city_founded(world, city);
+            // A human's new city works its first tile now; the AI's governor places it when it plans.
+            if world.civ(civ).is_some_and(|c| !c.is_ai) {
+                crate::world::assignment::place_idle_citizens(world, r, city);
+            }
             events.push(TurnEvent::CityFounded { city, by: civ });
         }
         Improve { unit, improvement } => {

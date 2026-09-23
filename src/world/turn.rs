@@ -581,9 +581,8 @@ fn plan_civ(
         // A puppet's governor works its citizens for gold (`CityTurnManager.startTurn`).
         let focus = if city.puppet { CityFocus::Single(crate::stats::Stat::Gold) } else { focus };
         crate::world::assignment::release_extra_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
-        if automated {
-            crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
-        }
+        // Every governor places idle citizens; a human player's own picks stay where they are.
+        crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
         let golden = crate::world::golden_age::is_golden(world, civ);
         let base_output =
             crate::world::city::city_yield_with_happiness(world, r, &hypothetical, golden, Some(plan.happiness));
@@ -1167,6 +1166,10 @@ fn apply_plan_inner(
         let after = city.population;
         if after != before {
             city.faith.on_population_change(after as i32 - before as i32, after);
+        }
+        // A human city's newborn citizen starts work at once instead of idling until the next round.
+        if matches!(growth, GrowthEvent::Grew { .. }) && world.civ(plan.civ).is_some_and(|c| !c.is_ai) {
+            crate::world::assignment::place_idle_citizens(world, r, *city_id);
         }
         events.push(match growth {
             GrowthEvent::Grew { population, .. } => TurnEvent::CityGrew { city: *city_id, population },
