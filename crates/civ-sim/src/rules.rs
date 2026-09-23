@@ -96,6 +96,17 @@ pub struct BuildingRow {
     pub cost: i32,
     pub wonder: bool,
     pub national_wonder: bool,
+    /// Flat yields the building adds to its city.
+    pub yields: Yields,
+    pub happiness: i32,
+    /// Gold a turn to keep it.
+    pub maintenance: i32,
+    /// Percentage bonuses by stat name, as `Growth` or `Science`.
+    pub percent: Vec<(String, i32)>,
+    /// Its rule text, one line per unique, in the ruleset's words.
+    pub effects: Vec<String>,
+    /// The building it needs in the city first, by name.
+    pub requires: Option<String>,
 }
 
 /// A technology's place in the tree (Unciv's column and row) and what it opens.
@@ -319,6 +330,12 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 cost: x.cost.unwrap_or(0),
                 wonder: x.is_wonder.unwrap_or(false),
                 national_wonder: x.is_national_wonder.unwrap_or(false),
+                yields: yields!(x),
+                happiness: x.happiness.unwrap_or(0),
+                maintenance: x.maintenance.unwrap_or(0),
+                percent: x.percent_stat_bonus.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+                effects: x.uniques.iter().map(rule_text).collect(),
+                requires: x.required_building.clone(),
             })
             .collect(),
         technologies: r.technologies.iter().map(|(id, t)| tech_row(r, id, t)).collect(),
@@ -357,5 +374,7 @@ mod tests {
         assert_eq!(terrain("Grassland").yields.food, 2);
         assert_eq!(terrain("Hill").movement_cost, 2);
         assert!(t.improvements.iter().any(|i| i.name == "Farm" && i.yields.food == 1));
+        let monument = t.buildings.iter().find(|b| b.name == "Monument").unwrap();
+        assert!(monument.yields.culture > 0 && monument.maintenance >= 0);
     }
 }
