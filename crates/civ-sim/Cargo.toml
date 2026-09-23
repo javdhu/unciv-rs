@@ -9,8 +9,8 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# The engine is developed in the Unciv-master repository; pinned by path until its public API settles.
-civ-core = { path = "../../../../Downloads/Unciv-master/civ-core-rs", features = ["save"] }
+# The rules engine lives beside this crate.
+civ-core = { path = "../civ-core", features = ["save"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
