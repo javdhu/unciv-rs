@@ -1,7 +1,7 @@
 # Client communication contract
 
 Status: shared session, save/replay, solo Worker and private-room host implemented locally.
-The existing observer UI has not been connected to the new session interface. Broader rule parity,
+The main UI plays solo sessions through the Worker; remote rooms are not in the UI yet. Broader rule parity,
 complete match playtests, public matchmaking and ranked play remain unfinished.
 
 Product direction: become the Colonist.io of Civ. The first outcome is a room people can join from a
@@ -258,8 +258,8 @@ are absent for foreign cities, including visible ones. A finished view retains `
 winning civilization, victory-condition ID and original winning turn; reconnect does not depend on
 receiving the one-time victory event. Victory names are included in the static rules table.
 
-The original `Game`/`worker.ts`/`transport.ts` path remains the observer demo. New human controls must use
-`openSolo`/`openRemote` in `session-transports.ts`; replacing the observer UI is a separate step.
+The original `Game`/`worker.ts`/`transport.ts` path now serves only the art review page. Human controls use
+`openSolo`/`openRemote` in `session-transports.ts`.
 `openRemote` returns one `RemoteSession` across replacement sockets. Transient failures retry up to
 eight times, using exponential backoff from a 250 ms ceiling up to 10 seconds, with 50–100% jitter.
 The retry budget resets after 30 seconds of stable connection. Each replacement socket receives a

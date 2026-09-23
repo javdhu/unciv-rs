@@ -25,6 +25,12 @@ use civ_core::world::{CivId, World};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+/// The bundled rule tables, for menus shown before any game exists.
+#[wasm_bindgen(js_name = ruleTables)]
+pub fn rule_tables() -> Result<JsValue, JsError> {
+    js(&tables(&content::load().map_err(|e| JsError::new(&e))?))
+}
+
 /// A game hosted in the browser. Every method returns plain JS objects (camelCase, JSON-compatible).
 #[wasm_bindgen]
 pub struct Game {

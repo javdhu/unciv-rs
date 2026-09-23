@@ -1,8 +1,8 @@
 # civ.game architecture
 
 The selected communication contract is [CLIENT-PROTOCOL.md](CLIENT-PROTOCOL.md). The shared human
-session and private-room server are implemented locally. The Svelte/Three.js UI still uses its original
-AI observer adapter; integrating human controls is unfinished.
+session and private-room server are implemented locally. The Svelte/Three.js UI plays solo sessions
+through `openSolo`; [PLAYABLE.md](PLAYABLE.md) tracks the controls still to build.
 
 ## Ownership
 
@@ -49,7 +49,10 @@ web/src/engine/
   storage.ts       IndexedDB transactions, outbox and solo compare-and-swap
   session-worker.ts solo host; persist staged state before acknowledge/publish
   session-transports.ts Worker and WebSocket adapters
-  protocol.ts, worker.ts, transport.ts   original observer adapter used by the existing UI
+  protocol.ts      the renderer's view contract, a subset of the wire view
+  worker.ts, transport.ts   original observer adapter, still used by art-review.ts
+web/src/state/
+  session.ts       live match stores; the UI's only path to the session
 ```
 
 The engine remains a path dependency at `~/Downloads/Unciv-master/civ-core-rs`. Its default build has no
@@ -92,17 +95,16 @@ hydrate a fresh view, and recover the outbox before queued commands resume. Fenc
 
 ## Existing UI
 
-The observer demo retains the Svelte stores (`rules`, current/previous `view`, selection, busy) and the
-Three.js renderer. The renderer does not calculate game rules. Terrain, cities, units and overlays have
+`state/session.ts` holds the Svelte stores (rules, the latest update and view, the selected unit, the
+open city, civ options) beside the Three.js renderer. The renderer does not calculate game rules. Terrain, cities, units and overlays have
 separate owners; art entries map ruleset names to procedural recipes (docs/PROCEDURAL.md). Static
 geometry is instanced, and each unit is a skinned mesh over shared geometry with its own skeleton. The
-observer's views carry no combat events, so `world/combat.ts` infers fights from consecutive views. A
+views carry no attacker/defender events yet, so `world/combat.ts` infers fights from consecutive views. A
 presentation event that names attacker and defender, and whether the attack was ranged, would replace that
-inference. No human-control UI, layout, artwork or leader media was changed in
-this integration.
+inference.
 
-New controls should use `openSolo`/`openRemote` and remove the old observer adapter when that UI is
-replaced. The session provides commands for currently implemented engine actions, including economy,
+Human controls use `openSolo`; remote rooms will use `openRemote`. The old observer adapter remains only
+for `art-review.ts`. The session provides commands for currently implemented engine actions, including economy,
 unit/city actions, religion and diplomacy. Human bilateral agreements require recipient consent,
 expire at turn boundaries, and are included only in the parties' updates and durable session state.
 The supported engine content is the bundled Gods & Kings rules. Unciv editor/mod-only behavior is excluded. Public matchmaking, accounts, rankings and full browser match validation remain separate work.

@@ -49,6 +49,8 @@ pub struct NationRow {
     pub outer_color: Vec<i32>,
     pub inner_color: Vec<i32>,
     pub city_state: bool,
+    /// Suggested names for new cities, in the nation's order.
+    pub cities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -146,6 +148,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 outer_color: n.outer_color.clone(),
                 inner_color: n.inner_color.clone(),
                 city_state: n.city_state_type.is_some(),
+                cities: n.cities.clone(),
             })
             .collect(),
         resources: r
