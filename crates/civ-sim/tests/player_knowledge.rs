@@ -217,3 +217,104 @@ fn map_reveal_does_not_reveal_a_city_or_live_roads_and_ownership() {
     assert!(view.cities.iter().all(|c| c.centre != tile.0));
     assert!(view.civs.iter().all(|c| c.id != 2));
 }
+
+/// A human's automated units decide from their civ's knowledge: rewriting
+/// everything that civ has never explored leaves their orders unchanged.
+#[test]
+fn automated_units_decide_the_same_whatever_the_fog_hides() {
+    use civ_core::world::automation::{order, Automation};
+    use civ_core::world::commands::{execute, Command};
+    let mut caught = false;
+    for seed in [1, 2, 3, 5, 8] {
+        let (mut w, r, me) = civ_sim::new_game(&civ_sim::Settings {
+            seed,
+            ..civ_sim::Settings::default()
+        })
+        .unwrap();
+        let settler = w
+            .units
+            .iter()
+            .find(|(_, u)| u.owner == me && civ_core::world::settling::is_settler(&r, u.base))
+            .unwrap()
+            .0;
+        execute(&mut w, &r, me, Command::FoundCity { unit: settler, name: "Home".into() }).unwrap();
+        let city = w.civ(me).unwrap().cities[0];
+        let centre = w.cities.get(city).unwrap().centre;
+        let worker = civ_core::world::construction::prepare_unit_near(
+            &w,
+            &r,
+            me,
+            r.units.id("Worker").unwrap(),
+            centre,
+            Some(city),
+        )
+        .unwrap();
+        let worker = w.place_unit(worker);
+        w.units.get_mut(worker).unwrap().automation = Some(Automation::Work);
+        let explorer = w
+            .units
+            .iter()
+            .find(|(_, u)| u.owner == me && u.is_military(&r))
+            .unwrap()
+            .0;
+        w.units.get_mut(explorer).unwrap().automation = Some(Automation::Explore);
+        // Know only the ring around our own units and city, so the fog starts
+        // inside the units' reach.
+        w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len());
+        let mine: Vec<TileId> = w
+            .units
+            .iter()
+            .filter(|(_, u)| u.owner == me)
+            .map(|(_, u)| u.position)
+            .chain([centre])
+            .collect();
+        for t in mine {
+            for n in w.grid.within(t, 1) {
+                w.visibility.observe(me, n);
+            }
+        }
+        capture_observations(&mut w, &r);
+
+        // Everything this civ has never explored, rewritten two ways: walled
+        // off with mountains and strangers, or open desert full of half-dug
+        // farms. Neither may change what our units do.
+        let (desert, mountain) = (r.terrain("Desert").unwrap(), r.terrain("Mountain").unwrap());
+        let farm = r.improvements.id("Farm").unwrap();
+        let barbarians = w.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+        let brute = r.units.id("Brute").unwrap();
+        let rewrite = |walled: bool| {
+            let mut other = w.clone();
+            for t in other.grid.ids().collect::<Vec<_>>() {
+                if other.visibility.has_explored(me, t) || other.grid.is_water(&r, t) {
+                    continue;
+                }
+                let i = t.0 as usize;
+                other.grid.features[i].clear();
+                other.grid.resource[i] = None;
+                if walled {
+                    other.grid.terrain[i] = mountain;
+                    if t.0 % 5 == 0 {
+                        other.place_unit(Unit::new(brute, barbarians, t, 2));
+                    }
+                } else {
+                    other.grid.terrain[i] = desert;
+                    other.grid.improvement_progress[i] = Some((farm, 1));
+                }
+            }
+            other
+        };
+        for other in [rewrite(true), rewrite(false)] {
+            // The same comparison catches the AI's own routines, which read the whole map.
+            caught |= civ_core::world::ai::explore_order(&w, &r, me, explorer)
+                != civ_core::world::ai::explore_order(&other, &r, me, explorer)
+                || civ_core::world::ai::worker_order(&w, &r, me, worker, &Default::default())
+                    != civ_core::world::ai::worker_order(&other, &r, me, worker, &Default::default());
+            for unit in [worker, explorer] {
+                let ours = order(&w, &r, unit, &Default::default());
+                let theirs = order(&other, &r, unit, &Default::default());
+                assert_eq!(ours, theirs, "seed {seed}: {unit:?} decided from hidden tiles");
+            }
+        }
+    }
+    assert!(caught, "the rewritten fog never changed even a whole-map routine's answer");
+}

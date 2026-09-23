@@ -581,7 +581,7 @@ pub struct PreviewReach {
 /// A deliberately reconstructed movement model. It never copies the hidden
 /// grid, cities, units, or other civilizations' private state. Unknown tiles
 /// use a stated land/water assumption, so different hidden maps answer alike.
-fn movement_knowledge(world: &World, r: &Ruleset, viewer: CivId, id: Id<Unit>) -> Option<(World, Id<Unit>)> {
+pub(crate) fn movement_knowledge(world: &World, r: &Ruleset, viewer: CivId, id: Id<Unit>) -> Option<(World, Id<Unit>)> {
     use crate::world::entities::Civilization;
     use crate::world::grid::TileGrid;
     let unit = world.units.get(id).filter(|u| u.owner == viewer)?;

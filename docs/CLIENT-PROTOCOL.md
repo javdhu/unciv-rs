@@ -111,6 +111,14 @@ A disconnect/timeout means the outcome is unknown, not rejected. Retry the same 
 Sequence dependent intentions: finish-turn must not race a preceding move or purchase. Deduplication
 does not repair reordered requests.
 
+`{ type: "undo" }` takes back the seat's last applied command by restoring the world from just before
+it. It is itself a recorded command, so replays reproduce it. When refused, the receipt's code is
+`unavailable` and its optional `undoRefusal` says why: `nothingToUndo` (also after a restore),
+`notAllowed` (solo: a move, fortify, skip, set-up, production, research or citizen change; in rooms,
+a unit's move only), `revealed` (it showed tiles, units or cities not in sight before, or met a civ, so
+an undo is never a free look), `combat`, `chance` (e.g. ruins), `turnEnded`, or `othersActed` (anything
+else has changed the world since).
+
 ## Turn access and ordering
 
 | Identifier | Purpose |
@@ -161,7 +169,17 @@ Unhandled internal events stay internal; never export debug strings by default.
 The facade now reads persistent tile/city/civilization observations, gates resources by technology,
 and previews movement against permitted knowledge. Hidden-state invariance is tested. Presentation
 projection uses an explicit whitelist; foreign movement and battles without event-time attribution
-are conservatively omitted. Richer battle animations still require provenance from the engine.
+are conservatively omitted from `events`.
+
+The update that closes a round carries `replay`: the other civilizations' turns as ordered per-civ
+batches (`{ civ, events, units }`), for a fast replay before the new `view`. The engine records, for
+each AI command, what every human could see just before it ran; an event is kept only if its tiles
+were in the viewer's sight then, never by end-of-round visibility. A move step needs both of its tiles
+in sight, a third-party battle both its tiles (it carries the same `attacked` payload), and a city
+founded or taken its centre. Units that hide appear only if still seen at the end. Battles the viewer
+fought in are always kept and also stay in `events`. `units` names the owner and type of every unit in
+the batch, so units that ended out of view can still be drawn. The field is absent when there is
+nothing to replay, and older clients may ignore it.
 
 ## Reconnect, persistence and updates
 

@@ -1087,3 +1087,442 @@ fn city_options_list_workable_tiles_with_yields() {
     assert!(options.workable_tiles.iter().any(|t| t.food > 0));
     assert!(crate::queries::city_options(&s.world, &s.rules, CivId(1), id.index(), id.generation()).is_none());
 }
+
+fn found_capital(s: Session, seat: u8) -> Session {
+    let settler = own_unit(&s, seat, true);
+    apply(
+        s,
+        seat,
+        &format!("found-{seat}"),
+        Action::FoundCity {
+            unit: settler,
+            name: format!("Capital {seat}"),
+        },
+    )
+}
+fn add_unit(s: &mut Session, seat: u8, name: &str) -> EntityRef {
+    let base = s.rules.units.id(name).unwrap();
+    let city = s.world.civ(CivId(seat)).unwrap().cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    let unit = civ_core::world::construction::prepare_unit_near(
+        &s.world,
+        &s.rules,
+        CivId(seat),
+        base,
+        centre,
+        Some(city),
+    )
+    .unwrap();
+    let id = s.world.place_unit(unit);
+    EntityRef {
+        id: id.index(),
+        gen: id.generation(),
+    }
+}
+fn clear_barbarians(s: &mut Session) {
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    s.world.barbarian_camps.clear();
+    let theirs: Vec<_> = s
+        .world
+        .units
+        .iter()
+        .filter(|(_, u)| u.owner == barbarians)
+        .map(|(id, _)| id)
+        .collect();
+    for id in theirs {
+        s.world.remove_unit(id);
+    }
+}
+fn next_round(s: Session) -> Session {
+    s.stage_timeout(s.turn()).unwrap().unwrap().next
+}
+fn automation_of(s: &Session, seat: u8, unit: EntityRef) -> Option<crate::view::UnitAutomation> {
+    s.current_update(seat)
+        .unwrap()
+        .view
+        .units
+        .iter()
+        .find(|u| u.id == unit.id && u.gen == unit.gen)
+        .and_then(|u| u.own.as_ref()?.automation)
+}
+fn unit_actions(s: &Session, seat: u8, unit: EntityRef) -> Vec<crate::queries::UnitActionKind> {
+    let reply = s.query(seat, Query::UnitOptions { unit }).unwrap();
+    let QueryResult::UnitOptions { options } = reply.result else {
+        panic!("unit options")
+    };
+    options.map_or_else(Vec::new, |o| o.actions.into_iter().map(|a| a.action).collect())
+}
+fn improved_tiles(s: &Session, seat: u8) -> usize {
+    s.world
+        .grid
+        .ids()
+        .filter(|t| {
+            s.world.grid.owner[t.0 as usize] == Some(CivId(seat))
+                && s.world.grid.improvement[t.0 as usize].is_some()
+        })
+        .count()
+}
+
+#[test]
+fn an_automated_worker_improves_tiles_over_twenty_rounds() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, worker);
+    assert!(offered.contains(&K::Automate) && !offered.contains(&K::Explore), "{offered:?}");
+    let before = improved_tiles(&s, 0);
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    assert!(!unit_actions(&s, 0, worker).contains(&K::Automate), "already automated");
+    // Barbarians wandering up would rightly stop the worker; keep them away.
+    for _ in 0..20 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(improved_tiles(&s, 0) >= before + 2, "{} tiles improved in 20 rounds", improved_tiles(&s, 0) - before);
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    // Other seats never learn about the standing order.
+    let theirs = s.current_update(1).unwrap().view;
+    assert!(theirs.units.iter().filter(|u| u.owner == 0).all(|u| u.own.is_none()));
+}
+
+#[test]
+fn an_explorer_reveals_tiles_and_a_manual_order_cancels_it() {
+    let s = session();
+    let warrior = own_unit(&s, 0, false);
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, warrior);
+    assert!(offered.contains(&K::Explore) && !offered.contains(&K::Automate), "{offered:?}");
+    let explored = |s: &Session| {
+        s.world
+            .grid
+            .ids()
+            .filter(|t| s.world.visibility.has_explored(CivId(0), *t))
+            .count()
+    };
+    let before = explored(&s);
+    let mut s = apply(s, 0, "explore", Action::ExploreUnit { unit: warrior });
+    let moved = explored(&s);
+    assert!(moved > before, "the order acts as soon as it is given");
+    for _ in 0..5 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(explored(&s) > moved, "exploring continued over the next rounds");
+    assert_eq!(automation_of(&s, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // A save keeps the order.
+    let restored = Session::restore(&s.save().unwrap()).unwrap();
+    assert_eq!(automation_of(&restored, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // Any manual order ends it.
+    let s = apply(restored, 0, "skip", Action::SkipUnit { unit: warrior });
+    assert_eq!(automation_of(&s, 0, warrior), None);
+}
+
+#[test]
+fn a_visible_enemy_next_to_an_automated_unit_stops_it() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    let id = s
+        .world
+        .units
+        .iter()
+        .find(|(id, _)| id.index() == worker.id)
+        .unwrap()
+        .0;
+    let at = s.world.units.get(id).unwrap().position;
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    let brute = s.rules.units.id("Brute").or_else(|| s.rules.units.id("Warrior")).unwrap();
+    let spot = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            s.world.visibility.can_see(CivId(0), *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+        })
+        .unwrap();
+    s.world
+        .place_unit(civ_core::world::entities::Unit::new(brute, barbarians, spot, 1));
+    s = next_round(s);
+    assert_eq!(automation_of(&s, 0, worker), None);
+}
+
+#[test]
+fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
+    let mut s = Session::new(
+        Settings {
+            majors: 3,
+            city_states: 0,
+            ..Settings::default()
+        },
+        "replay".into(),
+        vec![0],
+    )
+    .unwrap();
+    for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+        s.world.diplomacy.meet(CivId(a), CivId(b));
+    }
+    s.world.diplomacy.declare_war(CivId(1), CivId(2));
+    let here = s
+        .world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == CivId(0))
+        .unwrap()
+        .1
+        .position;
+    let land: Vec<_> = s
+        .world
+        .grid
+        .within(here, 2)
+        .into_iter()
+        .filter(|t| {
+            *t != here
+                && s.world.visibility.can_see(CivId(0), *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+        })
+        .collect();
+    let (x, y) = land
+        .iter()
+        .flat_map(|x| land.iter().map(move |y| (*x, *y)))
+        .find(|(x, y)| s.world.grid.distance(*x, *y) == 1)
+        .expect("two adjacent visible land tiles");
+    let unit = |name: &str| s.rules.units.id(name).unwrap();
+    let strong = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Swordsman"), CivId(1), x, 2));
+    let weak = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Warrior"), CivId(2), y, 2));
+    s.refresh(&[], None).unwrap();
+
+    let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    let replay = update.replay.as_ref().expect("the round had something to replay");
+    let actors: Vec<u8> = replay.iter().map(|b| b.civ).collect();
+    let mut sorted = actors.clone();
+    sorted.sort();
+    assert_eq!(actors, sorted, "batches follow the order civs acted in");
+    assert!(actors.iter().all(|c| *c != 0), "never our own turn");
+    let fight = replay
+        .iter()
+        .flat_map(|b| b.events.iter().map(move |e| (b.civ, e)))
+        .find(|(_, e)| {
+            matches!(&e.event, crate::view::PresentationEvent::Attacked { attacker, .. }
+                if (attacker.id, attacker.gen) == (strong.index(), strong.generation())
+                    || (attacker.id, attacker.gen) == (weak.index(), weak.generation()))
+        })
+        .expect("the fight in view is in the replay");
+    assert!(fight.0 == 1 || fight.0 == 2);
+    let crate::view::PresentationEvent::Attacked { from, at, viewer_attacked, .. } = &fight.1.event else {
+        unreachable!()
+    };
+    assert!(!viewer_attacked);
+    assert!([x.0, y.0].contains(from) && [x.0, y.0].contains(at));
+
+    // Old clients: the field is optional on the wire.
+    let mut json = serde_json::to_value(update).unwrap();
+    json.as_object_mut().unwrap().remove("replay");
+    let old: GameUpdate = serde_json::from_value(json).unwrap();
+    assert!(old.replay.is_none());
+    let quiet = t.next.current_update(0).unwrap();
+    assert!(serde_json::to_value(&quiet).unwrap().get("replay").is_none());
+}
+
+#[test]
+fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
+    let mut s = Session::new(
+        Settings {
+            majors: 4,
+            city_states: 2,
+            ..Settings::default()
+        },
+        "replay-game".into(),
+        vec![0],
+    )
+    .unwrap();
+    let mut shown = 0;
+    for _ in 0..30 {
+        let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+        s = t.next;
+        for (seat, update) in &t.updates {
+            for batch in update.replay.iter().flatten() {
+                assert_ne!(batch.civ, *seat);
+                for e in &batch.events {
+                    let tiles: Vec<u16> = match &e.event {
+                        crate::view::PresentationEvent::UnitMoved { from, to, .. } => vec![*from, *to],
+                        crate::view::PresentationEvent::Attacked { from, at, .. } => vec![*from, *at],
+                        _ => Vec::new(),
+                    };
+                    for t in tiles {
+                        assert!(
+                            s.world.visibility.has_explored(CivId(*seat), civ_core::world::TileId(t)),
+                            "replayed tile {t} was never seen"
+                        );
+                    }
+                    shown += 1;
+                }
+            }
+        }
+    }
+    assert!(shown > 0, "thirty rounds with nothing to replay");
+}
+
+fn warrior_of(s: &Session, seat: u8) -> (Id<civ_core::world::Unit>, EntityRef) {
+    let (id, _) = s
+        .world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == CivId(seat) && u.is_military(&s.rules))
+        .unwrap();
+    (id, EntityRef { id: id.index(), gen: id.generation() })
+}
+/// A neighbouring land tile whose view is already ours: a friendly civilian
+/// stands there, so a move onto it shows nothing new.
+fn covered_step(s: &mut Session, seat: u8, unit: Id<civ_core::world::Unit>) -> u16 {
+    let at = s.world.units.get(unit).unwrap().position;
+    let to = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+                && s.world.grid.features[t.0 as usize].is_empty()
+        })
+        .unwrap();
+    let settler = s.rules.units.id("Settler").unwrap();
+    s.world
+        .place_unit(civ_core::world::Unit::new(settler, CivId(seat), to, 2));
+    civ_core::world::turn::update_visibility_in(&mut s.world, &s.rules);
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    s.refresh(&[], None).unwrap();
+    to.0
+}
+fn rejected(s: &Session, seat: u8, id: &str, action: Action) -> UndoRefusal {
+    let t = s.stage_command(seat, request(s, seat, id, action)).unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Rejected { code: RejectionCode::Unavailable }, "{id}");
+    t.receipt.undo_refusal.expect("an undo refusal says why")
+}
+
+#[test]
+fn a_move_that_showed_nothing_new_can_be_taken_back() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "undo".into(), vec![0]).unwrap();
+    assert_eq!(rejected(&s, 0, "early", Action::Undo), UndoRefusal::NothingToUndo);
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    let before = s.world.clone();
+    let s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    assert_eq!(s.world.units.get(id).unwrap().position.0, to);
+    let t = s.stage_command(0, request(&s, 0, "undo", Action::Undo)).unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Applied);
+    assert_eq!(t.next.world, before, "the world is exactly as it was");
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    assert!(update.view.units.iter().any(|u| u.id == warrior.id && u.tile == before.units.get(id).unwrap().position.0));
+    // Only the last command, and only once.
+    assert_eq!(rejected(&t.next, 0, "again", Action::Undo), UndoRefusal::NothingToUndo);
+    // Solo, a production or research choice can be taken back too.
+    let s = t.next;
+    let tech = s.rules.technologies.iter().find(|(id, _)| !s.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    let s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    let s = apply(s, 0, "unresearch", Action::Undo);
+    assert_ne!(s.world.civ(CivId(0)).unwrap().researching, Some(tech));
+
+    // Replaying the log, undo included, reaches the same world.
+    let s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "undo-replay".into(), vec![0]).unwrap();
+    let s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    let s = apply(s, 0, "unresearch", Action::Undo);
+    s.verify_replay().unwrap();
+}
+
+#[test]
+fn an_undo_cannot_be_used_to_peek_at_hidden_tiles() {
+    let s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "peek".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let at = s.world.units.get(id).unwrap().position;
+    let explored = |s: &Session| s.world.grid.ids().filter(|t| s.world.visibility.has_explored(CivId(0), *t)).count();
+    let seen_before = explored(&s);
+    // Step outward: the move shows new ground.
+    let out = s
+        .world
+        .grid
+        .neighbours(at)
+        .filter(|t| !s.world.grid.is_water(&s.rules, *t) && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t))
+        .find(|t| {
+            let mut probe = s.world.clone();
+            civ_core::world::commands::execute(&mut probe, &s.rules, CivId(0), civ_core::world::commands::Command::MoveUnit { unit: id, to: *t })
+                .is_ok()
+                && probe.grid.ids().filter(|x| probe.visibility.has_explored(CivId(0), *x)).count() > seen_before
+        })
+        .unwrap();
+    let s = apply(s, 0, "scout", Action::MoveUnit { unit: warrior, to: out.0 });
+    let after = s.world.clone();
+    assert!(explored(&s) > seen_before);
+    assert_eq!(rejected(&s, 0, "take-back", Action::Undo), UndoRefusal::Revealed);
+    // Refused means refused: the unit stays where the look cost it.
+    let t = s.stage_command(0, request(&s, 0, "take-back-2", Action::Undo)).unwrap();
+    assert_eq!(t.next.world, after);
+}
+
+#[test]
+fn rooms_undo_only_moves_and_only_before_anything_else_happens() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "room".into(), vec![0, 1]).unwrap();
+    let tech = s.rules.technologies.iter().find(|(id, _)| !s.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    assert_eq!(rejected(&s, 0, "u1", Action::Undo), UndoRefusal::NotAllowed);
+
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    // The other player acts in the meantime: the world is not ours to rewind.
+    let other = own_unit(&s, 1, false);
+    let later = apply(s.clone(), 1, "their-skip", Action::SkipUnit { unit: other });
+    assert_eq!(rejected(&later, 0, "u2", Action::Undo), UndoRefusal::OthersActed);
+    // Without that, the move comes back.
+    let s = apply(s, 0, "u3", Action::Undo);
+    assert_ne!(s.world.units.get(id).unwrap().position.0, to);
+}
+
+#[test]
+fn a_turn_end_or_a_fight_makes_a_move_final() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "final".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    s = apply(s, 0, "step", Action::MoveUnit { unit: warrior, to });
+    let s = s.stage_timeout(s.turn()).unwrap().unwrap().next;
+    assert_eq!(rejected(&s, 0, "late", Action::Undo), UndoRefusal::TurnEnded);
+
+    // An attack is never taken back.
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "fight".into(), vec![0]).unwrap();
+    let (id, warrior) = warrior_of(&s, 0);
+    let at = s.world.units.get(id).unwrap().position;
+    let spot = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            s.world.visibility.can_see(CivId(0), *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+        })
+        .unwrap();
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    let brute = s.world.place_unit(civ_core::world::Unit::new(s.rules.units.id("Brute").unwrap(), barbarians, spot, 1));
+    s.refresh(&[], None).unwrap();
+    s = apply(
+        s,
+        0,
+        "hit",
+        Action::Attack { unit: warrior, target: AttackTarget::Unit { unit: EntityRef { id: brute.index(), gen: brute.generation() } } },
+    );
+    assert_eq!(rejected(&s, 0, "unhit", Action::Undo), UndoRefusal::Combat);
+}

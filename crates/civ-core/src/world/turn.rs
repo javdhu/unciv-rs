@@ -1500,6 +1500,47 @@ pub fn advance_turn(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
 /// only AI seats choose new commands. Income is derived after those actions
 /// and banked once, then the world's automatic systems advance once.
 pub fn finish_round(world: &mut World, r: &Ruleset, focus: CityFocus, mods: TurnModifiers) -> Vec<TurnEvent> {
+    finish_round_inner(world, r, focus, mods, None)
+}
+
+/// One AI command's trace, kept so a human can be shown the other civs'
+/// turns as they happened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayStep {
+    pub actor: CivId,
+    pub events: Vec<TurnEvent>,
+    /// What each human civ could see just before the command ran, indexed
+    /// by tile. Nothing a human sees changes while another civ acts, so this
+    /// is what they saw when each of its events happened.
+    pub seen: Vec<(CivId, Vec<bool>)>,
+}
+
+/// [`finish_round`], also recording each AI command for replays.
+pub fn finish_round_recorded(
+    world: &mut World,
+    r: &Ruleset,
+    focus: CityFocus,
+    mods: TurnModifiers,
+    replay: &mut Vec<ReplayStep>,
+) -> Vec<TurnEvent> {
+    finish_round_inner(world, r, focus, mods, Some(replay))
+}
+
+fn human_sight(world: &World) -> Vec<(CivId, Vec<bool>)> {
+    world
+        .living_civs()
+        .filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai))
+        .map(|id| (id, world.grid.ids().map(|t| world.visibility.can_see(id, t)).collect()))
+        .collect()
+}
+
+fn finish_round_inner(
+    world: &mut World,
+    r: &Ruleset,
+    focus: CityFocus,
+    mods: TurnModifiers,
+    mut replay: Option<&mut Vec<ReplayStep>>,
+) -> Vec<TurnEvent> {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
     if world.winner.is_some() {
         return Vec::new();
@@ -1515,10 +1556,22 @@ pub fn finish_round(world: &mut World, r: &Ruleset, focus: CityFocus, mods: Turn
     let mut events = Vec::new();
     for plan in &plans {
         for command in ai_commands(world, r, plan, mods) {
+            let seen = replay.as_ref().map(|_| human_sight(world));
             if let Ok(outcome) = crate::world::commands::execute_with(world, r, plan.civ, command, mods) {
+                if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
+                    if !outcome.events.is_empty() {
+                        replay.push(ReplayStep { actor: plan.civ, events: outcome.events.clone(), seen });
+                    }
+                }
                 events.extend(outcome.events);
             }
         }
+    }
+    // Humans' automated units use what movement they have left, as Unciv
+    // moves them when the turn ends.
+    let humans: Vec<_> = world.living_civs().filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai)).collect();
+    for civ in humans {
+        events.extend(crate::world::automation::run(world, r, civ, mods));
     }
     // Derive every civilization's economy from the same post-action state.
     let economies: Vec<_> = world.living_civs().map(|id| plan_economy(world, r, id, focus, mods)).collect();
