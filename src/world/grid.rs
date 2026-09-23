@@ -23,10 +23,12 @@ use crate::unique_type::UniqueType;
 
 /// A dense index into [`TileGrid`]. `u16` holds 65,535 tiles; Civ's largest
 /// standard map is 128×80 = 10,240.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileId(pub u16);
 
 /// A player. Fixed at game start, so also a dense index.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CivId(pub u8);
 
@@ -100,6 +102,7 @@ impl Direction {
 /// tile can hold a Farm *and* a Road at once, and Unciv stores them in two
 /// fields for exactly that reason. The ordering is meaningful — a railroad is
 /// strictly better than a road — so `max` over a route gives its quality.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum RoadLevel {
     #[default]
@@ -129,10 +132,12 @@ impl RoadLevel {
 }
 
 /// The map. One array per attribute.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileGrid {
     width: u16,
     height: u16,
+    wrap_x: bool,
     pub terrain: Vec<Id<Terrain>>,
     /// Between the base terrain and the features in the yield fold order.
     pub natural_wonder: Vec<Option<Id<Terrain>>>,
@@ -163,11 +168,17 @@ pub struct TileGrid {
 impl TileGrid {
     /// A grid of `width × height`, every tile the given terrain.
     pub fn new(width: u16, height: u16, default_terrain: Id<Terrain>) -> TileGrid {
+        Self::new_with_wrap(width, height, default_terrain, false)
+    }
+
+    /// Cylindrical maps join the east and west edges; the poles remain bounded.
+    pub fn new_with_wrap(width: u16, height: u16, default_terrain: Id<Terrain>, wrap_x: bool) -> TileGrid {
         let n = width as usize * height as usize;
         assert!(n <= u16::MAX as usize, "{width}x{height} exceeds what TileId can index");
         let mut grid = TileGrid {
             width,
             height,
+            wrap_x,
             terrain: vec![default_terrain; n],
             natural_wonder: vec![None; n],
             features: vec![Vec::new(); n],
@@ -306,6 +317,9 @@ impl TileGrid {
     pub fn height(&self) -> u16 {
         self.height
     }
+    pub fn wraps_x(&self) -> bool {
+        self.wrap_x
+    }
     pub fn len(&self) -> usize {
         self.terrain.len()
     }
@@ -331,7 +345,10 @@ impl TileGrid {
         let mut out = [None; 6];
         for (i, d) in Direction::ALL.into_iter().enumerate() {
             let (dc, dr) = d.delta(odd);
-            let (c, r) = (col as i32 + dc, row as i32 + dr);
+            let (mut c, r) = (col as i32 + dc, row as i32 + dr);
+            if self.wrap_x && self.width > 0 {
+                c = c.rem_euclid(self.width as i32);
+            }
             if c >= 0 && r >= 0 && c < self.width as i32 && r < self.height as i32 {
                 out[i] = self.id_at(c as u16, r as u16);
             }
@@ -405,7 +422,59 @@ impl TileGrid {
         };
         let (ax, ay, az) = to_cube(ac, ar);
         let (bx, by, bz) = to_cube(bc, br);
-        (((ax - bx).abs() + (ay - by).abs() + (az - bz).abs()) / 2) as u32
+        let distance = |shift: i32| (((ax - bx - shift).abs() + (ay - by + shift).abs() + (az - bz).abs()) / 2) as u32;
+        if self.wrap_x {
+            distance(0).min(distance(self.width as i32)).min(distance(-(self.width as i32)))
+        } else {
+            distance(0)
+        }
+    }
+}
+
+#[cfg(feature = "save")]
+impl TileGrid {
+    pub(crate) fn validate_snapshot(&self) -> Result<(), String> {
+        let len = self.width as usize * self.height as usize;
+        if self.width == 0 || self.height == 0 || len > u16::MAX as usize {
+            return Err("invalid grid dimensions".into());
+        }
+        let lengths = [
+            self.terrain.len(),
+            self.natural_wonder.len(),
+            self.features.len(),
+            self.resource.len(),
+            self.resource_amount.len(),
+            self.improvement.len(),
+            self.improvement_progress.len(),
+            self.owner.len(),
+            self.road.len(),
+            self.road_pillaged.len(),
+            self.river_edges.len(),
+            self.improvement_pillaged.len(),
+            self.neighbours.len(),
+        ];
+        if lengths.iter().any(|n| *n != len) {
+            return Err("grid columns have inconsistent lengths".into());
+        }
+        for i in 0..len {
+            if self.neighbours[i] != self.compute_neighbours(TileId(i as u16)) {
+                return Err("grid neighbour table is inconsistent".into());
+            }
+            if self.river_edges[i] & !0b11_1111 != 0 {
+                return Err("grid river mask has invalid bits".into());
+            }
+            for direction in Direction::ALL {
+                if self.river_edges[i] & direction.bit() == 0 {
+                    continue;
+                }
+                if self.neighbours[i][direction as usize]
+                    .is_none_or(|next| self.river_edges[next.0 as usize] & direction.opposite().bit() == 0)
+                {
+                    return Err("grid river edges are not symmetric".into());
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -419,6 +488,37 @@ mod tests {
         let mut r: Registry<Terrain> = Registry::new();
         let t = r.insert("Grassland", Terrain::default());
         TileGrid::new(w, h, t)
+    }
+
+    #[test]
+    fn cylindrical_distance_matches_shortest_paths_and_edges_are_symmetric() {
+        for width in [5, 6, 11, 12] {
+            let terrain = grid(1, 1).terrain[0];
+            let mut g = TileGrid::new_with_wrap(width, 7, terrain, true);
+            for start in g.ids().collect::<Vec<_>>() {
+                let mut distances = vec![u32::MAX; g.len()];
+                distances[start.0 as usize] = 0;
+                let mut queue = std::collections::VecDeque::from([start]);
+                while let Some(tile) = queue.pop_front() {
+                    for next in g.neighbours(tile) {
+                        assert_eq!(g.direction_to(next, tile), g.direction_to(tile, next).map(Direction::opposite));
+                        if distances[next.0 as usize] == u32::MAX {
+                            distances[next.0 as usize] = distances[tile.0 as usize] + 1;
+                            queue.push_back(next);
+                        }
+                    }
+                }
+                for to in g.ids() {
+                    assert_eq!(g.distance(start, to), distances[to.0 as usize], "{width}: {start:?} -> {to:?}");
+                }
+            }
+            let a = g.id_at(0, 3).unwrap();
+            let b = g.id_at(width - 1, 3).unwrap();
+            g.set_river_between(a, b);
+            assert!(g.has_river_between(b, a));
+            #[cfg(feature = "save")]
+            assert!(g.validate_snapshot().is_ok());
+        }
     }
 
     #[test]

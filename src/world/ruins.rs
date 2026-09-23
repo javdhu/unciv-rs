@@ -227,9 +227,9 @@ fn add_stat(world: &mut World, civ: CivId, stat: &str, amount: i64) -> bool {
     let n = amount as i32;
     match stat {
         "Gold" => c.gold += n,
-        "Culture" => c.culture_stored += n,
+        "Culture" => c.add_culture(n),
         "Science" => c.science_stored += n,
-        "Faith" => c.faith.stored += n,
+        "Faith" => c.add_faith(n),
         _ => return false,
     }
     n != 0
@@ -373,11 +373,7 @@ fn grant(
             let mut new_unit = Unit::new(base, civ, tile, movement);
             let Some(spot) = placement_near(world, r, &new_unit, tile) else { return false };
             new_unit.position = spot;
-            for name in r.units.get(base).into_iter().flat_map(|b| b.promotions.iter()) {
-                if let Some(id) = r.promotions.id(name) {
-                    new_unit.promotions.insert(id);
-                }
-            }
+            crate::world::military::initialize_promotions(world, r, &mut new_unit);
             world.place_unit(new_unit);
             true
         }
@@ -412,11 +408,9 @@ fn grant(
             techs.truncate(n.max(0) as usize);
             for t in &techs {
                 if let Some(c) = world.civ_mut(civ) {
-                    c.techs.insert(*t);
-                    if c.researching == Some(*t) {
-                        c.researching = None;
-                    }
+                    crate::world::research::grant_technology(c, r, *t);
                 }
+                crate::world::effects::on_technology_researched(world, r, civ, *t, s.speed);
             }
             !techs.is_empty()
         }

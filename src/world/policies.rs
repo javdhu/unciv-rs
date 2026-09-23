@@ -73,6 +73,35 @@ pub fn policy_cost(adopted: usize, cities: usize, m: PolicyModifiers) -> i32 {
     (cost - (cost % COST_GRANULARITY)).max(COST_GRANULARITY)
 }
 
+/// Live cost excludes free choices and branch finishers, and uses current
+/// non-puppet cities and active policy discounts (`PolicyManager.kt`).
+pub fn policy_cost_in(world: &World, r: &Ruleset, civ: CivId, mut m: PolicyModifiers) -> i32 {
+    let Some(c) = world.civ(civ) else { return BASE_POLICY_COST };
+    let ctx = GameContext::new(r).with_world(world).for_civ(civ);
+    for u in c.uniques.matching(UniqueType::LessPolicyCostFromCities).filter(|u| applies(u, &ctx) == Verdict::True) {
+        if let Some(p) = u.params.first().and_then(|p| Fixed::parse(p)) {
+            m.map.policy_cost_per_city =
+                m.map.policy_cost_per_city * (Fixed::ONE - p.checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
+        }
+    }
+    if c.is_ai {
+        m.difficulty = Fixed::ONE;
+    }
+    for u in c.uniques.matching(UniqueType::LessPolicyCost).filter(|u| applies(u, &ctx) == Verdict::True) {
+        if let Some(p) = u.params.first().and_then(|p| Fixed::parse(p)) {
+            m.difficulty = m.difficulty * (Fixed::ONE + p.checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO));
+        }
+    }
+    let cities = world.cities.iter().filter(|(_, city)| city.owner == civ && !city.puppet).count();
+    policy_cost(c.paid_policies as usize, cities, m)
+}
+
+pub fn is_finisher(r: &Ruleset, policy: Id<Policy>) -> bool {
+    r.policies.get(policy).is_some_and(|p| {
+        p.branch.and_then(|b| r.policy_branches.get(b)).is_some_and(|b| p.name == format!("{} Complete", b.name))
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PolicyRejection {
     AlreadyAdopted,
@@ -130,6 +159,9 @@ pub fn is_adoptable(world: &World, r: &Ruleset, civ_id: CivId, policy: Id<Policy
     if civ.adopted_policies.contains(&policy) {
         return Err(PolicyRejection::AlreadyAdopted);
     }
+    if is_finisher(r, policy) {
+        return Err(PolicyRejection::NotAvailable);
+    }
     for required in &p.requires {
         let have = r.policies.id(required).is_some_and(|id| civ.adopted_policies.contains(&id));
         if !have {
@@ -150,6 +182,9 @@ pub fn is_adoptable(world: &World, r: &Ruleset, civ_id: CivId, policy: Id<Policy
         if applies(u, &ctx) != Verdict::True {
             return Err(PolicyRejection::NotAvailable);
         }
+    }
+    if p.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::Unavailable) && applies(u, &ctx) == Verdict::True) {
+        return Err(PolicyRejection::NotAvailable);
     }
     Ok(())
 }
@@ -176,7 +211,7 @@ pub fn apply_culture(
     m: PolicyModifiers,
 ) -> Result<PolicyEvent, PolicyRejection> {
     if let Some(civ) = world.civ_mut(civ_id) {
-        civ.culture_stored += culture.max(0);
+        civ.add_culture(culture.max(0));
     }
     let Some(policy) = choice else {
         let stored = world.civ(civ_id).map_or(0, |c| c.culture_stored);
@@ -185,22 +220,60 @@ pub fn apply_culture(
 
     is_adoptable(world, r, civ_id, policy)?;
 
-    let (adopted, cities, stored) = {
-        let Some(civ) = world.civ(civ_id) else { return Err(PolicyRejection::Unknown) };
-        (civ.adopted_policies.len(), civ.cities.len(), civ.culture_stored)
-    };
-    let cost = policy_cost(adopted, cities, m);
-    if stored < cost {
+    let Some(civ) = world.civ(civ_id) else { return Err(PolicyRejection::Unknown) };
+    let stored = civ.culture_stored;
+    let free = civ.pending_rewards.free_policies > 0;
+    let cost = policy_cost_in(world, r, civ_id, m);
+    if !free && stored < cost {
         return Ok(PolicyEvent::Stored { culture: stored });
     }
-
-    if let Some(civ) = world.civ_mut(civ_id) {
+    let civ = world.civ_mut(civ_id).unwrap();
+    if free {
+        civ.pending_rewards.free_policies -= 1;
+    } else {
         civ.culture_stored -= cost;
-        civ.adopted_policies.insert(policy);
+        civ.paid_policies = civ.paid_policies.saturating_add(1);
     }
+    civ.adopted_policies.insert(policy);
+    register_timed_effects(world, r, civ_id, policy, m.speed);
     rebuild_uniques(world, r, civ_id);
+    crate::world::effects::on_policy_adopted(world, r, civ_id, policy, m.speed);
+    // A branch's final reward is automatic and never charges culture.
+    let finishers: Vec<_> = r
+        .policies
+        .iter()
+        .filter(|(id, p)| {
+            is_finisher(r, *id)
+                && !world.civ(civ_id).unwrap().adopted_policies.contains(id)
+                && r.policies
+                    .iter()
+                    .filter(|(id, other)| other.branch == p.branch && !is_finisher(r, *id))
+                    .all(|(id, _)| world.civ(civ_id).unwrap().adopted_policies.contains(&id))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    for finisher in finishers {
+        world.civ_mut(civ_id).unwrap().adopted_policies.insert(finisher);
+        register_timed_effects(world, r, civ_id, finisher, m.speed);
+        rebuild_uniques(world, r, civ_id);
+        crate::world::effects::on_policy_adopted(world, r, civ_id, finisher, m.speed);
+    }
     let left = world.civ(civ_id).map_or(0, |c| c.culture_stored);
     Ok(PolicyEvent::Adopted { policy, culture_left: left })
+}
+
+fn register_timed_effects(world: &mut World, r: &Ruleset, civ: CivId, policy: Id<Policy>, speed: Fixed) {
+    let turns = r.policies[policy]
+        .uniques
+        .iter()
+        .flat_map(|u| &u.conditionals)
+        .filter(|u| u.unique_type() == Some(UniqueType::ConditionalTimedUnique))
+        .filter_map(|u| u.params.first()?.parse::<i32>().ok())
+        .max();
+    if let Some(turns) = turns {
+        let expiry = world.turn.saturating_add((Fixed::whole(turns) * speed).floor().max(1) as u32);
+        world.civ_mut(civ).unwrap().timed_policy_expirations.insert(policy, expiry);
+    }
 }
 
 /// Rebuild a civ's active uniques from scratch.
@@ -217,7 +290,16 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     }
     for policy in &civ.adopted_policies {
         if let Some(p) = r.policies.get(*policy) {
-            uniques.extend(p.uniques.iter().cloned());
+            for unique in &p.uniques {
+                let timed =
+                    unique.conditionals.iter().any(|u| u.unique_type() == Some(UniqueType::ConditionalTimedUnique));
+                if timed && civ.timed_policy_expirations.get(policy).is_none_or(|expiry| *expiry <= world.turn) {
+                    continue;
+                }
+                let mut active = unique.clone();
+                active.conditionals.retain(|u| u.unique_type() != Some(UniqueType::ConditionalTimedUnique));
+                uniques.push(active);
+            }
         }
     }
     for tech in &civ.techs {
@@ -227,12 +309,27 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     }
     // Beliefs are uniques too, so a pantheon has to reach the index or it
     // grants nothing.
-    uniques.extend(crate::world::religion::belief_uniques(r, &civ.faith).into_iter().cloned());
+    uniques.extend(crate::world::religion::founder_uniques(r, &civ.faith).into_iter().cloned());
+    for city in &civ.cities {
+        if let Some(city) = world.cities.get(*city) {
+            for building in &city.built {
+                if let Some(b) = r.buildings.get(*building) {
+                    uniques.extend(
+                        b.uniques
+                            .iter()
+                            .filter(|u| u.is_global() && u.unique_type() != Some(UniqueType::Stats))
+                            .cloned(),
+                    );
+                }
+            }
+        }
+    }
     // So are the bonuses a city-state owes its friends. They come and go as
     // influence rises and falls, which is why this index is rebuilt every
     // turn for a major civ rather than only when something is adopted.
     if civ.is_major() {
-        uniques.extend(crate::world::city_states::bonus_uniques(world, r, civ_id));
+        let bonuses = crate::world::city_states::bonus_uniques_with_modifiers(world, r, civ_id, &uniques);
+        uniques.extend(bonuses);
     }
 
     let index = UniqueIndex::build(&uniques);

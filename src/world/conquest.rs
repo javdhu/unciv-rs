@@ -89,12 +89,55 @@ fn burn_buildings(r: &Ruleset, city: &City, rng: &mut Rng) -> Vec<Id<crate::rule
 pub fn conquer(world: &mut World, r: &Ruleset, city_id: Id<City>, conqueror: CivId) -> Option<Conquest> {
     let city = world.cities.get(city_id)?;
     let old_owner = city.owner;
+    let centre = city.centre;
+    let population = city.population;
+    // Capture yields use the city's output before resistance and population
+    // loss, and credit the conquering civilization once.
+    let income =
+        crate::world::city::city_yield_in(world, r, city, crate::world::golden_age::is_golden(world, old_owner));
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(conqueror)
+        .in_city(city_id)
+        .on_tile(centre);
+    let mut capture = crate::stats::Stats::ZERO;
+    if let Some(c) = world.civ(conqueror) {
+        for unique in c
+            .uniques
+            .matching(UniqueType::CaptureCityPlunder)
+            .filter(|u| crate::world::conditionals::applies(u, &ctx).holds())
+        {
+            if let (Some(times), Some(source), Some(target)) = (
+                unique.params.first().and_then(|p| p.parse::<i32>().ok()),
+                unique.params.get(1).and_then(|p| crate::stats::Stat::parse(p)),
+                unique.params.get(2).and_then(|p| crate::stats::Stat::parse(p)),
+            ) {
+                capture[target] += crate::stats::Fixed::whole(times.saturating_mul(income[source].floor() as i32));
+            }
+        }
+    }
+    if let Some(c) = world.civ_mut(conqueror) {
+        c.gold += capture.gold.floor() as i32;
+        c.add_culture(capture.culture.floor() as i32);
+        c.add_faith(capture.faith.floor() as i32);
+        c.science_stored += capture.science.floor() as i32;
+    }
+
+    let aircraft: Vec<_> = world
+        .units
+        .iter()
+        .filter(|(_, u)| u.position == centre && u.owner != conqueror && u.is_air(r))
+        .map(|(id, _)| id)
+        .collect();
+    for unit in aircraft {
+        world.remove_unit(unit);
+    }
     // The loser's anger is weighed before the conquest takes its toll.
     let loser_population: u32 = world
         .civ(old_owner)
         .map(|c| c.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.population).sum())
         .unwrap_or(0);
-    crate::world::opinion::on_city_captured(world, conqueror, old_owner, city.population, loser_population);
+    crate::world::opinion::on_city_captured(world, conqueror, old_owner, population, loser_population);
     let city = world.cities.get(city_id)?;
     let mut rng = Rng::from_parts(&[0xC0_4E57, city.centre.0 as u64, world.turn as u64]);
     let plundered = plunder(world, city, conqueror, &mut rng);
@@ -107,8 +150,8 @@ pub fn conquer(world: &mut World, r: &Ruleset, city_id: Id<City>, conqueror: Civ
     let city = world.cities.get_mut(city_id)?;
     for id in &buildings_lost {
         city.built.remove(id);
+        city.free_buildings.remove(id);
     }
-    city.owner = conqueror;
     city.turn_acquired = turn;
     city.health = crate::world::city::max_health(r, city) / 2;
     city.avoid_growth = false;
@@ -117,10 +160,9 @@ pub fn conquer(world: &mut World, r: &Ruleset, city_id: Id<City>, conqueror: Civ
     city.population -= population_lost;
     city.worked.clear();
     city.specialists.clear();
-    // What was banked toward the old owner's plans goes with them. Halving the
-    // population while keeping the food banked for the larger city would let a
-    // captured city grow back on the turn after it falls.
-    city.production_stored = 0;
+    // Construction investment and overflow belong to the city. Its new
+    // governor replaces the queue, while paused work remains available.
+    // Food is cleared so the reduced population cannot immediately grow back.
     city.food_stored = 0;
     // Retaking your own city ends its resistance; taking anyone else's starts it.
     city.resistance = if city.founder == conqueror { 0 } else { city.population };
@@ -129,24 +171,201 @@ pub fn conquer(world: &mut World, r: &Ruleset, city_id: Id<City>, conqueror: Civ
     city.puppet = true;
     city.razing = false;
     city.queue.clear();
+    city.production_conversion = None;
     crate::world::city::rebuild_city_uniques(r, city);
 
-    if let Some(old) = world.civ_mut(old_owner) {
-        old.cities.retain(|c| *c != city_id);
-    }
-    if let Some(new) = world.civ_mut(conqueror) {
-        new.cities.push(city_id);
-    }
-    // Its whole territory changes hands with it — every tile it claimed, not
-    // a ring around the centre.
-    for t in world.cities.get(city_id).map(|c| c.tiles.clone()).unwrap_or_default() {
-        world.grid.owner[t.0 as usize] = Some(conqueror);
-    }
+    transfer_city(world, r, city_id, conqueror)?;
     // A civ that takes back its own first city takes it back whole.
     if world.cities.get(city_id).is_some_and(|c| c.original_capital && c.founder == conqueror) {
         annex(world, city_id);
     }
     Some(Conquest { plundered, buildings_lost, population_lost })
+}
+
+/// Ownership transfer is separate from conquest damage. Capitals relocate,
+/// former-owner free buildings leave, and national replacements follow the
+/// receiving civilization for both conquest and liberation.
+pub fn transfer_city(world: &mut World, r: &Ruleset, city: Id<City>, to: CivId) -> Option<()> {
+    let source = world.cities.get(city)?;
+    let from = source.owner;
+    if from == to || world.civ(to).is_none() {
+        return None;
+    }
+    let original = source.original_capital;
+    let moving: Vec<_> = source
+        .built
+        .iter()
+        .copied()
+        .filter(|b| {
+            r.buildings[*b]
+                .uniques
+                .iter()
+                .any(|u| matches!(u.unique_type(), Some(UniqueType::IndicatesCapital | UniqueType::MovesToNewCapital)))
+        })
+        .collect();
+    let next = world
+        .cities
+        .iter()
+        .filter(|(id, c)| *id != city && c.owner == from)
+        .max_by_key(|(id, c)| (c.population, std::cmp::Reverse(*id)))
+        .map(|(id, _)| id);
+    {
+        let c = world.cities.get_mut(city)?;
+        c.built.retain(|b| !moving.contains(b) && !c.free_buildings.contains(b));
+        c.free_buildings.clear();
+        c.previous_owner = Some(from);
+        c.owner = to;
+        c.faith.retain_owner_pantheon(to, c.population);
+        c.turn_acquired = world.turn;
+        c.razing = false;
+        c.wltkd = 0;
+    }
+    if let Some(id) = next {
+        let c = world.cities.get_mut(id)?;
+        c.built.extend(moving);
+        crate::world::city::rebuild_city_uniques(r, c);
+    }
+    world.civ_mut(from)?.cities.retain(|id| *id != city);
+    let target = world.civ_mut(to)?;
+    target.cities.push(city);
+    target.has_ever_owned_original_capital |= original;
+    if target.cities.len() == 1 {
+        if let Some(palace) = r
+            .buildings
+            .iter()
+            .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::IndicatesCapital)))
+            .map(|(id, _)| id)
+        {
+            world.cities.get_mut(city)?.built.insert(palace);
+        }
+    }
+    let converted: Vec<_> = world
+        .cities
+        .get(city)?
+        .built
+        .iter()
+        .map(|id| {
+            let base = r.buildings[*id].replaces.as_deref().and_then(|name| r.buildings.id(name)).unwrap_or(*id);
+            crate::world::effects::equivalent_building(world, r, to, base)
+        })
+        .collect();
+    let c = world.cities.get_mut(city)?;
+    c.built = converted.into_iter().collect();
+    crate::world::city::rebuild_city_uniques(r, c);
+    for tile in c.tiles.clone() {
+        world.grid.owner[tile.0 as usize] = Some(to);
+    }
+    for civ in &mut world.civs {
+        for spy in &mut civ.espionage.spies {
+            if spy.station == Some(city) {
+                spy.station = None;
+                spy.action = crate::world::espionage::SpyAction::Hideout;
+                spy.turns_remaining = 0;
+                spy.progress = 0;
+            }
+        }
+    }
+    for civ in [from, to] {
+        crate::world::policies::rebuild_uniques(world, r, civ);
+        crate::world::effects::refresh_free_buildings(world, r, civ);
+    }
+    Some(())
+}
+
+/// Liberation is a decision in the same action window as a conquest. A
+/// voluntary later transfer must not repeatedly award liberation influence.
+pub fn can_liberate(world: &World, city: Id<City>) -> bool {
+    world.cities.get(city).is_some_and(|c| {
+        c.puppet
+            && c.turn_acquired == world.turn
+            && c.founder != c.owner
+            && c.previous_owner.is_some_and(|previous| previous != c.founder)
+            && world.civ(c.founder).is_some_and(|founder| !founder.is_barbarian && !founder.city_state.absorbed)
+    })
+}
+
+pub fn liberate(world: &mut World, r: &Ruleset, city: Id<City>) -> Option<()> {
+    use crate::world::diplomacy::Sentiment;
+    if !can_liberate(world, city) {
+        return None;
+    }
+    let c = world.cities.get(city)?;
+    let liberator = c.owner;
+    let founder = c.founder;
+    let former = c.previous_owner?;
+    let population = c.population;
+    let centre = c.centre;
+    let other_population: u32 =
+        world.cities.iter().filter(|(_, c)| c.owner == founder).map(|(_, c)| c.population).sum();
+    let respect =
+        10 + Precise::from_ratio(i64::from(population) * 100, i64::from(population + other_population)).round();
+    let was_dead = !world.civ(founder)?.is_alive();
+    if was_dead {
+        world.diplomacy.revive(founder);
+    }
+    world.civ_mut(founder)?.defeated = false;
+    world.diplomacy.meet(founder, liberator);
+    if world.civ(founder)?.is_city_state() {
+        let strongest = world
+            .civs
+            .iter()
+            .filter(|c| c.is_major() && c.is_alive())
+            .map(|c| world.diplomacy.influence(founder, c.id))
+            .max()
+            .unwrap_or(Fixed::whole(-60));
+        world.diplomacy.set_influence(founder, liberator, (strongest + Fixed::whole(105)).max(Fixed::whole(60)));
+        world.diplomacy.make_peace(founder, liberator);
+    } else {
+        world.diplomacy.attitude_mut(founder, liberator).add(
+            Sentiment::CapturedOurCities,
+            Fixed::whole(respect as i32),
+            None,
+        );
+        world.diplomacy.set_open_borders(founder, liberator, true);
+    }
+    let witnesses: Vec<_> = world
+        .civs
+        .iter()
+        .filter(|c| c.is_major() && c.id != liberator && c.id != former && world.diplomacy.have_met(c.id, liberator))
+        .map(|c| c.id)
+        .collect();
+    for witness in witnesses {
+        world.diplomacy.attitude_mut(witness, liberator).add(
+            Sentiment::LiberatedCity,
+            Fixed::whole(Precise::from_ratio(respect, 10).round() as i32),
+            None,
+        );
+    }
+    transfer_city(world, r, city, founder)?;
+    let c = world.cities.get_mut(city)?;
+    c.resistance = 0;
+    c.puppet = false;
+    let displaced: Vec<_> = world
+        .units
+        .iter()
+        .filter(|(_, u)| u.transport.is_none() && u.position == centre && u.owner != founder)
+        .map(|(id, _)| id)
+        .collect();
+    for id in displaced {
+        let old = world.units.get(id)?.clone();
+        if let Some(placement) =
+            crate::world::construction::prepare_unit_near(world, r, old.owner, old.base, centre, None)
+        {
+            let u = world.units.get_mut(id)?;
+            u.position = placement.position;
+            u.embarked = placement.embarked;
+            u.transport = placement.transport;
+            u.set_up = false;
+            crate::world::air::move_payload(world, id, placement.position);
+        } else {
+            world.remove_unit(id);
+        }
+    }
+    let visitors: Vec<_> = world.civs.iter().filter(|c| c.id != founder).map(|c| c.id).collect();
+    for visitor in visitors {
+        crate::world::movement::expel(world, r, visitor, founder);
+    }
+    Some(())
 }
 
 /// Take over a puppet's governing (`annexCity`). Its people resent it until
@@ -213,12 +432,34 @@ pub fn annexed_unhappiness(city: &City) -> bool {
 /// Remove a city from the world: its territory goes back to no one.
 pub fn destroy(world: &mut World, city_id: Id<City>) {
     let Some(city) = world.cities.remove(city_id) else { return };
+    for civ in &mut world.civs {
+        for spy in &mut civ.espionage.spies {
+            if spy.station == Some(city_id) {
+                spy.station = None;
+                spy.action = crate::world::espionage::SpyAction::Hideout;
+                spy.turns_remaining = 0;
+                spy.progress = 0;
+            }
+        }
+    }
     for t in &city.tiles {
         world.grid.owner[t.0 as usize] = None;
     }
     if let Some(c) = world.civ_mut(city.owner) {
         c.cities.retain(|id| *id != city_id);
     }
+}
+
+/// Live-game destruction also removes aircraft stationed in the lost base.
+pub fn destroy_in(world: &mut World, r: &Ruleset, city_id: Id<City>) {
+    if let Some(centre) = world.cities.get(city_id).map(|c| c.centre) {
+        let aircraft: Vec<_> =
+            world.units.iter().filter(|(_, u)| u.position == centre && u.is_air(r)).map(|(id, _)| id).collect();
+        for unit in aircraft {
+            world.remove_unit(unit);
+        }
+    }
+    destroy(world, city_id);
 }
 
 /// What a turn did to the cities a civ took.
@@ -248,7 +489,7 @@ pub fn tick(world: &mut World, r: &Ruleset, civ: CivId) -> Vec<ConquestEvent> {
         };
         if razing && population <= burned {
             events.push(ConquestEvent::Razed { city: city_id, owner: civ });
-            destroy(world, city_id);
+            destroy_in(world, r, city_id);
             continue;
         }
         let Some(c) = world.cities.get_mut(city_id) else { continue };
@@ -464,12 +705,13 @@ mod tests {
     }
 
     #[test]
-    fn barbarians_burn_what_they_take() {
+    fn barbarians_cannot_bypass_raid_rules_through_the_conquest_helper() {
         let r = ruleset();
         let (mut w, city) = world(&r);
         w.civ_mut(CivId(0)).unwrap().is_barbarian = true;
+        let before = w.clone();
         crate::world::combat::capture_city(&mut w, &r, city, CivId(0));
-        assert!(w.cities.get(city).is_none());
+        assert_eq!(w, before, "barbarian attacks resolve through the raid handler");
     }
 
     #[test]

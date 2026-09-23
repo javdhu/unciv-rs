@@ -19,12 +19,15 @@
 //! Who asks, and how the asked answer, are AI choices and live in `ai`. What
 //! follows from them is here.
 
+use crate::ruleset::Ruleset;
 use crate::stats::Fixed;
 use crate::world::diplomacy::{Flag, Sentiment};
 use crate::world::grid::CivId;
 use crate::world::world::World;
+use crate::world::TurnEvent;
 
 /// Something one civ can ask another to stop doing.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Demand {
     DontSpyOnUs,
@@ -141,35 +144,36 @@ pub fn asked_of(world: &World, civ: CivId) -> Vec<(CivId, Demand)> {
 /// returned so the caller can report it like any other.
 pub fn answer(
     world: &mut World,
+    r: &Ruleset,
     of: CivId,
     by: CivId,
     demand: Demand,
     agree: bool,
-) -> Result<(PromiseEvent, Option<crate::world::diplomacy::DiplomacyEvent>), DemandRejection> {
-    if !world.diplomacy.demands.remove(&(by, of, demand)) {
+) -> Result<(PromiseEvent, Vec<TurnEvent>), DemandRejection> {
+    if !world.diplomacy.demands.contains(&(by, of, demand)) {
         return Err(DemandRejection::NotAsked);
     }
     if !is_major(world, by) {
         // Asked by a civ since destroyed. Nobody is left to answer to.
         return Err(DemandRejection::NotMajor);
     }
+    if !agree && demand == Demand::DoNotAttackUs && !world.diplomacy.can_declare_war(of, by) {
+        return Err(DemandRejection::NotOffered);
+    }
+    world.diplomacy.demands.remove(&(by, of, demand));
     if agree {
         world.diplomacy.set_flag(by, of, Flag::Agreed(demand), PROMISE_TURNS);
         world.diplomacy.attitude_mut(of, by).add(Sentiment::UnacceptableDemands, AGREED, None);
-        return Ok((PromiseEvent::Agreed { by: of, to: by, demand }, None));
+        return Ok((PromiseEvent::Agreed { by: of, to: by, demand }, Vec::new()));
     }
     world.diplomacy.attitude_mut(of, by).add(Sentiment::UnacceptableDemands, REFUSED, None);
     world.diplomacy.set_flag(by, of, Flag::IgnoreViolation(demand), PROMISE_TURNS);
     let war = if demand == Demand::DoNotAttackUs {
         // No grudge for the refusal itself: "they respect our honesty".
-        let war = world.diplomacy.declare_war(of, by);
-        if war.is_some() {
-            crate::world::opinion::on_war_declared(world, of, by);
-        }
-        war
+        crate::world::diplomacy_actions::declare_war(world, r, of, by)
     } else {
         world.diplomacy.attitude_mut(by, of).add(Sentiment::RefusedDemand(demand), REFUSAL_RESENTED, None);
-        None
+        Vec::new()
     };
     Ok((PromiseEvent::Refused { by: of, to: by, demand }, war))
 }
@@ -356,7 +360,7 @@ mod tests {
         assert_eq!(asked_of(&w, B), vec![(A, Demand::DoNotSettleNearUs)]);
         assert_eq!(demand(&mut w, A, B, Demand::DoNotSettleNearUs), Err(DemandRejection::AlreadyAsked));
 
-        answer(&mut w, B, A, Demand::DoNotSettleNearUs, true).unwrap();
+        answer(&mut w, &r, B, A, Demand::DoNotSettleNearUs, true).unwrap();
         assert!(asked_of(&w, B).is_empty());
         assert_eq!(w.diplomacy.flag_turns(A, B, Flag::Agreed(Demand::DoNotSettleNearUs)), PROMISE_TURNS);
         assert_eq!(opinion(&w, B, A, Sentiment::UnacceptableDemands), Fixed::whole(-10));
@@ -368,9 +372,9 @@ mod tests {
         let r = ruleset();
         let mut w = world(&r);
         demand(&mut w, A, B, Demand::DontSpyOnUs).unwrap();
-        let (e, war) = answer(&mut w, B, A, Demand::DontSpyOnUs, false).unwrap();
+        let (e, war) = answer(&mut w, &r, B, A, Demand::DontSpyOnUs, false).unwrap();
         assert_eq!(e, PromiseEvent::Refused { by: B, to: A, demand: Demand::DontSpyOnUs });
-        assert!(war.is_none());
+        assert!(war.is_empty());
         assert_eq!(opinion(&w, B, A, Sentiment::UnacceptableDemands), Fixed::whole(-20));
         assert_eq!(opinion(&w, A, B, Sentiment::RefusedDemand(Demand::DontSpyOnUs)), Fixed::whole(-15));
         assert!(w.diplomacy.has_flag(A, B, Flag::IgnoreViolation(Demand::DontSpyOnUs)));
@@ -387,8 +391,8 @@ mod tests {
             "a human may not ask"
         );
         demand(&mut w, A, B, Demand::DoNotAttackUs).unwrap();
-        let (_, war) = answer(&mut w, B, A, Demand::DoNotAttackUs, false).unwrap();
-        assert!(war.is_some());
+        let (_, war) = answer(&mut w, &r, B, A, Demand::DoNotAttackUs, false).unwrap();
+        assert!(!war.is_empty());
         assert!(w.diplomacy.at_war(A, B));
         assert!(!w.diplomacy.attitude(A, B).has(Sentiment::RefusedDemand(Demand::DoNotAttackUs)), "honesty respected");
         assert_eq!(opinion(&w, A, B, Sentiment::DeclaredWarOnUs), Fixed::whole(-20), "but it is still a war");
@@ -411,7 +415,7 @@ mod tests {
         let r = ruleset();
         let mut w = world(&r);
         demand(&mut w, A, B, Demand::DoNotSettleNearUs).unwrap();
-        answer(&mut w, B, A, Demand::DoNotSettleNearUs, true).unwrap();
+        answer(&mut w, &r, B, A, Demand::DoNotSettleNearUs, true).unwrap();
         violated(&mut w, A, B, Demand::DoNotSettleNearUs);
         assert!(review(&mut w, A).is_empty(), "not judged the turn it happens");
         w.diplomacy.tick();
@@ -428,7 +432,7 @@ mod tests {
 
         let mut w = world(&r);
         demand(&mut w, A, C, Demand::DontSpyOnUs).unwrap();
-        answer(&mut w, C, A, Demand::DontSpyOnUs, true).unwrap();
+        answer(&mut w, &r, C, A, Demand::DontSpyOnUs, true).unwrap();
         let mut kept = Vec::new();
         for _ in 0..PROMISE_TURNS {
             let expired = w.diplomacy.tick();
@@ -444,7 +448,7 @@ mod tests {
         let mut w = world(&r);
         w.civ_mut(B).unwrap().is_ai = false;
         demand(&mut w, A, B, Demand::DoNotAttackUs).unwrap();
-        answer(&mut w, B, A, Demand::DoNotAttackUs, true).unwrap();
+        answer(&mut w, &r, B, A, Demand::DoNotAttackUs, true).unwrap();
         w.diplomacy.declare_war(B, A);
         crate::world::opinion::on_war_declared(&mut w, B, A);
         assert!(w.diplomacy.has_flag(A, B, Flag::Violated(Demand::DoNotAttackUs)));
@@ -538,7 +542,7 @@ mod tests {
         let r = ruleset();
         let mut w = world(&r);
         demand(&mut w, A, B, Demand::DoNotSettleNearUs).unwrap();
-        answer(&mut w, B, A, Demand::DoNotSettleNearUs, true).unwrap();
+        answer(&mut w, &r, B, A, Demand::DoNotSettleNearUs, true).unwrap();
         let a_city = w.grid.id_at(1, 6).unwrap();
         let near = w.grid.id_at(6, 6).unwrap();
         assert!(w.grid.distance(a_city, near) <= NEAR_US);

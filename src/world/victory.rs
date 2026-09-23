@@ -23,6 +23,7 @@ use crate::ruleset::{Ruleset, Victory};
 use crate::world::conditionals::Verdict;
 use crate::world::grid::CivId;
 use crate::world::world::World;
+use std::collections::BTreeSet;
 
 /// One requirement of a victory condition.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,15 +32,17 @@ pub enum Milestone {
     BuiltBuilding(String),
     /// Anyone has it — a race, not a personal goal.
     BuildingBuiltGlobally(String),
-    /// Every capital on the map is this civ's.
+    /// Every original major capital is this civ's, with no living major still
+    /// waiting to found its original capital.
     CaptureAllCapitals,
     /// Every other civ is out.
     DestroyAllPlayers,
     /// This many policy branches finished to the last policy.
     CompletePolicyBranches(i32),
-    /// Recognised by the ruleset but not judgeable here: spaceship parts,
-    /// religion, diplomatic votes, score. Kept as text so the gap is visible
-    /// rather than silently dropped.
+    SpaceshipParts,
+    DiplomaticVote,
+    HighestScore,
+    /// Milestones outside the bundled rules remain explicitly unsupported.
     Unsupported(String),
 }
 
@@ -62,8 +65,73 @@ pub fn parse_milestone(text: &str) -> Milestone {
     match t {
         "Capture all capitals" => Milestone::CaptureAllCapitals,
         "Destroy all players" => Milestone::DestroyAllPlayers,
+        "Add all [spaceship parts] in capital" => Milestone::SpaceshipParts,
+        "Win diplomatic vote" => Milestone::DiplomaticVote,
+        "Have highest score after max turns" => Milestone::HighestScore,
         _ => Milestone::Unsupported(t.to_string()),
     }
+}
+
+/// Whether the selected match enables this named victory.
+pub fn is_enabled(world: &World, r: &Ruleset, name: &str) -> bool {
+    r.victories.id(name).is_some_and(|id| world.endgame.enabled_victories.as_ref().is_none_or(|v| v.contains(&id)))
+}
+
+pub fn required_parts(r: &Ruleset, victory: &Victory) -> std::collections::BTreeMap<Id<crate::ruleset::BaseUnit>, u32> {
+    let mut parts = std::collections::BTreeMap::new();
+    for name in &victory.required_spaceship_parts {
+        if let Some(id) = r.units.id(name) {
+            *parts.entry(id).or_default() += 1;
+        }
+    }
+    parts
+}
+
+fn spaceship_complete(world: &World, r: &Ruleset, civ: CivId, victory: &Victory) -> bool {
+    // Missing rule references cannot silently shorten the required ship.
+    victory.required_spaceship_parts.iter().all(|name| r.units.id(name).is_some())
+        && required_parts(r, victory)
+            .into_iter()
+            .all(|(part, n)| crate::world::victory_actions::assembled_parts(world, civ, part) >= n)
+}
+
+/// Exact rational score. The denominator is common across civilizations, so
+/// time-victory tie breaking never depends on floating-point rounding.
+pub fn score_fraction(world: &World, r: &Ruleset, civ: CivId) -> (i64, i64) {
+    let Some(c) = world.civ(civ) else { return (0, 1) };
+    let tiles = world.grid.len().max(1) as i64;
+    let (num, den) = if tiles < 1276 { (1276 + 2 * tiles, 3 * tiles) } else { (1276, tiles) };
+    let mut base = 0i64;
+    let mut wonders = 0i64;
+    for city in c.cities.iter().filter_map(|id| world.cities.get(*id)) {
+        base += 10
+            + 3 * i64::from(city.population)
+            + city.tiles.iter().filter(|t| !world.grid.is_water(r, **t)).count() as i64;
+        wonders +=
+            city.built.iter().filter(|id| r.buildings.get(**id).is_some_and(|b| b.is_wonder == Some(true))).count()
+                as i64;
+    }
+    (base * num + (40 * wonders + 4 * c.techs.len() as i64 + 10 * i64::from(c.victory.repeated_techs)) * den, den)
+}
+
+pub fn score(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::Fixed {
+    let (num, den) = score_fraction(world, r, civ);
+    crate::stats::Fixed::from_fraction(num, den)
+}
+
+pub fn score_leader(world: &World, r: &Ruleset) -> Option<CivId> {
+    // Kotlin maxByOrNull keeps the first entry on a tie, including when a
+    // defeated civilization still leads through its technologies.
+    let mut best = None;
+    let mut highest = i64::MIN;
+    for civ in &world.civs {
+        let value = score_fraction(world, r, civ.id).0;
+        if value > highest {
+            highest = value;
+            best = Some(civ.id);
+        }
+    }
+    best
 }
 
 /// How many policy branches this civ has taken to completion.
@@ -82,14 +150,25 @@ pub fn completed_branches(world: &World, r: &Ruleset, civ: CivId) -> usize {
         .count()
 }
 
-/// Every city that is somebody's capital.
-fn capitals(world: &World, r: &Ruleset) -> Vec<(CivId, Id<crate::world::city::City>)> {
-    let palace = r
-        .buildings
-        .iter()
-        .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::IndicatesCapital)));
-    let Some((palace, _)) = palace else { return Vec::new() };
-    world.cities.iter().filter(|(_, c)| c.built.contains(&palace)).map(|(id, c)| (c.owner, id)).collect()
+/// Original capitals survive a Palace move and their founder's defeat. A
+/// living major without an original capital still counts: it can found one
+/// later (`Victory.kt:civsWithPotentialCapitalsToOwn`).
+fn owns_all_original_capitals(world: &World, civ: CivId) -> bool {
+    let mut required: BTreeSet<_> = world.civs.iter().filter(|c| c.is_major() && c.is_alive()).map(|c| c.id).collect();
+    let mut owned = BTreeSet::new();
+    for (_, city) in world.cities.iter() {
+        if !city.original_capital || !world.civ(city.founder).is_some_and(|c| c.is_major()) {
+            continue;
+        }
+        required.insert(city.founder);
+        if city.owner != civ {
+            return false;
+        }
+        owned.insert(city.founder);
+    }
+    // Compare founders, so duplicate flags in an older save cannot stand in
+    // for a different civilization's still-unfounded capital.
+    !owned.is_empty() && owned == required
 }
 
 /// Has this civ met the milestone?
@@ -104,12 +183,16 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
         Milestone::BuiltBuilding(name) => yes(has_building(Some(civ), name)),
         Milestone::BuildingBuiltGlobally(name) => yes(has_building(None, name)),
         Milestone::CompletePolicyBranches(n) => yes(completed_branches(world, r, civ) >= *n as usize),
-        Milestone::DestroyAllPlayers => yes(world.civs.iter().filter(|c| c.id != civ).all(|c| !c.is_alive())),
-        Milestone::CaptureAllCapitals => {
-            let all = capitals(world, r);
-            // No capitals at all is not a victory, it is an empty map.
-            yes(!all.is_empty() && all.iter().all(|(owner, _)| *owner == civ))
+        Milestone::DestroyAllPlayers => {
+            yes(world.civs.iter().filter(|c| c.id != civ && c.is_major()).all(|c| !c.is_alive()))
         }
+        Milestone::SpaceshipParts => yes(r
+            .victories
+            .values()
+            .any(|v| !v.required_spaceship_parts.is_empty() && spaceship_complete(world, r, civ, v))),
+        Milestone::DiplomaticVote => yes(world.civ(civ).is_some_and(|c| c.victory.diplomatic_win)),
+        Milestone::HighestScore => yes(world.turn >= world.endgame.max_turns && score_leader(world, r) == Some(civ)),
+        Milestone::CaptureAllCapitals => yes(owns_all_original_capitals(world, civ)),
         Milestone::Unsupported(_) => Verdict::Unknown,
     }
 }
@@ -121,7 +204,15 @@ pub fn progress(world: &World, r: &Ruleset, civ: CivId, victory: &Victory) -> Ve
         .iter()
         .map(|text| {
             let m = parse_milestone(text);
-            let v = evaluate(&m, world, r, civ);
+            let v = if m == Milestone::SpaceshipParts {
+                if spaceship_complete(world, r, civ, victory) {
+                    Verdict::True
+                } else {
+                    Verdict::False
+                }
+            } else {
+                evaluate(&m, world, r, civ)
+            };
             (m, v)
         })
         .collect()
@@ -149,7 +240,9 @@ pub fn winner(world: &World, r: &Ruleset) -> Option<(CivId, Id<Victory>)> {
             continue;
         }
         for (id, victory) in r.victories.iter() {
-            if achieved(world, r, civ, victory) {
+            if world.endgame.enabled_victories.as_ref().is_none_or(|enabled| enabled.contains(&id))
+                && achieved(world, r, civ, victory)
+            {
                 return Some((civ, id));
             }
         }
@@ -253,7 +346,8 @@ pub fn milestone_coverage(r: &Ruleset) -> (usize, usize) {
 mod tests {
     use super::*;
     use crate::world::city::City;
-    use crate::world::entities::Civilization;
+    use crate::world::conquest;
+    use crate::world::entities::{Civilization, Unit};
     use crate::world::grid::TileGrid;
 
     fn ruleset() -> Ruleset {
@@ -276,7 +370,7 @@ mod tests {
         assert_eq!(parse_milestone("Complete [5] Policy branches"), Milestone::CompletePolicyBranches(5));
         assert_eq!(parse_milestone("Capture all capitals"), Milestone::CaptureAllCapitals);
         // Kept, not dropped.
-        assert_eq!(parse_milestone("Win diplomatic vote"), Milestone::Unsupported("Win diplomatic vote".into()));
+        assert_eq!(parse_milestone("Win diplomatic vote"), Milestone::DiplomaticVote);
     }
 
     #[test]
@@ -295,7 +389,7 @@ mod tests {
                 .collect();
             println!("  {}: {}", v.name, states.join(", "));
         }
-        assert!(judgeable > 0 && judgeable < total, "some but not all, at this stage");
+        assert_eq!(judgeable, total, "all bundled victory milestones are implemented");
     }
 
     #[test]
@@ -370,9 +464,119 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unfounded_living_majors_block_domination_until_eliminated() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        let settler = Unit::new(r.unit("Settler").unwrap(), CivId(1), TileIdOf(&w, 10, 10), 2);
+        let unit = w.place_unit(settler.clone());
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+        assert!(winner(&w, &r).is_none());
+
+        // An eliminated civilization which never founded has no capital to take.
+        w.remove_unit(unit);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+
+        // If it returns before the result is awarded, its potential capital counts again.
+        w.place_unit(settler);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+    }
+
+    #[test]
+    fn minor_capitals_and_a_moved_palace_are_not_domination_targets() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.civ_mut(CivId(1)).unwrap().city_state_type = r.city_state_types.ids().next();
+        let mut barbarians = Civilization::new(CivId(2), w.civ(CivId(0)).unwrap().nation, true);
+        barbarians.is_barbarian = true;
+        w.civs.push(barbarians);
+        let original = w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        w.found_city_in(&r, City::found("City-state", CivId(1), TileIdOf(&w, 10, 10)));
+        w.found_city_in(&r, City::found("Barbarian city", CivId(2), TileIdOf(&w, 1, 12)));
+        let palace = r.building("Palace").unwrap();
+        w.cities.get_mut(original).unwrap().built.remove(&palace);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+    }
+
+    #[test]
+    fn capturing_originals_wins_despite_palace_moves_and_reverses_on_recapture() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        let original = w.found_city_in(&r, City::found("Antium", CivId(1), TileIdOf(&w, 10, 10)));
+        let replacement = w.found_city_in(&r, City::found("Cumae", CivId(1), TileIdOf(&w, 12, 12)));
+        let palace = r.building("Palace").unwrap();
+        w.cities.get_mut(original).unwrap().built.remove(&palace);
+        w.cities.get_mut(replacement).unwrap().built.insert(palace);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+
+        conquest::conquer(&mut w, &r, original, CivId(0)).unwrap();
+        assert_eq!(conquest::can_raze(&w, original), Err(conquest::RazeRejection::OriginalCapital));
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+        assert_eq!(winner(&w, &r), Some((CivId(0), r.victories.id("Domination").unwrap())));
+
+        conquest::conquer(&mut w, &r, original, CivId(1)).unwrap();
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+    }
+
+    #[test]
+    fn defeated_founders_still_count_while_their_original_capitals_exist() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let mut minor = Civilization::new(CivId(2), w.civ(CivId(0)).unwrap().nation, true);
+        minor.city_state_type = r.city_state_types.ids().next();
+        w.civs.push(minor);
+        w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        let original = w.found_city_in(&r, City::found("Antium", CivId(1), TileIdOf(&w, 10, 10)));
+        conquest::conquer(&mut w, &r, original, CivId(2)).unwrap();
+        w.civ_mut(CivId(1)).unwrap().defeated = true;
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+        conquest::conquer(&mut w, &r, original, CivId(0)).unwrap();
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+
+        // A map/mod may remove an original capital outright. Its dead founder
+        // no longer contributes a target, but a restored city makes it a live
+        // major again and restores the original-capital requirement.
+        conquest::destroy(&mut w, original);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+        w.civ_mut(CivId(1)).unwrap().defeated = false;
+        let restored = w.found_city(City::found("Restored city", CivId(1), TileIdOf(&w, 10, 10)));
+        w.cities.get_mut(restored).unwrap().original_capital = false;
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+    }
+
+    #[test]
+    fn founding_a_replacement_capital_does_not_create_another_original() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        let original = w.found_city_in(&r, City::found("Antium", CivId(1), TileIdOf(&w, 10, 10)));
+        w.place_unit(Unit::new(r.unit("Settler").unwrap(), CivId(1), TileIdOf(&w, 12, 12), 2));
+        conquest::conquer(&mut w, &r, original, CivId(0)).unwrap();
+        let replacement = w.found_city_in(&r, City::found("Cumae", CivId(1), TileIdOf(&w, 12, 12)));
+        let city = w.cities.get(replacement).unwrap();
+        assert!(!city.original_capital);
+        assert!(city.built.contains(&r.building("Palace").unwrap()));
+        assert!(conquest::can_raze(&w, replacement).is_ok());
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+    }
+
+    #[test]
+    fn owning_a_captured_city_does_not_prevent_founding_an_original_capital() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let original = w.found_city_in(&r, City::found("Antium", CivId(1), TileIdOf(&w, 10, 10)));
+        conquest::conquer(&mut w, &r, original, CivId(0)).unwrap();
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::False);
+        let mine = w.found_city_in(&r, City::found("Rome", CivId(0), TileIdOf(&w, 4, 4)));
+        assert!(w.cities.get(mine).unwrap().original_capital);
+        assert_eq!(evaluate(&Milestone::CaptureAllCapitals, &w, &r, CivId(0)), Verdict::True);
+    }
+
     /// An unjudgeable milestone blocks the award rather than being ignored.
     #[test]
-    fn a_victory_with_an_unsupported_milestone_is_not_awarded() {
+    fn an_incomplete_spaceship_is_not_awarded() {
         let r = ruleset();
         let mut w = world(&r);
         let scientific = r
@@ -387,7 +591,7 @@ mod tests {
             w.cities.get_mut(city).unwrap().built.insert(apollo);
         }
         let steps = progress(&w, &r, CivId(0), scientific);
-        assert!(steps.iter().any(|(_, v)| *v == Verdict::Unknown));
-        assert!(!achieved(&w, &r, CivId(0), scientific), "an unjudged step blocks it");
+        assert!(steps.iter().any(|(_, v)| *v == Verdict::False));
+        assert!(!achieved(&w, &r, CivId(0), scientific), "the unassembled ship blocks it");
     }
 }

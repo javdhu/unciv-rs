@@ -13,7 +13,11 @@
 use crate::arena::Id;
 use crate::ruleset::{Ruleset, Technology};
 use crate::stats::Fixed;
+use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::world::entities::Civilization;
+use crate::world::grid::CivId;
+use crate::world::world::World;
+use crate::UniqueType;
 
 /// Cost scaling that depends on map size (`MapSize.kt:48`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -77,6 +81,51 @@ pub fn tech_cost(r: &Ruleset, tech: Id<Technology>, cities: usize, m: ScienceMod
     Some(cost.floor().max(1) as i32)
 }
 
+/// Live price: puppet cities do not increase science cost, known major
+/// discoveries grant diffusion, and civilization-wide cost uniques apply.
+pub fn tech_cost_in(world: &World, r: &Ruleset, civ: CivId, tech: Id<Technology>, m: ScienceModifiers) -> Option<i32> {
+    let c = world.civ(civ)?;
+    let base = r.technologies.get(tech)?.cost?;
+    if base <= 0 {
+        return None;
+    }
+    let known = world
+        .civs
+        .iter()
+        .filter(|other| {
+            other.is_major() && other.id != civ && world.diplomacy.have_met(civ, other.id) && other.has_tech(tech)
+        })
+        .count() as i64;
+    let remaining = world.civs.iter().filter(|other| other.is_major() && other.is_alive()).count().max(1) as i64;
+    let difficulty = if c.is_ai { Fixed::ONE } else { m.difficulty };
+    let mut cost = Fixed::whole(base) * difficulty * m.speed;
+    cost = cost * m.map.tech_cost_multiplier;
+    let cities = c.cities.iter().filter_map(|id| world.cities.get(*id)).filter(|city| !city.puppet).count();
+    let mut city_modifier = Fixed::whole(cities.saturating_sub(1) as i32) * m.map.tech_cost_per_city;
+    let ctx = GameContext::new(r).with_world(world).for_civ(civ);
+    for u in c.uniques.matching(UniqueType::LessTechCostFromCities).filter(|u| applies(u, &ctx) == Verdict::True) {
+        if let Some(n) = u.params.first().and_then(|n| n.parse::<i32>().ok()) {
+            city_modifier = city_modifier * (Fixed::ONE - Fixed::from_fraction(i64::from(n), 100));
+        }
+    }
+    for u in c.uniques.matching(UniqueType::LessTechCost).filter(|u| applies(u, &ctx) == Verdict::True) {
+        if let Some(n) = u.params.first().and_then(|n| n.parse::<i32>().ok()) {
+            cost = cost * (Fixed::ONE + Fixed::from_fraction(i64::from(n), 100));
+        }
+    }
+    cost = cost * (Fixed::ONE + city_modifier);
+    // Keep diffusion rational until the final truncation: rounding 1/1.1
+    // to a thousandth before multiplying can turn an exact cost of 40 into 39.
+    Some(
+        (i128::from(cost.raw()) * i128::from(10 * remaining) / (1000 * i128::from(10 * remaining + 3 * known)))
+            .clamp(1, i128::from(i32::MAX)) as i32,
+    )
+}
+
+pub fn invested(civ: &Civilization, tech: Id<Technology>) -> i32 {
+    civ.science_invested.get(&tech).copied().unwrap_or(0)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResearchRejection {
     AlreadyKnown,
@@ -99,7 +148,9 @@ impl std::error::Error for ResearchRejection {}
 
 pub fn can_research(r: &Ruleset, civ: &Civilization, tech: Id<Technology>) -> Result<(), ResearchRejection> {
     let t = r.technologies.get(tech).ok_or(ResearchRejection::Unknown)?;
-    if civ.has_tech(tech) {
+    if civ.has_tech(tech)
+        && !t.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::ResearchableMultipleTimes))
+    {
         return Err(ResearchRejection::AlreadyKnown);
     }
     for prereq in &t.prerequisites {
@@ -109,6 +160,26 @@ pub fn can_research(r: &Ruleset, civ: &Civilization, tech: Id<Technology>) -> Re
         }
     }
     Ok(())
+}
+
+/// Grant a technology from research or a free reward. Repeated Future Tech
+/// completions count toward score, including the first one. Returns false
+/// for an unknown technology or an already-known non-repeatable technology.
+pub fn grant_technology(civ: &mut Civilization, r: &Ruleset, tech: Id<Technology>) -> bool {
+    let Some(t) = r.technologies.get(tech) else { return false };
+    let repeatable = t.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::ResearchableMultipleTimes));
+    if civ.has_tech(tech) && !repeatable {
+        return false;
+    }
+    civ.techs.insert(tech);
+    civ.science_invested.remove(&tech);
+    if repeatable {
+        civ.victory.repeated_techs = civ.victory.repeated_techs.saturating_add(1);
+    }
+    if civ.researching == Some(tech) {
+        civ.researching = repeatable.then_some(tech);
+    }
+    true
 }
 
 /// Every tech this civ could start on now, in id order.
@@ -125,29 +196,75 @@ pub enum ResearchEvent {
         tech: Id<Technology>,
         carried_over: i32,
     },
-    /// Nothing selected; the science is banked toward whatever comes next.
+    /// Nothing selected. Passive income is lost; existing overflow survives.
     Idle {
         stored: i32,
     },
 }
 
-/// Bank a turn's science and finish the current research if it is paid for.
+/// A detached civilization has no diplomacy or puppet-city information;
+/// live callers use `apply_science_in` instead.
 pub fn apply_science(civ: &mut Civilization, r: &Ruleset, science: i32, m: ScienceModifiers) -> ResearchEvent {
-    civ.science_stored += science.max(0);
+    let cost = civ.researching.and_then(|tech| tech_cost(r, tech, civ.cities.len(), m));
+    add_science(civ, r, science, science, cost)
+}
 
-    let Some(tech) = civ.researching else {
-        return ResearchEvent::Idle { stored: civ.science_stored };
-    };
-    let Some(cost) = tech_cost(r, tech, civ.cities.len(), m) else {
-        return ResearchEvent::Idle { stored: civ.science_stored };
-    };
-    if civ.science_stored < cost {
-        return ResearchEvent::Progressed { stored: civ.science_stored };
+pub fn apply_science_in(
+    world: &mut World,
+    r: &Ruleset,
+    civ: CivId,
+    science: i32,
+    m: ScienceModifiers,
+) -> ResearchEvent {
+    apply_science_with_income_in(world, r, civ, science, science, m)
+}
+
+/// Great Scientists add a lump sum, but the overflow limit still uses ordinary
+/// turn income, not five times the Scientist's entire grant.
+pub fn apply_science_with_income_in(
+    world: &mut World,
+    r: &Ruleset,
+    civ: CivId,
+    science: i32,
+    income: i32,
+    m: ScienceModifiers,
+) -> ResearchEvent {
+    let cost = world.civ(civ).and_then(|c| c.researching).and_then(|tech| tech_cost_in(world, r, civ, tech, m));
+    let Some(c) = world.civ_mut(civ) else { return ResearchEvent::Idle { stored: 0 } };
+    add_science(c, r, science, income, cost)
+}
+
+/// Selection and new-turn price changes can finish already-paid research
+/// immediately, without consuming another turn's income.
+pub fn update_research_progress(
+    world: &mut World,
+    r: &Ruleset,
+    civ: CivId,
+    income: i32,
+    m: ScienceModifiers,
+) -> Option<ResearchEvent> {
+    let c = world.civ(civ)?;
+    let tech = c.researching?;
+    let cost = tech_cost_in(world, r, civ, tech, m)?;
+    if invested(c, tech).saturating_add(c.science_stored) < cost {
+        return None;
     }
+    Some(apply_science_with_income_in(world, r, civ, 0, income, m))
+}
 
-    civ.science_stored -= cost;
-    civ.techs.insert(tech);
-    civ.researching = None;
+fn add_science(civ: &mut Civilization, r: &Ruleset, science: i32, income: i32, cost: Option<i32>) -> ResearchEvent {
+    let Some((tech, cost)) = civ.researching.zip(cost) else {
+        return ResearchEvent::Idle { stored: civ.science_stored };
+    };
+    let stored = invested(civ, tech).saturating_add(science.max(0)).saturating_add(civ.science_stored.max(0));
+    civ.science_stored = 0;
+    if stored < cost {
+        civ.science_invested.insert(tech, stored);
+        return ResearchEvent::Progressed { stored };
+    }
+    let base = r.technologies.get(tech).and_then(|t| t.cost).unwrap_or(cost);
+    civ.science_stored = (stored - cost).min(base.max(income.max(0).saturating_mul(5)));
+    grant_technology(civ, r, tech);
     ResearchEvent::Completed { tech, carried_over: civ.science_stored }
 }
 
@@ -253,10 +370,11 @@ mod tests {
     }
 
     #[test]
-    fn science_with_nothing_selected_is_banked() {
+    fn science_with_nothing_selected_is_lost_and_existing_overflow_survives() {
         let r = ruleset();
         let mut c = civ(&r);
-        assert_eq!(apply_science(&mut c, &r, 12, ScienceModifiers::default()), ResearchEvent::Idle { stored: 12 });
+        c.science_stored = 3;
+        assert_eq!(apply_science(&mut c, &r, 12, ScienceModifiers::default()), ResearchEvent::Idle { stored: 3 });
     }
 
     /// The whole tree is reachable from a standing start.

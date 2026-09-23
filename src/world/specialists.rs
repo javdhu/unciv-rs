@@ -56,10 +56,11 @@ pub fn base_stats(r: &Ruleset, id: Id<Specialist>) -> Stats {
 pub fn bonus_per_specialist(world: &World, r: &Ruleset, city_id: Id<crate::world::city::City>) -> Stats {
     let Some(city) = world.cities.get(city_id) else { return Stats::ZERO };
     let ctx = GameContext::new(r).with_world(world).for_civ(city.owner).in_city(city_id);
-    let civ_uniques =
-        world.civ(city.owner).into_iter().flat_map(|c| c.uniques.matching(UniqueType::StatsFromSpecialist));
     let mut total = Stats::ZERO;
-    for u in city.uniques.matching(UniqueType::StatsFromSpecialist).chain(civ_uniques) {
+    for u in crate::world::religion::city_uniques(world, r, city)
+        .into_iter()
+        .filter(|u| u.unique_type() == Some(UniqueType::StatsFromSpecialist))
+    {
         if applies(u, &ctx) != Verdict::True {
             continue;
         }

@@ -90,6 +90,18 @@ fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
 
     let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
 
+    if let Some(era_name) = term.strip_prefix("pre-[").and_then(|s| s.strip_suffix(']')) {
+        return r.eras.by_name(era_name).map_or(Verdict::Unknown, |era| {
+            yes(base
+                .required_tech
+                .as_deref()
+                .and_then(|n| r.technologies.by_name(n))
+                .and_then(|t| t.era(r))
+                .and_then(|id| r.eras.get(id))
+                .map_or(0, |e| e.era_number)
+                < era.era_number)
+        });
+    }
     match term {
         "all" | "All" => Verdict::True,
         "Ranged" => yes(ranged),
@@ -99,8 +111,17 @@ fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
         "Land" => movement.map_or(Verdict::Unknown, |m| yes(m == "Land")),
         "Water" => movement.map_or(Verdict::Unknown, |m| yes(m == "Water")),
         "Air" => movement.map_or(Verdict::Unknown, |m| yes(m == "Air")),
+        "Great Person" => yes(base.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::GreatPerson))),
         "non-air" => movement.map_or(Verdict::Unknown, |m| yes(m != "Air")),
         _ => {
+            if base
+                .uniques
+                .iter()
+                .chain(r.unit_types.by_name(&base.unit_type).into_iter().flat_map(|t| &t.uniques))
+                .any(|u| u.kind == crate::unique::UniqueKind::Tag && u.text == term)
+            {
+                return Verdict::True;
+            }
             if term == base.name || term == base.unit_type {
                 return Verdict::True;
             }
@@ -142,6 +163,17 @@ pub fn unit_matches(r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
     })
 }
 
+/// Live unit filters can also identify the owner's kind and granted promotions.
+pub fn unit_matches_in(world: &crate::world::World, r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
+    let yes = |value| if value { Verdict::True } else { Verdict::False };
+    multi_filter(filter, &|term| match term {
+        "Barbarian" | "barbarians" => yes(world.civ(unit.owner).is_some_and(|c| c.is_barbarian)),
+        "City-State" | "City-States" => yes(world.civ(unit.owner).is_some_and(|c| c.is_city_state())),
+        _ if r.promotions.id(term).is_some_and(|id| unit.promotions.contains(&id)) => Verdict::True,
+        _ => unit_matches(r, unit, term),
+    })
+}
+
 /// The type-only form, for questions about a unit that does not exist yet —
 /// what a city may build, what a promotion could apply to.
 pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdict {
@@ -165,7 +197,21 @@ pub fn building_matches(r: &Ruleset, id: Id<crate::ruleset::Building>, filter: &
         "Wonder" | "Wonders" => yes(world_wonder || national_wonder),
         "World Wonder" | "World Wonders" => yes(world_wonder),
         "National Wonder" | "National Wonders" => yes(national_wonder),
-        t if t == b.name => Verdict::True,
+        "Food" => yes(b.food.unwrap_or(0) > 0),
+        "Production" => yes(b.production.unwrap_or(0) > 0),
+        "Gold" => yes(b.gold.unwrap_or(0) > 0),
+        "Science" => yes(b.science.unwrap_or(0) > 0),
+        "Culture" => yes(b.culture.unwrap_or(0) > 0),
+        "Happiness" => yes(b.happiness.unwrap_or(0) > 0),
+        "Faith" => yes(b.faith.unwrap_or(0) > 0),
+        t if r.eras.by_name(t).is_some() => yes(b
+            .required_tech
+            .as_deref()
+            .and_then(|t| r.technologies.by_name(t))
+            .and_then(|t| t.era(r))
+            .and_then(|id| r.eras.get(id))
+            .is_some_and(|e| e.name == t)),
+        t if t == b.name || b.replaces.as_deref() == Some(t) => Verdict::True,
         t if r.buildings.id(t).is_some() => Verdict::False,
         _ => Verdict::Unknown,
     })
@@ -190,10 +236,37 @@ pub fn city_matches(
     let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
     let f = filter.trim();
     let f = f.strip_prefix("in ").unwrap_or(f);
+    let f = if f.starts_with("all cities ") || f == "all coastal cities" || f == "all non-occupied cities" {
+        f.strip_prefix("all ").unwrap_or(f)
+    } else {
+        f
+    };
     let _ = r;
     match f {
-        "all cities" | "All" | "in all cities" => Verdict::True,
-        "all cities in which the majority religion is a major religion" => yes(subject
+        "all cities" | "All" | "in all cities" | "cities following this religion" => Verdict::True,
+        "coastal cities" | "Coastal" => yes(subject.coastal),
+        "capital" => yes(world
+            .civ(subject.owner)
+            .and_then(|c| c.cities.first())
+            .and_then(|id| world.cities.get(*id))
+            .is_some_and(|c| c.centre == subject.centre)),
+        "non-occupied cities" => yes(subject.founder == subject.owner
+            || subject.puppet
+            || subject.uniques.has(crate::UniqueType::RemovesAnnexUnhappiness)),
+        "cities with a garrison" => yes(world
+            .units
+            .iter()
+            .any(|(_, u)| u.owner == subject.owner && u.position == subject.centre && !u.is_civilian(r))),
+        "cities with a world wonder" => {
+            yes(subject.built.iter().any(|id| r.buildings.get(*id).is_some_and(|b| b.is_wonder == Some(true))))
+        }
+        "Holy cities" | "Holy" => yes(subject.faith.holy_city_of.is_some()),
+        "cities connected to the capital" | "cities connected to capital" => yes(world
+            .cities
+            .iter()
+            .find(|(_, c)| c.centre == subject.centre)
+            .is_some_and(|(id, _)| crate::world::connections::find(world, r, subject.owner).has_trade_route(id))),
+        "cities in which the majority religion is a major religion" => yes(subject
             .faith
             .majority(subject.population)
             .is_some_and(|creed| world.civ(creed).is_some_and(|c| c.faith.founded))),
@@ -222,10 +295,7 @@ pub fn city_matches(
         },
         // City-states are not modelled yet. Saying "no" would quietly hand out
         // a bonus that should be withheld and hide the gap.
-        "City-State cities" | "City-State" => {
-            let _ = world;
-            Verdict::Unknown
-        }
+        "City-State cities" | "City-State" => yes(world.civ(subject.owner).is_some_and(|c| c.is_city_state())),
         _ => Verdict::Unknown,
     }
 }

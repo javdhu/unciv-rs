@@ -34,6 +34,10 @@ with_limit() {
   rm -f "$out"
 }
 
+# Debug suites skip the timing bound; keep its release gate in this check.
+echo "release performance and snapshot budget"
+cargo test --quiet --release --features save --test budget
+
 echo "native"
 native=$(cargo test --quiet --release --lib the_scenario_actually_runs -- --nocapture 2>/dev/null | fingerprint_from)
 

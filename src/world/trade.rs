@@ -20,11 +20,13 @@ use crate::arena::Id;
 use crate::ruleset::{Ruleset, TileResource};
 use crate::stats::{Fixed, Precise};
 use crate::unique_type::UniqueType;
+use crate::world::city::City;
 use crate::world::grid::CivId;
 use crate::world::opinion::RelationshipLevel;
 use crate::world::world::World;
 
 /// One thing a side gives.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Item {
     Gold(i32),
@@ -33,15 +35,20 @@ pub enum Item {
     Strategic(Id<TileResource>, i32),
     /// The giver opens its borders to the receiver.
     OpenBorders,
+    /// The giver permits an embassy in its capital; permanent until war.
+    Embassy,
+    /// An immediate voluntary transfer of a non-capital city.
+    City(Id<City>),
 }
 
 impl Item {
     fn immediate(self) -> bool {
-        matches!(self, Item::Gold(_))
+        matches!(self, Item::Gold(_) | Item::Embassy | Item::City(_))
     }
 }
 
 /// An item still running, and for how long.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Running {
     pub item: Item,
@@ -49,6 +56,7 @@ pub struct Running {
 }
 
 /// A deal in force between two civs.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deal {
     pub a: CivId,
@@ -80,6 +88,8 @@ pub enum TradeRejection {
     /// Open borders needs the tech that allows them, on both sides.
     OpenBordersNotYet,
     AlreadyOpen,
+    InvalidAmount,
+    CityUnavailable,
 }
 
 impl std::fmt::Display for TradeRejection {
@@ -92,6 +102,8 @@ impl std::fmt::Display for TradeRejection {
             TradeRejection::DoesNotHave(_) => write!(f, "does not have that resource"),
             TradeRejection::OpenBordersNotYet => write!(f, "open borders are not yet possible"),
             TradeRejection::AlreadyOpen => write!(f, "those borders are already open"),
+            TradeRejection::CityUnavailable => write!(f, "city cannot be traded"),
+            TradeRejection::InvalidAmount => write!(f, "invalid or overflowing offer amount"),
         }
     }
 }
@@ -116,6 +128,21 @@ pub fn can_give(world: &World, giver: CivId, receiver: CivId, item: Item) -> Res
         }
         Item::Luxury(res) if held(world, giver, res) < 1 => return Err(TradeRejection::DoesNotHave(res)),
         Item::Strategic(res, n) if held(world, giver, res) < n => return Err(TradeRejection::DoesNotHave(res)),
+        Item::City(id) => {
+            if !world
+                .cities
+                .get(id)
+                .is_some_and(|c| c.owner == giver && c.resistance == 0 && !c.uniques.has(UniqueType::IndicatesCapital))
+                || world.civ(giver).is_none_or(|c| c.cities.len() <= 1)
+            {
+                return Err(TradeRejection::CityUnavailable);
+            }
+        }
+        Item::Embassy => {
+            if !crate::world::research_agreements::can_give_embassy(world, giver, receiver) {
+                return Err(TradeRejection::OpenBordersNotYet);
+            }
+        }
         Item::OpenBorders => {
             if !may_open_borders(world, giver) || !may_open_borders(world, receiver) {
                 return Err(TradeRejection::OpenBordersNotYet);
@@ -143,7 +170,9 @@ fn check_parties(world: &World, a: CivId, b: CivId) -> Result<(), TradeRejection
     Ok(())
 }
 
-/// Make the deal (`TradeLogic.acceptTrade`): gold at once, the rest for `turns`.
+/// Low-level transfer using a caller-maintained resource cache.
+/// Authoritative player and AI actions use [`accept_with`] to validate fresh
+/// resource quantities, aggregate spending and recurring income before commit.
 pub fn accept(
     world: &mut World,
     a: CivId,
@@ -153,12 +182,259 @@ pub fn accept(
     turns: u32,
 ) -> Result<(), TradeRejection> {
     check_parties(world, a, b)?;
+    // City transfer needs the ruleset-aware path for building and unit cleanup.
+    if a_gives.iter().chain(b_gives).any(|i| matches!(i, Item::City(_))) {
+        return Err(TradeRejection::CityUnavailable);
+    }
     for item in a_gives {
         can_give(world, a, b, *item)?;
     }
     for item in b_gives {
         can_give(world, b, a, *item)?;
     }
+    commit(world, a, b, a_gives, b_gives, turns);
+    Ok(())
+}
+
+/// Accept an authoritative offer against fresh resources and aggregate costs.
+/// Validation completes before any treasury, treaty or deal is changed.
+pub fn accept_in(
+    world: &mut World,
+    r: &Ruleset,
+    a: CivId,
+    b: CivId,
+    a_gives: &[Item],
+    b_gives: &[Item],
+    turns: u32,
+) -> Result<(), TradeRejection> {
+    let mut mods = crate::world::turn::TurnModifiers::default();
+    mods.costs.deal_duration = turns;
+    accept_with(world, r, a, b, (a_gives, b_gives), mods)
+}
+
+/// Authoritative commit using the game's economic scaling for recurring gold.
+pub fn accept_with(
+    world: &mut World,
+    r: &Ruleset,
+    a: CivId,
+    b: CivId,
+    offers: (&[Item], &[Item]),
+    mods: crate::world::turn::TurnModifiers,
+) -> Result<(), TradeRejection> {
+    let (a_gives, b_gives) = offers;
+    let turns = mods.costs.deal_duration;
+    check_parties(world, a, b)?;
+    if turns == 0 {
+        return Err(TradeRejection::InvalidAmount);
+    }
+    validate_offer(world, r, a, b, a_gives, mods)?;
+    validate_offer(world, r, b, a, b_gives, mods)?;
+    commit(world, a, b, a_gives, b_gives, turns);
+    for (_, receiver, items) in [(a, b, a_gives), (b, a, b_gives)] {
+        for item in items {
+            if let Item::City(id) = item {
+                crate::world::conquest::transfer_city(world, r, *id, receiver).expect("validated city transfer");
+                let centre = world.cities.get(*id).unwrap().centre;
+                for unit in world.units_at(centre) {
+                    crate::world::movement::displace_unit(world, r, unit);
+                }
+                for visitor in world.civ_ids().filter(|c| *c != receiver).collect::<Vec<_>>() {
+                    crate::world::movement::expel(world, r, visitor, receiver);
+                }
+            }
+        }
+    }
+    for (giver, receiver, items) in [(a, b, a_gives), (b, a, b_gives)] {
+        if items.contains(&Item::Embassy) {
+            if let Some(city) = crate::world::connections::capital_of(world, r, giver) {
+                crate::world::fog::reveal_city_site(world, r, receiver, city);
+            }
+        }
+    }
+    // A second offer in this action window also sees the correct cached
+    // stock when the AI evaluates its price; legality never trusts the cache.
+    let a_stock = crate::world::resources::available_stock(world, r, a);
+    let b_stock = crate::world::resources::available_stock(world, r, b);
+    if let Some(civ) = world.civ_mut(a) {
+        civ.resources = a_stock;
+    }
+    if let Some(civ) = world.civ_mut(b) {
+        civ.resources = b_stock;
+    }
+    Ok(())
+}
+
+/// Validate a proposed exchange without testing the recipient's private ability
+/// to pay. Both sides are checked again by `accept_with` after mutual consent.
+pub fn validate_proposal(
+    world: &World,
+    r: &Ruleset,
+    proposer: CivId,
+    recipient: CivId,
+    offers: (&[Item], &[Item]),
+    mods: crate::world::turn::TurnModifiers,
+) -> Result<(), TradeRejection> {
+    // Recipient survival may be unobserved. Only acceptance can consult it.
+    if proposer == recipient
+        || !world.civ(proposer).is_some_and(|c| c.is_major() && c.is_alive())
+        || !world.civ(recipient).is_some_and(|c| c.is_major())
+    {
+        return Err(TradeRejection::NotAMajor);
+    }
+    if !world.diplomacy.have_met(proposer, recipient) {
+        return Err(TradeRejection::NotMet);
+    }
+    if world.diplomacy.at_war(proposer, recipient) {
+        return Err(TradeRejection::AtWar);
+    }
+    let (give, get) = offers;
+    if mods.costs.deal_duration == 0 || !valid_proposal_terms(r, give, get) {
+        return Err(TradeRejection::InvalidAmount);
+    }
+    for item in get {
+        if let Item::City(id) = item {
+            if !world.visibility.known_cities(proposer).any(|c| c.id == *id && c.owner == recipient) {
+                return Err(TradeRejection::CityUnavailable);
+            }
+        }
+    }
+    // The treasury-overflow guard reads the receiver. Remove that dependence
+    // while quoting a proposal; the authoritative acceptance checks it later.
+    let mut known = world.clone();
+    known.civ_mut(recipient).expect("validated party").gold = 0;
+    // Border-opening technology is rechecked at acceptance. In particular do
+    // not turn the recipient's hidden technology into a proposal oracle.
+    let owned: Vec<_> = give.iter().copied().filter(|item| *item != Item::OpenBorders).collect();
+    validate_offer(&known, r, proposer, recipient, &owned, mods)
+}
+
+/// Structural rules shared by live offers and durable consent restoration.
+/// This deliberately does not inspect current affordability.
+pub fn valid_proposal_terms(r: &Ruleset, give: &[Item], get: &[Item]) -> bool {
+    let valid_shape = |items: &[Item]| {
+        let mut kinds = std::collections::BTreeSet::new();
+        items.len() <= 32
+            && items.iter().all(|item| {
+                let kind = match *item {
+                    Item::Gold(n) if n > 0 => (0, None),
+                    Item::GoldPerTurn(n) if n > 0 => (1, None),
+                    Item::Luxury(id) if r.resources.get(id).is_some_and(|r| r.resource_type == "Luxury") => {
+                        (2, Some((id.index(), id.generation())))
+                    }
+                    Item::Strategic(id, n)
+                        if n > 0 && r.resources.get(id).is_some_and(|r| r.resource_type == "Strategic") =>
+                    {
+                        (2, Some((id.index(), id.generation())))
+                    }
+                    Item::OpenBorders => (3, None),
+                    Item::Embassy => (4, None),
+                    Item::City(id) if id.generation() > 0 => (5, Some((id.index(), id.generation()))),
+                    _ => return false,
+                };
+                kinds.insert(kind)
+            })
+    };
+    (!give.is_empty() || !get.is_empty()) && valid_shape(give) && valid_shape(get)
+}
+
+fn validate_offer(
+    world: &World,
+    r: &Ruleset,
+    giver: CivId,
+    receiver: CivId,
+    items: &[Item],
+    mods: crate::world::turn::TurnModifiers,
+) -> Result<(), TradeRejection> {
+    let stock = crate::world::resources::available_stock(world, r, giver);
+    let mut gold = 0i64;
+    let mut recurring = 0i64;
+    let mut resources = std::collections::BTreeMap::<Id<TileResource>, i64>::new();
+    let mut borders = false;
+    let mut embassy = false;
+    let mut cities = std::collections::BTreeSet::new();
+    for item in items {
+        match *item {
+            Item::Gold(n) if n >= 0 => gold = gold.checked_add(i64::from(n)).ok_or(TradeRejection::InvalidAmount)?,
+            Item::GoldPerTurn(n) if n >= 0 => {
+                recurring = recurring.checked_add(i64::from(n)).ok_or(TradeRejection::InvalidAmount)?
+            }
+            Item::Luxury(id) if r.resources.get(id).is_some_and(|r| r.resource_type == "Luxury") => {
+                let amount = resources.entry(id).or_default();
+                *amount = amount.checked_add(1).ok_or(TradeRejection::InvalidAmount)?;
+            }
+            Item::Strategic(id, n) if n > 0 && r.resources.get(id).is_some_and(|r| r.resource_type == "Strategic") => {
+                let amount = resources.entry(id).or_default();
+                *amount = amount.checked_add(i64::from(n)).ok_or(TradeRejection::InvalidAmount)?;
+            }
+            Item::City(id) if cities.insert(id) => {
+                can_give(world, giver, receiver, *item)?;
+                if crate::world::connections::capital_of(world, r, giver) == Some(id) {
+                    return Err(TradeRejection::CityUnavailable);
+                }
+            }
+            Item::Embassy if !embassy => {
+                can_give(world, giver, receiver, *item)?;
+                embassy = true;
+            }
+            Item::OpenBorders if !borders => {
+                can_give(world, giver, receiver, *item)?;
+                borders = true;
+            }
+            _ => return Err(TradeRejection::InvalidAmount),
+        }
+    }
+    if !cities.is_empty() && world.civ(giver).is_none_or(|c| cities.len() >= c.cities.len()) {
+        return Err(TradeRejection::CityUnavailable);
+    }
+    if gold > i64::from(world.civ(giver).map_or(0, |c| c.gold)).max(0) {
+        return Err(TradeRejection::NotEnoughGold);
+    }
+    if recurring > i64::from(i32::MAX)
+        || gold + i64::from(world.civ(receiver).map_or(0, |c| c.gold)) > i64::from(i32::MAX)
+    {
+        return Err(TradeRejection::InvalidAmount);
+    }
+    if recurring > 0 && recurring > available_gold_per_turn(world, r, giver, mods)? {
+        return Err(TradeRejection::NotEnoughGold);
+    }
+    for (resource, amount) in resources {
+        if i64::from(stock.get(&resource).copied().unwrap_or(0)) < amount {
+            return Err(TradeRejection::DoesNotHave(resource));
+        }
+    }
+    Ok(())
+}
+
+/// Current income after existing obligations. `plan_economy` never chooses
+/// diplomacy or calls trade acceptance, so this does not re-enter validation.
+pub fn available_gold_per_turn(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    mods: crate::world::turn::TurnModifiers,
+) -> Result<i64, TradeRejection> {
+    let economy = crate::world::turn::plan_economy(world, r, civ, crate::world::CityFocus::None, mods);
+    let mut available = i64::from(economy.gold);
+    for deal in &world.diplomacy.deals {
+        for (giver, receiver, items) in [(deal.a, deal.b, &deal.a_gives), (deal.b, deal.a, &deal.b_gives)] {
+            if giver != civ && receiver != civ {
+                continue;
+            }
+            for item in items.iter().filter(|item| item.turns_left > 0) {
+                if let Item::GoldPerTurn(amount) = item.item {
+                    if amount < 0 {
+                        return Err(TradeRejection::InvalidAmount);
+                    }
+                    let signed = if giver == civ { -i64::from(amount) } else { i64::from(amount) };
+                    available = available.checked_add(signed).ok_or(TradeRejection::InvalidAmount)?;
+                }
+            }
+        }
+    }
+    Ok(available.max(0))
+}
+
+fn commit(world: &mut World, a: CivId, b: CivId, a_gives: &[Item], b_gives: &[Item], turns: u32) {
     let running = |giver: CivId, receiver: CivId, items: &[Item], world: &mut World| -> Vec<Running> {
         let mut out = Vec::new();
         for item in items {
@@ -172,6 +448,7 @@ pub fn accept(
                     }
                 }
                 Item::OpenBorders => world.diplomacy.set_open_borders(giver, receiver, true),
+                Item::Embassy => crate::world::research_agreements::establish_embassy(world, giver, receiver),
                 _ => {}
             }
             if !item.immediate() {
@@ -185,7 +462,6 @@ pub fn accept(
     if !a_gives.is_empty() || !b_gives.is_empty() {
         world.diplomacy.deals.push(Deal { a, b, a_gives, b_gives });
     }
-    Ok(())
 }
 
 /// What a turn of trade did.
@@ -226,7 +502,7 @@ pub fn tick(world: &mut World, r: &Ruleset) -> Vec<TradeEvent> {
             continue;
         }
         for (giver, receiver, items) in [(deal.a, deal.b, &deal.a_gives), (deal.b, deal.a, &deal.b_gives)] {
-            for o in items.iter() {
+            for o in items.iter().filter(|o| o.turns_left > 0) {
                 if let Item::GoldPerTurn(n) = o.item {
                     if let Some(c) = world.civ_mut(giver) {
                         c.gold -= n;
@@ -308,7 +584,6 @@ fn could_use(world: &World, r: &Ruleset, civ: CivId, res: Id<TileResource>) -> b
 
 /// What `item`, given by `partner`, is worth to `civ` (`evaluateBuyCost`).
 fn buy_value(world: &World, r: &Ruleset, civ: CivId, partner: CivId, item: Item, turns: u32) -> i64 {
-    let _ = partner;
     match item {
         Item::Gold(n) => n as i64,
         Item::GoldPerTurn(n) => n as i64 * turns as i64 * 4 / 5,
@@ -338,7 +613,22 @@ fn buy_value(world: &World, r: &Ruleset, civ: CivId, partner: CivId, item: Item,
             }
             50 * wanted.min(n) as i64
         }
+        Item::City(id) => {
+            let Some(city) = world.cities.get(id).filter(|c| c.owner == partner) else { return 0 };
+            let mut after = world.clone();
+            if crate::world::conquest::transfer_city(&mut after, r, id, civ).is_none()
+                || crate::world::happiness::happiness(&after, r, civ, None) < 0
+            {
+                return 0;
+            }
+            let borders_us = city
+                .tiles
+                .iter()
+                .any(|t| world.grid.neighbours(*t).any(|n| world.grid.owner[n.0 as usize] == Some(civ)));
+            (i64::from(city.population) * 4 + city.built.len() as i64 + 4 + if borders_us { 3 } else { 0 }) * 100
+        }
         Item::OpenBorders => 100,
+        Item::Embassy => 25,
     }
 }
 
@@ -364,6 +654,10 @@ fn sell_value(world: &World, r: &Ruleset, civ: CivId, partner: CivId, item: Item
             let left = held(world, civ, res);
             ((left - n + 1)..=left).map(|k| if k > 5 { 100 } else { (6 - k as i64) * 100 }).sum()
         }
+        Item::City(id) => world.cities.get(id).filter(|c| c.owner == civ).map_or(i64::from(i32::MAX), |c| {
+            ((i64::from(c.population) * 4 + c.built.len() as i64 + 4) * 100).max(1000)
+        }),
+        Item::Embassy => 25,
         Item::OpenBorders => match crate::world::opinion::relationship(world, civ, partner) {
             RelationshipLevel::Unforgivable => 10_000,
             RelationshipLevel::Enemy => 2_000,
@@ -385,6 +679,11 @@ pub fn acceptability(
     gets: &[Item],
     turns: u32,
 ) -> i64 {
+    if gives.iter().filter(|item| matches!(item, Item::City(_))).count()
+        > world.civ(civ).map_or(0, |c| c.cities.len().div_ceil(5))
+    {
+        return i64::from(i32::MIN);
+    }
     let infl = inflation(world, r, civ);
     let deflate = |v: i64, item: &Item| {
         if matches!(item, Item::Gold(_) | Item::GoldPerTurn(_)) {
@@ -455,6 +754,23 @@ mod tests {
         assert_eq!(ended, Some(30));
         assert_eq!(w.civ(CivId(1)).unwrap().gold, 90);
         assert_eq!(w.civ(CivId(0)).unwrap().gold, -90);
+    }
+
+    #[test]
+    fn an_expired_gold_item_stops_while_the_rest_of_the_deal_continues() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let silk = r.resources.id("Silk").unwrap();
+        give(&mut w, 0, silk, 2);
+        accept(&mut w, CivId(0), CivId(1), &[Item::GoldPerTurn(3), Item::Luxury(silk)], &[], 30).unwrap();
+        w.diplomacy.deals[0].a_gives[0].turns_left = 5;
+        for _ in 0..10 {
+            assert!(tick(&mut w, &r).is_empty());
+        }
+        assert_eq!(w.diplomacy.deals.len(), 1);
+        assert_eq!(w.civ(CivId(1)).unwrap().gold, 15);
+        assert_eq!(w.civ(CivId(0)).unwrap().gold, -15);
+        assert_eq!(w.diplomacy.deals[0].a_gives[1].turns_left, 20);
     }
 
     #[test]

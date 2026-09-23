@@ -18,6 +18,7 @@ use crate::world::world::World;
 use crate::UniqueType;
 
 /// Where a civ stands toward its next golden age.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GoldenAge {
     pub stored_happiness: i32,

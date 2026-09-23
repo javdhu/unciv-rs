@@ -26,7 +26,7 @@ use crate::unique::Unique;
 use crate::unique_type::UniqueType;
 use crate::world::city::City;
 use crate::world::conditionals::{applies, GameContext, Verdict};
-use crate::world::construction::{can_construct, production_cost, Construction, CostModifiers, Rejection};
+use crate::world::construction::{production_cost_in, Construction, CostModifiers, Rejection};
 use crate::world::entities::Unit;
 use crate::world::filters::{base_unit_matches, building_matches, city_matches};
 use crate::world::world::World;
@@ -43,7 +43,7 @@ pub enum PurchaseRejection {
     Puppet,
     /// Nothing is bought in a city still resisting its conqueror.
     InResistance,
-    /// A purchased civilian needs a free civilian slot in its birth city.
+    /// A purchased unit needs a free slot of its type in its birth city.
     TileOccupied,
     NotEnough {
         cost: i64,
@@ -59,7 +59,7 @@ impl std::fmt::Display for PurchaseRejection {
             PurchaseRejection::NotForSale => write!(f, "cannot be bought with that"),
             PurchaseRejection::Puppet => write!(f, "a puppet does its own buying"),
             PurchaseRejection::InResistance => write!(f, "the city is resisting"),
-            PurchaseRejection::TileOccupied => write!(f, "the city already holds a civilian unit"),
+            PurchaseRejection::TileOccupied => write!(f, "the city has no free slot for this unit"),
             PurchaseRejection::NotEnough { cost, has } => write!(f, "costs {cost}, has {has}"),
         }
     }
@@ -85,8 +85,9 @@ impl<'a> Shop<'a> {
 
     /// Uniques in force here: the city's buildings', then the civ's.
     fn uniques(&self, t: UniqueType) -> impl Iterator<Item = &'a Unique> + '_ {
-        let civ = self.world.civ(self.city.owner).into_iter().flat_map(move |c| c.uniques.matching(t));
-        self.city.uniques.matching(t).chain(civ).filter(|u| applies(u, &self.ctx) == Verdict::True)
+        crate::world::religion::city_uniques(self.world, self.r, self.city)
+            .into_iter()
+            .filter(move |u| u.unique_type() == Some(t) && applies(u, &self.ctx) == Verdict::True)
     }
 
     /// The item's own uniques, whose conditionals hold here.
@@ -126,7 +127,7 @@ impl<'a> Shop<'a> {
     }
 
     fn production_cost(&self, what: Construction) -> Option<i64> {
-        production_cost(self.r, what, self.m).map(i64::from)
+        production_cost_in(self.world, self.r, self.ctx.city?, what, self.m).map(i64::from)
     }
 
     /// Prices the city's and civ's uniques name for this item (`getSpecificBuyCost`).
@@ -339,34 +340,12 @@ pub fn can_purchase(
             .is_some_and(|b| b.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::ReligiousUnit))),
         Construction::Building(_) => false,
     };
-    match can_construct(r, civ, c, what) {
-        Err(Rejection::NotProducible) if religious && stat == Stat::Faith => {
-            let Construction::Unit(id) = what else { unreachable!() };
-            let base = r.units.get(id).ok_or(PurchaseRejection::Cannot(Rejection::Unknown))?;
-            if r.unit_types.by_name(&base.unit_type).is_some_and(|t| t.movement_type == "Water") && !c.coastal {
-                return Err(PurchaseRejection::Cannot(Rejection::NotCoastal));
-            }
-            for unique in base.uniques.iter().filter(|u| u.unique_type() == Some(UniqueType::RequiresPopulation)) {
-                let needed = unique.params.first().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
-                if c.population < needed {
-                    return Err(PurchaseRejection::Cannot(Rejection::NeedsPopulation(needed)));
-                }
-            }
-            if let Some(tech) = &base.required_tech {
-                if !r.technologies.id(tech).is_some_and(|id| civ.has_tech(id)) {
-                    return Err(PurchaseRejection::Cannot(Rejection::NotUnlocked(tech.clone())));
-                }
-            }
-            if let Some(nation) = &base.unique_to {
-                if r.nations.name_of(civ.nation) != Some(nation.as_str()) {
-                    return Err(PurchaseRejection::Cannot(Rejection::UniqueToAnother(nation.clone())));
-                }
-            }
+    crate::world::construction::can_purchase_in(world, r, c.owner, c, what).map_err(PurchaseRejection::Cannot)?;
+    if let Construction::Unit(id) = what {
+        // Also applies to faith-only units that bypass NotProducible above.
+        if !crate::world::resources::can_supply_unit(world, r, c.owner, id, None) {
+            return Err(PurchaseRejection::Cannot(Rejection::MissingResources));
         }
-        result => result.map_err(PurchaseRejection::Cannot)?,
-    }
-    if religious {
-        let Construction::Unit(id) = what else { unreachable!() };
         let base = r.units.get(id).ok_or(PurchaseRejection::Cannot(Rejection::Unknown))?;
         let ctx = GameContext::new(r).with_world(world).for_civ(c.owner).in_city(city).on_tile(c.centre);
         if base
@@ -378,7 +357,8 @@ pub fn can_purchase(
         }
         let mut unit = Unit::new(id, c.owner, c.centre, base.movement);
         crate::world::religious_units::initialize_unit(world, r, &mut unit, Some(city));
-        if unit.religion.is_none() && !unit.has_unique(r, UniqueType::MayFoundReligion) {
+        crate::world::military::train(world, r, city, &mut unit);
+        if religious && unit.religion.is_none() && !unit.has_unique(r, UniqueType::MayFoundReligion) {
             return Err(PurchaseRejection::NotForSale);
         }
         if crate::world::movement::is_tile_occupied_for(world, r, c.centre, &unit) {
@@ -395,9 +375,9 @@ pub fn can_purchase(
 
 /// Buy it: pay, and have it now (`purchaseConstruction`).
 ///
-/// A building stands at once; a unit appears in the city. Anything already
-/// put toward it in the queue is dropped with it, as Unciv leaves that work
-/// behind on the item rather than handing it to the next.
+/// A building stands at once; a unit appears in the city. Existing work stays
+/// attached to its item, so buying a unit does not erase a partially produced
+/// unit of that type or turn its investment into another item's production.
 pub fn purchase(
     world: &mut World,
     r: &Ruleset,
@@ -405,6 +385,21 @@ pub fn purchase(
     what: Construction,
     stat: Stat,
     m: CostModifiers,
+) -> Result<i64, PurchaseRejection> {
+    let science = crate::world::research::ScienceModifiers {
+        speed: r.speeds.iter().find(|(_, s)| s.modifier == m.speed).map_or(m.speed, |(_, s)| s.science_cost_modifier),
+        ..Default::default()
+    };
+    purchase_with_science(world, r, city, what, stat, m, science)
+}
+pub fn purchase_with_science(
+    world: &mut World,
+    r: &Ruleset,
+    city: Id<City>,
+    what: Construction,
+    stat: Stat,
+    m: CostModifiers,
+    science: crate::world::research::ScienceModifiers,
 ) -> Result<i64, PurchaseRejection> {
     let cost = can_purchase(world, r, city, what, stat, m)?;
     let rises = {
@@ -421,9 +416,6 @@ pub fn purchase(
     let (owner, centre) = {
         let c = world.cities.get_mut(city).ok_or(PurchaseRejection::NoSuchCity)?;
         if let Some(at) = c.queue.iter().position(|q| *q == what) {
-            if at == 0 {
-                c.production_stored = 0;
-            }
             c.queue.remove(at);
         }
         if let Construction::Building(id) = what {
@@ -435,7 +427,18 @@ pub fn purchase(
     if let Construction::Unit(base) = what {
         let movement = r.units.get(base).map_or(2, |u| u.movement);
         let mut unit = Unit::new(base, owner, centre, movement);
+        for name in &r.units.get(base).expect("validated base").promotions {
+            if let Some(promotion) = r.promotions.id(name) {
+                unit.promotions.insert(promotion);
+            }
+        }
         crate::world::religious_units::initialize_unit(world, r, &mut unit, Some(city));
+        crate::world::military::train(world, r, city, &mut unit);
+        if unit.is_air(r) {
+            unit.transport = crate::world::air::base_for(world, r, &unit, centre, None)
+                .expect("purchase validated air capacity")
+                .transport();
+        }
         if unit.has_unique(r, UniqueType::ReligiousUnit)
             && !unit.has_unique(r, UniqueType::CanMoveImmediatelyOnceBought)
         {
@@ -454,12 +457,18 @@ pub fn purchase(
             *c.bought_with_increasing_price.entry(name).or_insert(0) += 1;
         }
     }
+    let stock = crate::world::resources::available_stock(world, r, owner);
+    if let Some(c) = world.civ_mut(owner) {
+        c.resources = stock;
+    }
+    crate::world::effects::on_construction_completed_with_science(world, r, city, what, m.speed, science);
     Ok(cost)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::construction::production_cost;
     use crate::world::entities::Civilization;
     use crate::world::grid::{CivId, TileGrid};
 
@@ -519,13 +528,13 @@ mod tests {
         let (mut w, city) = world(&r);
         let monument = building(&r, "Monument");
         w.cities.get_mut(city).unwrap().queue.push(monument);
-        w.cities.get_mut(city).unwrap().production_stored = 7;
+        w.cities.get_mut(city).unwrap().production_progress.insert(monument, 7);
 
         let paid = purchase(&mut w, &r, city, monument, Stat::Gold, CostModifiers::default()).expect("for sale");
         let c = w.cities.get(city).unwrap();
         assert!(c.built.contains(&r.buildings.id("Monument").unwrap()));
         assert!(c.queue.is_empty(), "it leaves the queue");
-        assert_eq!(c.production_stored, 0, "and the work on it with it");
+        assert_eq!(c.production_for(monument), 7, "purchase does not transfer the investment");
         assert_eq!(w.civ(CivId(0)).unwrap().gold, 10_000 - paid as i32);
 
         assert!(matches!(
@@ -645,10 +654,36 @@ mod tests {
         let warrior = Construction::Unit(r.units.id("Warrior").unwrap());
 
         // 200, then 200 + 50·(1 + 1) = 300, then 200 + 50·(4 + 2) = 500.
-        for want in [200, 300, 500] {
+        for (index, want) in [200, 300, 500].into_iter().enumerate() {
             assert_eq!(cost(&w, &r, city, warrior, Stat::Faith, CostModifiers::default()), Some(want));
             purchase(&mut w, &r, city, warrior, Stat::Faith, CostModifiers::default()).expect("for sale");
+            let born = w.units_at(w.cities.get(city).unwrap().centre)[0];
+            w.units.get_mut(born).unwrap().position = w.grid.id_at(index as u16, 0).unwrap();
         }
         assert_eq!(w.civ(CivId(0)).unwrap().faith.stored, 10_000 - 1_000);
+    }
+
+    #[test]
+    fn purchases_cannot_reserve_the_same_last_resource_twice() {
+        let r = ruleset();
+        let (mut w, city) = world(&r);
+        let iron = r.resources.id("Iron").unwrap();
+        let swordsman = Construction::Unit(r.units.id("Swordsman").unwrap());
+        let centre = w.cities.get(city).unwrap().centre;
+        for name in ["Iron Working", "Mining", "Bronze Working"] {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id(name).unwrap());
+        }
+        w.grid.resource[centre.0 as usize] = Some(iron);
+        w.grid.resource_amount[centre.0 as usize] = 1;
+        purchase(&mut w, &r, city, swordsman, Stat::Gold, CostModifiers::default()).unwrap();
+        let born = w.units_at(centre)[0];
+        w.units.get_mut(born).unwrap().position = crate::world::grid::TileId(0);
+        w.civ_mut(CivId(0)).unwrap().resources.insert(iron, 100); // stale cache must not grant supply
+        let before = w.clone();
+        assert_eq!(
+            purchase(&mut w, &r, city, swordsman, Stat::Gold, CostModifiers::default()),
+            Err(PurchaseRejection::Cannot(Rejection::MissingResources))
+        );
+        assert_eq!(w, before, "failed reservation spends no money or production");
     }
 }

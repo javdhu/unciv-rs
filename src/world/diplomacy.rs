@@ -42,6 +42,7 @@ use std::collections::BTreeMap;
 ///
 /// The constructor is the only way to build one, so `Pair::of(a, b)` and
 /// `Pair::of(b, a)` are the same key and cannot drift apart.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pair(CivId, CivId);
 
@@ -82,6 +83,7 @@ impl Pair {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Stance {
     /// Two civs who have met and are not fighting.
@@ -91,10 +93,16 @@ pub enum Stance {
 }
 
 /// What is true of the pair.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Pact {
     pub stance: Stance,
     pub defensive_pact: bool,
+    pub defensive_pact_turns: u32,
+    pub embassies: [bool; 2],
+    pub friendship_turns: u32,
+    pub peace_treaty_turns: u32,
+    pub research: Option<crate::world::research_agreements::ResearchAgreement>,
     /// Who lets whom walk through. Indexed by [`Pair::slot`] of the *grantor*:
     /// `open_borders[0]` is the lower-id civ opening its borders to the other.
     ///
@@ -114,11 +122,13 @@ pub struct Pact {
 
 /// A named reason one civ feels a certain way about another
 /// (`DiplomaticModifiers`). Each carries a signed amount; see [`Attitude`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Sentiment {
     // Grievances.
     DeclaredWarOnUs,
     WarMongerer,
+    UsedNuclearWeapons,
     CapturedOurCities,
     Denunciation,
     DenouncedOurAllies,
@@ -130,7 +140,16 @@ pub enum Sentiment {
     BetrayedPromise(Demand),
     /// Held by a bystander who watched a promise not to attack broken.
     BetrayedPromiseToOthers,
+    BetrayedFriendship,
+    LiberatedCity,
+    GaveUsUnits,
     // Warmth.
+    Friendship,
+    DefensivePact,
+    BetrayedDefensivePact,
+    DefensivePactWithAllies,
+    DefensivePactWithEnemies,
+    Embassies,
     DenouncedOurEnemies,
     YearsOfPeace,
     SharedEnemy,
@@ -144,8 +163,10 @@ pub enum Sentiment {
 /// fades at its own pace — a declaration of war over a hundred and sixty
 /// turns, warmongering in forty — and a total cannot remember which part of
 /// itself is which.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Attitude {
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pub sentiments: BTreeMap<Sentiment, Fixed>,
     /// The opinion averaged over the last thirty turns or so, lagging one
     /// turn behind (`smoothedOpinionOfOtherCiv`). How far the opinion has
@@ -214,13 +235,17 @@ impl Attitude {
 // trap for whoever writes to them next.
 
 /// Every relationship in the game.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Diplomacy {
     /// Symmetric facts. One entry per pair, never two.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pacts: BTreeMap<Pair, Pact>,
     /// Directed facts, keyed `(holder, subject)`.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     attitudes: BTreeMap<(CivId, CivId), Attitude>,
     /// Who has met whom. Symmetric, so also keyed by pair.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     met: BTreeMap<Pair, bool>,
     /// Permanently at war with everyone.
     always_hostile: std::collections::BTreeSet<CivId>,
@@ -228,8 +253,10 @@ pub struct Diplomacy {
     /// city-state's favour. Directed and *not* symmetric — the city-state's
     /// opinion of you is not your opinion of it — and keyed
     /// `(city_state, major)`, which is the direction Unciv stores it in too.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     influence: BTreeMap<(CivId, CivId), Fixed>,
     /// Directed countdowns, keyed `(holder, subject)`.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::nested_map_as_entries"))]
     flags: BTreeMap<(CivId, CivId), BTreeMap<Flag, u32>>,
     /// Trades in force; see `trade`.
     pub deals: Vec<crate::world::trade::Deal>,
@@ -240,8 +267,11 @@ pub struct Diplomacy {
 
 /// A countdown on a directed relation (`DiplomacyFlags`): in force while
 /// turns remain, gone when they run out.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Flag {
+    RecentlyPledgedProtection,
+    RecentlyWithdrewProtection,
     /// The holder has publicly denounced the subject.
     Denunciation,
     /// The holder, a city-state, paid the subject tribute — remembered for
@@ -265,6 +295,37 @@ pub enum DiplomacyEvent {
 }
 
 impl Diplomacy {
+    /// Resurrection starts both sides of the restored civ's relations afresh.
+    pub fn revive(&mut self, civ: CivId) {
+        self.end_agreements_for(civ);
+        self.flags.retain(|(a, b), _| *a != civ && *b != civ);
+        self.attitudes.retain(|(a, b), _| *a != civ && *b != civ);
+        for (pair, pact) in &mut self.pacts {
+            if pair.slot(civ).is_some() {
+                pact.stance = Stance::Peace;
+                pact.turns_in_stance = 0;
+            }
+        }
+    }
+    /// A defeated civilization cannot keep exchanging resources, granting
+    /// passage or making unanswered demands. Knowledge and opinions survive.
+    pub fn end_agreements_for(&mut self, civ: CivId) {
+        self.deals.retain(|deal| deal.a != civ && deal.b != civ);
+        self.demands.retain(|(a, b, _)| *a != civ && *b != civ);
+        for (pair, pact) in &mut self.pacts {
+            if pair.slot(civ).is_some() {
+                pact.open_borders = [false, false];
+                pact.defensive_pact = false;
+                pact.defensive_pact_turns = 0;
+                pact.protector = [false, false];
+                pact.embassies = [false, false];
+                pact.friendship_turns = 0;
+                pact.peace_treaty_turns = 0;
+                pact.research = None;
+            }
+        }
+    }
+
     pub fn new() -> Diplomacy {
         Diplomacy::default()
     }
@@ -317,13 +378,50 @@ impl Diplomacy {
         if pact.stance == Stance::War {
             return None;
         }
+        let betrayed = pact.friendship_turns > 0;
+        let betrayed_defensive = pact.defensive_pact;
+        pact.friendship_turns = 0;
+        pact.embassies = [false, false];
+        pact.research = None;
         pact.stance = Stance::War;
+        pact.peace_treaty_turns = 0;
         pact.defensive_pact = false; // war ends any pact between the two
+        pact.defensive_pact_turns = 0;
         pact.open_borders = [false, false]; // and closes both sets of borders
         pact.protector = [false, false]; // you do not protect what you invade
         pact.turns_in_stance = 0;
+        for (holder, subject) in [(aggressor, against), (against, aggressor)] {
+            self.attitude_mut(holder, subject).sentiments.remove(&Sentiment::Friendship);
+            self.attitude_mut(holder, subject).sentiments.remove(&Sentiment::Embassies);
+            self.attitude_mut(holder, subject).sentiments.remove(&Sentiment::DefensivePact);
+        }
+        if betrayed {
+            let witnesses: Vec<_> = self.met.keys().filter_map(|p| p.other(aggressor)).collect();
+            for witness in witnesses {
+                self.attitude_mut(witness, aggressor).grow(
+                    Sentiment::BetrayedFriendship,
+                    Fixed::whole(if witness == against { -40 } else { -20 }),
+                    None,
+                );
+            }
+        }
+        if betrayed_defensive {
+            let witnesses: Vec<_> = self.met.keys().filter_map(|p| p.other(aggressor)).collect();
+            for witness in witnesses {
+                self.attitude_mut(witness, aggressor).grow(
+                    Sentiment::BetrayedDefensivePact,
+                    Fixed::whole(if witness == against { -20 } else { -10 }),
+                    None,
+                );
+            }
+        }
         self.met.insert(pair, true); // you have certainly met now
         Some(DiplomacyEvent::WarDeclared { aggressor, against })
+    }
+
+    /// An initial peaceful relationship does not imply a signed truce.
+    pub fn can_declare_war(&self, a: CivId, b: CivId) -> bool {
+        a != b && !self.at_war(a, b) && self.pact(a, b).is_none_or(|p| p.peace_treaty_turns == 0)
     }
 
     pub fn make_peace(&mut self, a: CivId, b: CivId) -> Option<DiplomacyEvent> {
@@ -337,6 +435,7 @@ impl Diplomacy {
             return None;
         }
         pact.stance = Stance::Peace;
+        pact.peace_treaty_turns = 10;
         pact.turns_in_stance = 0;
         Some(DiplomacyEvent::PeaceMade { pair })
     }
@@ -372,6 +471,16 @@ impl Diplomacy {
 
     pub fn pact(&self, a: CivId, b: CivId) -> Option<&Pact> {
         Pair::of(a, b).and_then(|p| self.pacts.get(&p))
+    }
+
+    pub(crate) fn pact_mut(&mut self, a: CivId, b: CivId) -> Option<&mut Pact> {
+        Some(self.pacts.entry(Pair::of(a, b)?).or_default())
+    }
+
+    /// The host granted this visitor an embassy in the host's capital.
+    pub fn has_embassy(&self, visitor: CivId, host: CivId) -> bool {
+        Pair::of(visitor, host)
+            .is_some_and(|pair| self.pacts.get(&pair).is_some_and(|p| p.embassies[pair.slot(host).unwrap()]))
     }
 
     /// Has `major` pledged to protect `city_state`?
@@ -430,6 +539,12 @@ impl Diplomacy {
     pub fn tick(&mut self) -> Vec<(CivId, CivId, Flag)> {
         for pact in self.pacts.values_mut() {
             pact.turns_in_stance = pact.turns_in_stance.saturating_add(1);
+            pact.friendship_turns = pact.friendship_turns.saturating_sub(1);
+            pact.peace_treaty_turns = pact.peace_treaty_turns.saturating_sub(1);
+            pact.defensive_pact_turns = pact.defensive_pact_turns.saturating_sub(1);
+            if pact.defensive_pact_turns == 0 {
+                pact.defensive_pact = false;
+            }
         }
         let mut expired = Vec::new();
         for (&(holder, subject), flags) in self.flags.iter_mut() {
@@ -476,6 +591,47 @@ impl Diplomacy {
 
     pub fn pair_count(&self) -> usize {
         self.pacts.len()
+    }
+}
+
+#[cfg(feature = "save")]
+impl Diplomacy {
+    pub(crate) fn validate_snapshot(&self, civs: usize) -> Result<(), String> {
+        let valid = |c: CivId| (c.0 as usize) < civs;
+        let directed = |(a, b): &(CivId, CivId)| valid(*a) && valid(*b) && a != b;
+        if self.pacts.keys().chain(self.met.keys()).any(|Pair(a, b)| !valid(*a) || !valid(*b) || a >= b)
+            || self.attitudes.keys().chain(self.influence.keys()).chain(self.flags.keys()).any(|p| !directed(p))
+            || self.always_hostile.iter().any(|c| !valid(*c))
+            || self.demands.iter().any(|(a, b, _)| !directed(&(*a, *b)))
+        {
+            return Err("diplomacy references an invalid civilization pair".into());
+        }
+        if self.pacts.values().any(|p| {
+            p.friendship_turns > 30
+                || p.defensive_pact_turns > 1_000_000
+                || p.defensive_pact != (p.defensive_pact_turns > 0)
+                || (p.stance == Stance::War && p.defensive_pact)
+                || p.peace_treaty_turns > 1_000_000
+                || (p.stance == Stance::War && p.peace_treaty_turns > 0)
+                || (p.stance == Stance::War
+                    && (p.friendship_turns > 0 || p.embassies != [false, false] || p.research.is_some()))
+                || p.research.as_ref().is_some_and(|ra| {
+                    ra.turns_left == 0
+                        || ra.turns_left > 1_000_000
+                        || ra.science.iter().any(|n| !(0..=1_000_000_000).contains(n))
+                })
+        }) {
+            return Err("invalid embassy, friendship or research agreement".into());
+        }
+        const MAX: i64 = 1_000_000_000_000;
+        if self.influence.values().any(|v| !(-MAX..=MAX).contains(&v.raw()))
+            || self.attitudes.values().any(|a| {
+                a.sentiments.values().chain([&a.smoothed, &a.smoothed_next]).any(|v| !(-MAX..=MAX).contains(&v.raw()))
+            })
+        {
+            return Err("diplomacy value is outside snapshot bounds".into());
+        }
+        Ok(())
     }
 }
 

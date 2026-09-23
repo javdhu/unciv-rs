@@ -30,7 +30,7 @@ use crate::rng::Rng;
 use crate::ruleset::{BaseUnit, Promotion, Ruleset};
 use crate::stats::{Fixed, Precise};
 use crate::unique_type::UniqueType;
-use crate::world::conditionals::{applies, CombatRole, GameContext, Verdict};
+use crate::world::conditionals::{applies, CombatRole, GameContext};
 use crate::world::entities::Unit;
 use crate::world::grid::{RoadLevel, TileGrid, TileId};
 use crate::world::world::World;
@@ -105,37 +105,86 @@ pub fn strength_breakdown_against(
     target_tile: Option<TileId>,
     defending: bool,
 ) -> Option<(Fixed, ModifierStack)> {
+    let opponent = target_tile.and_then(|tile| {
+        if world.cities.iter().any(|(_, c)| c.centre == tile) {
+            Some(crate::world::conditionals::Opponent::City)
+        } else {
+            world
+                .units
+                .iter()
+                .find(|(_, u)| u.position == tile)
+                .map(|(id, _)| crate::world::conditionals::Opponent::Unit(id))
+        }
+    });
+    strength_breakdown_full(world, r, unit_id, target_tile, defending, opponent, false)
+}
+
+fn strength_breakdown_full(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    target_tile: Option<TileId>,
+    defending: bool,
+    opponent: Option<crate::world::conditionals::Opponent>,
+    ranged: bool,
+) -> Option<(Fixed, ModifierStack)> {
     let unit = world.units.get(unit_id)?;
-    let base = r.units.get(unit.base)?.strength.unwrap_or(0);
+    let definition = r.units.get(unit.base)?;
+    let mut base = if ranged { definition.ranged_strength.unwrap_or(0) } else { definition.strength.unwrap_or(0) };
     let mut stack = ModifierStack::new();
 
     // A unit whose resource has run out still stands; it just fights badly.
-    if world.civ(unit.owner).is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base)) {
+    if !world.civ(unit.owner).is_some_and(|c| c.is_barbarian)
+        && !crate::world::resources::can_supply_unit(world, r, unit.owner, unit.base, Some(unit_id))
+    {
         stack.add(Modifier::additive_percent(
             Fixed::whole(crate::world::resources::MISSING_RESOURCE_MALUS),
             Source::new(SourceKind::Other, "Missing resource"),
         ));
     }
 
-    if defending {
-        for id in world.grid.terrains(unit.position) {
-            let Some(t) = r.terrains.get(id) else { continue };
-            let Some(bonus) = t.defence_bonus else { continue };
-            if bonus.is_zero() {
-                continue;
+    if defending && !unit.embarked {
+        let context = GameContext::new(r)
+            .with_world(world)
+            .for_civ(unit.owner)
+            .for_unit(unit_id)
+            .on_tile(unit.position)
+            .in_combat(CombatRole::Defending);
+        let idx = unit.position.0 as usize;
+        let bonus_of = |id| r.terrains.get(id).and_then(|t| t.defence_bonus).unwrap_or(Fixed::ZERO);
+        let mut bonus = bonus_of(world.grid.terrain[idx]);
+        if let Some(feature) = world.grid.features[idx].iter().map(|id| bonus_of(*id)).max().filter(|b| !b.is_zero()) {
+            bonus = feature;
+        }
+        if let Some(wonder) = world.grid.natural_wonder[idx] {
+            bonus += bonus_of(wonder);
+        }
+        if let Some(improvement) =
+            world.grid.unpillaged_improvement(unit.position).and_then(|id| r.improvements.get(id))
+        {
+            for rule in &improvement.uniques {
+                if rule.unique_type() == Some(UniqueType::DefensiveBonus) && applies(rule, &context).holds() {
+                    bonus += Fixed::from_fraction(rule.params.first().and_then(|p| p.parse().ok()).unwrap_or(0), 100);
+                }
             }
-            stack.add(Modifier::additive_percent(
-                bonus * Fixed::whole(100),
-                Source::new(SourceKind::Terrain, t.name.clone()),
-            ));
+        }
+        let ignores = |kind| {
+            unit.all_uniques(r)
+                .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+                .any(|u| u.unique_type() == Some(kind) && applies(u, &context).holds())
+        };
+        if (bonus > Fixed::ZERO && !ignores(UniqueType::NoDefensiveTerrainBonus))
+            || (bonus < Fixed::ZERO && !ignores(UniqueType::NoDefensiveTerrainPenalty))
+        {
+            stack.add(Modifier::additive_percent(bonus * Fixed::whole(100), Source::new(SourceKind::Terrain, "Tile")));
         }
         if unit.fortified {
             stack.add(Modifier::additive_percent(
-                Fixed::whole(FORTIFICATION_BONUS),
+                Fixed::whole(FORTIFICATION_BONUS * i32::from(unit.fortification_turns)),
                 Source::new(SourceKind::Other, "Fortified"),
             ));
         }
-    } else if let Some(target) = target_tile {
+    } else if let Some(target) = target_tile.filter(|_| !ranged) {
         // Across river penalty
         if world.grid.has_river_between(unit.position, target) {
             let has_bridge = world.civ(unit.owner).is_some_and(|c| {
@@ -176,47 +225,139 @@ pub fn strength_breakdown_against(
             .neighbours(target)
             .filter(|&n| n != unit.position)
             .flat_map(|n| world.units_at(n))
-            .filter(|&other_id| world.units.get(other_id).is_some_and(|o| o.owner == unit.owner && o.is_military(r)))
+            .filter(|&other_id| {
+                world.units.get(other_id).is_some_and(|o| o.owner == unit.owner && o.is_military(r) && !o.is_ranged(r))
+            })
             .count() as i32;
 
         if flanking_units > 0 {
+            let context = GameContext::new(r)
+                .with_world(world)
+                .for_civ(unit.owner)
+                .for_unit(unit_id)
+                .in_combat(CombatRole::Attacking)
+                .on_tile(target);
+            let mut bonus = Fixed::whole(BASE_FLANKING_BONUS);
+            for rule in unit
+                .all_uniques(r)
+                .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+                .filter(|u| u.unique_type() == Some(UniqueType::FlankAttackBonus) && applies(u, &context).holds())
+            {
+                bonus = bonus
+                    * (Fixed::ONE
+                        + Fixed::from_fraction(rule.params.first().and_then(|p| p.parse().ok()).unwrap_or(0), 100));
+            }
             stack.add(Modifier::additive_percent(
-                Fixed::whole(flanking_units * BASE_FLANKING_BONUS),
+                Fixed::whole((bonus * Fixed::whole(flanking_units)).floor() as i32),
                 Source::new(SourceKind::Other, "Flanking"),
             ));
         }
     }
 
-    let ctx = GameContext::new(r)
+    let mut context = GameContext::new(r)
         .with_world(world)
         .for_civ(unit.owner)
-        .on_tile(unit.position)
+        .for_unit(unit_id)
+        .on_tile(if defending { unit.position } else { target_tile.unwrap_or(unit.position) })
         .in_combat(if defending { CombatRole::Defending } else { CombatRole::Attacking });
-
-    let mut check_unique = |u: &crate::Unique, name: &str| {
-        if u.unique_type() == Some(UniqueType::Strength) && applies(u, &ctx) == Verdict::True {
-            if let Some(percent) = u.params.first().and_then(|p| p.parse::<i32>().ok()) {
+    context.opponent = opponent;
+    context.opponent_civ = match opponent {
+        Some(crate::world::conditionals::Opponent::Unit(id)) => world.units.get(id).map(|u| u.owner),
+        Some(crate::world::conditionals::Opponent::City) => {
+            target_tile.and_then(|tile| world.cities.iter().find(|(_, c)| c.centre == tile).map(|(_, c)| c.owner))
+        }
+        None => None,
+    };
+    if context.opponent_civ.and_then(|id| world.civ(id)).is_some_and(|c| c.is_barbarian) {
+        let bonus = world.game_difficulty(r).map_or(Fixed::ZERO, |d| d.barbarian_bonus);
+        stack.add(Modifier::additive_percent(
+            Fixed::whole((bonus * Fixed::whole(100)).floor() as i32),
+            Source::new(SourceKind::Other, "Difficulty"),
+        ));
+    }
+    if defending && unit.embarked && unit.is_military(r) {
+        let era = crate::world::policies::era_number(world, r, unit.owner);
+        base = r.eras.iter().find(|(_, e)| e.era_number == era).map_or(3, |(_, e)| e.embark_defense);
+    }
+    for unique in unit.all_uniques(r).chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all())) {
+        if !applies(unique, &context).holds() {
+            continue;
+        }
+        let amount = unique.params.first().and_then(|p| p.parse::<i32>().ok()).unwrap_or(0);
+        match unique.unique_type() {
+            Some(UniqueType::Strength) => {
                 stack.add(Modifier::additive_percent(
-                    Fixed::whole(percent),
-                    Source::new(SourceKind::Other, name.to_string()),
+                    Fixed::whole(amount),
+                    Source::new(SourceKind::Other, unique.text.clone()),
                 ));
             }
-        }
-    };
-
-    if let Some(b) = r.units.get(unit.base) {
-        for u in &b.uniques {
-            check_unique(u, &b.name);
-        }
-    }
-    for promo_id in &unit.promotions {
-        if let Some(promo) = r.promotions.get(*promo_id) {
-            for u in &promo.uniques {
-                check_unique(u, &promo.name);
+            Some(UniqueType::StrengthAmount) => base += amount,
+            Some(UniqueType::StrengthNearCapital) => {
+                if let Some(capital) =
+                    crate::world::connections::capital_of(world, r, unit.owner).and_then(|id| world.cities.get(id))
+                {
+                    let amount = (amount - 3 * world.grid.distance(unit.position, capital.centre) as i32).max(0);
+                    stack.add(Modifier::additive_percent(
+                        Fixed::whole(amount),
+                        Source::new(SourceKind::Other, "Near capital"),
+                    ));
+                }
             }
+            _ => {}
         }
     }
-
+    let aura = world
+        .units
+        .iter()
+        .filter(|(_, u)| u.owner == unit.owner)
+        .flat_map(|(_, source)| {
+            source
+                .all_uniques(r)
+                .filter(|u| u.unique_type() == Some(UniqueType::StrengthBonusInRadius) && applies(u, &context).holds())
+                .map(move |u| (source, u))
+        })
+        .filter(|(source, u)| {
+            u.params.len() >= 3
+                && world.grid.distance(source.position, unit.position) <= u.params[2].parse::<u32>().unwrap_or(0)
+                && crate::world::filters::unit_matches_in(world, r, unit, &u.params[1]).holds()
+        })
+        .map(|(source, u)| {
+            let double = source.all_uniques(r).any(|u| {
+                u.unique_type() == Some(UniqueType::GreatPerson) && u.params.first().is_some_and(|p| p == "War")
+            }) && unit
+                .all_uniques(r)
+                .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+                .any(|u| {
+                    u.unique_type() == Some(UniqueType::GreatGeneralProvidesDoubleCombatBonus)
+                        && applies(u, &context).holds()
+                });
+            u.params[0].parse::<i32>().unwrap_or(0) * if double { 2 } else { 1 }
+        })
+        .max()
+        .unwrap_or(0);
+    if aura != 0 {
+        stack.add(Modifier::additive_percent(Fixed::whole(aura), Source::new(SourceKind::Other, "General aura")));
+    }
+    let adjacent = world
+        .units
+        .iter()
+        .filter(|(_, u)| {
+            world.diplomacy.at_war(unit.owner, u.owner) && world.grid.neighbours(unit.position).any(|t| t == u.position)
+        })
+        .flat_map(|(_, u)| u.all_uniques(r))
+        .filter(|u| {
+            u.unique_type() == Some(UniqueType::StrengthForAdjacentEnemies)
+                && u.params.len() >= 3
+                && applies(u, &context).holds()
+                && crate::world::filters::unit_matches_in(world, r, unit, &u.params[1]).holds()
+                && crate::world::conditionals::tile_matches(&context, unit.position, &u.params[2]).holds()
+        })
+        .filter_map(|u| u.params[0].parse::<i32>().ok())
+        .min()
+        .unwrap_or(0);
+    if adjacent != 0 {
+        stack.add(Modifier::additive_percent(Fixed::whole(adjacent), Source::new(SourceKind::Other, "Adjacent enemy")));
+    }
     // Strength never drops below a token amount, or the ratio maths degenerates.
     stack.floor_at(Fixed::ONE);
     Some((Fixed::whole(base), stack))
@@ -252,6 +393,53 @@ pub fn attacking_strength(world: &World, r: &Ruleset, unit: Id<Unit>) -> Option<
 pub fn defending_strength(world: &World, r: &Ruleset, unit: Id<Unit>) -> Option<Fixed> {
     let (base, stack) = strength_breakdown(world, r, unit, true)?;
     Some(stack.evaluate(base))
+}
+
+pub fn combat_strength(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    target: crate::world::air::Target,
+    defending: bool,
+) -> Option<Fixed> {
+    combat_strength_with_bonus(world, r, id, target, defending, 0)
+}
+pub(crate) fn combat_strength_with_bonus(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    target: crate::world::air::Target,
+    defending: bool,
+    bonus: i32,
+) -> Option<Fixed> {
+    let unit = world.units.get(id)?;
+    let (opponent, tile, enemy_ranged) = match target {
+        crate::world::air::Target::Unit(other) => {
+            let other_unit = world.units.get(other)?;
+            (crate::world::conditionals::Opponent::Unit(other), other_unit.position, other_unit.is_ranged(r))
+        }
+        crate::world::air::Target::City(city) => {
+            (crate::world::conditionals::Opponent::City, world.cities.get(city)?.centre, true)
+        }
+    };
+    let ranged = unit.is_ranged(r) && (!defending || enemy_ranged);
+    let (base, mut stack) = strength_breakdown_full(world, r, id, Some(tile), defending, Some(opponent), ranged)?;
+    stack.add(Modifier::additive_percent(Fixed::whole(bonus), Source::new(SourceKind::Other, "Mission")));
+    Some(stack.evaluate(base))
+}
+
+pub fn unit_health_ratio(world: &World, r: &Ruleset, id: Id<Unit>) -> Fixed {
+    let Some(unit) = world.units.get(id) else { return Fixed::ONE };
+    let context = GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(id).on_tile(unit.position);
+    if unit
+        .all_uniques(r)
+        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+        .any(|u| u.unique_type() == Some(UniqueType::NoDamagePenaltyWoundedUnits) && applies(u, &context).holds())
+    {
+        Fixed::ONE
+    } else {
+        health_ratio(unit.health)
+    }
 }
 
 /// How much less a wounded unit hits for.
@@ -322,6 +510,9 @@ pub fn resolve_attack(
     attacker: Id<Unit>,
     defender: Id<Unit>,
 ) -> Result<CombatResult, CombatRejection> {
+    if !crate::world::military::may_attack(world, r, attacker, crate::world::air::Target::Unit(defender)) {
+        return Err(CombatRejection::NoRangedAttack);
+    }
     let (a_owner, a_can_move, a_attacks_left, a_position, a_health) = {
         let a = world.units.get(attacker).ok_or(CombatRejection::NoSuchUnit)?;
         (a.owner, a.can_move(), a.attacks_left, a.position, a.health)
@@ -345,22 +536,7 @@ pub fn resolve_attack(
         return Err(CombatRejection::NotAdjacent);
     }
 
-    if d_is_civilian {
-        // A captured Settler becomes a Worker, except in barbarian hands, where
-        // it stays whole so it can be ransomed back (`Battle.captureCivilianUnit`).
-        let barbarian_captor = world.civ(a_owner).is_some_and(|c| c.is_barbarian);
-        let demoted_to = if !barbarian_captor && r.unit("Settler") == Some(d_base) { r.unit("Worker") } else { None };
-        world.transfer_unit(defender, a_owner);
-        if let Some(u) = world.units.get_mut(defender) {
-            if let Some(worker) = demoted_to {
-                u.base = worker;
-            }
-            u.movement_left = Fixed::ZERO;
-        }
-        if let Some(a_unit) = world.units.get_mut(attacker) {
-            a_unit.movement_left = Fixed::ZERO;
-            a_unit.attacks_left = a_unit.attacks_left.saturating_sub(1);
-        }
+    if crate::world::military::withdraw(world, r, attacker, defender) {
         return Ok(CombatResult {
             damage_to_defender: 0,
             damage_to_attacker: 0,
@@ -368,44 +544,82 @@ pub fn resolve_attack(
             attacker_died: false,
         });
     }
+    if d_is_civilian {
+        let uncapturable = world.units.get(defender).is_some_and(|u| u.has_unique(r, UniqueType::Uncapturable));
+        if uncapturable {
+            world.remove_unit(defender);
+        } else {
+            let barbarian_captor = world.civ(a_owner).is_some_and(|c| c.is_barbarian);
+            let demoted_to =
+                if !barbarian_captor && r.unit("Settler") == Some(d_base) { r.unit("Worker") } else { None };
+            world.transfer_unit(defender, a_owner);
+            if let Some(u) = world.units.get_mut(defender) {
+                if let Some(worker) = demoted_to {
+                    u.base = worker;
+                }
+                u.movement_left = Fixed::ZERO;
+            }
+        }
+        // Capturing a civilian costs the actual move, not a combat attack.
+        crate::world::military::advance(world, r, attacker, d_position);
+        return Ok(CombatResult {
+            damage_to_defender: 0,
+            damage_to_attacker: 0,
+            defender_died: uncapturable,
+            attacker_died: false,
+        });
+    }
 
-    let att = attacking_strength(world, r, attacker).ok_or(CombatRejection::NoSuchUnit)?;
-    let def = defending_strength(world, r, defender).ok_or(CombatRejection::NoSuchUnit)?;
+    let att = combat_strength(world, r, attacker, crate::world::air::Target::Unit(defender), false)
+        .ok_or(CombatRejection::NoSuchUnit)?;
+    let def = combat_strength(world, r, defender, crate::world::air::Target::Unit(attacker), true)
+        .ok_or(CombatRejection::NoSuchUnit)?;
     let ratio = strength_ratio(att, def);
-
-    // One roll drives both sides, as in Unciv.
     let randomness = combat_seed(world, a_position, d_position).unit_interval();
-
-    // One rounding each, at the very end.
-    let to_defender = damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a_health));
-    let to_attacker = damage_modifier_precise(ratio, true, randomness) * Precise::from_fixed(health_ratio(d_health));
-
-    let (dmg_d, dmg_a) = (to_defender.round().max(0) as i32, to_attacker.round().max(0) as i32);
-
+    let to_defender =
+        damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(unit_health_ratio(world, r, attacker));
+    let to_attacker =
+        damage_modifier_precise(ratio, true, randomness) * Precise::from_fixed(unit_health_ratio(world, r, defender));
+    let (dmg_a, dmg_d) = crate::world::military::exchange(
+        combat_seed(world, a_position, d_position),
+        i32::from(a_health),
+        i32::from(d_health),
+        to_attacker.round().max(0) as i32,
+        to_defender.round().max(0) as i32,
+        false,
+    );
+    if world.civ(d_owner).is_some_and(|c| c.is_barbarian) {
+        crate::world::barbarians::on_camp_attacked(world, d_position);
+    }
+    crate::world::military::plunder_damage(world, r, attacker, crate::world::air::Target::Unit(defender), dmg_d);
     let defender_died = dmg_d >= d_health as i32;
     let attacker_died = dmg_a >= a_health as i32;
-
-    let is_barbarian_fight =
-        world.civ(d_owner).is_some_and(|c| c.is_barbarian) || world.civ(a_owner).is_some_and(|c| c.is_barbarian);
-
+    let capture = defender_died
+        && !attacker_died
+        && crate::world::military::captures_kill(world, r, attacker, defender, att, def);
+    let defeated = world.units.get(defender).expect("defender").clone();
+    crate::world::military::award_xp(world, r, defender, 4, Some(attacker), a_owner, true);
+    crate::world::military::award_xp(world, r, attacker, 5, Some(defender), d_owner, false);
+    if defender_died {
+        crate::world::military::reward_kill(world, r, attacker, defender, false);
+    }
+    if attacker_died {
+        crate::world::military::reward_kill(world, r, defender, attacker, true);
+    }
     if defender_died {
         world.remove_unit(defender);
     } else if let Some(u) = world.units.get_mut(defender) {
-        u.health = (u.health as i32 - dmg_d).max(1) as u8;
-        if !is_barbarian_fight || u.xp < MAX_XP_FROM_BARBARIANS {
-            u.xp = (u.xp + 5).min(if is_barbarian_fight { MAX_XP_FROM_BARBARIANS } else { 1000 });
-        }
+        u.health = (i32::from(u.health) - dmg_d).max(1) as u8;
     }
-
     if attacker_died {
         world.remove_unit(attacker);
-    } else if let Some(u) = world.units.get_mut(attacker) {
-        u.health = (u.health as i32 - dmg_a).max(1) as u8;
-        u.movement_left = Fixed::ZERO; // attacking ends the turn
-        u.attacks_left = u.attacks_left.saturating_sub(1);
-        u.fortified = false;
-        if !is_barbarian_fight || u.xp < MAX_XP_FROM_BARBARIANS {
-            u.xp = (u.xp + 5).min(if is_barbarian_fight { MAX_XP_FROM_BARBARIANS } else { 1000 });
+    } else {
+        world.units.get_mut(attacker).expect("survivor").health = (i32::from(a_health) - dmg_a).max(1) as u8;
+        let captured = capture && crate::world::military::spawn_capture(world, r, a_owner, &defeated).is_some();
+        let advanced = defender_died && !captured && crate::world::military::advance(world, r, attacker, d_position);
+        crate::world::military::spend_attack(world, r, attacker, advanced);
+        if defender_died {
+            crate::world::military::heal_on_kill(world, r, attacker);
         }
     }
 
@@ -433,6 +647,9 @@ pub fn attack_city(
     attacker: Id<Unit>,
     city_id: Id<crate::world::city::City>,
 ) -> Result<CityAttackResult, CombatRejection> {
+    if !crate::world::military::may_attack(world, r, attacker, crate::world::air::Target::City(city_id)) {
+        return Err(CombatRejection::NoRangedAttack);
+    }
     let a = world.units.get(attacker).ok_or(CombatRejection::NoSuchUnit)?;
     let city = world.cities.get(city_id).ok_or(CombatRejection::NoSuchUnit)?;
     if a.owner == city.owner {
@@ -449,36 +666,64 @@ pub fn attack_city(
         return Err(CombatRejection::NotAdjacent);
     }
 
-    let att = attacking_strength_against(world, r, attacker, Some(centre)).ok_or(CombatRejection::NoSuchUnit)?;
-    let def = city_defense_strength(world, r, city_id);
+    let att = combat_strength(world, r, attacker, crate::world::air::Target::City(city_id), false)
+        .ok_or(CombatRejection::NoSuchUnit)?;
+    let def = city_combat_strength(world, r, city_id, Some(attacker), false);
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a_tile, centre).unit_interval();
 
-    let to_city = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a_health)))
-        .round()
-        .max(0) as i32;
+    let to_city = (damage_modifier_precise(ratio, false, randomness)
+        * Precise::from_fixed(unit_health_ratio(world, r, attacker)))
+    .round()
+    .max(0) as i32;
     let to_attacker = damage_modifier_precise(ratio, true, randomness).round().max(0) as i32;
 
+    let (to_attacker, to_city) = crate::world::military::exchange(
+        combat_seed(world, a_tile, centre),
+        i32::from(a_health),
+        city.health,
+        to_attacker,
+        to_city,
+        true,
+    );
+    let city_owner = city.owner;
+    crate::world::military::plunder_damage(world, r, attacker, crate::world::air::Target::City(city_id), to_city);
+    crate::world::military::award_xp(world, r, attacker, 5, None, city_owner, false);
     // A city floors at one; it is captured, not levelled.
     let city = world.cities.get_mut(city_id).ok_or(CombatRejection::NoSuchUnit)?;
     city.health = (city.health - to_city).max(1);
     let at_bay = city.health <= 1;
 
-    let attacker_died = to_attacker >= a_health as i32;
+    let mut attacker_died = to_attacker >= a_health as i32;
     if attacker_died {
         world.remove_unit(attacker);
     } else if let Some(u) = world.units.get_mut(attacker) {
         u.health = (u.health as i32 - to_attacker).max(1) as u8;
-        u.movement_left = Fixed::ZERO;
-        u.attacks_left = u.attacks_left.saturating_sub(1);
-        u.fortified = false;
-        u.xp += 5;
     }
 
     // Taking it needs a surviving attacker and a city already at bay.
-    let captured = at_bay && !attacker_died;
-    if captured {
+    let mut captured = at_bay
+        && !attacker_died
+        && !world.units.get(attacker).is_some_and(|u| u.has_unique(r, UniqueType::CannotCaptureCities));
+    if captured && world.civ(owner).is_some_and(|c| c.is_barbarian) {
+        // Barbarians raid instead of conquering (`Battle.handleCityDefeated`).
+        // The city and its original-capital identity survive the attack.
+        let defender = world.cities.get(city_id).expect("attacked city").owner;
+        world.cities.get_mut(city_id).expect("attacked city").health = 2;
+        if let Some(civ) = world.civ_mut(defender) {
+            civ.gold -= civ.gold.min(200);
+        }
+        world.remove_unit(attacker);
+        captured = false;
+        attacker_died = true;
+    } else if captured {
+        crate::world::military::capture_city_occupants(world, r, owner, centre);
         capture_city(world, r, city_id, owner);
+    }
+
+    if !attacker_died {
+        let advanced = captured && crate::world::military::advance(world, r, attacker, centre);
+        crate::world::military::spend_attack(world, r, attacker, advanced);
     }
 
     Ok(CityAttackResult {
@@ -491,8 +736,8 @@ pub fn attack_city(
 
 /// Hand a city to its conqueror (`Battle.conquerCity`).
 ///
-/// Barbarians burn what they take. Anyone else plunders it and holds it as a
-/// resisting puppet — see [`conquest`](crate::world::conquest) — and an AI
+/// Barbarian attacks are handled as raids by [`attack_city`]. Other attackers
+/// plunder the city and hold it as a resisting puppet — see [`conquest`](crate::world::conquest) — and an AI
 /// then decides at once whether to keep or raze it, as Unciv's does. A human
 /// player keeps the puppet until they choose.
 pub fn capture_city(
@@ -502,11 +747,14 @@ pub fn capture_city(
     new_owner: crate::world::grid::CivId,
 ) {
     if world.civ(new_owner).is_some_and(|c| c.is_barbarian) {
-        crate::world::conquest::destroy(world, city_id);
         return;
     }
+    let previous_owner = world.cities.get(city_id).map(|c| c.owner);
     if crate::world::conquest::conquer(world, r, city_id, new_owner).is_none() {
         return;
+    }
+    if let Some(old) = previous_owner.filter(|c| world.civ(*c).is_some_and(|c| c.is_city_state() && !c.is_alive())) {
+        crate::world::quests::on_city_state_conquered(world, r, old, new_owner);
     }
     if world.civ(new_owner).is_some_and(|c| c.is_ai) && crate::world::ai::should_raze(world, r, new_owner, city_id) {
         let _ = crate::world::conquest::raze(world, city_id);
@@ -515,52 +763,10 @@ pub fn capture_city(
 
 /// Breakdown of ranged strength for a unit.
 pub fn ranged_strength_breakdown(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Option<(Fixed, ModifierStack)> {
-    let unit = world.units.get(unit_id)?;
-    let base = r.units.get(unit.base)?.ranged_strength.unwrap_or(0);
-    if base == 0 {
+    if !world.units.get(unit_id)?.is_ranged(r) {
         return None;
     }
-    let mut stack = ModifierStack::new();
-
-    if world.civ(unit.owner).is_some_and(|c| crate::world::resources::is_missing_resources(r, c, unit.base)) {
-        stack.add(Modifier::additive_percent(
-            Fixed::whole(crate::world::resources::MISSING_RESOURCE_MALUS),
-            Source::new(SourceKind::Other, "Missing resource"),
-        ));
-    }
-
-    let ctx = GameContext::new(r)
-        .with_world(world)
-        .for_civ(unit.owner)
-        .on_tile(unit.position)
-        .in_combat(CombatRole::Attacking);
-
-    let mut check_unique = |u: &crate::Unique, name: &str| {
-        if u.unique_type() == Some(UniqueType::Strength) && applies(u, &ctx) == Verdict::True {
-            if let Some(percent) = u.params.first().and_then(|p| p.parse::<i32>().ok()) {
-                stack.add(Modifier::additive_percent(
-                    Fixed::whole(percent),
-                    Source::new(SourceKind::Other, name.to_string()),
-                ));
-            }
-        }
-    };
-
-    if let Some(b) = r.units.get(unit.base) {
-        for u in &b.uniques {
-            check_unique(u, &b.name);
-        }
-    }
-    for promo_id in &unit.promotions {
-        if let Some(promo) = r.promotions.get(*promo_id) {
-            for u in &promo.uniques {
-                check_unique(u, &promo.name);
-            }
-        }
-    }
-
-    stack.floor_at(Fixed::ONE);
-    Some((Fixed::whole(base), stack))
+    strength_breakdown_full(world, r, unit_id, None, false, None, true)
 }
 
 /// Evaluated ranged strength of a unit.
@@ -571,32 +777,7 @@ pub fn ranged_strength(world: &World, r: &Ruleset, unit: Id<Unit>) -> Option<Fix
 
 /// Line of sight check between `from` and `to`.
 pub fn has_line_of_sight(grid: &TileGrid, r: &Ruleset, from: TileId, to: TileId, indirect_fire: bool) -> bool {
-    if indirect_fire {
-        return true;
-    }
-    let dist = grid.distance(from, to);
-    if dist <= 1 {
-        return true;
-    }
-    let shooter_on_hill = grid
-        .terrains(from)
-        .any(|t| r.terrains.get(t).is_some_and(|terrain| terrain.r#type == "Hill" || terrain.name == "Hill"));
-
-    for n in grid.neighbours(from) {
-        if grid.distance(n, to) < dist {
-            let blocks = grid.terrains(n).any(|t| {
-                r.terrains.get(t).is_some_and(|terrain| {
-                    terrain.impassable == Some(true)
-                        || (!shooter_on_hill
-                            && (terrain.name == "Hill" || terrain.name == "Forest" || terrain.name == "Jungle"))
-                })
-            });
-            if blocks {
-                return false;
-            }
-        }
-    }
-    true
+    indirect_fire || crate::world::fog::viewable_tiles(grid, r, from, grid.distance(from, to), true).contains(&to)
 }
 
 /// Execute a ranged attack on an enemy unit at `target_tile`.
@@ -607,11 +788,14 @@ pub fn resolve_ranged_attack(
     target_tile: TileId,
 ) -> Result<CombatResult, CombatRejection> {
     let a = world.units.get(attacker).ok_or(CombatRejection::NoSuchUnit)?;
+    if a.has_unique(r, UniqueType::MustSetUp) && !a.set_up {
+        return Err(CombatRejection::NoMovement);
+    }
     if !a.can_move() || a.attacks_left == 0 {
         return Err(CombatRejection::NoMovement);
     }
     let base = r.units.get(a.base).ok_or(CombatRejection::NoSuchUnit)?;
-    let range = base.range.unwrap_or(2);
+    let range = crate::world::air::attack_range(world, r, attacker);
     if base.ranged_strength.unwrap_or(0) == 0 {
         return Err(CombatRejection::NoRangedAttack);
     }
@@ -629,40 +813,52 @@ pub fn resolve_ranged_attack(
         return Err(CombatRejection::NoSuchUnit);
     };
 
+    if !crate::world::military::may_attack(world, r, attacker, crate::world::air::Target::Unit(defender)) {
+        return Err(CombatRejection::NoRangedAttack);
+    }
     let d = world.units.get(defender).ok_or(CombatRejection::NoSuchUnit)?;
     if world.diplomacy.have_met(a.owner, d.owner) && !world.diplomacy.at_war(a.owner, d.owner) {
         return Err(CombatRejection::NotAtWar);
     }
 
-    let att = ranged_strength(world, r, attacker).ok_or(CombatRejection::NoSuchUnit)?;
-    let def = defending_strength(world, r, defender).ok_or(CombatRejection::NoSuchUnit)?;
+    let att = combat_strength(world, r, attacker, crate::world::air::Target::Unit(defender), false)
+        .ok_or(CombatRejection::NoSuchUnit)?;
+    let def = combat_strength(world, r, defender, crate::world::air::Target::Unit(attacker), true)
+        .ok_or(CombatRejection::NoSuchUnit)?;
     let ratio = strength_ratio(att, def);
 
     let randomness = combat_seed(world, a.position, target_tile).unit_interval();
-    let to_defender = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a.health)))
-        .round()
-        .max(0) as i32;
+    let to_defender = (damage_modifier_precise(ratio, false, randomness)
+        * Precise::from_fixed(unit_health_ratio(world, r, attacker)))
+    .round()
+    .max(0) as i32;
 
+    let to_defender = if d.is_civilian(r) { 40 } else { to_defender }.min(i32::from(d.health));
     let defender_died = to_defender >= d.health as i32;
     let d_owner = d.owner;
-    let is_barbarian = world.civ(d_owner).is_some_and(|c| c.is_barbarian);
-
+    let a_owner = a.owner;
+    let defeated = d.clone();
+    if world.civ(d_owner).is_some_and(|c| c.is_barbarian) {
+        crate::world::barbarians::on_camp_attacked(world, target_tile);
+    }
+    crate::world::military::plunder_damage(world, r, attacker, crate::world::air::Target::Unit(defender), to_defender);
+    let capture = defender_died && crate::world::military::captures_kill(world, r, attacker, defender, att, def);
+    crate::world::military::award_xp(world, r, defender, 2, Some(attacker), a_owner, true);
+    crate::world::military::award_xp(world, r, attacker, 2, Some(defender), d_owner, false);
+    if defender_died {
+        crate::world::military::reward_kill(world, r, attacker, defender, false);
+    }
     if defender_died {
         world.remove_unit(defender);
     } else if let Some(u) = world.units.get_mut(defender) {
-        u.health = (u.health as i32 - to_defender).max(1) as u8;
-        if !is_barbarian || u.xp < MAX_XP_FROM_BARBARIANS {
-            u.xp = (u.xp + 4).min(if is_barbarian { MAX_XP_FROM_BARBARIANS } else { 1000 });
-        }
+        u.health = (i32::from(u.health) - to_defender).max(1) as u8;
     }
-
-    if let Some(u) = world.units.get_mut(attacker) {
-        u.movement_left = Fixed::ZERO;
-        u.attacks_left = u.attacks_left.saturating_sub(1);
-        u.fortified = false;
-        if !is_barbarian || u.xp < MAX_XP_FROM_BARBARIANS {
-            u.xp = (u.xp + 2).min(if is_barbarian { MAX_XP_FROM_BARBARIANS } else { 1000 });
-        }
+    if capture {
+        crate::world::military::spawn_capture(world, r, a_owner, &defeated);
+    }
+    crate::world::military::spend_attack(world, r, attacker, false);
+    if defender_died {
+        crate::world::military::heal_on_kill(world, r, attacker);
     }
 
     Ok(CombatResult { damage_to_defender: to_defender, damage_to_attacker: 0, defender_died, attacker_died: false })
@@ -675,7 +871,13 @@ pub fn attack_city_ranged(
     attacker: Id<Unit>,
     city_id: Id<crate::world::city::City>,
 ) -> Result<CityAttackResult, CombatRejection> {
+    if !crate::world::military::may_attack(world, r, attacker, crate::world::air::Target::City(city_id)) {
+        return Err(CombatRejection::NoRangedAttack);
+    }
     let a = world.units.get(attacker).ok_or(CombatRejection::NoSuchUnit)?;
+    if a.has_unique(r, UniqueType::MustSetUp) && !a.set_up {
+        return Err(CombatRejection::NoMovement);
+    }
     let city = world.cities.get(city_id).ok_or(CombatRejection::NoSuchUnit)?;
     if a.owner == city.owner {
         return Err(CombatRejection::SameOwner);
@@ -687,7 +889,7 @@ pub fn attack_city_ranged(
         return Err(CombatRejection::NoMovement);
     }
     let base = r.units.get(a.base).ok_or(CombatRejection::NoSuchUnit)?;
-    let range = base.range.unwrap_or(2);
+    let range = crate::world::air::attack_range(world, r, attacker);
     if base.ranged_strength.unwrap_or(0) == 0 {
         return Err(CombatRejection::NoRangedAttack);
     }
@@ -699,24 +901,25 @@ pub fn attack_city_ranged(
         return Err(CombatRejection::TargetBlockedByLOS);
     }
 
-    let att = ranged_strength(world, r, attacker).ok_or(CombatRejection::NoSuchUnit)?;
-    let def = city_defense_strength(world, r, city_id);
+    let att = combat_strength(world, r, attacker, crate::world::air::Target::City(city_id), false)
+        .ok_or(CombatRejection::NoSuchUnit)?;
+    let def = city_combat_strength(world, r, city_id, Some(attacker), false);
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a.position, city.centre).unit_interval();
 
-    let to_city = (damage_modifier_precise(ratio, false, randomness) * Precise::from_fixed(health_ratio(a.health)))
-        .round()
-        .max(0) as i32;
+    let to_city = (damage_modifier_precise(ratio, false, randomness)
+        * Precise::from_fixed(unit_health_ratio(world, r, attacker)))
+    .round()
+    .max(0) as i32;
 
+    let city_owner = city.owner;
+    let to_city = to_city.min(city.health.saturating_sub(1));
+    crate::world::military::plunder_damage(world, r, attacker, crate::world::air::Target::City(city_id), to_city);
+    crate::world::military::award_xp(world, r, attacker, 3, None, city_owner, false);
     let city = world.cities.get_mut(city_id).ok_or(CombatRejection::NoSuchUnit)?;
     city.health = (city.health - to_city).max(1);
 
-    if let Some(u) = world.units.get_mut(attacker) {
-        u.movement_left = Fixed::ZERO;
-        u.attacks_left = u.attacks_left.saturating_sub(1);
-        u.fortified = false;
-        u.xp += 2;
-    }
+    crate::world::military::spend_attack(world, r, attacker, false);
 
     Ok(CityAttackResult {
         damage: to_city,
@@ -728,15 +931,69 @@ pub fn attack_city_ranged(
 
 /// Effective defensive combat strength of a city including garrison bonuses.
 pub fn city_defense_strength(world: &World, r: &Ruleset, city_id: Id<crate::world::city::City>) -> Fixed {
-    let Some(city) = world.cities.get(city_id) else { return Fixed::ONE };
-    let base = crate::world::city::city_strength(r, city);
-    let has_garrison =
-        world.units.iter().any(|(_, u)| u.position == city.centre && u.owner == city.owner && u.is_military(r));
-    if has_garrison {
-        base * Fixed::from_fraction(6, 5)
-    } else {
-        base
+    city_combat_strength(world, r, city_id, None, false)
+}
+pub(crate) fn city_combat_strength(
+    world: &World,
+    r: &Ruleset,
+    id: Id<crate::world::City>,
+    enemy: Option<Id<Unit>>,
+    attacking: bool,
+) -> Fixed {
+    let Some(city) = world.cities.get(id) else { return Fixed::ONE };
+    if !attacking && city.health <= 1 {
+        return Fixed::ONE;
     }
+    let context = GameContext::new(r)
+        .with_world(world)
+        .for_civ(city.owner)
+        .in_city(id)
+        .on_tile(city.centre)
+        .in_combat(if attacking { CombatRole::Attacking } else { CombatRole::Defending });
+    let mut context = context;
+    context.opponent = enemy.map(crate::world::conditionals::Opponent::Unit);
+    let rules = crate::world::religion::city_uniques(world, r, city);
+    let mut strength = Fixed::whole(8) + Fixed::permille(400) * Fixed::whole(city.population as i32);
+    for terrain in world.grid.terrains(city.centre).filter_map(|id| r.terrains.get(id)) {
+        for rule in terrain.uniques.iter().filter(|u| u.unique_type() == Some(UniqueType::GrantsCityStrength)) {
+            strength += Fixed::whole(rule.params.first().and_then(|p| p.parse().ok()).unwrap_or(0));
+        }
+    }
+    let ratio = if r.technologies.is_empty() {
+        Fixed::permille(500)
+    } else {
+        Fixed::from_fraction(world.civ(city.owner).map_or(0, |c| c.techs.len()) as i64, r.technologies.len() as i64)
+    };
+    strength += (ratio * Fixed::permille(5500)).pow(Fixed::permille(2800)).unwrap_or(Fixed::ZERO);
+    if let Some((_, garrison)) = world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == city.owner && u.position == city.centre && u.is_military(r) && !u.is_air(r))
+    {
+        strength += Fixed::whole(r.units[garrison.base].strength.unwrap_or(0))
+            * Fixed::from_fraction(i64::from(garrison.health), 500);
+    }
+    let mut buildings: Fixed = city.built.iter().filter_map(|id| r.buildings[*id].city_strength).sum();
+    let mut percent =
+        if enemy.and_then(|id| world.units.get(id)).and_then(|u| world.civ(u.owner)).is_some_and(|c| c.is_barbarian) {
+            (world.game_difficulty(r).map_or(Fixed::ZERO, |d| d.barbarian_bonus) * Fixed::whole(100)).floor() as i32
+        } else {
+            0
+        };
+    for rule in rules.into_iter().filter(|u| applies(u, &context).holds()) {
+        let n = rule.params.first().and_then(|p| p.parse::<i32>().ok()).unwrap_or(0);
+        match rule.unique_type() {
+            Some(UniqueType::BetterDefensiveBuildings) => {
+                buildings = buildings * (Fixed::ONE + Fixed::from_fraction(i64::from(n), 100))
+            }
+            Some(UniqueType::StrengthAmount) => strength += Fixed::whole(n),
+            Some(UniqueType::StrengthForCities) => percent += n,
+            _ => {}
+        }
+    }
+    let base = (strength + buildings).round() as i32;
+    let base = if attacking { (Fixed::whole(base) * Fixed::permille(750)).round() as i32 } else { base };
+    (Fixed::whole(base) * (Fixed::ONE + Fixed::from_fraction(i64::from(percent), 100))).max(Fixed::ONE)
 }
 
 /// A city bombards an enemy unit within range (range 2).
@@ -762,14 +1019,28 @@ pub fn city_bombard(
         return Err(CombatRejection::TargetBlockedByLOS);
     }
 
-    let att = city_defense_strength(world, r, city_id);
-    let def = defending_strength(world, r, target_unit_id).ok_or(CombatRejection::NoSuchUnit)?;
+    let att = city_combat_strength(world, r, city_id, Some(target_unit_id), true);
+    let def = combat_strength(world, r, target_unit_id, crate::world::air::Target::City(city_id), true)
+        .ok_or(CombatRejection::NoSuchUnit)?;
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, city.centre, target.position).unit_interval();
 
-    let to_target = damage_modifier_precise(ratio, false, randomness).round().max(0) as i32;
-
+    let to_target = if target.is_civilian(r) {
+        40
+    } else {
+        damage_modifier_precise(ratio, false, randomness).round().max(0) as i32
+    }
+    .min(i32::from(target.health));
+    let city_owner = city.owner;
     let target_died = to_target >= target.health as i32;
+    if world.civ(target.owner).is_some_and(|c| c.is_barbarian) {
+        let position = target.position;
+        crate::world::barbarians::on_camp_attacked(world, position);
+    }
+    crate::world::military::award_xp(world, r, target_unit_id, 2, None, city_owner, true);
+    if target_died {
+        crate::world::military::reward_city_kill(world, r, city_id, target_unit_id);
+    }
     if target_died {
         world.remove_unit(target_unit_id);
     } else if let Some(u) = world.units.get_mut(target_unit_id) {
@@ -792,246 +1063,42 @@ pub struct NuclearStrikeResult {
     pub cities_damaged: Vec<Id<crate::world::city::City>>,
 }
 
-/// Rebase an air unit to another friendly city or carrier.
-pub fn rebase_air_unit(
-    world: &mut World,
-    r: &Ruleset,
-    unit_id: Id<Unit>,
-    target_tile: TileId,
-) -> Result<(), CombatRejection> {
-    let unit = world.units.get(unit_id).ok_or(CombatRejection::NoSuchUnit)?;
-    if !unit.can_move() {
-        return Err(CombatRejection::NoMovement);
-    }
-    if !unit.is_air(r) {
-        return Err(CombatRejection::NoMovement);
-    }
-    let base = r.units.get(unit.base).ok_or(CombatRejection::NoSuchUnit)?;
-    let rebase_range = base.range.unwrap_or(8) * 2;
-    if world.grid.distance(unit.position, target_tile) as i32 > rebase_range {
-        return Err(CombatRejection::OutOfRange);
-    }
-    let is_friendly_city = world.cities.iter().any(|(_, c)| c.centre == target_tile && c.owner == unit.owner);
-    let is_friendly_carrier = world.units.iter().any(|(_, u)| {
-        u.position == target_tile
-            && u.owner == unit.owner
-            && r.units.get(u.base).is_some_and(|b| b.unit_type == "Aircraft Carrier")
-    });
-    if !is_friendly_city && !is_friendly_carrier {
-        return Err(CombatRejection::NotAdjacent);
-    }
-    if let Some(u) = world.units.get_mut(unit_id) {
-        u.position = target_tile;
-        u.movement_left = Fixed::ZERO;
-        u.attacks_left = 0;
-    }
-    Ok(())
+/// Compatibility entry point; all air rules are owned by `air`.
+pub fn rebase_air_unit(world: &mut World, r: &Ruleset, unit: Id<Unit>, target: TileId) -> Result<(), CombatRejection> {
+    crate::world::air::rebase(world, r, unit, target).map_err(Into::into)
 }
 
-/// Execute an air strike against a unit or city.
+/// Strike the tile's primary defender. Commands use an explicit target.
 pub fn air_strike(
     world: &mut World,
     r: &Ruleset,
-    attacker_id: Id<Unit>,
-    target_tile: TileId,
+    unit: Id<Unit>,
+    tile: TileId,
 ) -> Result<CombatResult, CombatRejection> {
-    let (a_owner, a_can_move, a_attacks_left, a_is_air, a_base, a_position, a_health) = {
-        let a = world.units.get(attacker_id).ok_or(CombatRejection::NoSuchUnit)?;
-        (a.owner, a.can_move(), a.attacks_left, a.is_air(r), a.base, a.position, a.health)
-    };
-    if !a_can_move || a_attacks_left == 0 {
-        return Err(CombatRejection::NoMovement);
-    }
-    if !a_is_air {
-        return Err(CombatRejection::NoMovement);
-    }
-    let base = r.units.get(a_base).ok_or(CombatRejection::NoSuchUnit)?;
-    let range = base.range.unwrap_or(8);
-    if world.grid.distance(a_position, target_tile) as i32 > range {
-        return Err(CombatRejection::OutOfRange);
-    }
-
-    // Interception check: find enemy fighter in range that can intercept
-    let mut interception_damage = 0;
-    let mut interceptor_id = None;
-    for (enemy_id, enemy_u) in world.units.iter() {
-        if enemy_u.owner != a_owner && enemy_u.attacks_left > 0 && world.diplomacy.at_war(a_owner, enemy_u.owner) {
-            if let Some(enemy_base) = r.units.get(enemy_u.base) {
-                let int_range = enemy_base.intercept_range.unwrap_or(enemy_base.range.unwrap_or(0));
-                if int_range > 0 && world.grid.distance(enemy_u.position, target_tile) as i32 <= int_range {
-                    let ratio = strength_ratio(
-                        Fixed::whole(enemy_base.strength.unwrap_or(45)),
-                        Fixed::whole(base.strength.unwrap_or(45)),
-                    );
-                    let roll = combat_seed(world, enemy_u.position, a_position).unit_interval();
-                    interception_damage = damage_modifier_precise(ratio, false, roll).round().max(0) as i32;
-                    interceptor_id = Some(enemy_id);
-                    break;
-                }
-            }
-        }
-    }
-    if let Some(id) = interceptor_id {
-        if let Some(u) = world.units.get_mut(id) {
-            u.attacks_left = u.attacks_left.saturating_sub(1);
-        }
-    }
-
-    let attacker_died = interception_damage >= a_health as i32;
-    if attacker_died {
-        world.remove_unit(attacker_id);
-        return Ok(CombatResult {
-            damage_to_defender: 0,
-            damage_to_attacker: interception_damage,
-            defender_died: false,
-            attacker_died: true,
-        });
-    }
-
-    let target_city =
-        world.cities.iter().find(|(_, c)| c.centre == target_tile && c.owner != a_owner).map(|(id, _)| id);
-    let target_unit =
-        world.units.iter().find(|(_, u)| u.position == target_tile && u.owner != a_owner).map(|(id, _)| id);
-
-    let (dmg_def, def_died) = if let Some(city_id) = target_city {
-        let city = world.cities.get(city_id).ok_or(CombatRejection::NoSuchUnit)?;
-        if !world.diplomacy.at_war(a_owner, city.owner) {
-            return Err(CombatRejection::NotAtWar);
-        }
-        let att = Fixed::whole(base.ranged_strength.or(base.strength).unwrap_or(45));
-        let def = city_defense_strength(world, r, city_id);
-        let ratio = strength_ratio(att, def);
-        let roll = combat_seed(world, a_position, target_tile).unit_interval();
-        let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
-            .round()
-            .max(0) as i32;
-        if let Some(c) = world.cities.get_mut(city_id) {
-            c.health = (c.health - dmg).max(1);
-        }
-        (dmg, false)
-    } else if let Some(def_id) = target_unit {
-        let d = world.units.get(def_id).ok_or(CombatRejection::NoSuchUnit)?;
-        if world.diplomacy.have_met(a_owner, d.owner) && !world.diplomacy.at_war(a_owner, d.owner) {
-            return Err(CombatRejection::NotAtWar);
-        }
-        let att = Fixed::whole(base.ranged_strength.or(base.strength).unwrap_or(45));
-        let def = defending_strength(world, r, def_id).ok_or(CombatRejection::NoSuchUnit)?;
-        let ratio = strength_ratio(att, def);
-        let roll = combat_seed(world, a_position, target_tile).unit_interval();
-        let dmg = (damage_modifier_precise(ratio, false, roll) * Precise::from_fixed(health_ratio(a_health)))
-            .round()
-            .max(0) as i32;
-        let died = dmg >= d.health as i32;
-        if died {
-            world.remove_unit(def_id);
-        } else if let Some(u) = world.units.get_mut(def_id) {
-            u.health = (u.health as i32 - dmg).max(1) as u8;
-        }
-        (dmg, died)
-    } else {
-        return Err(CombatRejection::NoSuchUnit);
-    };
-
-    if let Some(u) = world.units.get_mut(attacker_id) {
-        u.health = (u.health as i32 - interception_damage).max(1) as u8;
-        u.movement_left = Fixed::ZERO;
-        u.attacks_left = u.attacks_left.saturating_sub(1);
-        u.xp += 2;
-    }
-
-    Ok(CombatResult {
-        damage_to_defender: dmg_def,
-        damage_to_attacker: interception_damage,
-        defender_died: def_died,
-        attacker_died: false,
-    })
+    let owner = world.units.get(unit).ok_or(CombatRejection::NoSuchUnit)?.owner;
+    let target = crate::world::air::target_at(world, owner, tile).ok_or(CombatRejection::NoSuchUnit)?;
+    crate::world::air::strike(world, r, unit, target).map_err(Into::into)
 }
 
-/// Deploy a nuclear weapon at `target_tile`.
 pub fn nuclear_strike(
     world: &mut World,
     r: &Ruleset,
-    nuke_unit_id: Id<Unit>,
-    target_tile: TileId,
+    unit: Id<Unit>,
+    target: TileId,
 ) -> Result<NuclearStrikeResult, CombatRejection> {
-    let unit = world.units.get(nuke_unit_id).ok_or(CombatRejection::NoSuchUnit)?;
-    if !unit.can_move() {
-        return Err(CombatRejection::NoMovement);
-    }
-    let base = r.units.get(unit.base).ok_or(CombatRejection::NoSuchUnit)?;
-    let range = base.range.unwrap_or(10);
-    if world.grid.distance(unit.position, target_tile) as i32 > range {
-        return Err(CombatRejection::OutOfRange);
-    }
-
-    let blast_radius = base
-        .uniques
-        .iter()
-        .find_map(|u| {
-            if u.text.starts_with("Blast radius [") {
-                u.params.first().and_then(|p| p.parse::<u32>().ok())
-            } else {
-                None
-            }
-        })
-        .unwrap_or(2);
-
-    let fallout_terrain = r.terrain("Fallout");
-
-    let mut tiles_affected = Vec::new();
-    let mut units_destroyed = Vec::new();
-    let mut cities_damaged = Vec::new();
-
-    let candidates: Vec<TileId> =
-        world.grid.ids().filter(|&t| world.grid.distance(target_tile, t) <= blast_radius).collect();
-
-    for t in candidates {
-        tiles_affected.push(t);
-        let tile_units: Vec<Id<Unit>> =
-            world.units.iter().filter(|(id, u)| *id != nuke_unit_id && u.position == t).map(|(id, _)| id).collect();
-        for u_id in tile_units {
-            units_destroyed.push(u_id);
-            world.remove_unit(u_id);
-        }
-
-        let target_city = world.cities.iter().find(|(_, c)| c.centre == t).map(|(id, _)| id);
-        if let Some(city_id) = target_city {
-            cities_damaged.push(city_id);
-            if let Some(c) = world.cities.get_mut(city_id) {
-                c.population = (c.population / 2).max(1);
-                c.health = (c.health / 2).max(1);
-            }
-        }
-
-        if let Some(f_id) = fallout_terrain {
-            let features = &mut world.grid.features[t.0 as usize];
-            if !features.contains(&f_id) {
-                features.push(f_id);
-            }
-        }
-        if world.grid.improvement[t.0 as usize].is_some() {
-            world.grid.pillage_improvement(t);
-        }
-        if world.grid.road[t.0 as usize] != RoadLevel::None {
-            world.grid.pillage_road(t);
-        }
-    }
-
-    world.remove_unit(nuke_unit_id);
-
-    Ok(NuclearStrikeResult { tiles_affected, units_destroyed, cities_damaged })
+    crate::world::nuclear::strike(world, r, unit, target)
 }
 
 /// Experience required to reach the given promotion level.
 /// Level 1: 10 XP, Level 2: 30 XP, Level 3: 60 XP, Level 4: 100 XP.
 pub fn xp_for_level(level: usize) -> u16 {
-    (10 * level * (level + 1) / 2) as u16
+    (10_u64.saturating_mul(level as u64).saturating_mul(level as u64 + 1) / 2).min(u64::from(u16::MAX)) as u16
 }
 
 /// Whether the unit has earned enough experience to select a new promotion.
 pub fn can_promote(unit: &Unit) -> bool {
-    let next_level = unit.promotions.len() + 1;
-    unit.xp >= xp_for_level(next_level)
+    let next_level = u64::from(unit.promotions_earned) + 1;
+    u64::from(unit.xp) >= 5 * next_level * (next_level + 1)
 }
 
 /// List of promotions available to this unit given its type, XP, and prerequisites.
@@ -1040,15 +1107,17 @@ pub fn available_promotions(r: &Ruleset, unit: &Unit) -> Vec<Id<Promotion>> {
     r.promotions
         .iter()
         .filter_map(|(id, promo)| {
-            if unit.promotions.contains(&id) {
+            if unit.promotions.contains(&id) || base.promotions.contains(&promo.name) {
                 return None;
             }
-            if !promo.unit_types.is_empty() && !promo.unit_types.iter().any(|ut| ut == &base.unit_type) {
+            if !promo.unit_types.iter().any(|ut| ut == &base.unit_type) {
                 return None;
             }
-            let prereqs_met = promo.prerequisites.iter().all(|prereq_name| {
-                r.promotions.id(prereq_name).is_some_and(|req_id| unit.promotions.contains(&req_id))
-            });
+            let prereqs_met = promo.prerequisites.is_empty()
+                || promo.prerequisites.iter().any(|prereq_name| {
+                    base.promotions.contains(prereq_name)
+                        || r.promotions.id(prereq_name).is_some_and(|req_id| unit.promotions.contains(&req_id))
+                });
             if !prereqs_met {
                 return None;
             }
@@ -1059,14 +1128,29 @@ pub fn available_promotions(r: &Ruleset, unit: &Unit) -> Vec<Id<Promotion>> {
 
 /// Choose and apply a promotion to a unit.
 pub fn choose_promotion(unit: &mut Unit, r: &Ruleset, promo_id: Id<Promotion>) -> Result<(), &'static str> {
-    if !can_promote(unit) {
+    let promo = r.promotions.get(promo_id).ok_or("No such promotion")?;
+    let free = promo.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::FreePromotion));
+    if !free && !can_promote(unit) {
         return Err("Not enough XP for promotion");
     }
     let available = available_promotions(r, unit);
     if !available.contains(&promo_id) {
         return Err("Promotion not available");
     }
-    unit.promotions.insert(promo_id);
+    if !free {
+        unit.promotions_earned = unit.promotions_earned.saturating_add(1);
+    }
+    if !promo.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::SkipPromotion)) {
+        unit.promotions.insert(promo_id);
+    }
+    for unique in &promo.uniques {
+        if unique.unique_type() == Some(UniqueType::OneTimeUnitHeal)
+            && unique.params.first().is_some_and(|p| p == "This Unit")
+        {
+            let amount = unique.params.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(0);
+            unit.health = (u16::from(unit.health).saturating_add(amount)).min(100) as u8;
+        }
+    }
     Ok(())
 }
 
@@ -1088,39 +1172,126 @@ pub fn can_pillage(world: &World, unit_id: Id<Unit>) -> bool {
     world.grid.unpillaged_improvement(pos).is_some() || (world.grid.unpillaged_road(pos) != RoadLevel::None)
 }
 
-/// Pillage the tile the unit stands on, restoring HP and pillaging gold.
-pub fn pillage(world: &mut World, _r: &Ruleset, unit_id: Id<Unit>) -> Option<PillageEvent> {
+fn pillage_target(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+) -> Option<(Id<crate::ruleset::TileImprovement>, bool)> {
     let unit = world.units.get(unit_id)?;
-    if !unit.can_move() {
+    if !unit.can_move()
+        || unit.is_civilian(r)
+        || unit.is_air(r)
+        || unit.transport.is_some()
+        || world.cities.iter().any(|(_, c)| c.centre == unit.position)
+        || world.grid.owner[unit.position.0 as usize].is_some_and(|owner| !world.diplomacy.at_war(owner, unit.owner))
+    {
         return None;
     }
-    let pos = unit.position;
-    let owner = unit.owner;
+    let context = GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(unit_id).on_tile(unit.position);
+    if unit
+        .all_uniques(r)
+        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+        .any(|u| u.unique_type() == Some(UniqueType::CannotPillage) && applies(u, &context).holds())
+    {
+        return None;
+    }
+    if let Some(id) = world.grid.unpillaged_improvement(unit.position) {
+        if !r.improvements[id]
+            .uniques
+            .iter()
+            .any(|u| u.unique_type() == Some(UniqueType::Unpillagable) && applies(u, &context).holds())
+        {
+            return Some((id, true));
+        }
+    }
+    let name = match world.grid.unpillaged_road(unit.position) {
+        RoadLevel::Road => "Road",
+        RoadLevel::Railroad => "Railroad",
+        RoadLevel::None => return None,
+    };
+    r.improvements.id(name).map(|id| (id, false))
+}
 
-    let mut pillaged = false;
-    if world.grid.unpillaged_improvement(pos).is_some() {
-        world.grid.pillage_improvement(pos);
-        pillaged = true;
-    } else if world.grid.unpillaged_road(pos) != RoadLevel::None {
+pub fn can_pillage_in(world: &World, r: &Ruleset, unit: Id<Unit>) -> bool {
+    pillage_target(world, r, unit).is_some()
+}
+
+/// Improvement-defined loot is deterministic. Roads yield no healing, and
+/// free-pillage abilities preserve the unit's movement and resting status.
+pub fn pillage(world: &mut World, r: &Ruleset, unit_id: Id<Unit>) -> Option<PillageEvent> {
+    let (target, improvement) = pillage_target(world, r, unit_id)?;
+    let unit = world.units.get(unit_id)?;
+    let (pos, owner) = (unit.position, unit.owner);
+    let context = GameContext::new(r).with_world(world).for_civ(owner).for_unit(unit_id).on_tile(pos);
+    let mut random = Rng::from_parts(&[0xF1_11A6E, u64::from(world.turn), u64::from(pos.0), unit_id.index() as u64]);
+    let mut loot = crate::stats::Stats::ZERO;
+    for unique in &r.improvements[target].uniques {
+        if !applies(unique, &context).holds() {
+            continue;
+        }
+        let stats = unique.params.first().and_then(|p| crate::stats::Stats::parse(p)).unwrap_or_default();
+        match unique.unique_type() {
+            Some(UniqueType::PillageYieldFixed) => loot += stats,
+            Some(UniqueType::PillageYieldRandom) => {
+                for stat in crate::stats::Stat::ALL {
+                    let max = stats[stat].floor().max(0);
+                    if max > 0 {
+                        loot[stat] += Fixed::whole((random.range(0, max - 1) + random.range(0, max - 1)) as i32);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut free = false;
+    let mut heal = Fixed::whole(25);
+    for unique in unit
+        .all_uniques(r)
+        .chain(world.civ(owner).into_iter().flat_map(|c| c.uniques.all()))
+        .filter(|u| applies(u, &context).holds())
+    {
+        let factor = Fixed::ONE
+            + unique
+                .params
+                .first()
+                .and_then(|p| Fixed::parse(p))
+                .unwrap_or(Fixed::ZERO)
+                .checked_div(Fixed::whole(100))
+                .unwrap_or(Fixed::ZERO);
+        match unique.unique_type() {
+            Some(UniqueType::NoMovementToPillage) => free = true,
+            Some(UniqueType::PercentHealthFromPillaging) => heal = heal * factor,
+            Some(UniqueType::PercentYieldFromPillaging) => {
+                for stat in crate::stats::Stat::ALL {
+                    loot[stat] = loot[stat] * factor;
+                }
+            }
+            _ => {}
+        }
+    }
+    let destroyed = r.improvements[target]
+        .uniques
+        .iter()
+        .any(|u| u.unique_type() == Some(UniqueType::DestroyedWhenPillaged) && applies(u, &context).holds());
+    if improvement {
+        if destroyed {
+            world.grid.improvement[pos.0 as usize] = None;
+            world.grid.improvement_pillaged[pos.0 as usize] = false;
+        } else {
+            world.grid.pillage_improvement(pos);
+        }
+    } else {
         world.grid.pillage_road(pos);
-        pillaged = true;
     }
-
-    if !pillaged {
-        return None;
+    if !free {
+        let unit = world.units.get_mut(unit_id)?;
+        unit.movement_left = (unit.movement_left - Fixed::ONE).max(Fixed::ZERO);
+        unit.fortification_turns = 0;
+        unit.moved_this_turn = true;
     }
-
-    let u = world.units.get_mut(unit_id)?;
-    u.movement_left = (u.movement_left - Fixed::ONE).max(Fixed::ZERO);
-    let old_health = u.health;
-    u.health = (u.health + 25).min(100);
-    let healed = u.health - old_health;
-
-    let gold_pillaged = 20;
-    if let Some(c) = world.civ_mut(owner) {
-        c.gold += gold_pillaged;
-    }
-
+    let healed = if improvement { crate::world::healing::heal(world, r, unit_id, heal.floor() as i32) } else { 0 };
+    let gold_pillaged = (loot.gold.raw() / 1000) as i32;
+    crate::world::military::credit_yields(world, owner, pos, loot);
     Some(PillageEvent { unit: unit_id, tile: pos, healed, gold_pillaged })
 }
 
@@ -1158,10 +1329,36 @@ pub fn upgrade_cost(r: &Ruleset, current: Id<BaseUnit>, target: Id<BaseUnit>) ->
 
 /// Check if a unit is eligible for an upgrade.
 pub fn can_upgrade(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Result<(Id<BaseUnit>, i32), UpgradeRejection> {
+    can_upgrade_with(world, r, unit_id, Fixed::ONE)
+}
+/// Own-unit upgrade target and exact price, independent of current action
+/// legality, technology, resource supply and affordability.
+pub fn upgrade_quote(world: &World, r: &Ruleset, unit_id: Id<Unit>, speed: Fixed) -> Option<(Id<BaseUnit>, i32)> {
+    let unit = world.units.get(unit_id)?;
+    let base = r.units.get(unit.base)?;
+    let target_id = crate::world::effects::equivalent_unit(world, r, unit.owner, r.unit(base.upgrades_to.as_ref()?)?);
+    let civ = world.civ(unit.owner)?;
+    let context = GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(unit_id).on_tile(unit.position);
+    let mut price = Fixed::whole(upgrade_cost(r, unit.base, target_id).unwrap_or(10));
+    for rule in civ.uniques.matching(UniqueType::UnitUpgradeCost).filter(|u| applies(u, &context).holds()) {
+        price = price
+            * (Fixed::ONE + Fixed::from_fraction(rule.params.first().and_then(|p| p.parse().ok()).unwrap_or(0), 100));
+    }
+    let cost = (((price * speed).floor() / 5) * 5).max(0) as i32;
+    Some((target_id, cost))
+}
+
+pub fn can_upgrade_with(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    speed: Fixed,
+) -> Result<(Id<BaseUnit>, i32), UpgradeRejection> {
     let unit = world.units.get(unit_id).ok_or(UpgradeRejection::NoSuchUnit)?;
-    let base = r.units.get(unit.base).ok_or(UpgradeRejection::NoSuchUnit)?;
-    let target_name = base.upgrades_to.as_ref().ok_or(UpgradeRejection::CannotUpgrade)?;
-    let target_id = r.unit(target_name).ok_or(UpgradeRejection::CannotUpgrade)?;
+    let (target_id, cost) = upgrade_quote(world, r, unit_id, speed).ok_or(UpgradeRejection::CannotUpgrade)?;
+    if !unit.can_move() || unit.embarked {
+        return Err(UpgradeRejection::CannotUpgrade);
+    }
     let target_base = r.units.get(target_id).ok_or(UpgradeRejection::CannotUpgrade)?;
 
     let civ = world.civ(unit.owner).ok_or(UpgradeRejection::NoSuchUnit)?;
@@ -1179,9 +1376,11 @@ pub fn can_upgrade(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Result<(Id<
         return Err(UpgradeRejection::NotInFriendlyTerritory);
     }
 
-    let cost = upgrade_cost(r, unit.base, target_id).unwrap_or(10);
     if civ.gold < cost {
         return Err(UpgradeRejection::NotEnoughGold);
+    }
+    if !crate::world::resources::can_supply_unit(world, r, unit.owner, target_id, Some(unit_id)) {
+        return Err(UpgradeRejection::MissingResources);
     }
 
     Ok((target_id, cost))
@@ -1189,7 +1388,15 @@ pub fn can_upgrade(world: &World, r: &Ruleset, unit_id: Id<Unit>) -> Result<(Id<
 
 /// Upgrade a unit in-place to its modern equivalent.
 pub fn upgrade_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>) -> Result<Id<BaseUnit>, UpgradeRejection> {
-    let (target_id, cost) = can_upgrade(world, r, unit_id)?;
+    upgrade_unit_with(world, r, unit_id, Fixed::ONE)
+}
+pub fn upgrade_unit_with(
+    world: &mut World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    speed: Fixed,
+) -> Result<Id<BaseUnit>, UpgradeRejection> {
+    let (target_id, cost) = can_upgrade_with(world, r, unit_id, speed)?;
     let unit = world.units.get(unit_id).ok_or(UpgradeRejection::NoSuchUnit)?;
     let owner = unit.owner;
 
@@ -1197,8 +1404,25 @@ pub fn upgrade_unit(world: &mut World, r: &Ruleset, unit_id: Id<Unit>) -> Result
         c.gold -= cost;
     }
     if let Some(u) = world.units.get_mut(unit_id) {
+        for name in &r.units[u.base].promotions {
+            if let Some(p) = r.promotions.id(name) {
+                u.promotions.insert(p);
+            }
+        }
+        for name in &r.units[target_id].promotions {
+            if let Some(p) = r.promotions.id(name) {
+                u.promotions.insert(p);
+            }
+        }
         u.base = target_id;
+        u.set_up = false;
+        u.fortification_turns = 0;
+        u.moved_this_turn = true;
         u.movement_left = Fixed::ZERO;
+    }
+    let stock = crate::world::resources::available_stock(world, r, owner);
+    if let Some(c) = world.civ_mut(owner) {
+        c.resources = stock;
     }
     Ok(target_id)
 }
@@ -1282,6 +1506,7 @@ mod tests {
 
         // Fortifying adds another 20, additively — 45% total, not 50%.
         w.units.get_mut(id).unwrap().fortified = true;
+        crate::world::healing::recover(&mut w, &r);
         let dug_in = defending_strength(&w, &r, id).unwrap();
         assert_eq!(dug_in, open * Fixed::permille(1_450), "additive, not compounding");
     }
@@ -1503,7 +1728,8 @@ mod siege {
         assert!(!w.civ(CivId(1)).unwrap().is_alive(), "no cities and no units left");
         assert!(
             crate::world::victory::evaluate(&crate::world::victory::Milestone::CaptureAllCapitals, &w, &r, CivId(0))
-                == crate::world::conditionals::Verdict::True
+                == crate::world::conditionals::Verdict::False,
+            "the attacker has never founded its own original capital"
         );
     }
 
@@ -1612,8 +1838,8 @@ mod military_tests {
         w.diplomacy.declare_war(CivId(0), CivId(1));
 
         let a_tile = w.grid.id_at(4, 4).unwrap();
-        let mid_tile = w.grid.id_at(4, 5).unwrap();
-        let target_tile = w.grid.id_at(4, 6).unwrap();
+        let mid_tile = w.grid.id_at(5, 4).unwrap();
+        let target_tile = w.grid.id_at(6, 4).unwrap();
 
         let archer = unit(&mut w, &r, "Archer", CivId(0), a_tile);
         let _defender = unit(&mut w, &r, "Warrior", CivId(1), target_tile);
@@ -1653,7 +1879,11 @@ mod military_tests {
 
         let _warrior = unit(&mut w, &r, "Warrior", CivId(0), centre);
         let garr_def = city_defense_strength(&w, &r, city);
-        assert_eq!(garr_def, base_def * Fixed::from_fraction(6, 5), "garrison adds +20%");
+        assert_eq!(
+            garr_def,
+            base_def + Fixed::whole(2),
+            "Warrior contributes 20% of its 8 strength, rounded with the city base"
+        );
 
         let before_hp = w.units.get(enemy_unit).unwrap().health;
         let bombard_res = city_bombard(&mut w, &r, city, enemy_unit).expect("bombard succeeds");
@@ -1764,7 +1994,8 @@ mod military_tests {
         let pillage_res = pillage(&mut w, &r, unit_id).expect("pillage succeeds");
         assert_eq!(pillage_res.healed, 25);
         assert_eq!(w.units.get(unit_id).unwrap().health, 95);
-        assert_eq!(w.civ(CivId(0)).unwrap().gold, initial_gold + 20);
+        assert!((0..=34).contains(&pillage_res.gold_pillaged), "Farm yields two rolls below 18");
+        assert_eq!(w.civ(CivId(0)).unwrap().gold, initial_gold + pillage_res.gold_pillaged);
         assert_eq!(w.grid.unpillaged_improvement(tile), None, "now pillaged");
 
         assert!(!can_pillage(&w, unit_id));
@@ -1792,6 +2023,12 @@ mod military_tests {
         assert_eq!(can_upgrade(&w, &r, warrior), Err(UpgradeRejection::NotEnoughGold));
 
         w.civ_mut(CivId(0)).unwrap().gold = 100;
+        assert_eq!(can_upgrade(&w, &r, warrior), Err(UpgradeRejection::MissingResources));
+        let iron = r.resources.id("Iron").unwrap();
+        w.civ_mut(CivId(0)).unwrap().techs.extend(r.technologies.ids());
+        w.grid.resource[tile.0 as usize] = Some(iron);
+        w.grid.resource_amount[tile.0 as usize] = 1;
+        w.grid.improvement[tile.0 as usize] = r.improvements.id("Mine");
         let (up_base, cost) = can_upgrade(&w, &r, warrior).expect("can upgrade");
         assert_eq!(up_base, swordsman);
         assert_eq!(cost, 80);
@@ -1803,8 +2040,33 @@ mod military_tests {
     }
 
     #[test]
+    fn upgrades_credit_the_old_units_resources_but_cannot_overcommit() {
+        let mut r = ruleset();
+        let mut w = world(&r);
+        let tile = w.grid.id_at(5, 5).unwrap();
+        let iron = r.resources.id("Iron").unwrap();
+        w.grid.owner[tile.0 as usize] = Some(CivId(0));
+        w.grid.resource[tile.0 as usize] = Some(iron);
+        w.grid.resource_amount[tile.0 as usize] = 1;
+        w.grid.improvement[tile.0 as usize] = r.improvements.id("Mine");
+        w.civ_mut(CivId(0)).unwrap().techs.extend(r.technologies.ids());
+        w.civ_mut(CivId(0)).unwrap().gold = 10_000;
+        let old = unit(&mut w, &r, "Swordsman", CivId(0), tile);
+        let (target, _) = can_upgrade(&w, &r, old).expect("same Iron is reused");
+        r.units.get_mut(target).unwrap().uniques.push(crate::Unique::parse("Consumes [1] [Iron]"));
+        let before = w.clone();
+        assert_eq!(upgrade_unit(&mut w, &r, old), Err(UpgradeRejection::MissingResources));
+        assert_eq!(w, before);
+        w.grid.resource_amount[tile.0 as usize] = 2;
+        assert!(upgrade_unit(&mut w, &r, old).is_ok());
+        assert_eq!(w.civ(CivId(0)).unwrap().resources.get(&iron), Some(&0));
+    }
+
+    #[test]
     fn nuclear_strike_mechanics() {
-        let r = ruleset();
+        let mut r = ruleset();
+        let atomic = r.unit("Atomic Bomb").unwrap();
+        r.units.get_mut(atomic).unwrap().required_resource = None;
         let mut w = world(&r);
         let nuke_tile = w.grid.id_at(5, 5).unwrap();
         let target_tile = w.grid.id_at(5, 8).unwrap();
@@ -1817,15 +2079,20 @@ mod military_tests {
         w.cities.get_mut(city).unwrap().population = 10;
         w.cities.get_mut(city).unwrap().health = 200;
 
+        w.visibility.explore(CivId(0), target_tile);
+        w.diplomacy.meet(CivId(0), CivId(1));
         let res = nuclear_strike(&mut w, &r, abomb, target_tile).expect("nuclear strike succeeds");
         assert!(res.units_destroyed.contains(&victim));
         assert!(res.cities_damaged.contains(&city));
         assert!(w.units.get(victim).is_none(), "victim unit destroyed");
         assert!(w.units.get(abomb).is_none(), "atomic bomb self-destructed");
-        assert_eq!(w.cities.get(city).unwrap().population, 5, "population halved");
+        assert!((4..=7).contains(&w.cities.get(city).unwrap().population), "atomic population loss is a 30–68% roll");
         assert_eq!(w.cities.get(city).unwrap().health, 100, "city health halved");
         let fallout = r.terrain("Fallout").unwrap();
-        assert!(w.grid.features[target_tile.0 as usize].contains(&fallout));
+        assert!(
+            !w.grid.features[target_tile.0 as usize].contains(&fallout),
+            "surviving city centers never receive fallout"
+        );
     }
 
     #[test]

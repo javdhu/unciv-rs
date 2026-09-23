@@ -34,6 +34,8 @@ use crate::ruleset::{Ruleset, Terrain};
 use crate::stats::Fixed;
 use crate::world::grid::{TileGrid, TileId};
 
+mod geography;
+
 /// What kind of world to make.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MapParameters {
@@ -48,6 +50,7 @@ pub struct MapParameters {
     pub landmass_scale: i64,
     /// Roughly one resource per this many land tiles.
     pub resource_sparsity: i64,
+    pub wrap_x: bool,
 }
 
 impl Default for MapParameters {
@@ -61,6 +64,7 @@ impl Default for MapParameters {
             water: Fixed::permille(420),
             landmass_scale: 9,
             resource_sparsity: 14,
+            wrap_x: false,
         }
     }
 }
@@ -141,6 +145,12 @@ fn terrain_or_any(r: &Ruleset, name: &str, kind: &str) -> Option<Id<Terrain>> {
 /// The same parameters always give the same map — that is the whole contract,
 /// and [`same_seed_same_map`] is the test that holds it.
 pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
+    generate_with_biases(r, p, &vec![Vec::new(); civs])
+}
+
+/// Nation preferences influence starting sites before wonders and ruins.
+/// Camps are placed later, once live player visibility and capitals are known.
+pub fn generate_with_biases(r: &Ruleset, p: MapParameters, biases: &[Vec<String>]) -> GeneratedMap {
     let ocean = terrain_or_any(r, "Ocean", "Water").expect("a ruleset needs water");
     let coast = terrain_or_any(r, "Coast", "Water").unwrap_or(ocean);
     let grassland = terrain_or_any(r, "Grassland", "Land").expect("a ruleset needs land");
@@ -150,7 +160,7 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
     let snow = terrain_or_any(r, "Snow", "Land").unwrap_or(tundra);
     let mountain = terrain_or_any(r, "Mountain", "Land").unwrap_or(grassland);
 
-    let mut grid = TileGrid::new(p.width, p.height, grassland);
+    let mut grid = TileGrid::new_with_wrap(p.width, p.height, grassland, p.wrap_x);
 
     // Pass 1: elevation everywhere, then a sea level chosen from the
     // *distribution* rather than fixed.
@@ -209,12 +219,13 @@ pub fn generate(r: &Ruleset, p: MapParameters, civs: usize) -> GeneratedMap {
         grid.terrain[t.0 as usize] = coast;
     }
 
+    geography::lakes(r, &mut grid);
+    geography::rivers(r, &mut grid, &elevation, p.seed);
     place_features(r, &mut grid, &p, &elevation);
     place_resources(r, &mut grid, &p);
-    let starts = choose_starts(r, &grid, &p, civs);
+    let starts = choose_starts(r, &grid, biases);
     crate::world::natural_wonders::place(r, &mut grid, p.seed, &starts);
     crate::world::ruins::place(r, &mut grid, p.seed, &starts);
-    place_camps(r, &mut grid, &p, &starts);
     GeneratedMap { grid, starts }
 }
 
@@ -233,6 +244,12 @@ fn high_ground(sea_level: Fixed) -> Fixed {
 /// everywhere cold enough for it was underwater.
 fn shaped_elevation(p: &MapParameters, grid: &TileGrid, x: i64, y: i64) -> Fixed {
     let raw = fractal(p.seed, x, y, p.landmass_scale);
+    if p.wrap_x {
+        // Blend two periodic images so the seam has the same field on both sides.
+        let other = fractal(p.seed, x - i64::from(grid.width()), y, p.landmass_scale);
+        let weight = Fixed::permille(x * 1000 / i64::from(grid.width()).max(1));
+        return lerp(raw, other, weight);
+    }
     let margin = x.min(grid.width() as i64 - 1 - x);
     let reach = (grid.width() as i64 / 6).max(1);
     let near = margin.min(reach);
@@ -264,12 +281,34 @@ fn place_features(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, elevation
     for tile in grid.ids().collect::<Vec<_>>() {
         let i = tile.0 as usize;
         let Some(base) = r.terrains.get(grid.terrain[i]) else { continue };
+        if base.r#type == "Water" {
+            if let Some(ice) = feature("Ice") {
+                let (_, row) = grid.coords(tile);
+                if (row == 0 || row + 1 == grid.height()) && occurs_on(r, ice, &base.name) {
+                    grid.features[i].push(ice);
+                }
+            }
+            continue;
+        }
         if base.r#type != "Land" {
             continue;
         }
         let base_name = r.terrains.name_of(grid.terrain[i]).unwrap_or_default().to_string();
         let (col, row) = grid.coords(tile);
         let (x, y) = (col as i64, row as i64);
+        if base_name == "Desert" && grid.has_river(tile) {
+            if let Some(flood) = feature("Flood plains") {
+                grid.features[i].push(flood);
+                continue;
+            }
+        }
+        let roll = Rng::from_parts(&[p.seed, 0x46454154, tile.0 as u64]).range(0, 99);
+        if base_name == "Desert" && roll < 8 {
+            if let Some(oasis) = feature("Oasis") {
+                grid.features[i].push(oasis);
+                continue;
+            }
+        }
 
         // Hills follow elevation: the shoulders of the mountains, not a
         // scatter, which is what makes a range look like a range.
@@ -282,6 +321,12 @@ fn place_features(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, elevation
         }
 
         let humidity = fractal(p.seed ^ 0x48554d49, x, y, p.landmass_scale);
+        if humidity > Fixed::permille(600) && roll < 15 {
+            if let Some(marsh) = feature("Marsh").filter(|id| occurs_on(r, *id, &base_name)) {
+                grid.features[i].push(marsh);
+                continue;
+            }
+        }
         let temperature = temperature_at(p, grid, x, y);
         let wood = if temperature > Fixed::permille(720) { jungle } else { forest };
         if let Some(wood) = wood {
@@ -341,55 +386,47 @@ fn place_resources(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters) {
     }
 }
 
-/// Scatter barbarian encampments over the empty parts of the map.
-///
-/// Camps have to exist before anything can come out of them, and nothing
-/// placed any: `barbarians::place_camp` was as unreachable as
-/// `barbarians::spawn` itself. A map with no camps and a spawner that is never
-/// called are two halves of the same missing system.
-///
-/// Kept away from the starting positions, because a camp two tiles from a
-/// capital on turn one is not pressure, it is a coin flip.
-fn place_camps(r: &Ruleset, grid: &mut TileGrid, p: &MapParameters, starts: &[TileId]) {
-    let Some(camp) = crate::world::barbarians::camp_improvement(r) else { return };
-    let clearance = 6;
-    for tile in grid.ids().collect::<Vec<_>>() {
-        let i = tile.0 as usize;
-        if grid.improvement[i].is_some() || grid.owner[i].is_some() || grid.natural_wonder[i].is_some() {
-            continue;
-        }
-        let Some(t) = r.terrains.get(grid.terrain[i]) else { continue };
-        if t.r#type != "Land" || t.impassable == Some(true) {
-            continue;
-        }
-        if starts.iter().any(|s| grid.distance(*s, tile) < clearance) {
-            continue;
-        }
-        let mut rng = Rng::from_parts(&[p.seed, 0xCA_47, tile.0 as u64]);
-        // Roughly one tile in thirty-five, which on a standard map is a
-        // dozen-odd camps — enough to be a nuisance, not a siege.
-        if rng.range(1, 35) == 1 {
-            grid.improvement[i] = Some(camp);
-        }
-    }
-}
-
 /// Where the players begin.
 ///
 /// Scored on what a city there would actually have — food and production in
 /// the inner ring — and then spread out, taking the best remaining site that
 /// is far enough from every site already taken. Picking the best sites first
 /// and spacing second would put two civs in the same river valley.
-fn choose_starts(r: &Ruleset, grid: &TileGrid, p: &MapParameters, civs: usize) -> Vec<TileId> {
+fn choose_starts(r: &Ruleset, grid: &TileGrid, biases: &[Vec<String>]) -> Vec<TileId> {
+    let civs = biases.len();
     if civs == 0 {
         return Vec::new();
     }
     let passable = |t: TileId| crate::world::movement::is_passable(grid, r, t);
     let land = |t: TileId| r.terrains.get(grid.terrain[t.0 as usize]).is_some_and(|x| x.r#type == "Land");
+    let mut regions = vec![0; grid.len()];
+    for start in grid.ids() {
+        if regions[start.0 as usize] != 0 || !land(start) || !passable(start) {
+            continue;
+        }
+        let mut component = vec![start];
+        regions[start.0 as usize] = 1;
+        let mut at = 0;
+        while at < component.len() {
+            let tile = component[at];
+            at += 1;
+            for next in grid.neighbours(tile).filter(|t| land(*t) && passable(*t)) {
+                if regions[next.0 as usize] == 0 {
+                    regions[next.0 as usize] = 1;
+                    component.push(next);
+                }
+            }
+        }
+        let size = component.len();
+        for tile in component {
+            regions[tile.0 as usize] = size;
+        }
+    }
+    let min_region = 20.min(regions.iter().copied().max().unwrap_or(0));
 
     let mut scored: Vec<(i64, TileId)> = grid
         .ids()
-        .filter(|t| land(*t) && passable(*t))
+        .filter(|t| land(*t) && passable(*t) && regions[t.0 as usize] >= min_region)
         .map(|t| {
             let here = crate::world::yields::tile_yield(grid, r, t);
             let ring: Fixed = grid
@@ -413,16 +450,39 @@ fn choose_starts(r: &Ruleset, grid: &TileGrid, p: &MapParameters, civs: usize) -
     let mut spacing = (grid.width().min(grid.height()) as u32 / 2).max(2);
     loop {
         let mut chosen: Vec<TileId> = Vec::new();
-        for (_, t) in &scored {
-            if chosen.len() == civs {
+        for bias in biases {
+            let best = scored
+                .iter()
+                .filter(|(_, t)| chosen.iter().all(|c| grid.distance(*c, *t) >= spacing))
+                .max_by_key(|(score, t)| {
+                    let preference: i64 = bias
+                        .iter()
+                        .map(|filter| {
+                            if filter == "Coast" {
+                                return if grid.neighbours(*t).any(|n| grid.is_water(r, n)) { 20_000 } else { 0 };
+                            }
+                            let avoid = filter.strip_prefix("Avoid [").and_then(|f| f.strip_suffix(']'));
+                            let wanted = avoid.unwrap_or(filter);
+                            let matching = grid
+                                .within(*t, 2)
+                                .iter()
+                                .filter(|tile| {
+                                    grid.terrains(**tile).any(|terrain| r.terrains.name_of(terrain) == Some(wanted))
+                                })
+                                .count() as i64;
+                            matching * if avoid.is_some() { -2_000 } else { 2_000 }
+                        })
+                        .sum();
+                    (*score + preference, std::cmp::Reverse(t.0))
+                })
+                .map(|(_, t)| *t);
+            if let Some(best) = best {
+                chosen.push(best);
+            } else {
                 break;
-            }
-            if chosen.iter().all(|c| grid.distance(*c, *t) >= spacing) {
-                chosen.push(*t);
             }
         }
         if chosen.len() == civs || spacing <= 1 {
-            let _ = p;
             if chosen.len() < civs {
                 // A map too small to space everyone out still has to produce a
                 // game. Fill from the best remaining ground, wherever it is.

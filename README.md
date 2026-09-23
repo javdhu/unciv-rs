@@ -4,10 +4,26 @@ Deterministic Civ rules core in Rust. Compiles to native (authoritative server)
 and `wasm32` (browser client) from one source, so client and server cannot
 disagree about the rules.
 
+## Gameplay scope
+
+The supported match rules are the bundled **Civ V: Gods & Kings** content.
+Unciv editor tools and arbitrary mod-only rules are outside this scope. AI is
+an authored deterministic policy, not a port of Unciv's strategic decisions.
+
+Player actions enter through `world::commands`; mutually accepted agreements
+use `world::agreements`. Those boundaries own validation and action settlement.
+Air and naval movement, carrier cargo, setup and fortification, nuclear attacks,
+city administration, explicit belief selection, spies, city-state quests and
+gifts, alliances, and victory actions participate in that same world state.
+The optional save feature stores and validates their durable state. The
+`civ.game` facade projects player-specific information and generates the shared
+native-server / browser-Wasm protocol from Rust.
+
 ## Design notes
 
 [docs/remaining-systems.md](docs/remaining-systems.md) — design notes for the
-systems still to build, and which parts of them resist generation.
+historical port design decisions and why schema generation did not establish
+gameplay completeness.
 
 [docs/state-architecture.md](docs/state-architecture.md) — researched state
 representation, determinism budget, parallelisation and the content pipeline,
@@ -84,7 +100,15 @@ cargo test
 
 ## What the tests prove
 
-`cargo test` — 19 tests, all green. These are the spike results kept as gates.
+Run the current behavioral suite with `cargo test --features save --all-targets`.
+The timing budget is intentionally ignored in debug builds; run
+`cargo test --release --features save --test budget -- --nocapture` for that gate.
+`tools/check_determinism.sh` also runs the release budget. Its state-size report
+separates a partial in-memory payload lower bound from complete encoded snapshot
+bytes; neither number claims to measure total heap usage.
+
+The tables below record the original spike and parsing gates; they are not
+current behavioral test counts or a claim of complete gameplay coverage.
 
 **Rules algebra**
 
@@ -123,9 +147,8 @@ The library has **zero runtime dependencies** by default — the rules layer mus
 stay deterministic and wasm-portable. `serde` is opt-in; `serde_json` is a
 dev-dependency used only to read fixtures.
 
-> The TypeScript output is generated but not yet type-checked — no `tsc` in this
-> environment. Run `tsc --noEmit --strict` on `civ-web/src/generated/` once the
-> web package has a toolchain.
+The legacy `civ-web` generated index is reference data. The live client
+contract is generated and checked in `civ.game/web/src/engine/generated`.
 
 ## The reference index
 

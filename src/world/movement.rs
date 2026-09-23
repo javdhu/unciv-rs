@@ -45,6 +45,87 @@ pub fn is_passable(grid: &TileGrid, r: &Ruleset, tile: TileId) -> bool {
     terrain_cost(grid, r, tile).is_some()
 }
 
+fn active_uniques<'a>(
+    world: &'a World,
+    r: &'a Ruleset,
+    unit: &'a Unit,
+    tile: TileId,
+) -> impl Iterator<Item = &'a crate::Unique> {
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(unit.owner)
+        .for_unit_value(unit)
+        .on_tile(tile);
+    unit.all_uniques(r)
+        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+        .filter(move |u| crate::world::conditionals::applies(u, &ctx).holds())
+}
+
+fn civ_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType) -> bool {
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(unit.owner)
+        .for_unit_value(unit)
+        .on_tile(unit.position);
+    world.civ(unit.owner).is_some_and(|c| {
+        c.uniques
+            .matching(kind)
+            .chain(r.nations[c.nation].uniques.iter().filter(|u| u.unique_type() == Some(kind)))
+            .chain(c.techs.iter().flat_map(|t| &r.technologies[*t].uniques).filter(|u| u.unique_type() == Some(kind)))
+            .any(|u| crate::world::conditionals::applies(u, &ctx).holds())
+    })
+}
+
+fn unit_terrain_passable(world: &World, r: &Ruleset, unit: &Unit, tile: TileId) -> bool {
+    if is_passable(&world.grid, r, tile) || unit.has_unique(r, UniqueType::CanPassImpassable) {
+        return true;
+    }
+    if unit.has_unique(r, UniqueType::CanEnterIceTiles)
+        && world.grid.features[tile.0 as usize].iter().any(|id| r.terrains[*id].name == "Ice")
+    {
+        return true;
+    }
+    if !unit.is_land_unit(r) {
+        return false;
+    }
+    let Some(civ) = world.civ(unit.owner) else {
+        return false;
+    };
+    active_uniques(world, r, unit, tile)
+        .filter(|u| u.unique_type() == Some(UniqueType::LandUnitsCrossTerrainAfterUnitGained))
+        .any(|u| {
+            let (Some(terrain), Some(filter)) = (u.params.first(), u.params.get(1)) else {
+                return false;
+            };
+            world.grid.terrains(tile).any(|id| r.terrains[id].name == *terrain)
+                && civ.units_gained.iter().any(|base| {
+                    crate::world::filters::unit_matches(r, &Unit::new(*base, unit.owner, tile, 0), filter).holds()
+                })
+        })
+}
+
+pub fn max_movement(world: &World, r: &Ruleset, unit: &Unit) -> i32 {
+    let own = |u: &Unit| {
+        let base = if u.embarked { 2 } else { r.units.get(u.base).map_or(2, |b| b.movement) };
+        (base
+            + active_uniques(world, r, u, u.position)
+                .filter(|u| u.unique_type() == Some(UniqueType::Movement))
+                .filter_map(|u| u.params.first()?.parse::<i32>().ok())
+                .sum::<i32>())
+        .max(1)
+    };
+    let mut maximum = own(unit);
+    for (_, other) in world.units.iter().filter(|(_, u)| u.owner == unit.owner && u.position == unit.position) {
+        if active_uniques(world, r, other, other.position).any(|u| {
+            u.unique_type() == Some(UniqueType::TransferMovement)
+                && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, unit, f).holds())
+        }) {
+            maximum = maximum.max(own(other));
+        }
+    }
+    maximum
+}
+
 /// Every tile reachable with `budget` movement, and what it costs to get there.
 ///
 /// Dijkstra with the clamp described above: a tile that costs more than the
@@ -122,6 +203,9 @@ pub fn is_movement_affected_by_zoc(world: &World, r: &Ruleset, unit: &Unit, from
 
 /// Whether `tile` is occupied such that `unit` cannot land (end turn) on it under 1UPT rules.
 pub fn is_tile_occupied_for(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
+    if unit.is_air(r) {
+        return crate::world::air::base_for(world, r, unit, tile, None).is_none();
+    }
     let is_civ = unit.is_civilian(r);
     for (_, other) in world.units.iter() {
         if other.position != tile {
@@ -129,6 +213,9 @@ pub fn is_tile_occupied_for(world: &World, r: &Ruleset, tile: TileId, unit: &Uni
         }
         if other.owner != unit.owner {
             return true;
+        }
+        if other.is_air(r) {
+            continue;
         }
         if is_civ == other.is_civilian(r) {
             return true;
@@ -159,6 +246,29 @@ pub fn may_enter_territory(world: &World, visitor: CivId, owner: CivId) -> bool 
         return true;
     }
     world.civ(visitor).is_some_and(|c| !c.is_ai) && world.civ(owner).is_some_and(|c| c.is_city_state())
+}
+
+/// Territory friendly for healing and tile conditionals, including granted
+/// open borders and friendly city-states (`Tile.isFriendlyTerritory`).
+pub fn is_friendly_territory(world: &World, civ: CivId, tile: TileId) -> bool {
+    let Some(owner) = world.grid.owner[tile.0 as usize] else { return false };
+    if owner == civ {
+        return true;
+    }
+    if !world.diplomacy.have_met(civ, owner) {
+        return false;
+    }
+    if world.civ(owner).is_some_and(|c| c.is_city_state()) {
+        use crate::world::city_states::{relationship, Relationship};
+        if matches!(relationship(world, owner, civ), Relationship::Friend | Relationship::Ally)
+            || world.civ(civ).is_some_and(|c| c.uniques.has(UniqueType::CityStateTerritoryAlwaysFriendly))
+        {
+            return true;
+        }
+    }
+    world.diplomacy.may_enter_borders_of(civ, owner)
+        || (world.civ(civ).is_some_and(|c| c.is_city_state())
+            && crate::world::city_states::ally_of(world, civ) == Some(owner))
 }
 
 /// Whether `unit` can path through `tile`.
@@ -197,86 +307,135 @@ pub fn step_cost_for_unit(
     to: TileId,
     budget: Fixed,
 ) -> Option<Fixed> {
-    let _ = budget;
-    let terrain = terrain_cost(&world.grid, r, to)?;
+    step_cost_for_unit_with_zoc(world, r, unit, from, to, budget, true)
+}
 
+/// Combat advances may ignore zones of control for units allowed to keep moving.
+pub fn step_cost_for_unit_with_zoc(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+    budget: Fixed,
+    consider_zoc: bool,
+) -> Option<Fixed> {
+    let _ = budget;
+    if !can_traverse(world, r, unit, from, to) {
+        return None;
+    }
     let from_water = world.grid.is_water(r, from);
     let to_water = world.grid.is_water(r, to);
-
-    if unit.is_water_unit(r) {
-        if !to_water && !world.cities.iter().any(|(_, c)| c.centre == to) {
-            return None;
-        }
-    } else if unit.is_land_unit(r) {
-        if !from_water && to_water {
-            let can_embark = unit.has_unique(r, UniqueType::LandUnitEmbarkation)
-                || world.civ(unit.owner).is_some_and(|c| {
-                    c.techs.iter().any(|t| {
-                        r.technologies.get(*t).is_some_and(|tech| {
-                            tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::LandUnitEmbarkation))
-                        })
-                    })
-                });
-            if !can_embark {
-                return None;
-            }
-            return Some(Fixed::whole(100));
-        } else if from_water && !to_water {
-            return Some(Fixed::whole(100));
-        }
+    if unit.is_land_unit(r) && from_water != to_water && !unit.has_unique(r, UniqueType::CanMoveOnWater) {
+        let kind = if from_water { UniqueType::ReducedDisembarkCost } else { UniqueType::ReducedEmbarkCost };
+        return Some(
+            active_uniques(world, r, unit, to)
+                .filter(|u| u.unique_type() == Some(kind))
+                .filter_map(|u| u.params.first().and_then(|n| Fixed::parse(n)))
+                .min()
+                .unwrap_or(Fixed::whole(100)),
+        );
     }
-
-    if is_movement_affected_by_zoc(world, r, unit, from, to) {
+    if consider_zoc && is_movement_affected_by_zoc(world, r, unit, from, to) {
         return Some(Fixed::whole(100));
     }
-
-    if world.cities.iter().any(|(_, c)| c.centre == to) {
-        return Some(CITY_CENTRE_COST);
-    }
-
-    let from_road = world.grid.unpillaged_road(from);
-    let to_road = world.grid.unpillaged_road(to);
-    let has_river = world.grid.has_river_between(from, to);
-
-    let bridges = world.civ(unit.owner).is_some_and(|c| {
-        c.techs.iter().any(|t| {
-            r.technologies.get(*t).is_some_and(|tech| {
-                tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::RoadsConnectAcrossRivers))
-            })
-        })
-    });
-
-    if from_road == RoadLevel::Railroad && to_road == RoadLevel::Railroad && (!has_river || bridges) {
-        return Some(Fixed::from_fraction(1, 5));
-    }
-
-    if from_road >= RoadLevel::Road && to_road >= RoadLevel::Road && (!has_river || bridges) {
-        return Some(Fixed::from_fraction(1, 2));
-    }
-
-    if has_river && !unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
-        return Some(Fixed::whole(100));
-    }
-
-    if unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
+    if unit.has_unique(r, UniqueType::AllTilesCost1Move) {
         return Some(Fixed::ONE);
     }
-
-    let is_hill = world
-        .grid
-        .terrains(to)
-        .any(|t_id| r.terrains.get(t_id).is_some_and(|t| t.r#type == "Hill" || t.name == "Hill"));
-    if is_hill
-        && world.civ(unit.owner).is_some_and(|c| {
-            r.nations
-                .get(c.nation)
-                .is_some_and(|n| n.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::IgnoreHillMovementCost)))
-        })
+    let extra = world.grid.owner[to.0 as usize]
+        .filter(|owner| world.diplomacy.at_war(unit.owner, *owner))
+        .and_then(|owner| world.civ(owner))
+        .map_or(Fixed::ZERO, |owner| {
+            let ctx = crate::world::conditionals::GameContext::new(r)
+                .with_world(world)
+                .for_civ(owner.id)
+                .for_unit_value(unit)
+                .on_tile(to);
+            owner
+                .uniques
+                .matching(UniqueType::EnemyUnitsSpendExtraMovement)
+                .filter(|u| crate::world::conditionals::applies(u, &ctx).holds())
+                .filter(|u| u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, unit, f).holds()))
+                .filter_map(|u| u.params.get(1).and_then(|n| Fixed::parse(n)))
+                .fold(Fixed::ZERO, |a, b| a + b)
+        });
+    let road = |tile| {
+        let placed = world.grid.unpillaged_road(tile);
+        if placed != RoadLevel::None {
+            return placed;
+        }
+        let forest = civ_has(world, r, unit, UniqueType::ForestsAndJunglesAreRoads)
+            && is_friendly_territory(world, unit.owner, tile)
+            && world.grid.features[tile.0 as usize]
+                .iter()
+                .any(|f| matches!(r.terrains[*f].name.as_str(), "Forest" | "Jungle"));
+        if forest || world.cities.iter().any(|(_, c)| c.centre == tile) {
+            RoadLevel::Road
+        } else {
+            RoadLevel::None
+        }
+    };
+    let a = road(from);
+    let b = road(to);
+    let river = world.grid.has_river_between(from, to);
+    if a == RoadLevel::Railroad && b == RoadLevel::Railroad {
+        return Some(Fixed::from_fraction(1, 10) + extra);
+    }
+    if a >= RoadLevel::Road
+        && b >= RoadLevel::Road
+        && (!river || civ_has(world, r, unit, UniqueType::RoadsConnectAcrossRivers))
     {
-        return Some(Fixed::ONE);
+        return Some(
+            if civ_has(world, r, unit, UniqueType::RoadMovementSpeed) {
+                Fixed::from_fraction(1, 3)
+            } else {
+                Fixed::from_fraction(1, 2)
+            } + extra,
+        );
     }
-
-    Some(terrain)
+    if unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
+        return Some(Fixed::ONE + extra);
+    }
+    if river {
+        return Some(Fixed::whole(100));
+    }
+    let terrain = if world.cities.iter().any(|(_, c)| c.centre == to) {
+        CITY_CENTRE_COST
+    } else {
+        Fixed::whole(r.terrains[world.grid.terrains(to).last()?].movement_cost.unwrap_or(1))
+    };
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(unit.owner)
+        .for_unit_value(unit)
+        .on_tile(to);
+    let double = |features_only| {
+        active_uniques(world, r, unit, to).filter(|u| u.unique_type() == Some(UniqueType::DoubleMovementOnTerrain)).any(
+            |u| {
+                u.params.first().is_some_and(|f| {
+                    if features_only {
+                        world.grid.features[to.0 as usize].iter().any(|id| r.terrains[*id].name == *f)
+                    } else {
+                        crate::world::conditionals::tile_matches(&ctx, to, f).holds()
+                    }
+                })
+            },
+        )
+    };
+    if double(true) {
+        return Some(terrain * Fixed::from_fraction(1, 2) + extra);
+    }
+    if unit.has_unique(r, UniqueType::RoughTerrainPenalty)
+        && crate::world::conditionals::tile_matches(&ctx, to, "Rough terrain").holds()
+    {
+        return Some(Fixed::whole(100));
+    }
+    if civ_has(world, r, unit, UniqueType::IgnoreHillMovementCost)
+        && crate::world::conditionals::tile_matches(&ctx, to, "Hill").holds()
+    {
+        return Some(Fixed::ONE + extra);
+    }
+    Some(if double(false) { terrain * Fixed::from_fraction(1, 2) } else { terrain } + extra)
 }
 
 /// Every tile reachable for `unit_id` with its current movement and state.
@@ -340,15 +499,10 @@ fn search_for_unit(
 
 /// Whether this unit's civ lets land units take to the water (`Optics`, or
 /// the unit's own unique).
-fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
-    unit.has_unique(r, UniqueType::LandUnitEmbarkation)
-        || world.civ(unit.owner).is_some_and(|c| {
-            c.techs.iter().any(|t| {
-                r.technologies.get(*t).is_some_and(|tech| {
-                    tech.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::LandUnitEmbarkation))
-                })
-            })
-        })
+pub(crate) fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
+    !unit.has_unique(r, UniqueType::CannotEmbark)
+        && (unit.has_unique(r, UniqueType::LandUnitEmbarkation)
+            || civ_has(world, r, unit, UniqueType::LandUnitEmbarkation))
 }
 
 /// Whether `unit` could ever step from `from` to the adjacent `to` — the
@@ -357,20 +511,48 @@ fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
 /// Who stands where and how far it can go this turn are left out; this is
 /// for planning a route over many turns, which [`reachable_for_unit`] cannot.
 pub fn can_traverse(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> bool {
-    if !is_passable(&world.grid, r, to) {
+    can_traverse_with_borders(world, r, unit, from, to, true)
+}
+
+fn can_traverse_with_borders(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+    respect_borders: bool,
+) -> bool {
+    let _ = from;
+    if !world.grid.contains(to) || !unit_terrain_passable(world, r, unit, to) {
         return false;
     }
     if let Some(owner) = world.grid.owner[to.0 as usize] {
-        if !may_unit_enter_territory(world, r, unit, owner) {
+        if respect_borders && !may_unit_enter_territory(world, r, unit, owner) {
             return false;
         }
     }
-    let to_water = world.grid.is_water(r, to);
-    if unit.is_water_unit(r) {
-        return to_water || world.cities.iter().any(|(_, c)| c.centre == to);
+    let water = world.grid.is_water(r, to);
+    if unit.is_water_unit(r) && !water && !world.cities.iter().any(|(_, c)| c.centre == to) {
+        return false;
     }
-    if unit.is_land_unit(r) && to_water && !world.grid.is_water(r, from) {
-        return can_embark(world, r, unit);
+    let floating = unit.has_unique(r, UniqueType::CanMoveOnWater);
+    if unit.is_land_unit(r) && water && !floating && !can_embark(world, r, unit) {
+        return false;
+    }
+    if r.terrains[world.grid.terrain[to.0 as usize]].name == "Ocean" {
+        let ocean_allowed = active_uniques(world, r, unit, to).any(|u| {
+            u.unique_type() == Some(UniqueType::UnitsMayEnterOcean)
+                && u.params.first().is_some_and(|f| {
+                    f == "Embarked" && unit.is_land_unit(r) && !floating
+                        || crate::world::filters::unit_matches(r, unit, f).holds()
+                })
+        });
+        if !ocean_allowed
+            && (active_uniques(world, r, unit, to).any(|u| u.unique_type() == Some(UniqueType::CannotEnterOcean))
+                || unit.is_land_unit(r) && !floating)
+        {
+            return false;
+        }
     }
     true
 }
@@ -429,28 +611,120 @@ pub fn expel(world: &mut World, r: &Ruleset, visitor: CivId, host: CivId) {
     let inside: Vec<Id<Unit>> = world
         .units
         .iter()
-        .filter(|(_, u)| u.owner == visitor && world.grid.owner[u.position.0 as usize] == Some(host))
+        .filter(|(_, u)| {
+            u.owner == visitor && u.transport.is_none() && world.grid.owner[u.position.0 as usize] == Some(host)
+        })
         .filter(|(_, u)| !may_unit_enter_territory(world, r, u, host))
         .map(|(id, _)| id)
         .collect();
     for id in inside {
-        let Some(unit) = world.units.get(id).cloned() else { continue };
-        let fits = |t: TileId| {
-            is_passable(&world.grid, r, t)
-                && world.grid.is_water(r, t) == unit.is_water_unit(r)
-                && world.grid.owner[t.0 as usize].is_none_or(|o| may_unit_enter_territory(world, r, &unit, o))
-                && !is_tile_occupied_for(world, r, t, &unit)
-        };
-        let dest = (1..=30u32).find_map(|d| {
-            let mut ring = world.grid.ring(unit.position, d);
-            ring.sort();
-            ring.into_iter().find(|t| fits(*t))
-        });
-        if let (Some(t), Some(u)) = (dest, world.units.get_mut(id)) {
-            u.position = t;
-            u.embarked = false;
+        displace_unit(world, r, id);
+    }
+}
+
+/// Evacuate a unit that cannot stay after a border or city ownership change.
+/// Legal occupants remain, and transported aircraft follow their carrier.
+/// Search nearby terrain-connected tiles ignoring closed borders along the
+/// route, then owned city tiles. Destroy a stranded unit and its payload.
+/// Returns true only when the unit survives at a different position.
+pub fn displace_unit(world: &mut World, r: &Ruleset, id: Id<Unit>) -> bool {
+    let Some(unit) = world.units.get(id).cloned() else { return false };
+    if unit.transport.is_some() {
+        return false;
+    }
+    let origin = unit.position;
+    let is_air = unit.is_air(r);
+    let foreign_city = world.cities.iter().any(|(_, c)| c.centre == origin && c.owner != unit.owner);
+    if !foreign_city
+        && if is_air {
+            crate::world::air::base_for(world, r, &unit, origin, Some(id)).is_some()
+        } else {
+            can_traverse(world, r, &unit, origin, origin) && can_pass_through(world, r, origin, &unit)
+        }
+    {
+        return false;
+    }
+
+    let fits = |tile: TileId| {
+        if is_air {
+            crate::world::air::base_for(world, r, &unit, tile, Some(id)).is_some()
+        } else {
+            can_traverse(world, r, &unit, origin, tile) && !is_tile_occupied_for(world, r, tile, &unit)
+        }
+    };
+    // Source getPathBetweenTiles ignores diplomatic borders, but still
+    // respects terrain, embarkation and hostile occupants along the path.
+    let mut reachable = std::collections::BTreeSet::from([origin]);
+    if !is_air {
+        let mut frontier = std::collections::VecDeque::from([origin]);
+        while let Some(from) = frontier.pop_front() {
+            for tile in world.grid.neighbours(from) {
+                if reachable.contains(&tile)
+                    || !can_traverse_with_borders(world, r, &unit, from, tile, false)
+                    || world
+                        .units
+                        .iter()
+                        .any(|(_, other)| other.position == tile && world.diplomacy.at_war(unit.owner, other.owner))
+                    || world
+                        .cities
+                        .iter()
+                        .any(|(_, city)| city.centre == tile && world.diplomacy.at_war(unit.owner, city.owner))
+                {
+                    continue;
+                }
+                reachable.insert(tile);
+                frontier.push_back(tile);
+            }
         }
     }
+    let mut nearby = world.grid.within(origin, 5);
+    nearby.sort_by_key(|tile| (world.grid.distance(origin, *tile), *tile));
+    let destination = nearby
+        .into_iter()
+        .find(|tile| {
+            *tile != origin
+                && (is_air || reachable.contains(tile))
+                && world.grid.owner[tile.0 as usize].is_none_or(|owner| !world.diplomacy.at_war(unit.owner, owner))
+                && fits(*tile)
+        })
+        .or_else(|| {
+            let mut owned: Vec<_> = world
+                .cities
+                .iter()
+                .filter(|(_, c)| c.owner == unit.owner)
+                .flat_map(|(_, city)| city.tiles.iter().copied())
+                .collect();
+            owned.sort_by_key(|tile| (world.grid.distance(origin, *tile), *tile));
+            owned.into_iter().find(|tile| *tile != origin && fits(*tile))
+        });
+    let Some(tile) = destination else {
+        world.remove_unit(id);
+        return false;
+    };
+    let transport = is_air
+        .then(|| crate::world::air::base_for(world, r, &unit, tile, Some(id)))
+        .flatten()
+        .and_then(|base| base.transport());
+    let embarked = !is_air
+        && unit.is_land_unit(r)
+        && world.grid.is_water(r, tile)
+        && !unit.has_unique(r, UniqueType::CanMoveOnWater);
+    let moved = world.units.get_mut(id).expect("unit to displace");
+    moved.position = tile;
+    moved.transport = transport;
+    moved.embarked = embarked;
+    moved.fortified = false;
+    moved.fortification_turns = 0;
+    moved.set_up = false;
+    crate::world::air::move_payload(world, id, tile);
+    let payload: Vec<_> = world.units.iter().filter(|(_, u)| u.transport == Some(id)).map(|(uid, _)| uid).collect();
+    let sites = crate::world::natural_wonders::sites(&world.grid);
+    let mods = crate::world::turn::TurnModifiers { difficulty: world.game_difficulty(r), ..Default::default() };
+    let mut events = Vec::new();
+    for entered in std::iter::once(id).chain(payload) {
+        crate::world::turn::explore_on_entry(world, r, entered, mods, &sites, &mut events);
+    }
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -512,7 +786,7 @@ pub fn move_unit_with(
     if budget <= Fixed::ZERO {
         return Err(MoveRejection::NoMovement);
     }
-    if !is_passable(&world.grid, r, to) {
+    if !unit_terrain_passable(world, r, unit, to) {
         return Err(MoveRejection::Impassable);
     }
 
@@ -543,12 +817,18 @@ pub fn move_unit_with(
         }
         let Some(cost) = step_cost_for_unit(world, r, unit, last, next, unit.movement_left) else { break };
         let cost = cost.min(unit.movement_left);
-        let embarked = unit.is_land_unit(r) && world.grid.is_water(r, next);
+        let embarked =
+            unit.is_land_unit(r) && !unit.has_unique(r, UniqueType::CanMoveOnWater) && world.grid.is_water(r, next);
         let unit = world.units.get_mut(unit_id).expect("unit checked above");
         unit.position = next;
         unit.embarked = embarked;
         unit.movement_left -= cost;
+        unit.moved_this_turn = true;
         unit.fortified = false;
+        unit.fortification_turns = 0;
+        unit.set_up = false;
+        crate::world::air::move_payload(world, unit_id, next);
+        crate::world::military::on_enter(world, r, unit_id);
         spent += cost;
         entered(world, MoveEvent { unit: unit_id, from: last, to: next, spent: cost });
         last = next;
@@ -559,11 +839,15 @@ pub fn move_unit_with(
 
 /// Restore every unit's movement. Called when its owner's turn begins.
 pub fn refresh_movement(world: &mut World, r: &Ruleset) {
-    let refreshed: Vec<(Id<Unit>, i32)> =
-        world.units.iter().map(|(id, u)| (id, r.units.get(u.base).map_or(2, |b| b.movement))).collect();
-    for (id, movement) in refreshed {
+    let refreshed: Vec<_> = world
+        .units
+        .iter()
+        .map(|(id, u)| (id, max_movement(world, r, u), crate::world::air::max_attacks(world, r, id)))
+        .collect();
+    for (id, movement, attacks) in refreshed {
         if let Some(u) = world.units.get_mut(id) {
             u.refresh(movement);
+            u.attacks_left = attacks;
         }
     }
 }
@@ -750,10 +1034,10 @@ mod tests {
         w.grid.road[b.0 as usize] = RoadLevel::Road;
         assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 2)));
 
-        // Both Railroad: step cost is 0.2
+        // Both Railroad: step cost is 0.1
         w.grid.road[a.0 as usize] = RoadLevel::Railroad;
         w.grid.road[b.0 as usize] = RoadLevel::Railroad;
-        assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 5)));
+        assert_eq!(step_cost_for_unit(&w, &r, u, a, b, Fixed::whole(2)), Some(Fixed::from_fraction(1, 10)));
     }
 
     #[test]

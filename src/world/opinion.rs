@@ -47,9 +47,12 @@ const SHARED_ENEMY: Fixed = Fixed::whole(5);
 /// How fast each sentiment fades, a turn at Quick speed.
 fn fade_rate(s: Sentiment) -> Option<Fixed> {
     Some(match s {
-        Sentiment::DeclaredWarOnUs => Fixed::permille(125),
+        Sentiment::DeclaredWarOnUs | Sentiment::BetrayedFriendship => Fixed::permille(125),
         Sentiment::WarMongerer => Fixed::permille(500),
+        Sentiment::BetrayedDefensivePact => Fixed::from_fraction(1, 16),
         Sentiment::CapturedOurCities => Fixed::permille(250),
+        Sentiment::LiberatedCity => Fixed::permille(125),
+        Sentiment::GaveUsUnits => Fixed::permille(250),
         // Personal, so slow to fade.
         Sentiment::Denunciation => Fixed::permille(125),
         Sentiment::DenouncedOurAllies | Sentiment::DenouncedOurEnemies => Fixed::permille(250),
@@ -63,8 +66,14 @@ fn fade_rate(s: Sentiment) -> Option<Fixed> {
         // Handled with peace and open borders below. Shared enemies, kept
         // promises and a refusal to stop spying or preaching are not
         // forgotten at all in Unciv.
-        Sentiment::YearsOfPeace
+        Sentiment::Friendship
+        | Sentiment::DefensivePact
+        | Sentiment::DefensivePactWithAllies
+        | Sentiment::DefensivePactWithEnemies
+        | Sentiment::Embassies
+        | Sentiment::YearsOfPeace
         | Sentiment::OpenBorders
+        | Sentiment::UsedNuclearWeapons
         | Sentiment::SharedEnemy
         | Sentiment::FulfilledPromise(_)
         | Sentiment::RefusedDemand(Demand::DontSpyOnUs | Demand::DoNotSpreadReligion) => return None,
@@ -240,6 +249,7 @@ const SMOOTHING_PERIOD: i32 = 30;
 
 /// One turn of feelings settling (`nextTurnDiplomaticModifiers`).
 pub fn tick(world: &mut World, speed: Fixed) {
+    crate::world::defensive_pacts::refresh_opinions(world);
     // `0.67 × rate / speed` as one ratio, so thousandths are not lost twice.
     let scale = |rate: Fixed| {
         if speed.raw() <= 0 {
@@ -256,7 +266,15 @@ pub fn tick(world: &mut World, speed: Fixed) {
             let at_war = world.diplomacy.at_war(holder, subject);
             let open = world.diplomacy.may_enter_borders_of(holder, subject) as i32
                 + world.diplomacy.may_enter_borders_of(subject, holder) as i32;
+            let friendship = world.diplomacy.pact(holder, subject).is_some_and(|p| p.friendship_turns > 0);
+            let defensive = world.diplomacy.pact(holder, subject).is_some_and(|p| p.defensive_pact);
             let a: &mut Attitude = world.diplomacy.attitude_mut(holder, subject);
+            if !defensive {
+                a.fade(Sentiment::DefensivePact, scale(Fixed::ONE));
+            }
+            if !friendship {
+                a.fade(Sentiment::Friendship, scale(Fixed::permille(500)));
+            }
             if at_war {
                 a.fade(Sentiment::YearsOfPeace, scale(PEACE_PER_TURN));
             } else {

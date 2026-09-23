@@ -31,6 +31,8 @@ pub struct Ruleset {
     pub promotions: Registry<Promotion>,
     pub nations: Registry<Nation>,
     pub beliefs: Registry<Belief>,
+    /// Available religion names/symbols also bound how many religions may be founded.
+    pub religions: Vec<String>,
     pub difficulties: Registry<Difficulty>,
     pub eras: Registry<Era>,
     pub speeds: Registry<Speed>,
@@ -111,6 +113,14 @@ impl Ruleset {
                 "UnitPromotions.json" => flat(&mut r.promotions, &doc, Promotion::from_json),
                 "Nations.json" => flat(&mut r.nations, &doc, Nation::from_json),
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
+                "Religions.json" => {
+                    r.religions = doc
+                        .as_array()
+                        .unwrap_or_default()
+                        .iter()
+                        .filter_map(|name| name.as_str().map(str::to_owned))
+                        .collect();
+                }
                 "Ruins.json" => flat(&mut r.ruin_rewards, &doc, RuinReward::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),
                 "Eras.json" => flat(&mut r.eras, &doc, Era::from_json),
@@ -134,6 +144,14 @@ impl Ruleset {
                         if let (Some(id), Some(last)) = (r.speeds.id(name), last) {
                             if let Some(s) = r.speeds.get_mut(id) {
                                 s.total_turns = last;
+                                s.year_intervals = turns
+                                    .as_array()
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .filter_map(|t| {
+                                        Some((t.get("yearsPerTurn")?.as_fixed()?, t.get("untilTurn")?.as_i32()?))
+                                    })
+                                    .collect();
                             }
                         }
                     }

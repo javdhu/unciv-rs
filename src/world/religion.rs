@@ -34,11 +34,14 @@ pub const PROPHET_BASE: i32 = 200;
 pub const PROPHET_STEP: i32 = 100;
 
 /// What a civ has done with its faith.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Faith {
     pub stored: i32,
     /// Ordered, so iteration and serialisation are reproducible.
     pub beliefs: std::collections::BTreeSet<Id<Belief>>,
+    /// The original pantheon survives separately when its founder creates a religion.
+    pub pantheon_beliefs: std::collections::BTreeSet<Id<Belief>>,
     pub prophets_earned: i32,
     /// A religion exists once a prophet has founded one.
     pub founded: bool,
@@ -56,7 +59,7 @@ impl Faith {
 ///
 /// Dearer the more civs already have one, so waiting is paid for.
 pub fn pantheon_cost(world: &World, speed: Fixed) -> i32 {
-    let taken = world.civs.iter().filter(|c| c.faith.has_pantheon()).count() as i32;
+    let taken = world.civs.iter().filter(|c| c.is_major() && c.faith.has_pantheon()).count() as i32;
     (Fixed::whole(PANTHEON_BASE + taken * PANTHEON_GROWTH) * speed).round().max(1) as i32
 }
 
@@ -69,11 +72,51 @@ pub fn prophet_cost(earned: i32, speed: Fixed) -> i32 {
     (Fixed::whole(PROPHET_BASE + triangular) * speed).round().max(1) as i32
 }
 
+pub fn prophet_cost_in(world: &World, r: &Ruleset, civ: CivId, speed: Fixed) -> i32 {
+    let Some(c) = world.civ(civ) else { return PROPHET_BASE };
+    let n = c.faith.prophets_earned.max(0);
+    let faith_speed = r.speeds.iter().find(|(_, s)| s.modifier == speed).map_or(speed, |(_, s)| s.faith_cost_modifier);
+    let mut cost = Fixed::whole(PROPHET_BASE + PROPHET_STEP * n * (n + 1) / 2) * faith_speed;
+    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ);
+    for u in c
+        .uniques
+        .matching(crate::UniqueType::FaithCostOfGreatProphetChange)
+        .filter(|u| crate::world::conditionals::applies(u, &ctx) == Verdict::True)
+    {
+        cost =
+            cost * Fixed::from_fraction(100 + u.params.first().and_then(|p| p.parse::<i64>().ok()).unwrap_or(0), 100);
+    }
+    cost.floor().max(1) as i32
+}
+
 /// Beliefs of a kind that nobody has taken.
 pub fn available_beliefs(world: &World, r: &Ruleset, kind: &str) -> Vec<Id<Belief>> {
     let taken: std::collections::BTreeSet<_> =
         world.civs.iter().flat_map(|c| c.faith.beliefs.iter().copied()).collect();
     r.beliefs.iter().filter(|(id, b)| b.r#type == kind && !taken.contains(id)).map(|(id, _)| id).collect()
+}
+
+/// Bundled rules: one religion plus half the original major-civilization count,
+/// bounded by available symbols. Defeated civilizations still count.
+pub fn max_religions(world: &World, r: &Ruleset) -> usize {
+    r.religions.len().min(1 + world.civs.iter().filter(|c| c.is_major()).count() / 2)
+}
+
+/// Founding also needs an unclaimed founder and follower belief.
+pub fn remaining_foundable_religions(world: &World, r: &Ruleset) -> usize {
+    max_religions(world, r)
+        .saturating_sub(world.civs.iter().filter(|c| c.faith.founded).count())
+        .min(available_beliefs(world, r, "Founder").len())
+        .min(available_beliefs(world, r, "Follower").len())
+}
+
+/// Eligibility for an initial pantheon, excluding faith affordability.
+/// Once any religion is enhanced, the religion limit also closes late pantheons.
+pub fn can_found_pantheon(world: &World, r: &Ruleset, civ: CivId) -> bool {
+    world.civ(civ).is_some_and(|c| c.is_major() && !c.faith.has_pantheon())
+        && !available_beliefs(world, r, "Pantheon").is_empty()
+        && !(world.civs.iter().any(|c| c.faith.enhanced)
+            && world.civs.iter().filter(|c| c.faith.has_pantheon()).count() >= max_religions(world, r))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +133,7 @@ pub enum FaithEvent {
 /// do anything.
 pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, speed: Fixed) -> FaithEvent {
     if let Some(c) = world.civ_mut(civ_id) {
-        c.faith.stored += gained.max(0);
+        c.add_faith(gained.max(0));
     }
     let stored = world.civ(civ_id).map_or(0, |c| c.faith.stored);
     let has_pantheon = world.civ(civ_id).is_some_and(|c| c.faith.has_pantheon());
@@ -98,29 +141,33 @@ pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, s
     // A pantheon comes first and is cheap.
     if !has_pantheon {
         let cost = pantheon_cost(world, speed);
-        if stored >= cost {
+        if can_found_pantheon(world, r, civ_id) && stored >= cost {
             if let Some(belief) = available_beliefs(world, r, "Pantheon").into_iter().min() {
                 if let Some(c) = world.civ_mut(civ_id) {
                     c.faith.stored -= cost;
                     c.faith.beliefs.insert(belief);
                 }
+                on_pantheon_founded(world, civ_id);
                 return FaithEvent::PantheonFounded { belief };
             }
         }
         return FaithEvent::Stored { faith: stored };
     }
 
-    // Earning a prophet and using it are separate events. Do not spend more
-    // faith while an unused prophet is already waiting on the map.
+    // Each turn gets a reproducible roll, with five percent at the threshold
+    // and one percentage point per excess faith (ReligionManager.generateProphet).
     let Some(civ) = world.civ(civ_id) else { return FaithEvent::Stored { faith: stored } };
+    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ_id);
     if civ.is_major()
-        && !civ.units.iter().filter_map(|id| world.units.get(*id)).any(|unit| {
-            unit.has_unique(r, crate::UniqueType::MayFoundReligion)
-                && unit.religious_uses_left == crate::world::religious_units::initial_uses(r, unit)
-        })
+        && (civ.faith.founded || remaining_foundable_religions(world, r) > 0)
+        && !civ
+            .uniques
+            .matching(crate::UniqueType::MayNotGenerateGreatProphet)
+            .any(|u| crate::world::conditionals::applies(u, &ctx) == Verdict::True)
     {
-        let cost = prophet_cost(civ.faith.prophets_earned, speed);
-        if stored >= cost {
+        let cost = prophet_cost_in(world, r, civ_id, speed);
+        let chance = Fixed::from_fraction(5 + i64::from(stored) - i64::from(cost), 100);
+        if stored >= cost && crate::rng::Rng::seeded(u64::from(world.turn)).unit_interval() < chance {
             if let Some(unit) = crate::world::religious_units::spawn_prophet(world, r, civ_id) {
                 if let Some(civ) = world.civ_mut(civ_id) {
                     civ.faith.stored -= cost;
@@ -164,19 +211,28 @@ pub const ATHEIST_PRESSURE: i32 = 100;
 /// the other way round. Storing followers directly would make conversion a
 /// matter of editing a number, and then two cities could disagree about how
 /// many people a religion has.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CityFaith {
     /// Sparse: a religion that has never reached this city has no entry, and
     /// most cities in most games touch two or three religions at most.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pressure: std::collections::BTreeMap<Creed, i32>,
     /// Derived from pressure by [`CityFaith::recount`]. Atheists are not
     /// listed — they are the remainder.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     followers: std::collections::BTreeMap<CivId, u32>,
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
+    pantheon_pressure: std::collections::BTreeMap<CivId, i32>,
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
+    pantheon_followers: std::collections::BTreeMap<CivId, u32>,
     /// The city a religion was founded in pushes harder and cannot be
     /// converted away by ordinary pressure.
     pub holy_city_of: Option<CivId>,
     /// An inquisitor can suppress a conquered holy city until it is restored.
     pub holy_city_blocked: bool,
+    /// Permanent first-adoption history, including earlier owners of this city.
+    pub adopted_religions: std::collections::BTreeSet<CivId>,
 }
 
 impl Default for CityFaith {
@@ -184,8 +240,11 @@ impl Default for CityFaith {
         CityFaith {
             pressure: std::collections::BTreeMap::from([(None, ATHEIST_PRESSURE)]),
             followers: std::collections::BTreeMap::new(),
+            pantheon_pressure: std::collections::BTreeMap::new(),
+            pantheon_followers: std::collections::BTreeMap::new(),
             holy_city_of: None,
             holy_city_blocked: false,
+            adopted_religions: Default::default(),
         }
     }
 }
@@ -200,7 +259,7 @@ impl CityFaith {
     }
 
     pub fn total_pressure(&self) -> i32 {
-        self.pressure.values().sum()
+        self.pressure.values().chain(self.pantheon_pressure.values()).sum()
     }
 
     pub fn pressures(&self) -> impl Iterator<Item = (Creed, i32)> + '_ {
@@ -213,6 +272,24 @@ impl CityFaith {
 
     pub fn followers(&self) -> impl Iterator<Item = (CivId, u32)> + '_ {
         self.followers.iter().map(|(c, n)| (*c, *n))
+    }
+
+    pub fn pantheon_pressures(&self) -> impl Iterator<Item = (CivId, i32)> + '_ {
+        self.pantheon_pressure.iter().map(|(c, p)| (*c, *p))
+    }
+
+    pub fn pantheon_followers(&self) -> impl Iterator<Item = (CivId, u32)> + '_ {
+        self.pantheon_followers.iter().map(|(c, n)| (*c, *n))
+    }
+
+    pub fn add_pantheon_pressure(&mut self, civ: CivId, amount: i32) {
+        *self.pantheon_pressure.entry(civ).or_insert(0) += amount;
+    }
+
+    /// Pantheons are local to their founder's empire, unlike full religions.
+    pub fn retain_owner_pantheon(&mut self, owner: CivId, population: u32) {
+        self.pantheon_pressure.retain(|civ, _| *civ == owner);
+        self.recount(population);
     }
 
     /// Add pressure. The follower count is *not* refreshed — a turn of spread
@@ -228,6 +305,7 @@ impl CityFaith {
         let kept = self.pressure_of(Some(keep));
         let atheists = self.pressure_of(None);
         self.pressure.clear();
+        self.pantheon_pressure.clear();
         self.pressure.insert(None, atheists.max(ATHEIST_PRESSURE));
         if kept > 0 {
             self.pressure.insert(Some(keep), kept);
@@ -241,9 +319,31 @@ impl CityFaith {
     /// word suggests and it is deliberate — it makes a city flip while the
     /// contest is still live rather than at a knife edge.
     pub fn majority(&self, population: u32) -> Option<CivId> {
-        let (&civ, &count) = self.followers.iter().max_by_key(|(civ, n)| (**n, std::cmp::Reverse(**civ)))?;
+        self.majority_kind(population).filter(|(_, pantheon)| !pantheon).map(|(civ, _)| civ)
+    }
+
+    pub fn majority_pantheon(&self, population: u32) -> Option<CivId> {
+        self.majority_kind(population).filter(|(_, pantheon)| *pantheon).map(|(civ, _)| civ)
+    }
+
+    pub fn majority_followers(&self, population: u32) -> u32 {
+        self.majority_kind(population).map_or(0, |(civ, pantheon)| {
+            if pantheon {
+                self.pantheon_followers[&civ]
+            } else {
+                self.followers[&civ]
+            }
+        })
+    }
+
+    fn majority_kind(&self, population: u32) -> Option<(CivId, bool)> {
+        let (civ, pantheon, count) = self
+            .followers()
+            .map(|(c, n)| (c, false, n))
+            .chain(self.pantheon_followers().map(|(c, n)| (c, true, n)))
+            .max_by_key(|(civ, pantheon, n)| (*n, std::cmp::Reverse((*civ, *pantheon))))?;
         if count >= population / 2 && count > 0 {
-            Some(civ)
+            Some((civ, pantheon))
         } else {
             None
         }
@@ -261,6 +361,7 @@ impl CityFaith {
     /// reproducible. This breaks them by civ id.
     pub fn recount(&mut self, population: u32) {
         self.followers.clear();
+        self.pantheon_followers.clear();
         if population == 0 {
             return;
         }
@@ -270,29 +371,44 @@ impl CityFaith {
             return; // less pressure than people; nobody has convinced anyone
         }
 
-        let mut remainders: Vec<(Creed, i32)> = Vec::new();
+        let mut remainders: Vec<(Creed, bool, i32)> = Vec::new();
         let mut allocated: u32 = 0;
-        for (creed, pressure) in self.pressure.iter() {
-            let share = (*pressure / per_follower).max(0) as u32;
+        let pressures = self
+            .pressures()
+            .map(|(c, p)| (c, false, p))
+            .chain(self.pantheon_pressures().map(|(c, p)| (Some(c), true, p)))
+            .collect::<Vec<_>>();
+        for (creed, pantheon, pressure) in pressures {
+            let share = (pressure / per_follower).max(0) as u32;
             if let Some(civ) = creed {
                 if share > 0 {
-                    self.followers.insert(*civ, share);
+                    if pantheon {
+                        self.pantheon_followers.insert(civ, share);
+                    } else {
+                        self.followers.insert(civ, share);
+                    }
                 }
             }
             allocated += share;
-            remainders.push((*creed, *pressure - share as i32 * per_follower));
+            remainders.push((creed, pantheon, pressure - share as i32 * per_follower));
         }
 
         // Largest remainder first, ties to the lower civ id, atheism last of
         // all so a citizen goes to a religion before going to nobody.
-        remainders.sort_by_key(|(creed, rem)| (std::cmp::Reverse(*rem), creed.is_none(), creed.map(|c| c.0)));
+        remainders.sort_by_key(|(creed, pantheon, rem)| {
+            (std::cmp::Reverse(*rem), creed.is_none(), creed.map(|c| c.0), *pantheon)
+        });
         let mut unallocated = population.saturating_sub(allocated);
-        for (creed, _) in &remainders {
+        for (creed, pantheon, _) in &remainders {
             if unallocated == 0 {
                 break;
             }
             if let Some(civ) = creed {
-                *self.followers.entry(*civ).or_insert(0) += 1;
+                if *pantheon {
+                    *self.pantheon_followers.entry(*civ).or_insert(0) += 1;
+                } else {
+                    *self.followers.entry(*civ).or_insert(0) += 1;
+                }
             }
             unallocated -= 1;
         }
@@ -304,8 +420,10 @@ impl CityFaith {
     /// the city already believes; shrinking only redistributes.
     pub fn on_population_change(&mut self, change: i32, population: u32) {
         if change > 0 {
-            let creed = self.majority(population.saturating_sub(change as u32));
-            self.add_pressure(creed, PRESSURE_PER_CITIZEN * change);
+            match self.majority_kind(population.saturating_sub(change as u32)) {
+                Some((civ, true)) => self.add_pantheon_pressure(civ, PRESSURE_PER_CITIZEN * change),
+                creed => self.add_pressure(creed.map(|(civ, _)| civ), PRESSURE_PER_CITIZEN * change),
+            }
         }
         self.recount(population);
     }
@@ -388,6 +506,9 @@ pub struct Conversion {
 /// intermediate state, and a city pushed by three religions at once would
 /// report converting three times in one turn.
 pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Conversion> {
+    spread_with_speed(world, r, pressure_per_city, Fixed::ONE)
+}
+pub fn spread_with_speed(world: &mut World, r: &Ruleset, pressure_per_city: i32, speed: Fixed) -> Vec<Conversion> {
     let before: std::collections::BTreeMap<_, _> =
         world.cities.iter().map(|(id, c)| (id, c.faith.majority(c.population))).collect();
 
@@ -404,6 +525,9 @@ pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Con
             }
         }
         let Some(majority) = city.faith.majority(city.population) else { continue };
+        if !world.civ(majority).is_some_and(|c| c.faith.founded) {
+            continue;
+        }
         let range = spread_range(world, r, city);
         for &other in &ids {
             if other == id {
@@ -439,7 +563,51 @@ pub fn spread(world: &mut World, r: &Ruleset, pressure_per_city: i32) -> Vec<Con
             }
         }
     }
+    settle_adoptions(world, r, speed);
     converted
+}
+
+/// Each city pays its founder's first-conversion reward at most once per religion.
+pub fn settle_adoptions(world: &mut World, r: &Ruleset, speed: Fixed) {
+    use crate::stats::{Stat, Stats};
+    use crate::world::conditionals::{applies, GameContext, Verdict};
+    let first: Vec<_> = world
+        .cities
+        .iter()
+        .filter_map(|(id, c)| {
+            let creed = c.faith.majority(c.population)?;
+            (world.civ(creed).is_some_and(|f| f.faith.founded) && !c.faith.adopted_religions.contains(&creed))
+                .then_some((id, creed))
+        })
+        .collect();
+    for (city, creed) in first {
+        world.cities.get_mut(city).unwrap().faith.adopted_religions.insert(creed);
+        let mut reward = Stats::ZERO;
+        let ctx = GameContext::new(r).with_world(world).for_civ(creed).in_city(city);
+        for u in world.civ(creed).unwrap().uniques.matching(crate::UniqueType::StatsWhenAdoptingReligion) {
+            let mut conditional = u.clone();
+            conditional.conditionals.retain(|c| c.unique_type() != Some(crate::UniqueType::ModifiedByGameSpeed));
+            if applies(&conditional, &ctx) != Verdict::True {
+                continue;
+            }
+            if let Some(s) = u.params.first().and_then(|p| Stats::parse(p)) {
+                let factor =
+                    if u.conditionals.iter().any(|c| c.unique_type() == Some(crate::UniqueType::ModifiedByGameSpeed)) {
+                        speed
+                    } else {
+                        Fixed::ONE
+                    };
+                for stat in Stat::ALL {
+                    reward[stat] += s[stat] * factor;
+                }
+            }
+        }
+        let c = world.civ_mut(creed).unwrap();
+        c.gold = c.gold.saturating_add(reward.gold.floor() as i32);
+        c.add_culture(reward.culture.floor() as i32);
+        c.add_faith(reward.faith.floor() as i32);
+        c.science_stored = c.science_stored.saturating_add(reward.science.floor() as i32);
+    }
 }
 
 /// Every unique a civ's beliefs grant, for the index.
@@ -447,11 +615,114 @@ pub fn belief_uniques<'a>(r: &'a Ruleset, faith: &Faith) -> Vec<&'a crate::Uniqu
     faith.beliefs.iter().filter_map(|id| r.beliefs.get(*id)).flat_map(|b| b.uniques.iter()).collect()
 }
 
+/// Founder and enhancer effects belong to the civilization that founded the religion.
+pub fn founder_uniques<'a>(r: &'a Ruleset, faith: &Faith) -> Vec<&'a crate::Unique> {
+    faith
+        .beliefs
+        .iter()
+        .filter_map(|id| r.beliefs.get(*id))
+        .filter(|b| matches!(b.r#type.as_str(), "Founder" | "Enhancer"))
+        .flat_map(|b| b.uniques.iter())
+        .collect()
+}
+
+/// Pantheon and follower effects belong to the religion followed by this city,
+/// including foreign religions. They never enter the owner's empire index.
+pub fn city_belief_uniques<'a>(
+    world: &World,
+    r: &'a Ruleset,
+    city: &crate::world::city::City,
+) -> Vec<&'a crate::Unique> {
+    let major = city.faith.majority(city.population);
+    let Some(creed) = major.or_else(|| city.faith.majority_pantheon(city.population)) else { return Vec::new() };
+    let Some(civ) = world.civ(creed) else { return Vec::new() };
+    let beliefs = if major.is_some() || civ.faith.pantheon_beliefs.is_empty() && !civ.faith.founded {
+        &civ.faith.beliefs
+    } else {
+        &civ.faith.pantheon_beliefs
+    };
+    beliefs
+        .iter()
+        .filter_map(|id| r.beliefs.get(*id))
+        .filter(|b| b.r#type == "Pantheon" || major.is_some() && b.r#type == "Follower")
+        .flat_map(|b| b.uniques.iter())
+        .collect()
+}
+
+pub fn on_pantheon_founded(world: &mut World, civ: CivId) {
+    if let Some(c) = world.civ_mut(civ) {
+        c.faith.pantheon_beliefs.clone_from(&c.faith.beliefs);
+    }
+    for (_, city) in world.cities.iter_mut().filter(|(_, c)| c.owner == civ) {
+        city.faith.add_pantheon_pressure(civ, 200i32.saturating_mul(city.population as i32));
+        city.faith.recount(city.population);
+    }
+}
+
+pub fn on_city_founded(world: &mut World, city: Id<crate::world::city::City>) {
+    let Some(c) = world.cities.get(city) else { return };
+    if !world.civ(c.owner).is_some_and(|c| c.faith.has_pantheon() && !c.faith.founded) {
+        return;
+    }
+    let c = world.cities.get_mut(city).unwrap();
+    c.faith.add_pantheon_pressure(c.owner, 200i32.saturating_mul(c.population as i32));
+    c.faith.recount(c.population);
+}
+
+/// All effects in a city, without duplicating global building effects.
+pub fn city_uniques<'a>(
+    world: &'a World,
+    r: &'a Ruleset,
+    city: &'a crate::world::city::City,
+) -> Vec<&'a crate::Unique> {
+    city.uniques
+        .all()
+        .filter(|u| !u.is_global() || u.unique_type() == Some(crate::UniqueType::Stats))
+        .chain(world.civ(city.owner).into_iter().flat_map(|c| c.uniques.all()))
+        .chain(city_belief_uniques(world, r, city))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::world::entities::Civilization;
     use crate::world::grid::TileGrid;
+
+    #[test]
+    fn pantheon_and_religion_compete_separately_for_the_same_population() {
+        let mut faith = CityFaith::new();
+        faith.add_pantheon_pressure(CivId(0), 600);
+        faith.recount(3);
+        assert_eq!(faith.majority_pantheon(3), Some(CivId(0)));
+        assert_eq!(faith.majority(3), None);
+        assert_eq!(faith.followers_of(CivId(0)), 0);
+        faith.on_population_change(1, 4);
+        assert_eq!(faith.pantheon_pressures().collect::<Vec<_>>(), vec![(CivId(0), 700)]);
+        assert_eq!(faith.pressure_of(Some(CivId(0))), 0);
+        faith.add_pressure(Some(CivId(0)), 1000);
+        faith.recount(4);
+        assert_eq!(faith.followers().map(|(_, n)| n).sum::<u32>(), 2);
+        assert_eq!(faith.pantheon_followers().map(|(_, n)| n).sum::<u32>(), 2);
+        assert_eq!(faith.majority(4), Some(CivId(0)));
+        assert_eq!(faith.majority_pantheon(4), None);
+        faith.remove_all_pressures_except(CivId(0));
+        faith.recount(4);
+        assert_eq!(faith.pantheon_pressures().count(), 0);
+        assert_eq!(faith.pantheon_followers().count(), 0);
+    }
+
+    #[test]
+    fn changing_owners_removes_foreign_pantheons_but_preserves_full_religions() {
+        let mut faith = CityFaith::new();
+        faith.add_pantheon_pressure(CivId(0), 600);
+        faith.add_pantheon_pressure(CivId(1), 200);
+        faith.add_pressure(Some(CivId(0)), 500);
+        faith.retain_owner_pantheon(CivId(1), 4);
+        assert_eq!(faith.pantheon_pressures().collect::<Vec<_>>(), vec![(CivId(1), 200)]);
+        assert_eq!(faith.pressure_of(Some(CivId(0))), 500);
+        assert_eq!(faith.majority(4), Some(CivId(0)));
+    }
 
     fn ruleset() -> Ruleset {
         Ruleset::load_dir("../android/assets/jsons/Civ V - Gods & Kings").expect("readable").expect("loads")
@@ -560,6 +831,7 @@ mod tests {
 
     /// Make a city wholly devout, the way founding a religion there does.
     fn convert(w: &mut World, city: Id<crate::world::city::City>, to: CivId) {
+        w.civ_mut(to).unwrap().faith.founded = true;
         let c = w.cities.get_mut(city).unwrap();
         let pop = c.population;
         c.faith.add_pressure(Some(to), PRESSURE_PER_CITIZEN * pop as i32 * 10);

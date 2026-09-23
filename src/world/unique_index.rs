@@ -79,6 +79,22 @@ impl UniqueIndex {
     }
 }
 
+// The bitset is a cache, reconstructed from the ordered entries on load.
+#[cfg(feature = "serde")]
+impl serde::Serialize for UniqueIndex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.entries, serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for UniqueIndex {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let entries = <Vec<Unique> as serde::Deserialize>::deserialize(deserializer)?;
+        Ok(Self::build(&entries))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

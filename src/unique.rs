@@ -8,12 +8,14 @@ use std::sync::OnceLock;
 /// plus a handful of undeclared flags (e.g. `"Aircraft"` on a `UnitType`) that
 /// exist only to be matched by name from a filter. Modelling the second case
 /// explicitly is what keeps mods loadable without a code change.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UniqueKind {
     Known(UniqueType),
     Tag,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unique {
     pub kind: UniqueKind,
@@ -95,6 +97,23 @@ fn placeholder_and_params(s: &str) -> (String, Vec<String>) {
 }
 
 impl Unique {
+    pub fn is_local(&self) -> bool {
+        self.params.iter().any(|p| p == "in this city")
+            || self.conditionals.iter().any(|c| c.unique_type() == Some(UniqueType::ConditionalInThisCity))
+    }
+
+    pub fn is_global(&self) -> bool {
+        !self.is_local()
+            && self.unique_type().is_some_and(|t| {
+                t.targets().iter().any(|target| {
+                    matches!(
+                        target,
+                        crate::unique_type::UniqueTarget::Global | crate::unique_type::UniqueTarget::Triggerable
+                    )
+                })
+            })
+    }
+
     pub fn parse(raw: &str) -> Unique {
         let (base, mods) = split_conditionals(raw);
         let (ph, params) = placeholder_and_params(&base);

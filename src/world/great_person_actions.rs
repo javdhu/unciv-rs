@@ -151,7 +151,9 @@ pub fn can_place(
     improvement: Id<TileImprovement>,
 ) -> Result<(), ActionRejection> {
     let Some(imp) = r.improvements.get(improvement) else { return Err(ActionRejection::CannotBuildHere) };
-    if city_centre_at(world, tile).is_some() {
+    if !crate::world::improvements::terrain_allows(world, r, civ, tile, improvement)
+        || city_centre_at(world, tile).is_some()
+    {
         return Err(ActionRejection::CannotBuildHere);
     }
     let fits = imp.terrains_can_be_built_on.iter().any(|t| {
@@ -230,9 +232,9 @@ fn hurry_amount(
     if building.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::CannotBeHurried)) {
         return Err(ActionRejection::CannotBeHurried);
     }
-    let cost = crate::world::construction::production_cost(r, Construction::Building(b), costs)
+    let cost = crate::world::construction::production_cost_in(world, r, city, Construction::Building(b), costs)
         .ok_or(ActionRejection::NotABuilding)?;
-    let add = hammers_from_engineer(world, city, costs).min(cost - c.production_stored - 1);
+    let add = hammers_from_engineer(world, city, costs).min(cost - c.current_production() - 1);
     if add <= 0 {
         return Err(ActionRejection::NothingToAdd);
     }
@@ -249,22 +251,33 @@ pub fn perform(
 ) -> Result<Outcome, ActionRejection> {
     can(world, r, unit, action, s)?;
     let u = world.units.get(unit).ok_or(ActionRejection::NoSuchUnit)?;
-    let (civ, tile) = (u.owner, u.position);
+    let (civ, tile, base) = (u.owner, u.position, u.base);
     let outcome = match action {
         Action::HurryResearch => {
             let amount = science_from_scientist(world, civ, s.science);
-            let c = world.civ_mut(civ).ok_or(ActionRejection::NoSuchUnit)?;
-            let learned = match crate::world::research::apply_science(c, r, amount, s.science) {
-                crate::world::research::ResearchEvent::Completed { tech, .. } => Some(tech),
-                _ => None,
-            };
+            let income = crate::world::turn::plan_economy(
+                world,
+                r,
+                civ,
+                crate::world::CityFocus::None,
+                crate::world::turn::TurnModifiers { costs: s.costs, science: s.science, ..Default::default() },
+            )
+            .science;
+            let learned =
+                match crate::world::research::apply_science_with_income_in(world, r, civ, amount, income, s.science) {
+                    crate::world::research::ResearchEvent::Completed { tech, .. } => Some(tech),
+                    _ => None,
+                };
+            if let Some(tech) = learned {
+                crate::world::effects::on_technology_researched(world, r, civ, tech, s.costs.speed);
+            }
             Outcome::Science { amount, learned }
         }
         Action::HurryProduction => {
             let city = city_centre_at(world, tile).ok_or(ActionRejection::NotInOwnCity)?;
             let hammers = hurry_amount(world, r, city, s.costs)?;
             if let Some(c) = world.cities.get_mut(city) {
-                c.production_stored += hammers;
+                crate::world::construction::add_production_points(c, hammers);
             }
             Outcome::Production { city, hammers }
         }
@@ -297,6 +310,15 @@ pub fn perform(
             Outcome::Constructed { tile, improvement }
         }
     };
+    crate::world::effects::trigger(
+        world,
+        r,
+        civ,
+        city_centre_at(world, tile),
+        UniqueType::TriggerUponExpendingUnit,
+        &r.units[base].name,
+        s.costs.speed,
+    );
     world.remove_unit(unit);
     Ok(outcome)
 }
@@ -400,7 +422,7 @@ mod tests {
                 .unwrap();
         let out = perform(&mut w, &r, e, Action::HurryProduction, Scaling::default()).unwrap();
         assert_eq!(out, Outcome::Production { city: home, hammers: cost - 1 });
-        assert_eq!(w.cities.get(home).unwrap().production_stored, cost - 1);
+        assert_eq!(w.cities.get(home).unwrap().current_production(), cost - 1);
         assert_eq!(hammers_from_engineer(&w, home, CostModifiers::default()), 330, "300 + 30 a citizen");
     }
 

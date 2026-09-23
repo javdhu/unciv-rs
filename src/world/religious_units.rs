@@ -105,7 +105,7 @@ pub fn initial_uses(r: &Ruleset, unit: &Unit) -> u8 {
     else {
         return 0;
     };
-    unique
+    let base = unique
         .conditionals
         .iter()
         .filter_map(|u| match u.unique_type() {
@@ -114,7 +114,14 @@ pub fn initial_uses(r: &Ruleset, unit: &Unit) -> u8 {
             _ => None,
         })
         .max()
-        .unwrap_or(1)
+        .unwrap_or(1);
+    let extra = uniques(r, unit)
+        .filter(|u| u.unique_type() == unique.unique_type())
+        .flat_map(|u| &u.conditionals)
+        .filter(|u| u.unique_type() == Some(UniqueType::UnitActionExtraLimitedTimes))
+        .filter_map(|u| u.params.first()?.parse::<u16>().ok())
+        .fold(0u16, u16::saturating_add);
+    u16::from(base).saturating_add(extra).min(u16::from(u8::MAX)) as u8
 }
 
 /// Initialize a freshly created unit; never call this to refresh an existing
@@ -143,34 +150,110 @@ pub fn spawn_prophet(world: &mut World, r: &Ruleset, civ: CivId) -> Option<Id<Un
         .iter()
         .find(|(_, b)| b.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::MayFoundReligion)))?
         .0;
-    let home = world
-        .civ(civ)?
-        .cities
-        .iter()
-        .copied()
-        .filter(|id| world.cities.get(*id).is_some_and(|c| c.owner == civ))
-        .min_by_key(|id| (world.cities.get(*id).is_none_or(|c| c.faith.holy_city_of != Some(civ)), *id))?;
+    let base = crate::world::effects::equivalent_unit(world, r, civ, base);
+    let founder = world.civ(civ)?;
+    let holy =
+        founder
+            .faith
+            .founded
+            .then(|| {
+                founder.cities.iter().copied().find(|id| {
+                    world.cities.get(*id).is_some_and(|c| c.owner == civ && c.faith.holy_city_of == Some(civ))
+                })
+            })
+            .flatten();
+    let home = holy.or_else(|| crate::world::connections::capital_of(world, r, civ))?;
     let centre = world.cities.get(home)?.centre;
-    let mut unit = Unit::new(base, civ, centre, r.units.get(base)?.movement);
-    let position = world
-        .grid
-        .within(centre, 2)
-        .into_iter()
-        .filter(|t| {
-            !world.grid.is_water(r, *t)
-                && crate::world::movement::is_passable(&world.grid, r, *t)
-                && world.grid.owner[t.0 as usize].is_none_or(|owner| owner == civ)
-                && !crate::world::movement::is_tile_occupied_for(world, r, *t, &unit)
-        })
-        .min_by_key(|t| (world.grid.distance(centre, *t), *t))?;
-    unit.position = position;
-    initialize_unit(world, r, &mut unit, Some(home));
+    let mut unit = crate::world::construction::prepare_unit_near(world, r, civ, base, centre, Some(home))?;
+    crate::world::military::train(world, r, home, &mut unit);
     Some(world.place_unit(unit))
 }
 
-fn belief_pair(world: &World, r: &Ruleset, enhancing: bool) -> Option<Vec<Id<Belief>>> {
-    let kind = if enhancing { "Enhancer" } else { "Founder" };
-    Some(vec![*available_beliefs(world, r, kind).first()?, *available_beliefs(world, r, "Follower").first()?])
+/// Available slots include a missing pantheon and nation-specific extra beliefs.
+pub fn belief_requirements(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    enhancing: bool,
+) -> std::collections::BTreeMap<String, u32> {
+    let mut result = std::collections::BTreeMap::new();
+    let Some(c) = world.civ(civ) else { return result };
+    let available = available_belief_choices(world, r);
+    let mut remaining: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for id in &available {
+        *remaining.entry(r.beliefs[*id].r#type.clone()).or_default() += 1;
+    }
+    let mut slots = vec![(if enhancing { "Enhancer" } else { "Founder" }.to_string(), 1)];
+    if !enhancing && !c.faith.beliefs.iter().any(|id| r.beliefs.get(*id).is_some_and(|b| b.r#type == "Pantheon")) {
+        slots.push(("Pantheon".into(), 1));
+    }
+    slots.push(("Follower".into(), 1));
+    let ctx = GameContext::new(r).with_world(world).for_civ(civ);
+    let action = if enhancing { "enhancing" } else { "founding" };
+    for u in c.uniques.all().filter(|u| crate::world::conditionals::applies(u, &ctx) == Verdict::True) {
+        match u.unique_type() {
+            Some(UniqueType::FreeExtraBeliefs) if u.params.get(2).is_some_and(|p| p == action) => {
+                if let (Some(n), Some(kind)) = (u.params.first().and_then(|p| p.parse::<u32>().ok()), u.params.get(1)) {
+                    slots.push((kind.clone(), n));
+                }
+            }
+            Some(UniqueType::FreeExtraAnyBeliefs) if u.params.get(1).is_some_and(|p| p == action) => {
+                slots.push(("Any".into(), u.params[0].parse().unwrap_or(0)))
+            }
+            _ => {}
+        }
+    }
+    let mut total = available.len() as u32;
+    for (kind, n) in slots {
+        let n = n.min(if kind == "Any" { total } else { remaining.get(&kind).copied().unwrap_or(0) });
+        if n == 0 {
+            continue;
+        }
+        *result.entry(kind.clone()).or_default() += n;
+        total = total.saturating_sub(n);
+        if kind != "Any" {
+            *remaining.get_mut(&kind).unwrap() -= n;
+        }
+    }
+    result
+}
+pub fn available_belief_choices(world: &World, r: &Ruleset) -> Vec<Id<Belief>> {
+    let taken: std::collections::BTreeSet<_> =
+        world.civs.iter().flat_map(|c| c.faith.beliefs.iter().copied()).collect();
+    r.beliefs.ids().filter(|id| !taken.contains(id)).collect()
+}
+fn valid_beliefs(world: &World, r: &Ruleset, civ: CivId, enhancing: bool, chosen: &[Id<Belief>]) -> bool {
+    let requirements = belief_requirements(world, r, civ, enhancing);
+    if chosen.len() != requirements.values().sum::<u32>() as usize {
+        return false;
+    }
+    let available = available_belief_choices(world, r);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut selected: std::collections::BTreeMap<&str, u32> = std::collections::BTreeMap::new();
+    for id in chosen {
+        if !available.contains(id) || !seen.insert(*id) {
+            return false;
+        }
+        *selected.entry(&r.beliefs[*id].r#type).or_default() += 1;
+    }
+    requirements.into_iter().all(|(kind, n)| kind == "Any" || selected.get(kind.as_str()).copied().unwrap_or(0) >= n)
+}
+fn belief_pair(world: &World, r: &Ruleset, civ: CivId, enhancing: bool) -> Option<Vec<Id<Belief>>> {
+    let primary = if enhancing { "Enhancer" } else { "Founder" };
+    if available_beliefs(world, r, primary).is_empty() || available_beliefs(world, r, "Follower").is_empty() {
+        return None;
+    }
+    let required = belief_requirements(world, r, civ, enhancing);
+    let mut available = available_belief_choices(world, r);
+    let mut chosen = Vec::new();
+    for (kind, n) in required.iter().filter(|(kind, _)| kind.as_str() != "Any") {
+        for _ in 0..*n {
+            let at = available.iter().position(|id| r.beliefs[*id].r#type == *kind)?;
+            chosen.push(available.remove(at));
+        }
+    }
+    chosen.extend(available.into_iter().take(required.get("Any").copied().unwrap_or(0) as usize));
+    Some(chosen)
 }
 
 fn city_centre(world: &World, position: TileId) -> Option<Id<City>> {
@@ -240,8 +323,10 @@ pub fn can(world: &World, r: &Ruleset, id: Id<Unit>, action: ReligiousAction) ->
                 }
             } else if faith.founded {
                 return Err(E::AlreadyFounded);
+            } else if crate::world::religion::remaining_foundable_religions(world, r) == 0 {
+                return Err(E::NoBeliefs);
             }
-            if belief_pair(world, r, enhancing).is_none() {
+            if belief_pair(world, r, unit.owner, enhancing).is_none() {
                 return Err(E::NoBeliefs);
             }
             let city = city_centre(world, unit.position).and_then(|id| world.cities.get(id)).ok_or(E::NotInCity)?;
@@ -277,6 +362,7 @@ pub fn can(world: &World, r: &Ruleset, id: Id<Unit>, action: ReligiousAction) ->
                     return Err(E::NotOurCity);
                 }
                 if !(target.faith.pressures().any(|(c, p)| c.is_some_and(|c| c != religion) && p > 0)
+                    || target.faith.pantheon_pressures().any(|(_, p)| p > 0)
                     || target.faith.holy_city_of == Some(religion) && target.faith.holy_city_blocked)
                 {
                     return Err(E::NoHeresy);
@@ -317,7 +403,13 @@ fn spreading_rewards(world: &World, r: &Ruleset, id: Id<Unit>, city: Id<City>) -
     let mut rewards = Stats::ZERO;
     let Some(unit) = world.units.get(id) else { return rewards };
     let Some(target) = world.cities.get(city) else { return rewards };
-    let others: u32 = target.faith.followers().filter(|(creed, _)| Some(*creed) != unit.religion).map(|(_, n)| n).sum();
+    let others: u32 = target
+        .faith
+        .followers()
+        .filter(|(creed, _)| Some(*creed) != unit.religion)
+        .map(|(_, n)| n)
+        .chain(target.faith.pantheon_followers().map(|(_, n)| n))
+        .sum();
     let ctx =
         GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(id).on_tile(unit.position).in_city(city);
     for unique in uniques(r, unit).chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all())) {
@@ -345,6 +437,7 @@ fn spend_use(world: &mut World, r: &Ruleset, id: Id<Unit>, kind: UniqueType) -> 
     let Some(unit) = world.units.get_mut(id) else { return 0 };
     unit.religious_uses_left = unit.religious_uses_left.saturating_sub(1);
     unit.movement_left = (unit.movement_left - Fixed::whole(movement)).max(Fixed::ZERO);
+    unit.moved_this_turn |= movement > 0;
     let left = unit.religious_uses_left;
     if left == 0 {
         world.remove_unit(id);
@@ -358,13 +451,54 @@ pub fn perform(
     id: Id<Unit>,
     action: ReligiousAction,
 ) -> Result<ReligiousEvent, ReligiousRejection> {
+    perform_with_speed(world, r, id, action, Fixed::ONE)
+}
+pub fn perform_with_speed(
+    world: &mut World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    action: ReligiousAction,
+    speed: Fixed,
+) -> Result<ReligiousEvent, ReligiousRejection> {
+    perform_selected(world, r, id, action, speed, None)
+}
+pub fn choose_beliefs(
+    world: &mut World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    beliefs: Vec<Id<Belief>>,
+    enhancing: bool,
+    speed: Fixed,
+) -> Result<ReligiousEvent, ReligiousRejection> {
+    let owner = world.units.get(id).ok_or(ReligiousRejection::NoSuchUnit)?.owner;
+    if !valid_beliefs(world, r, owner, enhancing, &beliefs) {
+        return Err(ReligiousRejection::NoBeliefs);
+    }
+    perform_selected(
+        world,
+        r,
+        id,
+        if enhancing { ReligiousAction::EnhanceReligion } else { ReligiousAction::FoundReligion },
+        speed,
+        Some(beliefs),
+    )
+}
+fn perform_selected(
+    world: &mut World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    action: ReligiousAction,
+    speed: Fixed,
+    selected: Option<Vec<Id<Belief>>>,
+) -> Result<ReligiousEvent, ReligiousRejection> {
     can(world, r, id, action)?;
     let unit = world.units.get(id).ok_or(ReligiousRejection::NoSuchUnit)?;
-    let (owner, position, religion) = (unit.owner, unit.position, unit.religion);
+    let (owner, position, religion, base) = (unit.owner, unit.position, unit.religion, unit.base);
     let event = match action {
         ReligiousAction::FoundReligion | ReligiousAction::EnhanceReligion => {
             let enhancing = matches!(action, ReligiousAction::EnhanceReligion);
-            let beliefs = belief_pair(world, r, enhancing).ok_or(ReligiousRejection::NoBeliefs)?;
+            let beliefs =
+                selected.or_else(|| belief_pair(world, r, owner, enhancing)).ok_or(ReligiousRejection::NoBeliefs)?;
             let civ = world.civ_mut(owner).ok_or(ReligiousRejection::NotAble)?;
             civ.faith.beliefs.extend(beliefs.iter().copied());
             if enhancing {
@@ -414,8 +548,8 @@ pub fn perform(
             if let Some(civ) = world.civ_mut(owner) {
                 civ.gold += rewards.gold.floor() as i32;
                 civ.science_stored += rewards.science.floor() as i32;
-                civ.culture_stored += rewards.culture.floor() as i32;
-                civ.faith.stored += rewards.faith.floor() as i32;
+                civ.add_culture(rewards.culture.floor() as i32);
+                civ.add_faith(rewards.faith.floor() as i32);
             }
             crate::world::promises::on_religion_spread(world, city_owner, owner, true);
             ReligiousEvent::Spread { unit: id, city: city_id, religion, pressure, uses_left, from, to, rewards }
@@ -446,6 +580,18 @@ pub fn perform(
             ReligiousEvent::HolySiteConstructed { unit: id, tile: position, improvement }
         }
     };
+    if world.units.get(id).is_none() && !matches!(action, ReligiousAction::ConstructHolySite) {
+        crate::world::effects::trigger(
+            world,
+            r,
+            owner,
+            city_centre(world, position),
+            UniqueType::TriggerUponExpendingUnit,
+            &r.units[base].name,
+            speed,
+        );
+    }
+    crate::world::religion::settle_adoptions(world, r, speed);
     Ok(event)
 }
 
@@ -509,7 +655,7 @@ pub fn plan_action(world: &World, r: &Ruleset, civ: CivId, id: Id<Unit>) -> Opti
             if can(world, r, id, action).is_ok() {
                 return Some(UnitOrder::Religious(action));
             }
-            if belief_pair(world, r, faith.founded).is_some() {
+            if belief_pair(world, r, unit.owner, faith.founded).is_some() {
                 let mut targets: Vec<_> = world
                     .cities
                     .iter()
@@ -547,6 +693,7 @@ pub fn plan_action(world: &World, r: &Ruleset, civ: CivId, id: Id<Unit>) -> Opti
             if inquisitor {
                 city.owner == civ
                     && (city.faith.pressures().any(|(c, p)| c.is_some_and(|c| c != religion) && p > 0)
+                        || city.faith.pantheon_pressures().any(|(_, p)| p > 0)
                         || (city.faith.holy_city_blocked && city.faith.holy_city_of == Some(religion)))
             } else {
                 city.faith.majority(city.population) != Some(religion)
@@ -604,8 +751,21 @@ pub fn choose_purchase(
             && !protected_by_inquisitor(world, r, id, civ)
     });
     let heresy = world.cities.iter().any(|(_, city)| {
+        let majority_pressure = city
+            .faith
+            .majority(city.population)
+            .map(|c| city.faith.pressure_of(Some(c)))
+            .or_else(|| {
+                city.faith
+                    .majority_pantheon(city.population)
+                    .map(|c| city.faith.pantheon_pressures().find(|(founder, _)| *founder == c).map_or(0, |(_, p)| p))
+            })
+            .unwrap_or(0);
+        // ReligionAutomation prefers a missionary unless an unconverted city
+        // has at least 3000 more pressure for its current majority.
         city.owner == civ
-            && city.faith.pressures().any(|(creed, p)| creed.is_some_and(|religion| religion != civ) && p > 0)
+            && city.faith.majority(city.population) != Some(civ)
+            && majority_pressure.saturating_sub(city.faith.pressure_of(Some(civ))) >= 3000
     });
     let count = |kind| c.units.iter().filter_map(|id| world.units.get(*id)).filter(|u| u.has_unique(r, kind)).count();
     let kind = if heresy && count(UniqueType::CanRemoveHeresy) == 0 {
@@ -680,6 +840,7 @@ mod tests {
     #[test]
     fn faith_spawns_prophets_and_the_second_enhances_only_when_used() {
         let (r, mut world, [home, _, _]) = setup();
+        world.turn = 20; // Deterministic successful roll at the faith threshold.
         assert!(matches!(apply_faith(&mut world, &r, CivId(0), 10, Fixed::ONE), FaithEvent::PantheonFounded { .. }));
         let FaithEvent::ProphetBorn { unit: first } = apply_faith(&mut world, &r, CivId(0), 200, Fixed::ONE) else {
             panic!("prophet")
@@ -697,7 +858,15 @@ mod tests {
         );
         assert!(world.units.get(first).is_none());
         assert_eq!(world.cities.get(home).unwrap().faith.holy_city_of, Some(CivId(0)));
-        assert_eq!(world.cities.get(home).unwrap().faith.pressure_of(Some(CivId(0))), 2500);
+        assert_eq!(
+            world.cities.get(home).unwrap().faith.pressure_of(Some(CivId(0))),
+            2500,
+            "the new religion receives founding pressure, separate from its pantheon"
+        );
+        assert_eq!(
+            world.cities.get(home).unwrap().faith.pantheon_pressures().collect::<Vec<_>>(),
+            vec![(CivId(0), 1000)]
+        );
         let FaithEvent::ProphetBorn { unit: second } = apply_faith(&mut world, &r, CivId(0), 300, Fixed::ONE) else {
             panic!("second prophet")
         };
@@ -720,14 +889,15 @@ mod tests {
     }
 
     #[test]
-    fn waiting_prophet_does_not_spend_faith_on_duplicate_units() {
+    fn a_waiting_prophet_does_not_prevent_earning_another() {
         let (r, mut world, _) = setup();
         apply_faith(&mut world, &r, CivId(0), 10, Fixed::ONE);
-        apply_faith(&mut world, &r, CivId(0), 200, Fixed::ONE);
+        apply_faith(&mut world, &r, CivId(0), 295, Fixed::ONE);
         let count = world.units.len();
-        assert_eq!(apply_faith(&mut world, &r, CivId(0), 500, Fixed::ONE), FaithEvent::Stored { faith: 500 });
-        assert_eq!(world.units.len(), count);
-        assert_eq!(world.civ(CivId(0)).unwrap().faith.prophets_earned, 1);
+        assert!(matches!(apply_faith(&mut world, &r, CivId(0), 500, Fixed::ONE), FaithEvent::ProphetBorn { .. }));
+        assert_eq!(world.units.len(), count + 1);
+        assert_eq!(world.civ(CivId(0)).unwrap().faith.prophets_earned, 2);
+        assert_eq!(world.civ(CivId(0)).unwrap().faith.stored, 295);
     }
 
     #[test]

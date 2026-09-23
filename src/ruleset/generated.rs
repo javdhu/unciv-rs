@@ -526,6 +526,8 @@ pub struct Speed {
     ///
     /// Derived at load: absent from the json, so `from_json` never sets it.
     pub total_turns: i32,
+    /// Parsed calendar intervals: years per turn and inclusive end turn.
+    pub year_intervals: Vec<(Fixed, i32)>,
 }
 
 /// From `Specialists.json` — 8 objects across both shipped rulesets.
@@ -611,7 +613,7 @@ pub struct Quest {
     /// 34/34 objects carry this.
     pub description: String,
     /// 34/34 objects carry this.
-    pub weight_for_city_state_type: std::collections::BTreeMap<String, i32>,
+    pub weight_for_city_state_type: std::collections::BTreeMap<String, Fixed>,
     /// 16/34 objects carry this.
     pub duration: Option<i32>,
     /// 14/34 objects carry this.
@@ -1134,6 +1136,7 @@ impl Speed {
             start_year: j.get("startYear").and_then(|v| v.as_i32()).unwrap_or_default(),
             turns: Default::default(),
             total_turns: Default::default(), // set by ruleset/load.rs
+            year_intervals: Default::default(),
         })
     }
 }
@@ -1212,7 +1215,11 @@ impl Quest {
         Some(Self {
             name,
             description: j.get("description").and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
-            weight_for_city_state_type: j.get("weightForCityStateType").map(|v| v.counter()).unwrap_or_default(),
+            weight_for_city_state_type: j
+                .get("weightForCityStateType")
+                .and_then(|v| v.as_object())
+                .map(|m| m.iter().filter_map(|(k, v)| v.as_fixed().map(|n| (k.clone(), n))).collect())
+                .unwrap_or_default(),
             duration: j.get("duration").and_then(|v| v.as_i32()),
             influence: j.get("influence").and_then(|v| v.as_i32()),
             minimum_civs: j.get("minimumCivs").and_then(|v| v.as_i32()),

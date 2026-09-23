@@ -16,6 +16,7 @@ pub const SCALE: i64 = 1_000;
 
 /// A number in the rules layer. Exact, deterministic, and identical on every
 /// target. Construct with [`Fixed::whole`] or [`Fixed::permille`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Fixed(i64);
 
@@ -163,6 +164,7 @@ impl fmt::Display for Fixed {
 
 /// The seven yields Civ tracks. One struct rather than seven parameters,
 /// because nearly everything that produces one produces several.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Stats {
     pub food: Fixed,
@@ -175,6 +177,7 @@ pub struct Stats {
 }
 
 /// Names one yield, for iterating and for parsing `[+2 Food]` out of a unique.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Stat {
     Food,

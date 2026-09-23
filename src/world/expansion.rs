@@ -94,9 +94,7 @@ fn percent_multipliers(world: &World, r: &Ruleset, city_id: Id<City>, t: UniqueT
 /// Whether the civ knows what is under a tile — a resource hidden behind an
 /// unresearched tech does not count for or against it (`canSeeResource`).
 fn can_see(r: &Ruleset, civ: &Civilization, resource: Id<TileResource>) -> bool {
-    r.resources.get(resource).is_some_and(|res| {
-        res.revealed_by.as_deref().is_none_or(|tech| r.technologies.id(tech).is_some_and(|t| civ.has_tech(t)))
-    })
+    crate::world::resources::is_visible(r, civ, resource)
 }
 
 fn is_bonus(r: &Ruleset, resource: Id<TileResource>) -> bool {
@@ -130,7 +128,7 @@ pub fn rank_tile(world: &World, r: &Ruleset, city: &City, tile: TileId) -> i64 {
     }
 
     // The sum of every yield, truncated as Kotlin's `toInt` does.
-    let y = crate::world::yields::tile_yield(grid, r, tile);
+    let y = crate::world::yields::tile_yield_for(grid, r, tile, civ);
     let total: Fixed = Stat::ALL.into_iter().map(|s| y[s]).sum();
     score -= total.raw() / SCALE;
 

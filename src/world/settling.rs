@@ -60,9 +60,13 @@ pub enum SettleRejection {
     /// Inside another civilization's borders.
     ForeignTerritory(CivId),
     /// Another city is too near.
-    TooClose { city: Id<City>, distance: u32 },
+    TooClose {
+        city: Id<City>,
+        distance: u32,
+    },
     /// The settler id no longer resolves.
     NoSuchUnit,
+    CannotFound,
 }
 
 impl std::fmt::Display for SettleRejection {
@@ -74,6 +78,7 @@ impl std::fmt::Display for SettleRejection {
                 write!(f, "{distance} tiles from city {city:?}, which is too close")
             }
             SettleRejection::NoSuchUnit => write!(f, "no such unit"),
+            SettleRejection::CannotFound => write!(f, "this unit cannot found a city here"),
         }
     }
 }
@@ -82,7 +87,7 @@ impl std::error::Error for SettleRejection {}
 
 /// Whether a city may be founded here.
 pub fn can_settle(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> Result<(), SettleRejection> {
-    if !is_passable(&world.grid, r, tile) {
+    if !world.grid.contains(tile) || world.grid.is_water(r, tile) || !is_passable(&world.grid, r, tile) {
         return Err(SettleRejection::Impassable);
     }
     if let Some(owner) = world.grid.owner[tile.0 as usize] {
@@ -92,11 +97,57 @@ pub fn can_settle(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> Resul
     }
     for (id, city) in world.cities.iter() {
         let distance = world.grid.distance(tile, city.centre);
-        if distance <= MINIMAL_CITY_DISTANCE {
+        if distance <= 2 || (distance <= MINIMAL_CITY_DISTANCE && same_continent(&world.grid, r, tile, city.centre)) {
             return Err(SettleRejection::TooClose { city: id, distance });
         }
     }
     Ok(())
+}
+
+/// Continents include mountain chains; passability is a unit rule, not a
+/// boundary between two landmasses.
+pub fn same_continent(grid: &crate::world::grid::TileGrid, r: &Ruleset, a: TileId, b: TileId) -> bool {
+    if !grid.contains(a) || !grid.contains(b) || grid.is_water(r, a) || grid.is_water(r, b) {
+        return false;
+    }
+    let mut seen = std::collections::BTreeSet::from([a]);
+    let mut queue = std::collections::VecDeque::from([a]);
+    while let Some(tile) = queue.pop_front() {
+        if tile == b {
+            return true;
+        }
+        for next in grid.neighbours(tile) {
+            if !grid.is_water(r, next) && seen.insert(next) {
+                queue.push_back(next);
+            }
+        }
+    }
+    false
+}
+
+pub fn can_found_with(world: &World, r: &Ruleset, unit: Id<Unit>) -> Result<(), SettleRejection> {
+    let u = world.units.get(unit).ok_or(SettleRejection::NoSuchUnit)?;
+    can_found_on(world, r, u, u.position)
+}
+
+pub fn can_found_on(world: &World, r: &Ruleset, u: &Unit, tile: TileId) -> Result<(), SettleRejection> {
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(u.owner)
+        .for_unit_value(u)
+        .on_tile(tile);
+    let allowed = u.all_uniques(r).filter(|x| x.unique_type() == Some(crate::UniqueType::FoundCity)).any(|rule| {
+        let mut rule = rule.clone();
+        rule.conditionals.retain(|c| {
+            !c.unique_type()
+                .is_some_and(|t| t.targets().contains(&crate::unique_type::UniqueTarget::UnitActionModifier))
+        });
+        crate::world::conditionals::applies(&rule, &ctx).holds()
+    });
+    if !u.can_move() || !allowed {
+        return Err(SettleRejection::CannotFound);
+    }
+    can_settle(world, r, u.owner, tile)
 }
 
 /// What one tile contributes, as its yields dotted with the work weights.
@@ -105,13 +156,24 @@ pub fn can_settle(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> Resul
 /// already decide which tile a citizen works keeps one definition of "good
 /// tile" in the engine rather than two that can drift apart.
 pub fn tile_worth(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
-    let y = tile_yield(&world.grid, r, tile);
+    tile_worth_for(world, r, tile, None)
+}
+fn tile_worth_for(
+    world: &World,
+    r: &Ruleset,
+    tile: TileId,
+    civ: Option<&crate::world::entities::Civilization>,
+) -> Fixed {
+    let y = civ.map_or_else(
+        || tile_yield(&world.grid, r, tile),
+        |c| crate::world::yields::tile_yield_for(&world.grid, r, tile, c),
+    );
     let w = ranking_weights();
     Stat::ALL.into_iter().map(|s| y[s] * w[s]).sum::<Fixed>().checked_div(Fixed::whole(10)).unwrap_or(Fixed::ZERO)
 }
 
 /// Flat bonuses for the site tile itself (`CityLocationTileRanker.kt:107`).
-fn site_bonuses(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
+fn site_bonuses(world: &World, r: &Ruleset, tile: TileId, civ: Option<&crate::world::entities::Civilization>) -> Fixed {
     let mut v = Fixed::ZERO;
     let named = |id| r.terrains.get(id).map(|t| t.name.clone());
 
@@ -125,7 +187,9 @@ fn site_bonuses(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
         v += Fixed::whole(5);
     }
     // Building on a resource wastes it.
-    if world.grid.resource[tile.0 as usize].is_some() {
+    if world.grid.resource[tile.0 as usize]
+        .is_some_and(|res| civ.is_none_or(|c| crate::world::resources::is_visible(r, c, res)))
+    {
         v -= Fixed::whole(4);
     }
     v
@@ -133,7 +197,15 @@ fn site_bonuses(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
 
 /// How good a city here would be. Higher is better; sites may score negative.
 pub fn rank_site(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
-    let mut value = site_bonuses(world, r, tile);
+    rank_site_for(world, r, tile, None)
+}
+fn rank_site_for(
+    world: &World,
+    r: &Ruleset,
+    tile: TileId,
+    civ: Option<&crate::world::entities::Civilization>,
+) -> Fixed {
+    let mut value = site_bonuses(world, r, tile, civ);
     let mut counted = 0usize;
 
     for ring in 0..=2u32 {
@@ -141,7 +213,7 @@ pub fn rank_site(world: &World, r: &Ruleset, tile: TileId) -> Fixed {
         let weight = Fixed::whole(3).checked_div(Fixed::whole(ring as i32 + 1)).unwrap_or(Fixed::ONE);
         for t in world.grid.ring(tile, ring) {
             counted += 1;
-            value += tile_worth(world, r, t) * weight;
+            value += tile_worth_for(world, r, t, civ) * weight;
         }
     }
 
@@ -163,7 +235,7 @@ pub fn ranked_sites(world: &World, r: &Ruleset, civ: CivId, from: TileId, radius
         .into_iter()
         .filter(|t| can_settle(world, r, civ, *t).is_ok())
         .filter(|t| !crate::world::promises::promised_not_to_settle(world, civ, *t))
-        .map(|t| (t, rank_site(world, r, t)))
+        .map(|t| (t, rank_site_for(world, r, t, world.civ(civ))))
         .collect();
     // Ties break on id, so the choice is the same on every machine.
     sites.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -190,6 +262,7 @@ pub fn found_city_with(
     settler: Id<Unit>,
     name: impl Into<String>,
 ) -> Result<Id<City>, SettleRejection> {
+    can_found_with(world, r, settler)?;
     let unit = world.units.get(settler).ok_or(SettleRejection::NoSuchUnit)?;
     let (civ, tile) = (unit.owner, unit.position);
     can_settle(world, r, civ, tile)?;
@@ -205,6 +278,9 @@ pub fn found_city_with(
         if world.grid.owner[t.0 as usize].is_none() {
             world.claim_tile(id, t);
         }
+    }
+    if world.civ(civ).is_some_and(|c| c.is_city_state()) {
+        crate::world::city_state_actions::initialize(world, r);
     }
     Ok(id)
 }

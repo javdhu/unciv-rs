@@ -12,6 +12,10 @@ pub mod json;
 pub mod modifiers;
 pub mod rng;
 pub mod ruleset;
+#[cfg(feature = "save")]
+pub mod save;
+#[cfg(feature = "serde")]
+pub mod serialization;
 pub mod stats;
 mod unique;
 mod unique_type;

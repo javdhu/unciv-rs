@@ -33,6 +33,16 @@ pub struct Id<T> {
 }
 
 impl<T> Id<T> {
+    /// Decode an untrusted handle; existence and ownership still require arena validation.
+    pub fn from_parts(index: u32, generation: u32) -> Option<Self> {
+        NonZeroU32::new(generation).map(|generation| Self::new(index, generation))
+    }
+
+    #[cfg(feature = "serde")]
+    pub(crate) fn from_snapshot_parts(index: u32, generation: NonZeroU32) -> Self {
+        Self::new(index, generation)
+    }
+
     fn new(index: u32, generation: NonZeroU32) -> Id<T> {
         Id { index, generation, _marker: PhantomData }
     }
@@ -172,6 +182,7 @@ impl<T> std::ops::Index<Id<T>> for Registry<T> {
 
 // ------------------------------------------------------------------- Arena
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 enum Slot<T> {
     Occupied(T),
@@ -179,6 +190,7 @@ enum Slot<T> {
 }
 
 /// Storage for things that are created and destroyed during a game.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arena<T> {
     slots: Vec<(NonZeroU32, Slot<T>)>,
@@ -277,6 +289,43 @@ impl<T> Arena<T> {
 
     pub fn ids(&self) -> Vec<Id<T>> {
         self.iter().map(|(id, _)| id).collect()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> Arena<T> {
+    pub(crate) fn validate_snapshot(&self) -> Result<(), String> {
+        if self.slots.len() > u32::MAX as usize {
+            return Err("arena exceeds handle index range".into());
+        }
+        let vacant: Vec<u32> = self
+            .slots
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(|(i, (_, slot))| matches!(slot, Slot::Vacant).then_some(i as u32))
+            .collect();
+        if self.free != vacant || self.len != self.slots.len() - vacant.len() {
+            return Err("arena free slots or occupied count are inconsistent".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Arena<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Stored<T> {
+            slots: Vec<(NonZeroU32, Slot<T>)>,
+            free: Vec<u32>,
+            len: usize,
+        }
+        let stored = Stored::deserialize(deserializer)?;
+        let arena = Self { slots: stored.slots, free: stored.free, len: stored.len };
+        arena.validate_snapshot().map_err(serde::de::Error::custom)?;
+        Ok(arena)
     }
 }
 

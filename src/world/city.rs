@@ -33,6 +33,7 @@ pub const WORK_RADIUS: u32 = 3;
 /// Food each citizen eats per turn. Two in Civ V (`CityStats.kt:655`).
 pub const FOOD_PER_CITIZEN: i32 = 2;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct City {
     pub name: String,
@@ -45,15 +46,25 @@ pub struct City {
     pub worked: Vec<TileId>,
     /// The "avoid growth" toggle: stores cap instead of spilling into a citizen.
     pub avoid_growth: bool,
-    /// Production banked toward the head of the queue.
-    pub production_stored: i32,
+    /// Investment belongs to the construction, even while it is not queued.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
+    pub production_progress: std::collections::BTreeMap<crate::world::construction::Construction, i32>,
+    /// Excess from the last completion, available to the next active item.
+    pub production_overflow: i32,
     /// What this city is working on, front first.
     pub queue: Vec<crate::world::construction::Construction>,
+    /// Continuous Wealth or Research work, mutually exclusive with the queue.
+    pub production_conversion: Option<crate::stats::Stat>,
     /// Ordered so iteration and serialisation are reproducible.
     pub built: std::collections::BTreeSet<crate::arena::Id<crate::ruleset::Building>>,
+    /// Buildings granted without an ongoing maintenance charge.
+    pub free_buildings: std::collections::BTreeSet<crate::arena::Id<crate::ruleset::Building>>,
     /// Damage taken. A city is never destroyed — it floors at 1 and is then
     /// captured, which is why `health` is separate from existing at all.
     pub health: i32,
+    /// City bombardments remaining in the current action window.
+    pub attacks_left: u8,
+    pub sold_building_this_turn: bool,
     /// Uniques in force in this city, from its buildings. Rebuilt whenever
     /// something finishes — never patched.
     pub uniques: crate::world::unique_index::UniqueIndex,
@@ -67,6 +78,7 @@ pub struct City {
     /// policy pool: the same culture fills both.
     pub culture_stored: i32,
     /// Citizens working in buildings rather than on tiles, by kind.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pub specialists: crate::world::specialists::Allocation,
     /// Who built it. An annexed city is unhappy about anyone else holding it.
     pub founder: CivId,
@@ -74,6 +86,8 @@ pub struct City {
     pub original_capital: bool,
     /// The turn it was founded or last changed hands.
     pub turn_acquired: u32,
+    /// Previous holder, for the immediate post-conquest liberation decision.
+    pub previous_owner: Option<CivId>,
     /// Run by its own governor for gold, after a conquest; see `conquest`.
     pub puppet: bool,
     /// Burning, a citizen a turn, until nothing is left.
@@ -103,9 +117,14 @@ impl City {
             worked: Vec::new(),
             avoid_growth: false,
             health: BASE_CITY_HEALTH,
-            production_stored: 0,
+            attacks_left: 1,
+            sold_building_this_turn: false,
+            production_progress: Default::default(),
+            production_overflow: 0,
             queue: Vec::new(),
+            production_conversion: None,
             built: std::collections::BTreeSet::new(),
+            free_buildings: Default::default(),
             uniques: Default::default(),
             // A new city is atheist, and atheism is a positive quantity here
             // rather than the absence of one.
@@ -116,6 +135,7 @@ impl City {
             founder: owner,
             original_capital: false,
             turn_acquired: 0,
+            previous_owner: None,
             puppet: false,
             razing: false,
             resistance: 0,
@@ -129,6 +149,15 @@ impl City {
     /// Citizens not assigned to a tile or a specialist slot.
     pub fn idle_population(&self) -> u32 {
         self.population.saturating_sub(self.worked.len() as u32 + crate::world::specialists::count(self))
+    }
+
+    pub fn production_for(&self, what: crate::world::construction::Construction) -> i32 {
+        self.production_progress.get(&what).copied().unwrap_or(0)
+    }
+
+    /// Invested work on the current item; overflow is a separate reserve.
+    pub fn current_production(&self) -> i32 {
+        self.queue.first().map_or(0, |&what| self.production_for(what))
     }
 }
 
@@ -201,13 +230,54 @@ pub fn workable_tiles(grid: &TileGrid, city: &City) -> Vec<TileId> {
         .collect()
 }
 
+/// Tiles yielding to this city, including automatic wonders/improvements.
+pub fn yield_tiles(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<TileId> {
+    let mut tiles: std::collections::BTreeSet<_> =
+        city.worked.iter().copied().chain(std::iter::once(city.centre)).collect();
+    for tile in &city.tiles {
+        if grid.owner[tile.0 as usize] != Some(city.owner) || grid.distance(city.centre, *tile) > WORK_RADIUS {
+            continue;
+        }
+        let automatic = grid
+            .terrains(*tile)
+            .filter_map(|id| r.terrains.get(id))
+            .flat_map(|t| &t.uniques)
+            .chain(
+                grid.unpillaged_improvement(*tile)
+                    .and_then(|id| r.improvements.get(id))
+                    .into_iter()
+                    .flat_map(|i| &i.uniques),
+            )
+            .any(|u| u.unique_type() == Some(UniqueType::TileProvidesYieldWithoutPopulation));
+        if automatic {
+            tiles.insert(*tile);
+        }
+    }
+    tiles.into_iter().collect()
+}
+
 /// Everything the city produces, attributed by tile.
 pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Contribution> {
-    let centre = tile_yield(grid, r, city.centre);
+    city_yield_parts(grid, r, city, true, None)
+}
+
+fn city_yield_parts(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &City,
+    legacy_uniques: bool,
+    observer: Option<&crate::world::entities::Civilization>,
+) -> Vec<Contribution> {
+    let tile_output = |tile| {
+        observer
+            .map_or_else(|| tile_yield(grid, r, tile), |civ| crate::world::yields::tile_yield_for(grid, r, tile, civ))
+    };
+    let centre = tile_output(city.centre);
     let mut out = vec![(Source::new(SourceKind::Terrain, format!("{} centre", city.name)), centre)];
     // A city centre is topped up to a floor whatever it sits on, so founding
     // on poor terrain is survivable.
-    if let Some(gap) = crate::world::yields::missing_from_minimum(centre, crate::world::yields::CITY_CENTRE_MINIMUM) {
+    if let Some(gap) = crate::world::yields::missing_from_minimum(centre, crate::world::yields::city_centre_minimum(r))
+    {
         out.push((Source::new(SourceKind::Terrain, "city centre minimum"), gap));
     }
     // Citizens produce regardless of what they stand on: one science each,
@@ -240,7 +310,7 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
     // Uniques that grant yields. These are how buildings mostly work: a
     // Library's science is `[+1 Science] per [2] population`, not a field, and
     // 28 building uniques in Gods & Kings are `[stats] from [tileFilter] tiles`.
-    for u in city.uniques.all() {
+    for u in city.uniques.all().filter(|_| legacy_uniques) {
         match u.unique_type() {
             Some(UniqueType::StatsPerPopulation) => {
                 let (Some(stats), Some(per)) = (
@@ -287,9 +357,9 @@ pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Co
         }
     }
 
-    for t in &city.worked {
-        let (col, row) = grid.coords(*t);
-        out.push((Source::new(SourceKind::Terrain, format!("({col}, {row})")), tile_yield(grid, r, *t)));
+    for t in yield_tiles(grid, r, city).into_iter().filter(|t| *t != city.centre) {
+        let (col, row) = grid.coords(t);
+        out.push((Source::new(SourceKind::Terrain, format!("({col}, {row})")), tile_output(t)));
     }
     out
 }
@@ -341,78 +411,189 @@ pub fn city_yield_with(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bo
 /// City output with its owner's tile-yield modifiers, including Spain's
 /// natural-wonder bonus. Tile percentages precede building percentages.
 pub fn city_yield_in(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
-    let bonus = tile_percentage_bonus(world, r, city, golden_age);
-    finish_city_yield(&world.grid, r, city, golden_age, bonus)
+    city_yield_with_happiness(world, r, city, golden_age, None)
+}
+pub fn city_yield_with_happiness(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    city: &City,
+    golden_age: bool,
+    happiness: Option<i32>,
+) -> Stats {
+    let (flat, percent) = crate::world::city_effects::bonuses(world, r, city, happiness);
+    let bonus = tile_percentage_bonus(world, r, city, golden_age) + flat;
+    let base: Stats =
+        city_yield_parts(&world.grid, r, city, false, world.civ(city.owner)).into_iter().map(|(_, s)| s).sum();
+    let mut rate = Fixed::from_fraction(1, 4);
+    if let Some(stat) = city.production_conversion {
+        let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(city.owner);
+        if let Some(u) = world
+            .civ(city.owner)
+            .into_iter()
+            .flat_map(|c| c.uniques.matching(UniqueType::ProductionToStatConversionBonus))
+            .find(|u| {
+                u.params.first().is_some_and(|s| s == stat.name())
+                    && crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True
+            })
+        {
+            rate = rate
+                * Fixed::from_fraction(100 + u.params.get(1).and_then(|p| p.parse::<i64>().ok()).unwrap_or(0), 100);
+        }
+    }
+    let golden_tiles = golden_age.then(|| {
+        yield_tiles(&world.grid, r, city)
+            .into_iter()
+            .filter(|&tile| {
+                world
+                    .civ(city.owner)
+                    .is_some_and(|civ| !crate::world::yields::tile_yield_for(&world.grid, r, tile, civ).gold.is_zero())
+            })
+            .count()
+    });
+    finish_output(r, city, golden_tiles, base + bonus, percent, rate)
 }
 
 fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
-    use crate::world::conditionals::{applies, tile_matches_in, GameContext, Verdict};
-    let Some(civ) = world.civ(city.owner) else { return Stats::ZERO };
-    let modifiers: Vec<_> = city
-        .uniques
-        .matching(UniqueType::AllStatsPercentFromObject)
-        .chain(civ.uniques.matching(UniqueType::AllStatsPercentFromObject))
+    use crate::world::conditionals::{applies, tile_matches, GameContext, Verdict};
+    let modifiers: Vec<_> = crate::world::religion::city_uniques(world, r, city)
+        .into_iter()
+        .filter(|u| {
+            matches!(u.unique_type(), Some(UniqueType::AllStatsPercentFromObject | UniqueType::StatPercentFromObject))
+        })
         .collect();
     if modifiers.is_empty() {
         return Stats::ZERO;
     }
-    let grid = &world.grid;
-    let mut context = GameContext::new(r).with_world(world).for_civ(city.owner);
-    context.city =
-        world.cities.iter().find(|(_, c)| c.centre == city.centre && c.owner == city.owner).map(|(id, _)| id);
+    let mut ctx = GameContext::new(r).with_world(world).for_civ(city.owner);
+    ctx.city = world.cities.iter().find(|(_, c)| c.centre == city.centre).map(|(id, _)| id);
     let mut bonus = Stats::ZERO;
-    for tile in std::iter::once(city.centre).chain(city.worked.iter().copied()) {
-        let ctx = context.on_tile(tile);
-        let percent: Fixed = modifiers
-            .iter()
-            .filter_map(|u| {
-                let filter = u.params.get(1)?;
-                (applies(u, &ctx) == Verdict::True
-                    && tile_matches_in(grid, r, tile, filter, Some(city.owner)) == Verdict::True)
-                    .then(|| u.params.first().and_then(|p| Fixed::parse(p)))
-                    .flatten()
-            })
-            .sum();
-        if percent.is_zero() {
-            continue;
+    for tile in yield_tiles(&world.grid, r, city) {
+        let context = ctx.on_tile(tile);
+        let improvement = world.grid.unpillaged_improvement(tile).and_then(|id| r.improvements.get(id));
+        let breakdown = world.civ(city.owner).map_or_else(
+            || crate::world::yields::tile_yield_breakdown(&world.grid, r, tile),
+            |civ| crate::world::yields::tile_yield_breakdown_for(&world.grid, r, tile, civ),
+        );
+        let mut terrain: Stats =
+            breakdown.iter().filter(|(source, _)| source.kind != SourceKind::Improvement).map(|(_, s)| *s).sum();
+        let mut improved: Stats =
+            breakdown.iter().filter(|(source, _)| source.kind == SourceKind::Improvement).map(|(_, s)| *s).sum();
+        improved += crate::world::improvements::conditional_yields(world, r, city.owner, tile);
+        for flat in crate::world::religion::city_uniques(world, r, city) {
+            if applies(flat, &context) != Verdict::True {
+                continue;
+            }
+            let valid = match flat.unique_type() {
+                Some(UniqueType::StatsFromObject) => true,
+                Some(UniqueType::StatsFromTiles) => flat.params.get(2).is_some_and(|f| {
+                    crate::world::filters::city_matches(world, r, city, Some(city), f) == Verdict::True
+                }),
+                Some(UniqueType::StatsFromTilesWithout) => {
+                    flat.params.get(3).is_some_and(|f| {
+                        crate::world::filters::city_matches(world, r, city, Some(city), f) == Verdict::True
+                    }) && flat.params.get(2).is_some_and(|f| tile_matches(&context, tile, f) == Verdict::False)
+                }
+                _ => false,
+            };
+            if !valid {
+                continue;
+            }
+            if let (Some(filter), Some(stats)) = (flat.params.get(1), flat.params.first().and_then(|p| Stats::parse(p)))
+            {
+                if improvement.is_some_and(|imp| {
+                    crate::world::filters::multi_filter(filter, &|f| {
+                        if f == imp.name || f == "All" || f == "Improvement" || imp.uniques.iter().any(|u| u.text == f)
+                        {
+                            Verdict::True
+                        } else {
+                            Verdict::False
+                        }
+                    }) == Verdict::True
+                }) {
+                    improved += stats;
+                } else if tile_matches(&context, tile, filter) == Verdict::True {
+                    terrain += stats;
+                }
+            }
         }
-        // Tile percentages do not multiply the improvement's own output;
-        // Kotlin keeps terrain, improvement and road percentage categories.
-        let mut affected: Stats = crate::world::yields::tile_yield_breakdown(grid, r, tile)
-            .into_iter()
-            .filter(|(source, _)| source.kind != SourceKind::Improvement)
-            .map(|(_, stats)| stats)
-            .sum();
         if tile == city.centre {
             if let Some(gap) = crate::world::yields::missing_from_minimum(
-                tile_yield(grid, r, tile),
-                crate::world::yields::CITY_CENTRE_MINIMUM,
+                breakdown.iter().map(|(_, stats)| *stats).sum(),
+                crate::world::yields::city_centre_minimum(r),
             ) {
-                affected += gap;
+                terrain += gap;
             }
         }
-        for u in city.uniques.matching(UniqueType::StatsFromTiles) {
-            if u.params.get(1).is_some_and(|f| tile_matches_in(grid, r, tile, f, Some(city.owner)) == Verdict::True) {
-                affected += u.params.first().and_then(|p| Stats::parse(p)).unwrap_or_default();
+        if golden_age && !breakdown.iter().map(|(_, stats)| stats.gold).sum::<Fixed>().is_zero() {
+            terrain.gold += Fixed::ONE;
+        }
+        for u in &modifiers {
+            if applies(u, &context) != Verdict::True {
+                continue;
             }
-        }
-        if golden_age && crate::world::golden_age::gains_gold(r, grid, tile) {
-            affected.gold += Fixed::ONE;
-        }
-        for stat in Stat::ALL {
-            bonus[stat] += (affected[stat] * percent).checked_div(Fixed::whole(100)).unwrap_or(Fixed::ZERO);
+            let all = u.unique_type() == Some(UniqueType::AllStatsPercentFromObject);
+            let Some(filter) = u.params.get(if all { 1 } else { 2 }) else { continue };
+            let on_improvement = improvement.is_some_and(|imp| {
+                crate::world::filters::multi_filter(filter, &|f| {
+                    if f == imp.name || f == "All" || f == "Improvement" || imp.uniques.iter().any(|u| u.text == f) {
+                        Verdict::True
+                    } else {
+                        Verdict::False
+                    }
+                }) == Verdict::True
+            });
+            let affected = if on_improvement {
+                improved
+            } else if tile_matches(&context, tile, filter) == Verdict::True {
+                terrain
+            } else {
+                continue;
+            };
+            let pct = u
+                .params
+                .first()
+                .and_then(|p| p.parse::<i64>().ok())
+                .map(|p| Fixed::from_fraction(p, 100))
+                .unwrap_or_default();
+            for stat in Stat::ALL {
+                if all || u.params.get(1).and_then(|s| Stat::parse(s)) == Some(stat) {
+                    bonus[stat] += affected[stat] * pct;
+                }
+            }
         }
     }
     bonus
 }
 
 fn finish_city_yield(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool, tile_bonus: Stats) -> Stats {
-    let mut base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
-    base += tile_bonus;
+    let base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
+    let golden_tiles = golden_age.then(|| {
+        yield_tiles(grid, r, city)
+            .into_iter()
+            .filter(|&tile| crate::world::golden_age::gains_gold(r, grid, tile))
+            .count()
+    });
+    finish_output(r, city, golden_tiles, base + tile_bonus, Stats::ZERO, Fixed::from_fraction(1, 4))
+}
+
+fn finish_output(
+    r: &Ruleset,
+    city: &City,
+    golden_tiles: Option<usize>,
+    mut base: Stats,
+    percent: Stats,
+    conversion_rate: Fixed,
+) -> Stats {
     let mut bonuses = city_percent_bonuses(r, city);
-    if golden_age {
-        let tiles = std::iter::once(city.centre).chain(city.worked.iter().copied());
-        let gold_tiles = tiles.filter(|t| crate::world::golden_age::gains_gold(r, grid, *t)).count();
+    for stat in Stat::ALL {
+        if !percent[stat].is_zero() {
+            bonuses
+                .entry(stat)
+                .or_default()
+                .add(Modifier::additive_percent(percent[stat], Source::new(SourceKind::Other, "Ruleset")));
+        }
+    }
+    if let Some(gold_tiles) = golden_tiles {
         base.gold += Fixed::whole(gold_tiles as i32);
         for stat in [Stat::Production, Stat::Culture] {
             bonuses.entry(stat).or_default().add(Modifier::additive_percent(
@@ -423,8 +604,15 @@ fn finish_city_yield(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool
     }
 
     let mut out = base;
+    out.production = bonuses.get(&Stat::Production).map_or(base.production, |stack| stack.evaluate(base.production));
+    if let Some(stat) = city.production_conversion {
+        base[stat] += out.production * conversion_rate;
+        out[stat] = base[stat];
+    }
     for (stat, stack) in &bonuses {
-        out[*stat] = stack.evaluate(base[*stat]);
+        if *stat != Stat::Production {
+            out[*stat] = stack.evaluate(base[*stat]);
+        }
     }
     out
 }
@@ -450,7 +638,12 @@ pub fn city_strength(r: &Ruleset, city: &City) -> Fixed {
 
 /// Gold a city's buildings cost to keep, per turn.
 pub fn city_maintenance(r: &Ruleset, city: &City) -> i32 {
-    city.built.iter().filter_map(|id| r.buildings.get(*id)).filter_map(|b| b.maintenance).sum()
+    city.built
+        .iter()
+        .filter(|id| !city.free_buildings.contains(id))
+        .filter_map(|id| r.buildings.get(*id))
+        .filter_map(|b| b.maintenance)
+        .sum()
 }
 
 /// Rebuild the city's unique index from what it has built.
@@ -467,7 +660,16 @@ pub fn food_surplus(grid: &TileGrid, r: &Ruleset, city: &City) -> i32 {
 
 /// Apply one turn of food. Mirrors `CityPopulationManager.nextTurn`.
 pub fn apply_food(city: &mut City, food: i32, m: GrowthModifiers) -> GrowthEvent {
-    city.food_stored += food;
+    apply_food_with_rules(city, food, m, 0, false)
+}
+pub fn apply_food_with_rules(
+    city: &mut City,
+    food: i32,
+    m: GrowthModifiers,
+    carry_percent: i32,
+    nullified: bool,
+) -> GrowthEvent {
+    city.food_stored = city.food_stored.saturating_add(food);
 
     if city.food_stored < 0 {
         // Starvation costs a citizen, never the last one, and empties the store.
@@ -482,12 +684,16 @@ pub fn apply_food(city: &mut City, food: i32, m: GrowthModifiers) -> GrowthEvent
     if city.food_stored < needed {
         return GrowthEvent::Stored { food: city.food_stored };
     }
+    if nullified {
+        return GrowthEvent::Held { food: city.food_stored };
+    }
     if city.avoid_growth {
         city.food_stored = needed;
         return GrowthEvent::Held { food: city.food_stored };
     }
 
     city.food_stored -= needed;
+    city.food_stored += (i64::from(needed) * i64::from(carry_percent.clamp(0, 95)) / 100) as i32;
     city.population += 1;
     GrowthEvent::Grew { population: city.population, carried_over: city.food_stored }
 }

@@ -19,11 +19,11 @@ use crate::ruleset::{Policy, Ruleset, Technology};
 use crate::stats::{Fixed, Stat};
 use crate::world::assignment::ranking_weights;
 use crate::world::city::City;
-use crate::world::construction::{available, production_cost, Construction, CostModifiers};
+use crate::world::construction::{available, production_cost, production_cost_in, Construction, CostModifiers};
 use crate::world::entities::Unit;
 use crate::world::grid::{CivId, TileId};
-use crate::world::policies::{is_adoptable, policy_cost, PolicyModifiers};
-use crate::world::research::{available_techs, tech_cost, ScienceModifiers};
+use crate::world::policies::{is_adoptable, PolicyModifiers};
+use crate::world::research::{available_techs, tech_cost_in, ScienceModifiers};
 use crate::world::world::World;
 use crate::UniqueType;
 
@@ -33,10 +33,9 @@ use crate::UniqueType;
 /// the things later techs build on, so rushing an expensive one usually costs
 /// more than it returns. Ties break on id.
 pub fn choose_research(world: &World, r: &Ruleset, civ: CivId, m: ScienceModifiers) -> Option<Id<Technology>> {
-    let cities = world.civ(civ).map_or(0, |c| c.cities.len());
     available_techs(r, world.civ(civ)?)
         .into_iter()
-        .filter_map(|t| tech_cost(r, t, cities, m).map(|c| (c, t)))
+        .filter_map(|t| tech_cost_in(world, r, civ, t, m).map(|c| (c, t)))
         .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)))
         .map(|(_, t)| t)
 }
@@ -74,42 +73,93 @@ pub fn choose_construction(
     let wins_the_game = victory_buildings(r);
     // What this city makes in a turn, for deciding whether a victory building
     // is a plan or a daydream.
-    let production = crate::world::city::city_yield(&world.grid, r, city).production.floor().max(0) as i32;
+    let golden = crate::world::golden_age::is_golden(world, civ);
+    let current_output = crate::world::city::city_yield_in(world, r, city, golden);
+    let production = current_output.production.floor().max(0) as i32;
+    let city_id = world.cities.iter().find(|(_, c)| c.owner == civ && c.centre == city.centre).map(|(id, _)| id);
+
+    // Once this city can finish the last outstanding milestone within the
+    // existing build horizon, winning outranks marginal infrastructure yields.
+    let winning = if production > 0 {
+        wins_the_game.iter().filter_map(|&building| {
+        let what=Construction::Building(building);
+        crate::world::construction::can_construct_in(world,r,civ,city,what).ok()?;
+        let cost=city_id.map_or_else(||production_cost(r,what,m),|id|production_cost_in(world,r,id,what,m))?;
+        let remaining=cost.saturating_sub(city.production_for(what)).max(0);
+        if (remaining+production-1)/production>VICTORY_BUILD_HORIZON {return None;}
+        let ends=crate::world::victory::victories_needing(r,building).into_iter().filter_map(|id|r.victories.get(id)).any(|v|
+            crate::world::victory::is_enabled(world,r,&v.name) && crate::world::victory::progress(world,r,civ,v).iter().all(|(milestone,verdict)|
+                *verdict==crate::world::conditionals::Verdict::True || matches!(milestone,crate::world::victory::Milestone::BuiltBuilding(name) if *name==r.buildings[building].name)));
+        ends.then_some((remaining,what))
+    }).min_by_key(|(cost,what)|(*cost,*what)).map(|(_,what)|what)
+    } else {
+        None
+    };
+    if winning.is_some() {
+        return winning;
+    }
 
     available(r, civ_ref, city)
         .into_iter()
+        .filter(|what| crate::world::construction::can_construct_in(world, r, civ, city, *what).is_ok())
         .filter_map(|what| {
-            let cost = production_cost(r, what, m)?;
+            let cost =
+                city_id.map_or_else(|| production_cost(r, what, m), |id| production_cost_in(world, r, id, what, m))?;
             let value = match what {
                 // A settler is worth more than any building while the empire
                 // is small — land compounds and a granary does not.
-                // Every unit is scored, and the `want_*` flags scale that
-                // score rather than gating it.
-                //
-                // They used to be gates, with a catch-all of zero underneath —
-                // and a score of zero is filtered out, so any unit that fit no
-                // category could never be built at all. Work Boats are the
-                // real casualty: no strength, not a settler, not a worker, and
-                // once the civ owns a single unit `want_scout` goes false, so
-                // from that turn on they were unbuildable forever. Spaceship
-                // parts the same, which quietly removes a victory condition.
+                // Settlers and workers need a job. Giving an unneeded worker
+                // a small positive fallback score produced hundreds of idle
+                // workers after the useful buildings were exhausted. Other
+                // noncombat roles retain their own fallback below.
                 Construction::Unit(id) => {
                     let u = r.units.get(id)?;
-                    let strength = u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0));
-                    if crate::world::settling::is_settler(r, id) {
+                    let strength = unit_strength(r, id);
+                    if u.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::AddInCapital)) {
+                        crate::world::victory_actions::part_priority(world, r, civ, id)?
+                    } else if crate::world::settling::is_settler(r, id) {
                         // Land compounds and a granary does not — but only
                         // while there is somewhere to put it.
                         if want_settler {
                             Fixed::whole(400)
                         } else {
-                            Fixed::whole(20)
+                            return None;
                         }
                     } else if is_worker(r, id) {
                         if want_worker {
                             Fixed::whole(200)
                         } else {
-                            Fixed::whole(20)
+                            return None;
                         }
+                    } else if is_work_boat(r, id) {
+                        let jobs = world
+                            .grid
+                            .ids()
+                            .filter(|tile| {
+                                world.grid.owner[tile.0 as usize] == Some(civ) && world.grid.is_water(r, *tile)
+                            })
+                            .filter(|tile| {
+                                world.grid.resource[tile.0 as usize]
+                                    .and_then(|res| r.resources[res].improvement.as_deref())
+                                    .and_then(|name| r.improvements.id(name))
+                                    .is_some_and(|imp| {
+                                        crate::world::improvements::can_build(world, r, civ, *tile, imp).is_ok()
+                                    })
+                            })
+                            .count();
+                        let boats =
+                            world.units.iter().filter(|(_, u)| u.owner == civ && is_work_boat(r, u.base)).count()
+                                + world
+                                    .cities
+                                    .iter()
+                                    .filter(|(_, c)| c.owner == civ)
+                                    .flat_map(|(_, c)| &c.queue)
+                                    .filter(|what| matches!(what,Construction::Unit(base) if is_work_boat(r,*base)))
+                                    .count();
+                        if jobs <= boats {
+                            return None;
+                        }
+                        Fixed::whole(180)
                     } else if want_scout {
                         // Something — anything — that can walk and look. The
                         // point is eyes, not strength, so a warrior counts:
@@ -117,21 +167,14 @@ pub fn choose_construction(
                         // exploration and with it its first contacts.
                         Fixed::whole(100 + u.movement * 10)
                     } else if strength > 0 {
-                        // Soldiers, by what they bring to a fight per hammer.
-                        //
-                        // A civ that has enough of them scores the next one at
-                        // one, not at zero. The difference matters only at the
-                        // margin — one over a cost of forty loses to every
-                        // building in the ruleset — but zero is what made
-                        // whole unit classes unbuildable, and "we have enough"
-                        // is not the same fact as "this does not exist".
-                        // Scoring a surplus soldier at its full strength
-                        // instead produced a hundred and thirty-seven units
-                        // and eighteen thousand gold of debt.
+                        // A stronger unit uses the same frontline tile and
+                        // maintenance slot as a scout. Value that strength as
+                        // well as its cost; raw strength/cost ties Scout with
+                        // Warrior and otherwise keeps obsolete armies forever.
                         if want_military {
-                            Fixed::whole(strength * 3)
+                            military_value(strength)
                         } else {
-                            Fixed::ONE
+                            return None;
                         }
                     } else {
                         // Something with a job rather than a fight: a work
@@ -143,12 +186,18 @@ pub fn choose_construction(
                 }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
-                    let stats = crate::ruleset::queries::HasStats::stats(b);
+                    // Evaluate the same yields the city will receive. Many
+                    // buildings (notably a Library's science per population)
+                    // put their benefit in uniques rather than flat fields.
+                    let mut hypothetical = city.clone();
+                    hypothetical.built.insert(id);
+                    crate::world::city::rebuild_city_uniques(r, &mut hypothetical);
+                    let output = crate::world::city::city_yield_in(world, r, &hypothetical, golden);
+                    let mut stats = crate::stats::Stats::ZERO;
+                    for stat in Stat::ALL {
+                        stats[stat] = output[stat] - current_output[stat];
+                    }
                     let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
-                    // A percentage is worth something even with nothing to
-                    // multiply yet, or nothing would ever build a Library.
-                    let pct: i32 = b.percent_stat_bonus.values().sum();
-                    flat += Fixed::whole(pct);
 
                     // Upkeep is priced, not gated.
                     //
@@ -249,7 +298,13 @@ pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
         .filter_map(|u| world.units.get(*u))
         .filter(|u| crate::world::settling::is_settler(r, u.base))
         .count();
-    if settlers > 0 {
+    if settlers > 0
+        || c.cities.iter().filter_map(|id| world.cities.get(*id)).any(|city| {
+            city.queue
+                .iter()
+                .any(|what| matches!(what, Construction::Unit(base) if crate::world::settling::is_settler(r, *base)))
+        })
+    {
         return false;
     }
     c.cities
@@ -270,7 +325,7 @@ pub fn settler_order(
         return None;
     }
     // Standing somewhere legal? Then stop walking.
-    if crate::world::settling::can_settle(world, r, civ, u.position).is_ok() {
+    if crate::world::settling::can_found_with(world, r, unit).is_ok() {
         return Some(UnitOrder::FoundCity);
     }
     // The best site there is a way to, and one step of that way. A site
@@ -278,6 +333,7 @@ pub fn settler_order(
     // no site at all; walking at it only strands the settler at the border.
     let step = crate::world::settling::ranked_sites(world, r, civ, u.position, 8)
         .into_iter()
+        .filter(|(site, _)| crate::world::settling::can_found_on(world, r, u, *site).is_ok())
         .take(6)
         .find_map(|(site, _)| crate::world::movement::step_toward(world, r, unit, site))?;
     Some(UnitOrder::MoveTo(step))
@@ -289,7 +345,13 @@ pub fn settler_order(
 /// worker with nothing to do is 70 production spent on standing still.
 pub fn wants_worker(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
-    let workers = c.units.iter().filter_map(|u| world.units.get(*u)).filter(|u| is_worker(r, u.base)).count();
+    let workers = c.units.iter().filter_map(|u| world.units.get(*u)).filter(|u| is_worker(r, u.base)).count()
+        + c.cities
+            .iter()
+            .filter_map(|id| world.cities.get(*id))
+            .flat_map(|city| &city.queue)
+            .filter(|what| matches!(what, Construction::Unit(base) if is_worker(r, *base)))
+            .count();
     if workers >= c.cities.len() {
         return false;
     }
@@ -304,6 +366,12 @@ pub fn is_worker(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
     r.units
         .get(base)
         .is_some_and(|u| u.uniques.iter().any(|x| x.unique_type() == Some(crate::UniqueType::BuildImprovements)))
+}
+
+fn is_work_boat(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
+    r.units
+        .get(base)
+        .is_some_and(|u| u.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::CreateWaterImprovements)))
 }
 
 /// Worked tiles that could be improved and are not, best first.
@@ -419,7 +487,7 @@ pub fn improvable_tiles(
     let civ_ref = world.civ(civ);
     let mut out: Vec<_> = candidates
         .iter()
-        .filter(|t| world.grid.improvement[t.0 as usize].is_none())
+        .filter(|t| world.grid.improvement[t.0 as usize].is_none() || world.grid.improvement_pillaged[t.0 as usize])
         .filter_map(|t| {
             // Best by what it yields, weighted as a citizen would weigh it.
             let weights = ranking_weights();
@@ -428,6 +496,12 @@ pub fn improvable_tiles(
                 .map(|i| {
                     let stats = crate::ruleset::queries::HasStats::stats(&r.improvements[i]);
                     let mut worth: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    if r.improvements[i].name == "Repair" {
+                        worth += Fixed::whole(30);
+                    }
+                    if r.improvements[i].name.starts_with("Remove ") && !r.improvements[i].name.contains("Road") {
+                        worth += Fixed::whole(2);
+                    }
                     worth += resource_worth(world, r, civ_ref, *t, i);
                     (worth, i)
                 })
@@ -482,6 +556,32 @@ pub fn worker_order(
     jobs: &std::cell::OnceCell<Vec<WorkerJob>>,
 ) -> Option<UnitOrder> {
     let u = world.units.get(unit)?;
+    if r.units[u.base]
+        .uniques
+        .iter()
+        .any(|unique| unique.unique_type() == Some(crate::UniqueType::CreateWaterImprovements))
+    {
+        let mut targets: Vec<_> = world
+            .grid
+            .ids()
+            .filter(|tile| world.grid.is_water(r, *tile))
+            .filter_map(|tile| {
+                world.grid.resource[tile.0 as usize]
+                    .and_then(|res| r.resources[res].improvement.as_deref())
+                    .and_then(|name| r.improvements.id(name))
+                    .filter(|imp| crate::world::improvements::can_build(world, r, civ, tile, *imp).is_ok())
+                    .map(|imp| (tile, imp))
+            })
+            .collect();
+        targets.sort_by_key(|(tile, _)| (world.grid.distance(u.position, *tile), *tile));
+        return targets.into_iter().find_map(|(tile, imp)| {
+            if tile == u.position {
+                Some(UnitOrder::Improve(imp))
+            } else {
+                crate::world::movement::step_toward(world, r, unit, tile).map(UnitOrder::MoveTo)
+            }
+        });
+    }
     if !is_worker(r, u.base) {
         return None;
     }
@@ -498,7 +598,9 @@ pub fn worker_order(
     let jobs = jobs.get_or_init(|| worker_jobs(world, r, civ));
 
     // Already standing on a job? Dig.
-    if let Some((_, imp)) = jobs.iter().find(|(t, _)| *t == u.position) {
+    if let Some((_, imp)) =
+        jobs.iter().find(|(t, imp)| *t == u.position && crate::world::improvements::can_work(world, r, unit, *imp))
+    {
         return Some(UnitOrder::Improve(*imp));
     }
 
@@ -517,7 +619,8 @@ pub fn worker_order(
         .min_by_key(|t| (world.grid.distance(u.position, *t), t.0));
 
     // Otherwise head for the nearest one there is a way to, ties by tile id.
-    let mut nearest: Vec<crate::world::grid::TileId> = jobs.iter().map(|(t, _)| *t).collect();
+    let mut nearest: Vec<crate::world::grid::TileId> =
+        jobs.iter().filter(|(t, _)| !world.grid.is_water(r, *t)).map(|(t, _)| *t).collect();
     nearest.sort_by_key(|t| (world.grid.distance(u.position, *t), t.0));
     nearest.dedup();
     let step = unfinished
@@ -541,7 +644,7 @@ pub fn explore_order(
 ) -> Option<UnitOrder> {
     let u = world.units.get(unit)?;
     // Settlers and workers have jobs; only the idle military wanders.
-    if crate::world::settling::is_settler(r, u.base) || is_worker(r, u.base) {
+    if crate::world::settling::is_settler(r, u.base) || is_worker(r, u.base) || u.is_air(r) {
         return None;
     }
     if !u.can_move() {
@@ -1084,7 +1187,7 @@ pub fn choose_purchases(
     for (city_id, _) in order {
         let Some(city) = world.cities.get(city_id) else { continue };
         let Some(&what) = city.queue.first() else { continue };
-        if city.production_stored > 0 {
+        if city.production_for(what) > 0 {
             continue;
         }
         let hurry = match what {
@@ -1179,15 +1282,19 @@ pub fn military_strength(world: &World, r: &Ruleset, civ: CivId) -> Fixed {
     world
         .civ(civ)
         .map(|c| {
-            c.units
-                .iter()
-                .filter_map(|u| world.units.get(*u))
-                .filter_map(|u| r.units.get(u.base))
-                .filter_map(|b| b.strength)
-                .map(Fixed::whole)
-                .sum()
+            c.units.iter().filter_map(|u| world.units.get(*u)).map(|u| unit_strength(r, u.base)).map(Fixed::whole).sum()
         })
         .unwrap_or(Fixed::ZERO)
+}
+
+fn unit_strength(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> i32 {
+    r.units.get(base).map_or(0, |u| u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0))).max(0)
+}
+
+fn military_value(strength: i32) -> Fixed {
+    // Preserve the old Warrior value (24) while rewarding stronger units
+    // for limited frontage. All scoring stays in deterministic fixed point.
+    Fixed::whole(strength) * Fixed::whole(strength) * Fixed::permille(375)
 }
 
 /// How many military units the civ should keep.
@@ -1214,17 +1321,42 @@ pub fn target_military(world: &World, r: &Ruleset, civ: CivId) -> usize {
 
 pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
-    let have = c
+    // Size the force in current soldiers' strength, not a count in which an
+    // ancient scout permanently substitutes for a modern infantry unit.
+    // Legality matters: unavailable iron/oil must not create an unreachable
+    // target that drains every city's production into weaker replacements.
+    let best = r
         .units
-        .iter()
-        .filter_map(|u| world.units.get(*u))
-        .filter(|u| {
-            !crate::world::settling::is_settler(r, u.base)
-                && !is_worker(r, u.base)
-                && r.units.get(u.base).and_then(|b| b.strength).unwrap_or(0) > 0
+        .ids()
+        .filter(|base| unit_strength(r, *base) > 0)
+        .filter_map(|base| {
+            let what = Construction::Unit(base);
+            let cost = c
+                .cities
+                .iter()
+                .filter_map(|id| {
+                    let city = world.cities.get(*id)?;
+                    crate::world::construction::can_construct_in(world, r, civ, city, what).ok()?;
+                    production_cost_in(world, r, *id, what, CostModifiers::default())
+                })
+                .min()?;
+            Some((military_value(unit_strength(r, base)).checked_div(Fixed::whole(cost.max(1)))?, base))
         })
-        .count();
-    have < target_military(world, r, civ)
+        .max_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)))
+        .map(|(_, base)| unit_strength(r, base));
+    let Some(strength) = best else { return false };
+    let queued: Fixed = c
+        .cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .flat_map(|city| &city.queue)
+        .filter_map(|what| match what {
+            Construction::Unit(base) => Some(Fixed::whole(unit_strength(r, *base))),
+            _ => None,
+        })
+        .sum();
+    military_strength(world, r, civ) + queued
+        < Fixed::whole(strength) * Fixed::whole(target_military(world, r, civ) as i32)
 }
 
 /// Whether to declare war on a civ already met.
@@ -1234,7 +1366,7 @@ pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
 /// makes the decision legible: at 1.5x strength with an adjacent target,
 /// attack.
 pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool {
-    if !world.diplomacy.have_met(civ, other) || world.diplomacy.at_war(civ, other) {
+    if !world.diplomacy.have_met(civ, other) || !world.diplomacy.can_declare_war(civ, other) {
         return false;
     }
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
@@ -1321,28 +1453,61 @@ pub fn military_order(
         return None;
     }
 
-    // A city in reach is worth more than any unit beside it: killing an army
-    // achieves nothing, taking a city ends a civilization.
-    let adjacent_city = world.grid.neighbours(u.position).find_map(|t| {
-        world
-            .cities
-            .iter()
-            .find(|(_, c)| c.centre == t && c.owner != civ && world.diplomacy.at_war(civ, c.owner))
-            .map(|(id, _)| id)
-    });
-    if let Some(city) = adjacent_city {
-        return Some(UnitOrder::Assault(city));
+    if u.has_unique(r, crate::UniqueType::NuclearWeapon) {
+        if let Some(target) = crate::world::nuclear::order(world, r, unit) {
+            return Some(UnitOrder::NuclearStrike(target));
+        }
+    }
+    if u.is_air(r) {
+        return crate::world::air::order(world, r, unit);
+    }
+    if let Some(to) = crate::world::air::paradrop_order(world, r, unit) {
+        return Some(UnitOrder::Paradrop(to));
     }
 
-    // An adjacent enemy is the whole decision.
-    let adjacent: Vec<_> = world
-        .grid
-        .neighbours(u.position)
-        .flat_map(|t| world.units_at(t))
-        .filter(|id| world.units.get(*id).is_some_and(|o| o.owner != civ && world.diplomacy.at_war(civ, o.owner)))
-        .collect();
-    if let Some(target) = adjacent.into_iter().min() {
-        return Some(UnitOrder::Attack(target));
+    // Use the same target restrictions and range as command execution. Siege
+    // setup is scheduled by the turn adapter before an otherwise legal shot.
+    let range = crate::world::air::attack_range(world, r, unit);
+    let can_reach = |tile| {
+        world.grid.distance(u.position, tile) <= range as u32
+            && (!u.is_ranged(r)
+                || crate::world::combat::has_line_of_sight(
+                    &world.grid,
+                    r,
+                    u.position,
+                    tile,
+                    u.has_unique(r, crate::UniqueType::IndirectFire),
+                ))
+    };
+    if u.attacks_left > 0 {
+        if let Some((city, _)) = world
+            .cities
+            .iter()
+            .filter(|(id, city)| {
+                city.owner != civ
+                    && world.diplomacy.at_war(civ, city.owner)
+                    && world.visibility.can_see(civ, city.centre)
+                    && can_reach(city.centre)
+                    && crate::world::military::may_attack(world, r, unit, crate::world::air::Target::City(*id))
+            })
+            .min_by_key(|(id, city)| (city.health, *id))
+        {
+            return Some(UnitOrder::Assault(city));
+        }
+        if let Some((target, _)) = world
+            .units
+            .iter()
+            .filter(|(id, other)| {
+                other.owner != civ
+                    && world.diplomacy.at_war(civ, other.owner)
+                    && crate::world::fog::can_see_unit(world, r, civ, *id)
+                    && can_reach(other.position)
+                    && crate::world::military::may_attack(world, r, unit, crate::world::air::Target::Unit(*id))
+            })
+            .min_by_key(|(id, other)| (other.health, *id))
+        {
+            return Some(UnitOrder::Attack(target));
+        }
     }
 
     // At war and nothing to hit? Walk toward their nearest city.
@@ -1366,6 +1531,10 @@ pub fn military_order(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitOrder {
     MoveTo(crate::world::grid::TileId),
+    Rebase(crate::world::grid::TileId),
+    AirSweep(crate::world::grid::TileId),
+    NuclearStrike(crate::world::grid::TileId),
+    Paradrop(crate::world::grid::TileId),
     FoundCity,
     Improve(Id<crate::ruleset::TileImprovement>),
     Attack(Id<crate::world::entities::Unit>),
@@ -1381,8 +1550,8 @@ pub enum UnitOrder {
 /// deepening them — a reasonable default, and the place a real opinion would go.
 pub fn choose_policy(world: &World, r: &Ruleset, civ: CivId, m: PolicyModifiers) -> Option<Id<Policy>> {
     let c = world.civ(civ)?;
-    let cost = policy_cost(c.adopted_policies.len(), c.cities.len(), m);
-    if c.culture_stored < cost {
+    let cost = crate::world::policies::policy_cost_in(world, r, civ, m);
+    if c.culture_stored < cost && c.pending_rewards.free_policies == 0 {
         return None;
     }
     r.policies.ids().filter(|p| is_adoptable(world, r, civ, *p).is_ok()).min()
@@ -1448,6 +1617,111 @@ mod tests {
         assert!(crate::world::construction::can_construct(&r, w.civ(CivId(0)).unwrap(), &city, choice).is_ok());
     }
 
+    #[test]
+    fn idle_workers_do_not_outrank_a_libraries_population_science() {
+        let mut r = ruleset();
+        let library = r.buildings.id("Library").unwrap();
+        // Isolate the real late-game choice: a useful population-scaled
+        // building and units whose jobs are already covered.
+        for id in r.buildings.ids().collect::<Vec<_>>() {
+            if id != library {
+                r.buildings.get_mut(id).unwrap().cost = None;
+            }
+        }
+        let mut w = world(&r);
+        let centre = w.grid.id_at(8, 8).unwrap();
+        let city_id = w.found_city_in(&r, City::found("Established", CivId(0), centre));
+        w.cities.get_mut(city_id).unwrap().population = 9;
+        for name in ["Agriculture", "Writing"] {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id(name).unwrap());
+        }
+        for tile in w.grid.ids() {
+            w.grid.improvement[tile.0 as usize] = r.improvements.id("Farm");
+        }
+        for tile in 0..10 {
+            w.place_unit(Unit::new(r.units.id("Worker").unwrap(), CivId(0), TileId(tile), 2));
+        }
+        assert!(!wants_worker(&w, &r, CivId(0)));
+        assert!(worker_jobs(&w, &r, CivId(0)).is_empty());
+        let before = w.clone();
+        let choice = choose_construction(
+            &w,
+            &r,
+            CivId(0),
+            w.cities.get(city_id).unwrap(),
+            CostModifiers::default(),
+            3,
+            Priorities { happiness: -3, ..Default::default() },
+        );
+        assert_eq!(choice, Some(Construction::Building(library)));
+        assert_eq!(w, before, "hypothetical yields must not change the city");
+
+        // Exercise repeated real planning and production after the first
+        // choice. A city-state keeps this fixture about one established city.
+        w.civ_mut(CivId(0)).unwrap().city_state_type = r.city_state_types.ids().next();
+        // Seed the construction selected above; work belongs to this item
+        // even if subsequent choices change.
+        w.cities.get_mut(city_id).unwrap().queue.push(choice.unwrap());
+        w.cities.get_mut(city_id).unwrap().production_progress.insert(choice.unwrap(), 500);
+        for _ in 0..30 {
+            let mods = crate::world::turn::TurnModifiers::default();
+            let plan =
+                crate::world::turn::plan_civ_turn(&w, &r, CivId(0), crate::world::assignment::CityFocus::None, mods);
+            crate::world::turn::apply_plan(&mut w, &r, &plan, mods);
+            crate::world::movement::refresh_movement(&mut w, &r);
+            w.turn += 1;
+        }
+        assert!(w.cities.get(city_id).unwrap().built.contains(&library));
+        let workers = w.units.iter().filter(|(_, unit)| unit.owner == CivId(0) && is_worker(&r, unit.base)).count();
+        assert_eq!(workers, 10, "thirty rounds must not grow an idle workforce");
+    }
+
+    #[test]
+    fn scouts_do_not_fill_an_established_armys_strength_budget() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let centre = w.grid.id_at(8, 8).unwrap();
+        let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), centre));
+        for name in ["Agriculture", "Bronze Working", "Civil Service", "Iron Working"] {
+            w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id(name).unwrap());
+        }
+        for tile in 0..4 {
+            w.place_unit(Unit::new(r.units.id("Scout").unwrap(), CivId(0), TileId(tile), 2));
+        }
+        assert!(wants_military(&w, &r, CivId(0)), "four scouts do not replace two pikemen");
+        let city = w.cities.get(city_id).unwrap();
+        let choice = choose_construction(
+            &w,
+            &r,
+            CivId(0),
+            city,
+            CostModifiers::default(),
+            10,
+            Priorities { want_military: true, ..Default::default() },
+        )
+        .unwrap();
+        let Construction::Unit(base) = choice else { panic!("needed a fighting unit: {choice:?}") };
+        assert!(unit_strength(&r, base) >= 11, "an established army should train a stronger unit");
+        assert!(crate::world::construction::can_construct_in(&w, &r, CivId(0), city, choice).is_ok());
+        assert!(crate::world::resources::resource_requirements(&r, base).is_empty(), "no iron on this map");
+        w.cities.get_mut(city_id).unwrap().queue.push(choice);
+        assert!(!wants_military(&w, &r, CivId(0)), "the queued reinforcement already covers the deficit");
+    }
+
+    #[test]
+    fn queued_workers_and_settlers_count_toward_their_jobs() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let centre = w.grid.id_at(8, 8).unwrap();
+        let city_id = w.found_city_in(&r, City::found("Rome", CivId(0), centre));
+        w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id("Agriculture").unwrap());
+        assert!(wants_worker(&w, &r, CivId(0)));
+        w.cities.get_mut(city_id).unwrap().queue.push(Construction::Unit(r.units.id("Worker").unwrap()));
+        assert!(!wants_worker(&w, &r, CivId(0)));
+        w.cities.get_mut(city_id).unwrap().queue = vec![Construction::Unit(r.units.id("Settler").unwrap())];
+        assert!(!wants_settler(&w, &r, CivId(0)));
+    }
+
     /// Poverty shifts the choice toward cheap upkeep; it does not forbid
     /// building.
     ///
@@ -1494,6 +1768,7 @@ mod tests {
         let centre = w.cities.get(city_id).unwrap().centre;
         for t in w.grid.within(centre, 2) {
             w.grid.features[t.0 as usize].push(hill);
+            w.grid.improvement[t.0 as usize] = r.improvements.id("Mine");
         }
         {
             let c = w.cities.get_mut(city_id).unwrap();
@@ -1517,6 +1792,10 @@ mod tests {
         // Note "outright": a wonder that is one of several milestones is not
         // the last thing between this civ and the end of the game, and it is
         // correct for ordinary infrastructure to beat it.
+        for policy in r.policies.ids() {
+            w.civ_mut(CivId(0)).unwrap().adopted_policies.insert(policy);
+        }
+        crate::world::policies::rebuild_uniques(&mut w, &r, CivId(0));
         let target = *wins.iter().max_by_key(|b| victory_urgency(&w, &r, CivId(0), **b).raw()).expect("at least one");
         assert!(
             victory_urgency(&w, &r, CivId(0), target) > Fixed::whole(1000),

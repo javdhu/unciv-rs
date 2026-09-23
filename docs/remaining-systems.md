@@ -1,6 +1,10 @@
-# The systems that have to be designed
+# Historical engine design notes
 
-Notes for the second half of the port. Dated 2026-09-21.
+Historical design notes for the second half of the port, written 2026-09-21.
+The module inventory and "done" labels below record earlier implementation
+tranches, not a current claim of complete rule parity. Current verification
+must inspect executable rules and compare them with the Kotlin source; stub
+counts and the presence of a module cannot establish completion.
 
 Sizes below are stub counts from `tools/stub_manifest.json` — an indication of
 surface area in Unciv, not an estimate of the work here, since a system's shape
@@ -23,13 +27,10 @@ matters more than its line count.
 Every system on this list now exists, and so do the three pieces that were
 named as the remainder: quests, rigging elections and coups.
 
-What is still deliberately *not* built is four of the ruleset's eighteen
-quests — Give Gold, Invest, Bully City State and Denounce Civilization — which
-need tribute and denunciations, neither of which is modelled. Rather than hand
-out a quest that can never be completed, `quests::judgeable` reports exactly
-which of a ruleset's quests this engine can decide, and the rest are never
-offered. A test asserts that list, so adding a quest without an evaluator fails
-the build rather than producing a silent dead errand.
+Give Gold, Invest, Bully City State and Denounce Civilization now have evaluators
+and action hooks in `quests.rs`, with focused tests. `quests::judgeable` still
+keeps unknown quests out of the offered pool. This establishes those paths,
+not the completeness of all city-state behavior.
 
 Two further gaps are worth stating plainly, because both are cases of a system
 being correct and the AI not reaching for it:
@@ -89,9 +90,11 @@ These were paid for once and should not be relitigated per system.
    which is fine. The penalty is for being *short*.
 5. **Provenance on anything a player can question.** Yields, rankings and
    combat strengths all carry their sources. Bolting it on later never works.
-6. **Events, not mutations.** A turn produces `TurnEvent`s that are the save
-   format and the wire format. A system that only mutates has to have its event
-   reconstructed from a diff.
+6. **Separate durable state from presentation.** Complete validated snapshots
+   store world state. The session retains ordered player commands and host
+   inputs for replay, plus durable receipts. `TurnEvent`s describe outcomes;
+   the facade projects an explicit safe subset into presentation events.
+   They are neither the save format nor the complete wire contract.
 7. **Ids, never pointers. Generations only where things die.** Tiles are a dense
    index; units and cities are arenas.
 

@@ -417,25 +417,19 @@ pub fn trade_route_stats(
         crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True
     };
 
-    let civ_uniques = world.civ(civ).map(|c| &c.uniques);
-    let sources = city
-        .uniques
-        .matching(crate::UniqueType::StatsFromTradeRoute)
-        .chain(civ_uniques.into_iter().flat_map(|u| u.matching(crate::UniqueType::StatsFromTradeRoute)))
-        .filter(|u| holds(u));
+    let sources = crate::world::religion::city_uniques(world, r, city)
+        .into_iter()
+        .filter(|u| u.unique_type() == Some(crate::UniqueType::StatsFromTradeRoute) && holds(u));
     for u in sources {
         if let Some(extra) = u.params.first().and_then(|p| Stats::parse(p)) {
             stats += extra;
         }
     }
 
-    let civ_uniques = world.civ(civ).map(|c| &c.uniques);
     let mut percent = Stats::ZERO;
-    let scalers = city
-        .uniques
-        .matching(crate::UniqueType::StatPercentFromTradeRoutes)
-        .chain(civ_uniques.into_iter().flat_map(|u| u.matching(crate::UniqueType::StatPercentFromTradeRoutes)))
-        .filter(|u| holds(u));
+    let scalers = crate::world::religion::city_uniques(world, r, city)
+        .into_iter()
+        .filter(|u| u.unique_type() == Some(crate::UniqueType::StatPercentFromTradeRoutes) && holds(u));
     for u in scalers {
         let (Some(amount), Some(stat)) =
             (u.params.first().and_then(|p| Fixed::parse(p)), u.params.get(1).and_then(|p| Stat::parse(p)))

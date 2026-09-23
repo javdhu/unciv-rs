@@ -55,12 +55,33 @@ fn terrain_yield(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Vec<Contribution
 
 /// Every contribution to a tile's yield, in the order they apply.
 pub fn tile_yield_breakdown(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Vec<Contribution> {
+    tile_yield_breakdown_with_resource(grid, r, tile, true)
+}
+
+/// Runtime yield for an observing civilization; hidden deposits contribute
+/// neither their base yield nor their resource-specific improvement bonus.
+pub fn tile_yield_breakdown_for(
+    grid: &TileGrid,
+    r: &Ruleset,
+    tile: TileId,
+    civ: &crate::world::entities::Civilization,
+) -> Vec<Contribution> {
+    let visible = grid.resource[tile.0 as usize].is_none_or(|id| crate::world::resources::is_visible(r, civ, id));
+    tile_yield_breakdown_with_resource(grid, r, tile, visible)
+}
+
+fn tile_yield_breakdown_with_resource(
+    grid: &TileGrid,
+    r: &Ruleset,
+    tile: TileId,
+    resource_visible: bool,
+) -> Vec<Contribution> {
     let mut out = terrain_yield(grid, r, tile);
     let i = tile.0 as usize;
 
-    let improvement = grid.improvement[i].and_then(|id| r.improvements.get(id));
+    let improvement = grid.unpillaged_improvement(tile).and_then(|id| r.improvements.get(id));
 
-    if let Some(res) = grid.resource[i].and_then(|id| r.resources.get(id)) {
+    if let Some(res) = grid.resource[i].filter(|_| resource_visible).and_then(|id| r.resources.get(id)) {
         let mut stats = res.stats();
 
         // A resource's improvement bonus lands only once the matching
@@ -86,6 +107,11 @@ pub fn tile_yield_breakdown(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Vec<C
         if !stats.is_zero() {
             out.push((Source::new(SourceKind::Improvement, imp.name.clone()), stats));
         }
+        if let Some(minimum) = minimum_from_improvement(imp) {
+            if let Some(gap) = missing_from_minimum(out.iter().map(|(_, stats)| *stats).sum(), minimum) {
+                out.push((Source::new(SourceKind::Improvement, "minimum tile yield"), gap));
+            }
+        }
     }
 
     out
@@ -102,6 +128,25 @@ pub const CITY_CENTRE_MINIMUM: Stats = Stats {
     faith: Fixed::ZERO,
     happiness: Fixed::ZERO,
 };
+
+fn minimum_from_improvement(improvement: &crate::ruleset::TileImprovement) -> Option<Stats> {
+    improvement
+        .uniques
+        .iter()
+        .find(|u| u.unique_type() == Some(UniqueType::EnsureMinimumStats) && u.conditionals.is_empty())
+        .and_then(|u| u.params.first())
+        .and_then(|p| Stats::parse(p))
+}
+
+/// The bundled city-center improvement declares the floor; retain the source
+/// fallback for rulesets without that improvement.
+pub fn city_centre_minimum(r: &Ruleset) -> Stats {
+    r.improvements
+        .id("City center")
+        .and_then(|id| r.improvements.get(id))
+        .and_then(minimum_from_improvement)
+        .unwrap_or(CITY_CENTRE_MINIMUM)
+}
 
 /// The shortfall against a per-stat floor, or `None` if nothing is missing.
 ///
@@ -121,6 +166,10 @@ pub fn missing_from_minimum(have: Stats, minimum: Stats) -> Option<Stats> {
 /// The tile's total output.
 pub fn tile_yield(grid: &TileGrid, r: &Ruleset, tile: TileId) -> Stats {
     tile_yield_breakdown(grid, r, tile).into_iter().map(|(_, s)| s).sum()
+}
+
+pub fn tile_yield_for(grid: &TileGrid, r: &Ruleset, tile: TileId, civ: &crate::world::entities::Civilization) -> Stats {
+    tile_yield_breakdown_for(grid, r, tile, civ).into_iter().map(|(_, stats)| stats).sum()
 }
 
 #[cfg(test)]

@@ -59,7 +59,17 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
 
     // Each *distinct* luxury counts once, however many copies you hold — which
     // is why Civ players trade for variety rather than quantity.
-    let per_luxury = BASE_HAPPINESS_PER_LUXURY + difficulty.map_or(0, |d| d.extra_happiness_per_luxury);
+    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ_id);
+    let bonus = |kind| {
+        civ.uniques
+            .matching(kind)
+            .filter(|u| crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True)
+            .filter_map(|u| u.params.first()?.parse::<i32>().ok())
+            .sum::<i32>()
+    };
+    let per_luxury = BASE_HAPPINESS_PER_LUXURY
+        + difficulty.map_or(0, |d| d.extra_happiness_per_luxury)
+        + bonus(crate::UniqueType::BonusHappinessFromLuxury);
     let luxuries = civ
         .resources
         .iter()
@@ -70,35 +80,103 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         out.push((Source::new(SourceKind::Resource, "Luxury resources"), luxuries * per_luxury));
     }
 
+    let supplied: std::collections::BTreeSet<_> = crate::world::city_states::city_states(world)
+        .into_iter()
+        .filter(|cs| crate::world::city_states::ally_of(world, *cs) == Some(civ_id))
+        .flat_map(|cs| crate::world::resources::recompute_stock(world, r, cs))
+        .filter(|(id, n)| {
+            *n > 0
+                && civ.resources.get(id).copied().unwrap_or(0) > 0
+                && r.resources.get(*id).is_some_and(|res| res.resource_type == "Luxury")
+        })
+        .map(|(id, _)| id)
+        .collect();
+    let extra = (Fixed::whole(per_luxury * supplied.len() as i32)
+        * Fixed::from_fraction(i64::from(bonus(crate::UniqueType::CityStateLuxuryHappiness)), 100))
+    .floor() as i32;
+    if extra != 0 {
+        out.push((Source::new(SourceKind::Resource, "City-State luxuries"), extra));
+    }
+    let exported: std::collections::BTreeSet<_> = world
+        .diplomacy
+        .deals
+        .iter()
+        .flat_map(|d| [(d.a, &d.a_gives), (d.b, &d.b_gives)])
+        .filter(|(giver, _)| *giver == civ_id)
+        .flat_map(|(_, items)| items)
+        .filter(|item| item.turns_left > 0)
+        .filter_map(|item| match item.item {
+            crate::world::trade::Item::Luxury(id) if civ.resources.get(&id).copied().unwrap_or(0) <= 0 => Some(id),
+            _ => None,
+        })
+        .collect();
+    let retained = (Fixed::whole(per_luxury * exported.len() as i32)
+        * Fixed::from_fraction(i64::from(bonus(crate::UniqueType::RetainHappinessFromLuxury)), 100))
+    .floor() as i32;
+    if retained != 0 {
+        out.push((Source::new(SourceKind::Resource, "Traded luxuries"), retained));
+    }
+
     let wonders = crate::world::natural_wonders::known_stats(world, r, civ_id).happiness.floor() as i32;
     if wonders != 0 {
         out.push((Source::new(SourceKind::Other, "Natural Wonders"), wonders));
     }
 
-    // Difficulty scales the unhappiness, not the happiness.
-    let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
-    let scale = |n: i32| (Fixed::whole(n) * modifier).floor() as i32;
-
-    // An annexed city resents its new rulers until a Courthouse stands: it
-    // counts as a city and a half, each citizen twice, and two more on top
-    // for the occupation (`CityStats`, `hasExtraAnnexUnhappiness`).
-    let held: Vec<&crate::world::city::City> = civ.cities.iter().filter_map(|id| world.cities.get(*id)).collect();
-    let occupied = held.iter().filter(|c| crate::world::conquest::annexed_unhappiness(c)).count() as i32;
-
-    let cities = held.len() as i32;
-    if cities > 0 {
-        let unhappy = cities * UNHAPPINESS_PER_CITY + occupied * ANNEXED_CITY_EXTRA;
-        out.push((Source::new(SourceKind::Other, "Cities"), scale(unhappy)));
-    }
-
-    let citizens: i32 = held
+    let from_cities: i32 = world
+        .cities
         .iter()
-        .map(|c| c.population as i32 * if crate::world::conquest::annexed_unhappiness(c) { 2 } else { 1 })
+        .filter(|(_, city)| city.owner == civ_id)
+        .map(|(_, city)| crate::world::city::city_yield_in(world, r, city, false).happiness.floor() as i32)
         .sum();
-    if citizens > 0 {
-        out.push((Source::new(SourceKind::Other, "Population"), scale(citizens * UNHAPPINESS_PER_CITIZEN)));
+    if from_cities != 0 {
+        out.push((Source::new(SourceKind::Other, "City happiness"), from_cities));
     }
-
+    let global = crate::world::city_states::civ_wide_yields(world, r, civ_id).happiness.floor() as i32;
+    if global != 0 {
+        out.push((Source::new(SourceKind::Other, "Empire happiness"), global));
+    }
+    let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
+    let city_modifier =
+        Fixed::from_fraction(i64::from(100 + bonus(crate::UniqueType::UnhappinessFromCitiesPercentage)), 100);
+    let mut city_unhappy = Fixed::ZERO;
+    let mut citizen_unhappy = Fixed::ZERO;
+    let mut occupied = 0;
+    for id in &civ.cities {
+        let Some(city) = world.cities.get(*id) else { continue };
+        let annexed = crate::world::conquest::annexed_unhappiness(city);
+        city_unhappy += Fixed::whole(UNHAPPINESS_PER_CITY + if annexed { ANNEXED_CITY_EXTRA } else { 0 })
+            * city_modifier
+            * modifier;
+        let mut people = Fixed::whole(city.population as i32);
+        let context = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ_id).in_city(*id);
+        for u in crate::world::religion::city_uniques(world, r, city) {
+            if u.unique_type() != Some(crate::UniqueType::UnhappinessFromPopulationTypePercentageChange)
+                || crate::world::conditionals::applies(u, &context) != crate::world::conditionals::Verdict::True
+                || !u.params.get(2).is_some_and(|f| {
+                    crate::world::filters::city_matches(world, r, city, Some(city), f)
+                        == crate::world::conditionals::Verdict::True
+                })
+            {
+                continue;
+            }
+            if let (Some(pct), Some(filter)) = (u.params.first().and_then(|p| p.parse::<i64>().ok()), u.params.get(1)) {
+                people += Fixed::whole(crate::world::city_effects::population_count(r, city, filter) as i32)
+                    * Fixed::from_fraction(pct, 100);
+            }
+        }
+        citizen_unhappy += people.max(Fixed::ZERO)
+            * Fixed::whole(if annexed { 2 * UNHAPPINESS_PER_CITIZEN } else { UNHAPPINESS_PER_CITIZEN })
+            * modifier;
+        if annexed {
+            occupied += 1;
+        }
+    }
+    if !city_unhappy.is_zero() {
+        out.push((Source::new(SourceKind::Other, "Cities"), city_unhappy.floor() as i32));
+    }
+    if !citizen_unhappy.is_zero() {
+        out.push((Source::new(SourceKind::Other, "Population"), citizen_unhappy.floor() as i32));
+    }
     if occupied > 0 {
         out.push((Source::new(SourceKind::Other, "Occupied cities"), occupied * OCCUPIED_CITY));
     }

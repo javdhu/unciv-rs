@@ -59,7 +59,8 @@ DERIVED = {
                     "The branch this policy belongs to (Ruleset.kt:468).")],
     "Speed":      [("total_turns", "i32",
                     "Last `untilTurn` in the `turns` array (Speed.kt numTotalTurns). "
-                    "The array is nested structure, so schema inference reads it as opaque.")],
+                    "The array is nested structure, so schema inference reads it as opaque."),
+                   ("year_intervals", "Vec<(Fixed, i32)>", "Parsed calendar intervals: years per turn and inclusive end turn.")],
     "Terrain":    [("damage_per_turn", "i32",
                     "Summed from DamagesContainingUnits uniques (Terrain.kt:212).")],
 }
@@ -139,7 +140,7 @@ def build(struct, objs, note):
     for k in sorted(ks, key=lambda k: (-sum(ks[k].values()), k)):
         if k == "name": continue
         present = sum(ks[k].values())
-        ty = rust_type(ks[k])
+        ty = "std::collections::BTreeMap<String, Fixed>" if k == "weightForCityStateType" else rust_type(ks[k])
         # An absent list or table is an empty one; `Option<Vec<_>>` would make
         # every reader distinguish two things that mean the same.
         opt = present < len(objs) and not (ty.startswith("Vec<") or ty.startswith("std::collections::"))
@@ -225,6 +226,8 @@ for struct, note, n, fields in structs:
             expr = f'{g}.map(|v| v.strings()).unwrap_or_default()'
         elif ty == "Vec<i32>":
             expr = f'{g}.map(|v| v.ints()).unwrap_or_default()'
+        elif ty == "std::collections::BTreeMap<String, Fixed>":
+            expr = f'{g}.and_then(|v|v.as_object()).map(|m|m.iter().filter_map(|(k,v)|v.as_fixed().map(|n|(k.clone(),n))).collect()).unwrap_or_default()'
         elif ty.startswith("std::collections::BTreeMap"):
             expr = f'{g}.map(|v| v.counter()).unwrap_or_default()'
         elif ty == "Vec<Todo>":

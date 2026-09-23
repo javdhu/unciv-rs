@@ -13,7 +13,11 @@
 
 use crate::arena::Id;
 use crate::ruleset::{BaseUnit, Ruleset, TileResource};
+use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::world::entities::Civilization;
+use crate::world::entities::Unit;
+use crate::world::grid::CivId;
+use crate::world::world::World;
 use crate::UniqueType;
 use std::collections::BTreeMap;
 
@@ -25,30 +29,171 @@ pub const MISSING_RESOURCE_MALUS: i32 = -25;
 /// Ordered, so iteration and serialisation are reproducible.
 pub type ResourceStock = BTreeMap<Id<TileResource>, i32>;
 
+/// A deposit's yields and tile filters become visible with its revealing technology.
+pub fn is_visible(r: &Ruleset, civ: &Civilization, resource: Id<TileResource>) -> bool {
+    r.resources.get(resource).is_some_and(|resource| {
+        resource
+            .revealed_by
+            .as_deref()
+            .is_none_or(|name| r.technologies.id(name).is_some_and(|tech| civ.has_tech(tech)))
+    })
+}
+
 /// Resources a unit needs to be at full strength.
 ///
 /// Both the `requiredResource` field and any `Consumes [amount] [resource]`
 /// unique; Unciv reads the same two places.
 pub fn required_resources(r: &Ruleset, unit: Id<BaseUnit>) -> Vec<Id<TileResource>> {
-    let Some(u) = r.units.get(unit) else { return Vec::new() };
-    let mut out = Vec::new();
+    resource_requirements(r, unit).into_keys().collect()
+}
+
+/// Static declared quantities. `requiredResource` contributes one and repeated
+/// consumption uniques add to it, matching BaseUnit.getResourceRequirementsPerTurn.
+pub fn resource_requirements(r: &Ruleset, unit: Id<BaseUnit>) -> ResourceStock {
+    requirements(r, unit, None)
+}
+
+fn requirements(r: &Ruleset, unit: Id<BaseUnit>, context: Option<&GameContext<'_>>) -> ResourceStock {
+    let Some(u) = r.units.get(unit) else { return ResourceStock::new() };
+    let mut out = ResourceStock::new();
 
     if let Some(name) = u.required_resource.as_deref() {
         if let Some(id) = r.resources.id(name) {
-            out.push(id);
+            out.insert(id, 1);
         }
     }
     for unique in &u.uniques {
-        if unique.unique_type() == Some(UniqueType::ConsumesResources) {
+        if unique.unique_type() == Some(UniqueType::ConsumesResources)
+            && context.is_none_or(|ctx| applies(unique, ctx) != Verdict::False)
+        {
             // "Consumes [amount] [resource]" — the resource is the second slot.
-            if let Some(id) = unique.params.get(1).and_then(|n| r.resources.id(n)) {
-                out.push(id);
+            if let (Some(amount), Some(id)) = (
+                unique.params.first().and_then(|n| n.parse::<i32>().ok()),
+                unique.params.get(1).and_then(|n| r.resources.id(n)),
+            ) {
+                if amount > 0 {
+                    adjust(&mut out, id, i64::from(amount));
+                }
             }
         }
     }
-    out.sort();
-    out.dedup();
     out
+}
+
+fn adjust(stock: &mut ResourceStock, resource: Id<TileResource>, amount: i64) {
+    let value = stock.entry(resource).or_default();
+    *value = (i64::from(*value) + amount).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+}
+
+fn fielded_requirements(world: &World, r: &Ruleset, id: Id<Unit>) -> ResourceStock {
+    let Some(unit) = world.units.get(id) else { return ResourceStock::new() };
+    if r.units.get(unit.base).is_some_and(|base| {
+        base.uniques.iter().all(|u| u.unique_type() != Some(UniqueType::ConsumesResources) || u.conditionals.is_empty())
+    }) {
+        return resource_requirements(r, unit.base);
+    }
+    let mut ctx = GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(id).on_tile(unit.position);
+    if let Some((city, _)) = world.cities.iter().find(|(_, c)| c.centre == unit.position) {
+        ctx = ctx.in_city(city);
+    }
+    requirements(r, unit.base, Some(&ctx))
+}
+
+/// Fresh spendable stock, including active imports/exports. This deliberately
+/// does not trust the turn-start cache: two purchases in one turn cannot both
+/// reserve the same last Iron.
+pub fn available_stock(world: &World, r: &Ruleset, civ: CivId) -> ResourceStock {
+    let mut stock = recompute_stock(world, r, civ);
+    let ctx = GameContext::new(r).with_world(world).for_civ(civ);
+    let bonus: i64 = world
+        .civ(civ)
+        .into_iter()
+        .flat_map(|c| c.uniques.matching(UniqueType::CityStateResources))
+        .filter(|u| applies(u, &ctx) == Verdict::True)
+        .filter_map(|u| u.params.first()?.parse::<i64>().ok())
+        .sum();
+    // Allies provide their positive domestic supplies once. Raw supplier stock
+    // excludes diplomacy, so this cannot recurse through allied resource sharing.
+    for cs in crate::world::city_states::city_states(world)
+        .into_iter()
+        .filter(|cs| crate::world::city_states::ally_of(world, *cs) == Some(civ))
+    {
+        for (res, n) in recompute_stock(world, r, cs).into_iter().filter(|(_, n)| *n > 0) {
+            adjust(&mut stock, res, (i64::from(n) * (100 + bonus) / 100).max(0));
+        }
+    }
+    for deal in &world.diplomacy.deals {
+        for (giver, receiver, items) in [(deal.a, deal.b, &deal.a_gives), (deal.b, deal.a, &deal.b_gives)] {
+            if giver != civ && receiver != civ {
+                continue;
+            }
+            for running in items.iter().filter(|item| item.turns_left > 0) {
+                let (resource, amount) = match running.item {
+                    crate::world::trade::Item::Luxury(id) => (id, 1),
+                    crate::world::trade::Item::Strategic(id, amount) => (id, amount),
+                    _ => continue,
+                };
+                adjust(&mut stock, resource, if giver == civ { -i64::from(amount) } else { i64::from(amount) });
+            }
+        }
+    }
+    stock
+}
+
+/// Refresh cached stocks only after every result was derived from the same
+/// world, so updates for one civilization cannot influence another's result.
+pub fn refresh_stocks(world: &mut World, r: &Ruleset) {
+    let stocks: Vec<_> = world.civ_ids().map(|civ| (civ, available_stock(world, r, civ))).collect();
+    for (civ, stock) in stocks {
+        if let Some(c) = world.civ_mut(civ) {
+            c.resources = stock;
+        }
+    }
+}
+
+/// Can the civilization sustain this new unit? An upgrade releases the old
+/// unit's actual requirements before reserving the replacement's quantities.
+pub fn can_supply_unit(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    base: Id<BaseUnit>,
+    replacing: Option<Id<Unit>>,
+) -> bool {
+    let (Some(owner), Some(definition)) = (world.civ(civ), r.units.get(base)) else { return false };
+    if replacing.is_some_and(|id| world.units.get(id).is_none_or(|u| u.owner != civ)) {
+        return false;
+    }
+    if owner.is_barbarian {
+        return true;
+    }
+    // Broken resource references must not turn a requirement into a free unit.
+    if definition.required_resource.as_ref().is_some_and(|name| r.resources.id(name).is_none()) {
+        return false;
+    }
+    let mut ctx = GameContext::new(r).with_world(world).for_civ(civ);
+    if let Some(unit) = replacing.and_then(|id| world.units.get(id)) {
+        ctx = ctx.on_tile(unit.position);
+    }
+    if definition.uniques.iter().any(|unique| {
+        unique.unique_type() == Some(UniqueType::ConsumesResources)
+            && applies(unique, &ctx) != Verdict::False
+            && (unique.params.first().and_then(|n| n.parse::<i32>().ok()).is_none_or(|n| n <= 0)
+                || unique.params.get(1).and_then(|name| r.resources.id(name)).is_none())
+    }) {
+        return false;
+    }
+    let needed = requirements(r, base, Some(&ctx));
+    if needed.is_empty() {
+        return true;
+    }
+    let mut stock = available_stock(world, r, civ);
+    if let Some(old) = replacing {
+        for (resource, amount) in fielded_requirements(world, r, old) {
+            adjust(&mut stock, resource, i64::from(amount));
+        }
+    }
+    needed.into_iter().all(|(resource, amount)| stock.get(&resource).copied().unwrap_or(0) >= amount)
 }
 
 /// Whether this civ is short of anything this unit needs.
@@ -85,13 +230,9 @@ pub fn provides_resource(
     tile: crate::world::grid::TileId,
 ) -> bool {
     let Some(res) = world.grid.resource[tile.0 as usize] else { return false };
-    let Some(resource) = r.resources.get(res) else { return false };
-
     // 1. revealed?
-    if let Some(tech) = resource.revealed_by.as_deref() {
-        if !r.technologies.id(tech).is_some_and(|t| civ.has_tech(t)) {
-            return false;
-        }
+    if !is_visible(r, civ, res) {
+        return false;
     }
 
     let improvements = extracting_improvements(r, res);
@@ -108,10 +249,52 @@ pub fn provides_resource(
     }
 
     // 3. otherwise the improvement has to be standing.
-    let Some(built) = world.grid.improvement[tile.0 as usize] else { return false };
+    let Some(built) = world.grid.unpillaged_improvement(tile) else { return false };
     let Some(built) = r.improvements.get(built) else { return false };
     improvements.contains(&built.name)
         && built.tech_required.as_deref().is_none_or(|t| r.technologies.id(t).is_some_and(|id| civ.has_tech(id)))
+}
+
+pub fn resource_matches(r: &Ruleset, id: Id<TileResource>, filter: &str) -> bool {
+    let Some(res) = r.resources.get(id) else { return false };
+    crate::world::filters::multi_filter(filter, &|f| {
+        if f == "All"
+            || f == "all"
+            || f == res.name
+            || f == res.resource_type
+            || res.uniques.iter().any(|u| u.text == f)
+        {
+            Verdict::True
+        } else {
+            Verdict::False
+        }
+    }) == Verdict::True
+}
+pub fn building_requirements(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    city: &crate::world::city::City,
+    id: Id<crate::ruleset::Building>,
+) -> ResourceStock {
+    let mut out = ResourceStock::new();
+    let Some(b) = r.buildings.get(id) else { return out };
+    if let Some(res) = b.required_resource.as_deref().and_then(|n| r.resources.id(n)) {
+        adjust(&mut out, res, 1);
+    }
+    let mut ctx = GameContext::new(r).with_world(world).for_civ(city.owner);
+    ctx.city = world.cities.iter().find(|(_, c)| c.centre == city.centre).map(|(id, _)| id);
+    for u in b
+        .uniques
+        .iter()
+        .filter(|u| u.unique_type() == Some(UniqueType::ConsumesResources) && applies(u, &ctx) == Verdict::True)
+    {
+        if let (Some(amount), Some(res)) =
+            (u.params.first().and_then(|p| p.parse::<i64>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
+        {
+            adjust(&mut out, res, amount.max(0));
+        }
+    }
+    out
 }
 
 /// Recompute a civ's net stock: what its territory yields, less what its
@@ -130,27 +313,103 @@ pub fn recompute_stock(
     civ_id: crate::world::grid::CivId,
 ) -> ResourceStock {
     let mut stock = ResourceStock::new();
+    if let Some(resource) = crate::world::city_state_actions::unique_luxury(world, civ_id) {
+        adjust(&mut stock, resource, 1);
+    }
     let Some(civ) = world.civ(civ_id) else { return stock };
 
+    let mut produced: BTreeMap<(Option<Id<crate::world::city::City>>, Id<TileResource>), i32> = BTreeMap::new();
     for tile in world.grid.ids() {
         if world.grid.owner[tile.0 as usize] != Some(civ_id) {
             continue;
         }
-        let Some(res) = world.grid.resource[tile.0 as usize] else { continue };
-        if !provides_resource(world, r, civ, tile) {
-            continue;
+        let city =
+            world.cities.iter().find(|(_, city)| city.owner == civ_id && city.tiles.contains(&tile)).map(|(id, _)| id);
+        if let Some(res) = world.grid.resource[tile.0 as usize].filter(|_| provides_resource(world, r, civ, tile)) {
+            let resource = &r.resources[res];
+            let mut amount =
+                if resource.resource_type == "Strategic" { world.grid.resource_amount[tile.0 as usize] } else { 1 };
+            if resource.resource_type == "Luxury"
+                && city
+                    .and_then(|id| world.cities.get(id))
+                    .is_some_and(|c| c.uniques.has(UniqueType::ProvidesExtraLuxuryFromCityResources))
+            {
+                amount += 1;
+            }
+            *produced.entry((city, res)).or_default() += amount.max(0);
         }
-        let strategic = r.resources.get(res).is_some_and(|x| x.resource_type == "Strategic");
-        let amount = if strategic { world.grid.resource_amount[tile.0 as usize] } else { 1 };
-        *stock.entry(res).or_insert(0) += amount;
+        if let Some(imp) = world.grid.unpillaged_improvement(tile).and_then(|id| r.improvements.get(id)) {
+            let mut ctx = GameContext::new(r).with_world(world).for_civ(civ_id).on_tile(tile);
+            ctx.city = city;
+            for u in imp.uniques.iter().filter(|u| applies(u, &ctx) == Verdict::True) {
+                if let (Some(amount), Some(res)) = (
+                    u.params.first().and_then(|p| p.parse::<i32>().ok()),
+                    u.params.get(1).and_then(|p| r.resources.id(p)),
+                ) {
+                    match u.unique_type() {
+                        Some(UniqueType::ProvidesResources) => {
+                            *produced.entry((city, res)).or_default() += amount.max(0)
+                        }
+                        Some(UniqueType::ConsumesResources) => adjust(&mut stock, res, -i64::from(amount.max(0))),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    let ctx = GameContext::new(r).with_world(world).for_civ(civ_id);
+    for u in civ.uniques.matching(UniqueType::ProvidesResources).filter(|u| applies(u, &ctx) == Verdict::True) {
+        if let (Some(amount), Some(res)) =
+            (u.params.first().and_then(|p| p.parse::<i32>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
+        {
+            *produced.entry((None, res)).or_default() += amount.max(0);
+        }
+    }
+    for city in &civ.cities {
+        let Some(c) = world.cities.get(*city) else { continue };
+        let ctx = ctx.in_city(*city);
+        for u in c
+            .uniques
+            .matching(UniqueType::ProvidesResources)
+            .filter(|u| u.is_local() && applies(u, &ctx) == Verdict::True)
+        {
+            if let (Some(amount), Some(res)) =
+                (u.params.first().and_then(|p| p.parse::<i32>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
+            {
+                *produced.entry((Some(*city), res)).or_default() += amount.max(0);
+            }
+        }
+        for building in c.built.iter().filter(|id| !c.free_buildings.contains(id)) {
+            for (res, n) in building_requirements(world, r, c, *building) {
+                adjust(&mut stock, res, -i64::from(n));
+            }
+        }
+    }
+    for ((city, res), amount) in produced {
+        let mut ctx = ctx;
+        ctx.city = city;
+        let modifiers: Vec<_> = city
+            .and_then(|id| world.cities.get(id))
+            .map(|c| crate::world::religion::city_uniques(world, r, c))
+            .unwrap_or_else(|| civ.uniques.all().collect());
+        let percent: i64 = modifiers
+            .into_iter()
+            .filter(|u| {
+                u.unique_type() == Some(UniqueType::PercentResourceProduction)
+                    && applies(u, &ctx) == Verdict::True
+                    && u.params.get(1).is_some_and(|f| resource_matches(r, res, f))
+            })
+            .filter_map(|u| u.params.first()?.parse::<i64>().ok())
+            .sum();
+        adjust(&mut stock, res, (i64::from(amount) * (100 + percent) / 100).max(0));
     }
 
-    for (_, unit) in world.units.iter() {
+    for (id, unit) in world.units.iter() {
         if unit.owner != civ_id {
             continue;
         }
-        for res in required_resources(r, unit.base) {
-            *stock.entry(res).or_insert(0) -= 1;
+        for (res, amount) in fielded_requirements(world, r, id) {
+            adjust(&mut stock, res, -i64::from(amount));
         }
     }
     stock
@@ -310,5 +569,81 @@ mod tests {
         println!("{} of {} units need a resource", needy.len(), r.units.len());
         assert!(needy.len() > 20, "only {} found", needy.len());
         assert!(needy.contains(&"Swordsman"));
+    }
+
+    #[test]
+    fn resource_quantities_add_the_field_and_every_consumption_unique() {
+        let mut r = ruleset();
+        let swordsman = r.units.id("Swordsman").unwrap();
+        r.units.get_mut(swordsman).unwrap().uniques.extend([
+            crate::Unique::parse("Consumes [2] [Iron]"),
+            crate::Unique::parse("Consumes [3] [Iron]"),
+            crate::Unique::parse("Consumes [4] [Horses]"),
+        ]);
+        let iron = r.resources.id("Iron").unwrap();
+        let horses = r.resources.id("Horses").unwrap();
+        assert_eq!(resource_requirements(&r, swordsman), BTreeMap::from([(iron, 6), (horses, 4)]));
+        let mut w = World::new(crate::world::grid::TileGrid::new(4, 4, r.terrain("Grassland").unwrap()), vec![civ(&r)]);
+        w.place_unit(Unit::new(swordsman, CivId(0), crate::world::grid::TileId(0), 2));
+        assert_eq!(recompute_stock(&w, &r, CivId(0)), BTreeMap::from([(iron, -6), (horses, -4)]));
+    }
+
+    #[test]
+    fn current_stock_includes_live_trades_and_ignores_stale_cache() {
+        use crate::world::trade::{Deal, Item, Running};
+        let r = ruleset();
+        let mut other = civ(&r);
+        other.id = CivId(1);
+        let mut w =
+            World::new(crate::world::grid::TileGrid::new(4, 4, r.terrain("Grassland").unwrap()), vec![civ(&r), other]);
+        let swordsman = r.units.id("Swordsman").unwrap();
+        let iron = r.resources.id("Iron").unwrap();
+        w.civ_mut(CivId(0)).unwrap().resources.insert(iron, 99);
+        assert!(!can_supply_unit(&w, &r, CivId(0), swordsman, None));
+        w.diplomacy.deals.push(Deal {
+            a: CivId(1),
+            b: CivId(0),
+            a_gives: vec![Running { item: Item::Strategic(iron, 1), turns_left: 3 }],
+            b_gives: vec![],
+        });
+        assert!(can_supply_unit(&w, &r, CivId(0), swordsman, None));
+        w.place_unit(Unit::new(swordsman, CivId(0), crate::world::grid::TileId(0), 2));
+        assert!(!can_supply_unit(&w, &r, CivId(0), swordsman, None));
+        w.diplomacy.deals[0].a_gives[0].turns_left = 0;
+        assert_eq!(available_stock(&w, &r, CivId(0)).get(&iron), Some(&-1));
+    }
+
+    #[test]
+    fn a_pillaged_extractor_stops_supplying_resources_immediately() {
+        let r = ruleset();
+        let mut w = World::new(crate::world::grid::TileGrid::new(4, 4, r.terrain("Grassland").unwrap()), vec![civ(&r)]);
+        let iron = r.resources.id("Iron").unwrap();
+        w.civ_mut(CivId(0)).unwrap().techs.extend(r.technologies.ids());
+        w.grid.owner[5] = Some(CivId(0));
+        w.grid.resource[5] = Some(iron);
+        w.grid.resource_amount[5] = 3;
+        w.grid.improvement[5] = r.improvements.id("Mine");
+        assert_eq!(available_stock(&w, &r, CivId(0)).get(&iron), Some(&3));
+        w.grid.pillage_improvement(crate::world::grid::TileId(5));
+        assert!(!available_stock(&w, &r, CivId(0)).contains_key(&iron));
+    }
+
+    #[test]
+    fn resource_conditions_use_the_owners_current_technology() {
+        let mut r = ruleset();
+        let warrior = r.units.id("Warrior").unwrap();
+        let iron = r.resources.id("Iron").unwrap();
+        r.units
+            .get_mut(warrior)
+            .unwrap()
+            .uniques
+            .push(crate::Unique::parse("Consumes [2] [Iron] <after discovering [Mining]>"));
+        let mut w = World::new(crate::world::grid::TileGrid::new(4, 4, r.terrain("Grassland").unwrap()), vec![civ(&r)]);
+        assert!(can_supply_unit(&w, &r, CivId(0), warrior, None));
+        w.place_unit(Unit::new(warrior, CivId(0), crate::world::grid::TileId(0), 2));
+        assert!(!recompute_stock(&w, &r, CivId(0)).contains_key(&iron));
+        w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id("Mining").unwrap());
+        assert!(!can_supply_unit(&w, &r, CivId(0), warrior, None));
+        assert_eq!(recompute_stock(&w, &r, CivId(0)).get(&iron), Some(&-2));
     }
 }

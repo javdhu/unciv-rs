@@ -86,7 +86,14 @@ pub fn ally_of(world: &World, cs: CivId) -> Option<CivId> {
         .filter(|(major, _)| !world.diplomacy.at_war(cs, *major))
         .filter(|(major, _)| world.civ(*major).is_some_and(|c| c.is_major() && c.is_alive()))
         .filter(|(_, v)| *v >= ALLY_THRESHOLD)
-        .max_by(|a, b| a.1.cmp(&b.1).then(std::cmp::Reverse(a.0 .0).cmp(&std::cmp::Reverse(b.0 .0))))
+        .max_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then(
+                    (world.civ(cs).and_then(|c| c.city_state.tracked_ally) == Some(a.0))
+                        .cmp(&(world.civ(cs).and_then(|c| c.city_state.tracked_ally) == Some(b.0))),
+                )
+                .then(std::cmp::Reverse(a.0 .0).cmp(&std::cmp::Reverse(b.0 .0)))
+        })
         .map(|(major, _)| major)
 }
 
@@ -100,53 +107,110 @@ pub fn city_states(world: &World) -> Vec<CivId> {
 /// Influence always slides back here — down from a gift, up from a war — which
 /// is what makes courting a city-state an ongoing cost rather than a purchase.
 pub fn resting_point(world: &World, cs: CivId, major: CivId) -> Fixed {
-    let mut point = Fixed::ZERO;
-    if let Some(c) = world.civ(major) {
-        for u in c.uniques.matching(crate::UniqueType::CityStateRestingPoint) {
-            if let Some(v) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                point += v;
-            }
-        }
+    resting_point_impl(world, None, cs, major)
+}
+
+pub fn resting_point_in(world: &World, r: &Ruleset, cs: CivId, major: CivId) -> Fixed {
+    resting_point_impl(world, Some(r), cs, major)
+}
+
+fn matching_bonus(world: &World, r: Option<&Ruleset>, major: CivId, kind: crate::UniqueType) -> Fixed {
+    world
+        .civ(major)
+        .into_iter()
+        .flat_map(|c| c.uniques.matching(kind))
+        .filter(|u| {
+            r.is_none_or(|r| {
+                crate::world::conditionals::applies(
+                    u,
+                    &crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(major),
+                )
+                .holds()
+            })
+        })
+        .filter_map(|u| u.params.first().and_then(|p| Fixed::parse(p)))
+        .sum()
+}
+
+fn shares_religion(world: &World, r: Option<&Ruleset>, cs: CivId, major: CivId) -> bool {
+    if !world.civ(major).is_some_and(|c| c.faith.founded) {
+        return false;
+    }
+    let capital = r
+        .and_then(|r| crate::world::connections::capital_of(world, r, cs))
+        .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()));
+    capital.and_then(|id| world.cities.get(id)).is_some_and(|city| city.faith.majority(city.population) == Some(major))
+}
+
+fn resting_point_impl(world: &World, r: Option<&Ruleset>, cs: CivId, major: CivId) -> Fixed {
+    let mut point = matching_bonus(world, r, major, crate::UniqueType::CityStateRestingPoint);
+    if shares_religion(world, r, cs, major) {
+        point += matching_bonus(world, r, major, crate::UniqueType::RestingPointOfCityStatesFollowingReligionChange);
     }
     if world.diplomacy.is_protector(major, cs) {
         point += PROTECTOR_RESTING_BONUS;
     }
+    if world.civ(cs).is_some_and(|c| c.city_state.wary_until.get(&major).is_some_and(|until| *until > world.turn)) {
+        point -= Fixed::whole(20);
+    }
     point
 }
 
-/// One turn of drift toward the resting point.
-///
-/// A point a turn, modified — slow enough that an alliance bought at 60 lasts
-/// thirty turns, which is the whole design of the mechanic: influence is rent,
-/// not a purchase.
 pub fn drift(world: &World, cs: CivId, major: CivId) -> Fixed {
-    let resting = resting_point(world, cs, major);
+    drift_impl(world, None, cs, major)
+}
+pub fn drift_in(world: &World, r: &Ruleset, cs: CivId, major: CivId) -> Fixed {
+    drift_impl(world, Some(r), cs, major)
+}
+
+fn drift_impl(world: &World, r: Option<&Ruleset>, cs: CivId, major: CivId) -> Fixed {
+    let resting = resting_point_impl(world, r, cs, major);
     let influence = world.diplomacy.influence(cs, major);
-    if influence == resting {
-        return Fixed::ZERO;
-    }
-    let step = Fixed::ONE;
+    let same_religion = shares_religion(world, r, cs, major);
     if influence > resting {
-        let mut percent = Fixed::ZERO;
-        if let Some(c) = world.civ(major) {
-            for u in c.uniques.matching(crate::UniqueType::CityStateInfluenceDegradation) {
-                if let Some(v) = u.params.first().and_then(|p| Fixed::parse(p)) {
-                    percent += v;
-                }
-            }
+        // War hides influence below the resting point without erasing the
+        // saved relationship; its above-resting influence does not decay.
+        if world.diplomacy.at_war(cs, major) {
+            return Fixed::ZERO;
         }
-        let scaled =
-            (step * (Fixed::whole(100) + percent)).checked_div(Fixed::whole(100)).unwrap_or(step).max(Fixed::ZERO);
-        -(scaled.min(influence - resting))
-    } else {
-        let mut percent = Fixed::ZERO;
-        if world.civ(major).is_some_and(|c| c.uniques.has(crate::UniqueType::CityStateInfluenceRecoversTwiceNormalRate))
+        let mut percent = matching_bonus(world, r, major, crate::UniqueType::CityStateInfluenceDegradation);
+        if same_religion {
+            percent -= Fixed::whole(25);
+        }
+        for other in world.civs.iter().filter(|c| c.is_major() && c.id != major) {
+            percent += matching_bonus(world, r, other.id, crate::UniqueType::OtherCivsCityStateRelationsDegradeFaster);
+        }
+        let step = if world
+            .civ(cs)
+            .is_some_and(|c| c.city_state.personality == crate::world::city_state_actions::Personality::Hostile)
+            || r.and_then(|r| world.civ(cs).and_then(|c| r.nations.get(c.nation)))
+                .and_then(|n| n.personality.as_deref())
+                == Some("Hostile")
         {
-            percent += Fixed::whole(100);
-        }
+            Fixed::permille(1500)
+        } else if world.civ(major).is_some_and(|c| c.city_state.minor_attacks >= 2) {
+            Fixed::whole(2)
+        } else {
+            Fixed::ONE
+        };
         let scaled =
-            (step * (Fixed::whole(100) + percent)).checked_div(Fixed::whole(100)).unwrap_or(step).max(Fixed::ZERO);
-        scaled.min(resting - influence)
+            (step * (Fixed::whole(100) + percent)).checked_div(Fixed::whole(100)).unwrap_or_default().max(Fixed::ZERO);
+        -scaled.min(influence - resting)
+    } else if influence < resting {
+        let mut percent = if world
+            .civ(major)
+            .is_some_and(|c| c.uniques.has(crate::UniqueType::CityStateInfluenceRecoversTwiceNormalRate))
+        {
+            100
+        } else {
+            0
+        };
+        if same_religion {
+            percent += 50;
+        }
+        Fixed::from_fraction(100 + percent, 100).min(resting - influence)
+    } else {
+        Fixed::ZERO
     }
 }
 
@@ -197,6 +261,12 @@ pub fn changes_since(world: &World, before: &[(CivId, CivId, Relationship)]) -> 
 /// comparing influences — applying one civ's decay before reading another's
 /// would let the order of iteration decide who the ally is.
 pub fn tick(world: &mut World) -> Vec<RelationshipChange> {
+    tick_impl(world, None)
+}
+pub fn tick_in(world: &mut World, r: &Ruleset) -> Vec<RelationshipChange> {
+    tick_impl(world, Some(r))
+}
+fn tick_impl(world: &mut World, r: Option<&Ruleset>) -> Vec<RelationshipChange> {
     let states = city_states(world);
     let majors: Vec<CivId> = world.civs.iter().filter(|c| c.is_major()).map(|c| c.id).collect();
 
@@ -205,7 +275,7 @@ pub fn tick(world: &mut World) -> Vec<RelationshipChange> {
     for &cs in &states {
         for &major in &majors {
             before.push((cs, major, relationship(world, cs, major)));
-            let step = drift(world, cs, major);
+            let step = drift_impl(world, r, cs, major);
             if !step.is_zero() {
                 steps.push((cs, major, step));
             }
@@ -226,7 +296,7 @@ pub fn tick(world: &mut World) -> Vec<RelationshipChange> {
 
 /// Influence bought by a gift of gold.
 ///
-/// `amount^1.01 / 9.8`, falling to a third of that by the end of the game, then
+/// `amount^1.01 / 9.8`, falling to a third at 400 standard-speed turns, then
 /// rounded *down* to a multiple of five with a floor of five. The exponent is
 /// barely above one — it exists to make very large gifts slightly better than
 /// proportional, and it is the reason this needs a real fractional power
@@ -249,14 +319,11 @@ pub fn influence_from_gift(
         .unwrap_or(Fixed::ZERO);
 
     // Gifts are worth less as the game goes on: a third as much by the end.
-    let progress = if game_length > 0 {
-        Fixed::whole(world.turn as i32).checked_div(Fixed::whole(game_length)).unwrap_or(Fixed::ONE).min(Fixed::ONE)
-    } else {
-        Fixed::ONE
-    };
-    let decay = Fixed::ONE - (Fixed::permille(667) * progress);
-
-    let mut gained = ((Precise::from_fixed(base) * Precise::from_fixed(decay))
+    // game_length is the speed's 500-turn horizon; gifts use 400 * speed.
+    let duration = (i64::from(game_length) * 4).max(1);
+    let elapsed = (i64::from(world.turn) * 5).min(duration);
+    let decay = Precise::from_ratio(3 * duration - 2 * elapsed, 3 * duration);
+    let mut gained = ((Precise::from_fixed(base) * decay)
         * Precise::from_fixed(if gold_gift_modifier.is_zero() { Fixed::ONE } else { gold_gift_modifier }))
     .to_fixed();
 
@@ -320,6 +387,37 @@ pub fn gift_gold(
 /// not as well — the ally uniques already restate the friend ones at a higher
 /// value, and adding both would pay twice.
 pub fn bonus_uniques(world: &World, r: &Ruleset, major: CivId) -> Vec<Unique> {
+    let modifiers: Vec<_> = world
+        .civ(major)
+        .into_iter()
+        .flat_map(|c| c.uniques.matching(crate::UniqueType::BonusStatsFromCityStates))
+        .cloned()
+        .collect();
+    bonus_uniques_with_modifiers(world, r, major, &modifiers)
+}
+
+/// Transform only the city-state contributions before they enter the empire
+/// index, so national bonuses never multiply unrelated city/policy yields.
+pub(crate) fn bonus_uniques_with_modifiers(
+    world: &World,
+    r: &Ruleset,
+    major: CivId,
+    modifiers: &[Unique],
+) -> Vec<Unique> {
+    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(major);
+    let multipliers: Vec<_> = modifiers
+        .iter()
+        .filter(|u| {
+            u.unique_type() == Some(crate::UniqueType::BonusStatsFromCityStates)
+                && crate::world::conditionals::applies(u, &ctx).holds()
+        })
+        .filter_map(|u| {
+            Some((
+                crate::stats::Stat::parse(u.params.get(1)?)?,
+                Fixed::ONE + Fixed::parse(u.params.first()?)?.checked_div(Fixed::whole(100))?,
+            ))
+        })
+        .collect();
     let mut out = Vec::new();
     for cs in city_states(world) {
         let level = relationship(world, cs, major);
@@ -330,7 +428,17 @@ pub fn bonus_uniques(world: &World, r: &Ruleset, major: CivId) -> Vec<Unique> {
             Relationship::Friend => &kind.friend_bonus_uniques,
             _ => continue,
         };
-        out.extend(source.iter().map(|text| Unique::parse(text)));
+        for text in source {
+            let mut unique = Unique::parse(text);
+            if let Some(mut stats) = unique.params.first().and_then(|p| crate::stats::Stats::parse(p)) {
+                for &(stat, multiplier) in &multipliers {
+                    stats[stat] = stats[stat] * multiplier;
+                }
+                unique.text = unique.text.replacen(&format!("[{}]", unique.params[0]), &format!("[{stats}]"), 1);
+                unique.params[0] = stats.to_string();
+            }
+            out.push(unique);
+        }
     }
     out
 }
@@ -345,6 +453,15 @@ pub fn bonus_uniques(world: &World, r: &Ruleset, major: CivId) -> Vec<Unique> {
 /// `[stats]` lands once on the empire. `[stats] [cityFilter]` lands once per
 /// city that matches — "in all cities" really does mean each of them.
 pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::Stats {
+    civ_wide_yields_with_modifiers(world, r, civ, Default::default())
+}
+
+pub fn civ_wide_yields_with_modifiers(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    mods: crate::world::TurnModifiers,
+) -> crate::stats::Stats {
     use crate::stats::Stats;
     let Some(c) = world.civ(civ) else { return Stats::ZERO };
     let mut total = Stats::ZERO;
@@ -358,23 +475,27 @@ pub fn civ_wide_yields(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::
         }
     }
 
-    let capital = crate::world::connections::capital_of(world, r, civ);
-    for u in c.uniques.matching(crate::UniqueType::StatsPerCity).filter(|u| holds(u)) {
-        let (Some(stats), Some(filter)) = (u.params.first().and_then(|p| Stats::parse(p)), u.params.get(1)) else {
-            continue;
-        };
-        for city_id in &c.cities {
-            let Some(city) = world.cities.get(*city_id) else { continue };
-            // "in capital" is the one filter that is about which city this is
-            // rather than whose it is, so it is answered here.
-            let matched = if filter.contains("capital") {
-                Some(*city_id) == capital
-            } else {
-                crate::world::filters::city_matches(world, r, city, Some(city), filter)
-                    == crate::world::conditionals::Verdict::True
-            };
-            if matched {
-                total += stats;
+    total += crate::world::city_effects::founder_yields(world, r, civ);
+    total += crate::world::city_effects::reserve_yields(world, r, civ);
+    if c.is_major() {
+        for u in c.uniques.matching(crate::UniqueType::CityStateStatPercent).filter(|u| holds(u)) {
+            let Some(stat) = u.params.first().and_then(|p| crate::stats::Stat::parse(p)) else { continue };
+            let Some(percent) = u.params.get(1).and_then(|p| Fixed::parse(p)) else { continue };
+            for cs in city_states(world).into_iter().filter(|cs| ally_of(world, *cs) == Some(civ)) {
+                let plan = crate::world::turn::plan_economy(world, r, cs, Default::default(), mods);
+                let amount = match stat {
+                    crate::stats::Stat::Science => {
+                        plan.science
+                            + crate::world::turn::treasury_deficit(world.civ(cs).unwrap().gold, plan.gold, plan.science)
+                    }
+                    crate::stats::Stat::Gold => plan.gold,
+                    crate::stats::Stat::Culture => plan.culture,
+                    crate::stats::Stat::Faith => plan.faith,
+                    crate::stats::Stat::Happiness => plan.happiness,
+                    crate::stats::Stat::Food => plan.food.iter().map(|(_, n)| *n).sum(),
+                    crate::stats::Stat::Production => plan.production.iter().map(|(_, n)| *n).sum(),
+                };
+                total[stat] += (Fixed::whole(amount) * percent).checked_div(Fixed::whole(100)).unwrap_or_default();
             }
         }
     }
@@ -454,7 +575,9 @@ pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
             // Half the influence already held, plus the spy's own skill. A civ
             // the city-state already likes finds rigging easy, which is how
             // an ally stays an ally.
-            let votes = world.diplomacy.influence(cs, major).floor() as i32 / 2 + spy.skill();
+            let votes = (world.diplomacy.influence(cs, major).checked_div(Fixed::whole(2)).unwrap_or(Fixed::ZERO)
+                + Fixed::whole(spy.skill()) * crate::world::espionage::efficiency(world, r, major, capital))
+            .floor() as i32;
             riggers.push((major, votes.max(0)));
         }
         if riggers.is_empty() {
@@ -506,6 +629,15 @@ pub fn hold_elections(world: &mut World, r: &Ruleset) -> Vec<ElectionResult> {
 /// skill gap between the plotting spy and whatever guards the place. Capped at
 /// 85: however far ahead you are, a coup can fail.
 pub fn coup_chance(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> i32 {
+    coup_chance_in(world, r, plotter, cs, true)
+}
+
+/// Public estimate excludes the unknown defending spy.
+pub fn visible_coup_chance(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> i32 {
+    coup_chance_in(world, r, plotter, cs, false)
+}
+
+fn coup_chance_in(world: &World, r: &Ruleset, plotter: CivId, cs: CivId, include_defender: bool) -> i32 {
     let ally = ally_of(world, cs);
     // With no ally there is no incumbent to beat, so the bar is the ally
     // threshold itself.
@@ -523,6 +655,7 @@ pub fn coup_chance(world: &World, r: &Ruleset, plotter: CivId, cs: CivId) -> i32
         .map_or(0, |s| s.skill());
     // The incumbent's own spy defends what it bought.
     let theirs = ally
+        .filter(|_| include_defender)
         .and_then(|a| world.civ(a))
         .and_then(|c| c.espionage.spies.iter().find(|s| s.station == Some(capital)))
         .map_or(0, |s| s.skill());
@@ -608,7 +741,7 @@ pub fn attempt_coup(world: &mut World, r: &Ruleset, plotter: CivId, cs: CivId) -
         world.diplomacy.add_influence(cs, plotter, COUP_FAILURE_PENALTY);
         if let (Some(capital), Some(c)) = (capital, world.civ_mut(plotter)) {
             if let Some(s) = c.espionage.spies.iter_mut().find(|s| s.station == Some(capital)) {
-                *s = crate::world::espionage::Spy::new();
+                s.kill();
             }
         }
         // Whoever was guarding the place learns from it.
@@ -1157,5 +1290,79 @@ mod tests {
             None,
             "a city-state is not playing, so it cannot win by outlasting those who are"
         );
+    }
+    #[test]
+    fn human_coup_is_queued_once_and_resolves_at_boundary() {
+        let r = ruleset();
+        let mut w = world(&r);
+        rig(&mut w, &r, CivId(0), 3);
+        let before = w.diplomacy.influence(CS, CivId(0));
+        assert!(crate::world::espionage::queue_coup(&mut w, &r, CivId(0), CS));
+        assert!(!crate::world::espionage::queue_coup(&mut w, &r, CivId(0), CS));
+        assert_eq!(w.diplomacy.influence(CS, CivId(0)), before);
+        let events = crate::world::espionage::tick(&mut w, &r, Fixed::ONE);
+        assert_eq!(events.iter().filter(|e| matches!(e, crate::world::espionage::SpyEvent::Coup(_))).count(), 1);
+        assert!(matches!(
+            w.civ(CivId(0)).unwrap().espionage.spies[0].action,
+            crate::world::espionage::SpyAction::Dead | crate::world::espionage::SpyAction::RiggingElections
+        ));
+        assert!(!crate::world::espionage::tick(&mut w, &r, Fixed::ONE)
+            .iter()
+            .any(|e| matches!(e, crate::world::espionage::SpyEvent::Coup(_))));
+    }
+
+    #[test]
+    fn shared_religion_and_papal_primacy_change_resting_point_and_drift() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let major = CivId(0);
+        w.civ_mut(major).unwrap().faith.founded = true;
+        w.civ_mut(major)
+            .unwrap()
+            .uniques
+            .insert(Unique::parse("Resting point for Influence with City-States following this religion [+15]"));
+        let city = w.civ(CS).unwrap().cities[0];
+        let c = w.cities.get_mut(city).unwrap();
+        c.faith.add_pressure(Some(major), 5000);
+        c.faith.recount(c.population);
+        assert_eq!(resting_point_in(&w, &r, CS, major), Fixed::whole(15));
+        w.diplomacy.set_influence(CS, major, Fixed::whole(60));
+        assert_eq!(drift_in(&w, &r, CS, major), Fixed::permille(-750));
+        w.diplomacy.set_influence(CS, major, Fixed::ZERO);
+        assert_eq!(drift_in(&w, &r, CS, major), Fixed::permille(1500));
+        w.civ_mut(major)
+            .unwrap()
+            .uniques
+            .insert(Unique::parse("City-State Influence recovers at twice the normal rate"));
+        assert_eq!(drift_in(&w, &r, CS, major), Fixed::permille(2500));
+    }
+
+    #[test]
+    fn patronage_finisher_accelerates_other_majors_decay_only() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.civ_mut(CivId(0))
+            .unwrap()
+            .uniques
+            .insert(Unique::parse("Influence of all other civilizations with all city-states degrades [33]% faster"));
+        for civ in [CivId(0), CivId(1)] {
+            w.diplomacy.set_influence(CS, civ, Fixed::whole(100));
+        }
+        assert_eq!(drift_in(&w, &r, CS, CivId(0)), Fixed::whole(-1));
+        assert_eq!(drift_in(&w, &r, CS, CivId(1)), Fixed::permille(-1330));
+        w.diplomacy.declare_war(CivId(1), CS);
+        assert_eq!(drift_in(&w, &r, CS, CivId(1)), Fixed::ZERO);
+    }
+
+    #[test]
+    fn gift_decay_reaches_its_floor_at_four_hundred_standard_turns() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.turn = 400;
+        let at_floor = influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS);
+        w.turn = 500;
+        assert_eq!(influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS), at_floor);
+        w.turn = 399;
+        assert!(influence_from_gift(&w, 1000, 500, Fixed::ONE, CivId(0), CS) >= at_floor);
     }
 }

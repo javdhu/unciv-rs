@@ -144,11 +144,30 @@ pub fn rank_for_city_work(yields: Stats, city: &City, focus: CityFocus, surplus_
 ///
 /// Ties break on [`TileId`], so two machines reach the same answer.
 pub fn rank_available_tiles(grid: &TileGrid, r: &Ruleset, city: &City, focus: CityFocus) -> Vec<(TileId, Ranking)> {
+    rank_tiles(grid, r, city, focus, None)
+}
+
+fn observed_yield(
+    grid: &TileGrid,
+    r: &Ruleset,
+    tile: TileId,
+    observer: Option<&crate::world::entities::Civilization>,
+) -> Stats {
+    observer.map_or_else(|| tile_yield(grid, r, tile), |civ| crate::world::yields::tile_yield_for(grid, r, tile, civ))
+}
+
+fn rank_tiles(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &City,
+    focus: CityFocus,
+    observer: Option<&crate::world::entities::Civilization>,
+) -> Vec<(TileId, Ranking)> {
     let surplus = crate::world::city::food_surplus(grid, r, city);
     let mut ranked: Vec<(TileId, Ranking)> = workable_tiles(grid, city)
         .into_iter()
         .filter(|t| !city.worked.contains(t))
-        .map(|t| (t, rank_for_city_work(tile_yield(grid, r, t), city, focus, surplus)))
+        .map(|t| (t, rank_for_city_work(observed_yield(grid, r, t, observer), city, focus, surplus)))
         .collect();
     ranked.sort_by(|a, b| b.1.score.cmp(&a.1.score).then(a.0.cmp(&b.0)));
     ranked
@@ -170,10 +189,32 @@ pub fn best_tile_for_new_citizen(grid: &TileGrid, r: &Ruleset, city: &City, focu
 /// fits neither stays unemployed. `bonus` is what every specialist here gets
 /// from uniques, which a city alone cannot see.
 pub fn assign_idle_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
+    assign_idle(grid, r, city, focus, bonus, None)
+}
+
+pub fn assign_idle_citizens_for(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &mut City,
+    focus: CityFocus,
+    bonus: Stats,
+    civ: &crate::world::entities::Civilization,
+) {
+    assign_idle(grid, r, city, focus, bonus, Some(civ))
+}
+
+fn assign_idle(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &mut City,
+    focus: CityFocus,
+    bonus: Stats,
+    observer: Option<&crate::world::entities::Civilization>,
+) {
     let slots = crate::world::specialists::slots(r, city);
     while city.idle_population() > 0 {
         let surplus = crate::world::city::food_surplus(grid, r, city);
-        let tile = rank_available_tiles(grid, r, city, focus).into_iter().next();
+        let tile = rank_tiles(grid, r, city, focus, observer).into_iter().next();
         let job = slots
             .iter()
             .filter(|(id, max)| city.specialists.get(id).copied().unwrap_or(0) < **max)
@@ -199,6 +240,28 @@ pub fn assign_idle_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus
 /// weaker let go. Without this a city that starved kept working the tile of
 /// the citizen it lost.
 pub fn release_extra_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
+    release_extra(grid, r, city, focus, bonus, None)
+}
+
+pub fn release_extra_citizens_for(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &mut City,
+    focus: CityFocus,
+    bonus: Stats,
+    civ: &crate::world::entities::Civilization,
+) {
+    release_extra(grid, r, city, focus, bonus, Some(civ))
+}
+
+fn release_extra(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &mut City,
+    focus: CityFocus,
+    bonus: Stats,
+    observer: Option<&crate::world::entities::Civilization>,
+) {
     let workable = workable_tiles(grid, city);
     city.worked.retain(|t| workable.contains(t));
 
@@ -213,7 +276,7 @@ pub fn release_extra_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, foc
         let worst_tile = city
             .worked
             .iter()
-            .map(|t| (rank_for_city_work(tile_yield(grid, r, *t), city, focus, surplus).score, *t))
+            .map(|t| (rank_for_city_work(observed_yield(grid, r, *t, observer), city, focus, surplus).score, *t))
             .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
         let worst_job = city
             .specialists

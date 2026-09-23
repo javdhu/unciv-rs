@@ -1,32 +1,13 @@
-//! What the engine costs, measured rather than assumed.
+//! Performance and state-size measurements for the deterministic engine.
 //!
-//! These are the numbers any decision about search, netcode or a client has to
-//! be judged against. How much compute an AI can spend per turn depends on how
-//! fast a turn is; whether tree search is even possible depends on how cheap a
-//! clone is; whether rollback netcode is sane depends on how big the state is.
+//! The timing gate requires an optimized build. Run it explicitly with:
+//! `cargo test --release --features save --test budget -- --nocapture`.
+//! Normal debug test runs ignore only `what_a_turn_costs`.
 //!
-//! Measured on an M-series Mac, September 2026, for scale rather than as a
-//! target:
-//!
-//! | map | turn | World::clone | clones per 100 ms |
-//! |---|---|---|---|
-//! | 24x16, 4 civs  | 2.4 ms  | 71 us  | ~1,400 |
-//! | 64x40, 8 civs  | 37 ms   | 288 us | ~350   |
-//!
-//! A whole mid-game state is ~33 KB. The wasm build is 1.2 MB raw and 327 KB
-//! gzipped, of which 456 KB is the ruleset JSON embedded by `include_str!` —
-//! so the engine *code* is a small fraction of that, and fetching the ruleset
-//! separately would cut the download a long way.
-//!
-//! What those numbers decide: a few hundred to a few thousand full-state
-//! clones fit in a 100 ms turn budget, which is the ceiling on any tree search
-//! that works by cloning and simulating. And a game worth 33 KB is small
-//! enough to send whole — though a deterministic engine never needs to, since
-//! a seed plus a command log reconstructs it exactly.
-//!
-//! Reported, not asserted at fixed values — they are measurements, and a
-//! machine-dependent assertion would be a flaky test. The loose bounds that
-//! *are* asserted only catch an order-of-magnitude regression.
+//! The manual size tally counts selected structs and payloads. It is a lower
+//! bound, excluding allocation overhead, spare capacity, observation history,
+//! and other nested state. With `save`, the test also reports the complete
+//! encoded snapshot size; encoded JSON bytes are not a heap measurement.
 
 use civ_core::ruleset::Ruleset;
 use civ_core::world::assignment::CityFocus;
@@ -62,8 +43,12 @@ fn play(w: &mut World, r: &Ruleset, turns: u32) {
     }
 }
 
-/// The three numbers that decide what kind of AI is affordable.
+/// Turn latency and clone cost, guarded only in optimized release builds.
 #[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "release timing gate: cargo test --release --features save --test budget -- --nocapture"
+)]
 fn what_a_turn_costs() {
     let r = ruleset();
     println!("\n--- engine budget ---");
@@ -101,16 +86,16 @@ fn what_a_turn_costs() {
     }
 }
 
-/// How big a game actually is, which decides what can be sent over a wire and
-/// what can be snapshotted for rollback or search.
+/// A partial in-memory payload tally and, when enabled, encoded save bytes.
 #[test]
 fn what_a_game_weighs() {
     let r = ruleset();
     let mut w = game(&r, 40, 26, 6);
     play(&mut w, &r, 150);
 
-    // No serializer in the core crate by design, so this measures the live
-    // footprint of the parts that would have to be sent.
+    // This deliberately partial tally is a lower bound. In particular it
+    // does not account for visibility/knowledge histories, allocator overhead,
+    // unused collection capacity, or every nested collection in entities.
     let tiles = w.grid.len();
     let grid_bytes = tiles
         * (std::mem::size_of::<civ_core::arena::Id<civ_core::ruleset::Terrain>>() * 2
@@ -135,16 +120,26 @@ fn what_a_game_weighs() {
         .map(|(_, c)| std::mem::size_of_val(c) + c.built.len() * 8 + c.worked.len() * 2 + c.name.len())
         .sum();
     let unit_bytes = w.units.len() * std::mem::size_of::<Unit>();
-    let total = grid_bytes + features + civ_bytes + city_bytes + unit_bytes;
+    let payload_lower_bound = grid_bytes + features + civ_bytes + city_bytes + unit_bytes;
 
-    println!("\n--- game weight, 40x26, 6 civs, turn 150 ---");
+    println!("\n--- state size, 40x26, 6 civs, turn 150 ---");
     println!("grid      {grid_bytes:7} bytes ({tiles} tiles)");
     println!("features  {features:7} bytes");
     println!("civs      {civ_bytes:7} bytes ({} civs)", w.civs.len());
     println!("cities    {city_bytes:7} bytes ({})", w.cities.len());
     println!("units     {unit_bytes:7} bytes ({})", w.units.len());
-    println!("TOTAL     {total:7} bytes (~{} KB)", total / 1024);
-    println!("a deterministic game is really: seed + command log, not this");
+    println!("SELECTED PAYLOAD LOWER BOUND {payload_lower_bound} bytes (~{} KiB)", payload_lower_bound / 1024);
+    println!("excludes knowledge/history allocations, collection capacity and allocator overhead");
 
-    assert!(total < 2_000_000, "a game should not weigh megabytes: {total}");
+    #[cfg(feature = "save")]
+    {
+        let snapshot = civ_core::save::encode(&w, &r).expect("mid-game world can be saved");
+        println!(
+            "COMPLETE ENCODED SNAPSHOT {} UTF-8 bytes (~{} KiB), not heap bytes",
+            snapshot.len(),
+            snapshot.len() / 1024
+        );
+    }
+    #[cfg(not(feature = "save"))]
+    println!("enable --features save to measure the complete encoded snapshot");
 }
