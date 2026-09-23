@@ -100,8 +100,8 @@ open city, civ options) beside the Three.js renderer. The renderer does not calc
 separate owners; art entries map ruleset names to procedural recipes (docs/PROCEDURAL.md). Static
 geometry is instanced, and each unit is a skinned mesh over shared geometry with its own skeleton. An
 `attacked` presentation event names the attacker, the target, both tiles, whether it was ranged, the damage and
-any deaths; it reaches the owners of both sides, and `world/combat.ts` can use it instead of inferring fights
-from consecutive views. Fights between third parties still wait for event-time observation.
+any deaths; it reaches the owners of both sides, and `world/combat.ts` animates fights from it instead of
+inferring them from consecutive views. Fights between third parties still wait for event-time observation.
 
 Human controls use `openSolo`; remote rooms will use `openRemote`. The old observer adapter remains only
 for `art-review.ts`. The session provides commands for currently implemented engine actions, including economy,
