@@ -11,6 +11,7 @@ pub mod air;
 pub mod assignment;
 pub mod automation;
 pub mod barbarians;
+pub mod belief_rating;
 pub mod city;
 pub mod city_effects;
 pub mod city_names;

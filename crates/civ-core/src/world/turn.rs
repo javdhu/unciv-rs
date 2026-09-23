@@ -1118,6 +1118,12 @@ fn apply_plan_inner(
                     }
                 }
             }
+            UnitOrder::Fortify | UnitOrder::Hold => {
+                if let Some(u) = world.units.get_mut(*unit) {
+                    u.fortified |= *order == UnitOrder::Fortify;
+                    u.movement_left = Fixed::ZERO;
+                }
+            }
             UnitOrder::Improve(improvement) => {
                 if let Some(tile) = world.units.get(*unit).map(|u| u.position) {
                     if let Ok(crate::world::improvements::WorkEvent::Finished { improvement, .. }) =
@@ -1694,6 +1700,8 @@ fn ai_commands(
                 Command::FoundCity { unit: *unit, name }
             }
             UnitOrder::Improve(improvement) => Command::Improve { unit: *unit, improvement: *improvement },
+            UnitOrder::Fortify => Command::Fortify { unit: *unit },
+            UnitOrder::Hold => Command::SkipUnit { unit: *unit },
             UnitOrder::GreatPerson(action) => Command::GreatPerson { unit: *unit, action: *action },
             UnitOrder::Religious(action) => Command::Religious { unit: *unit, action: *action },
         });
@@ -3091,41 +3099,57 @@ mod warfare {
     /// loop rather than by calling combat directly.
     #[test]
     fn armies_at_war_actually_fight() {
-        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
-        let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
-        g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
-        let nation = r.nations.ids().next().unwrap();
-        let mut w =
-            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
-        w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
-        w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
+        let duel = |classic: bool| {
+            let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
+            let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
+            g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
+            let nation = r.nations.ids().next().unwrap();
+            let mut w = World::new(
+                g,
+                vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)],
+            );
+            w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
+            w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
+            if classic {
+                w.classic_ai.extend([CivId(0), CivId(1)]);
+            }
 
-        let warrior = r.unit("Warrior").unwrap();
-        let movement = r.units.get(warrior).unwrap().movement;
-        let a = w.grid.id_at(6, 6).unwrap();
-        let b = w.grid.neighbours(a).next().unwrap();
-        w.place_unit(Unit::new(warrior, CivId(0), a, movement));
-        w.place_unit(Unit::new(warrior, CivId(1), b, movement));
+            let warrior = r.unit("Warrior").unwrap();
+            let movement = r.units.get(warrior).unwrap().movement;
+            let a = w.grid.id_at(6, 6).unwrap();
+            let b = w.grid.neighbours(a).next().unwrap();
+            w.place_unit(Unit::new(warrior, CivId(0), a, movement));
+            w.place_unit(Unit::new(warrior, CivId(1), b, movement));
 
-        w.diplomacy.meet(CivId(0), CivId(1));
-        w.diplomacy.declare_war(CivId(0), CivId(1));
+            w.diplomacy.meet(CivId(0), CivId(1));
+            w.diplomacy.declare_war(CivId(0), CivId(1));
 
-        let prince = r.difficulties.by_name("Prince");
+            let prince = r.difficulties.by_name("Prince");
 
-        let mut battles = 0;
-        let mut deaths = 0;
-        for _ in 0..30 {
-            for e in
-                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
-            {
-                if let TurnEvent::Battle { attacker_died, defender_died, .. } = e {
-                    battles += 1;
-                    deaths += attacker_died as u32 + defender_died as u32;
+            let mut battles = 0;
+            let mut deaths = 0;
+            for _ in 0..30 {
+                for e in advance_turn(
+                    &mut w,
+                    &r,
+                    CityFocus::None,
+                    TurnModifiers { difficulty: prince, ..Default::default() },
+                ) {
+                    if let TurnEvent::Battle { attacker_died, defender_died, .. } = e {
+                        battles += 1;
+                        deaths += attacker_died as u32 + defender_died as u32;
+                    }
                 }
             }
-        }
-        println!("{battles} battles, {deaths} units destroyed");
+            println!("classic={classic}: {battles} battles, {deaths} units destroyed");
+            (battles, deaths)
+        };
+        // The AI pulls a beaten soldier back to heal (UnitAutomation.tryRetreat),
+        // so a lone duel on open ground need not end in a death.
+        let (battles, _) = duel(false);
         assert!(battles > 0, "adjacent enemies at war should fight");
-        assert!(deaths > 0, "and someone should eventually lose");
+        // Without those tactics they fight on until one falls.
+        let (battles, deaths) = duel(true);
+        assert!(battles > 0 && deaths > 0, "and someone should eventually lose");
     }
 }

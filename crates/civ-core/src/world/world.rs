@@ -53,6 +53,11 @@ pub struct World {
     /// Faiths that arise by era (civ.game); empty unless the ruleset has them.
     #[cfg_attr(feature = "serde", serde(default))]
     pub faiths: crate::world::faiths::FaithWorld,
+    /// AI civs that play without the tactics of ENGINE-BRIEF B7 (healing and
+    /// retreat, surviving attacks, racing for wonders, rating beliefs), so the
+    /// balance runner can pit the two against each other. Empty in play.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub classic_ai: std::collections::BTreeSet<CivId>,
 }
 
 impl World {
@@ -76,6 +81,7 @@ impl World {
             influence: Default::default(),
             slice: None,
             faiths: Default::default(),
+            classic_ai: Default::default(),
         }
     }
 

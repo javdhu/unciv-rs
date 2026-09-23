@@ -118,6 +118,36 @@ pub fn unit_healing(world: &World, r: &Ruleset, id: Id<Unit>) -> i32 {
     modified_amount(world, r, id, healing)
 }
 
+/// How much this unit would heal resting on `tile`, for choosing where to
+/// rest (`MapUnit.rankTileForHealing`, MapUnit.kt:523): 25 in a city, 20 in
+/// friendly land (or friendly water, for units at home there), 10 in neutral
+/// or enemy land, 0 at sea; plus the unit's own `Heal` bonuses.
+pub fn heal_rank(world: &World, r: &Ruleset, id: Id<Unit>, tile: crate::world::grid::TileId) -> i32 {
+    let Some(unit) = world.units.get(id) else { return 0 };
+    let friendly = crate::world::movement::is_friendly_territory(world, unit.owner, tile);
+    let water = world.grid.is_water(r, tile);
+    let city = world.cities.iter().any(|(_, c)| c.centre == tile);
+    let base = if city {
+        25
+    } else if water {
+        if friendly
+            && (unit.is_water_unit(r) || !matching(world, r, id, UniqueType::CanMoveOnWater, false).is_empty())
+        {
+            20
+        } else {
+            0
+        }
+    } else if friendly {
+        20
+    } else {
+        10
+    };
+    if base == 0 {
+        return 0;
+    }
+    base + matching(world, r, id, UniqueType::Heal, true).into_iter().map(|u| amount(u, 0)).sum::<i32>()
+}
+
 fn modified_amount(world: &World, r: &Ruleset, id: Id<Unit>, amount: i32) -> i32 {
     let double = !matching(world, r, id, UniqueType::HealingEffectsDoubled, true).is_empty();
     amount.max(0).saturating_mul(if double { 2 } else { 1 })

@@ -178,7 +178,15 @@ pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, s
     if !has_pantheon {
         let cost = pantheon_cost(world, speed);
         if can_found_pantheon(world, r, civ_id) && stored >= cost {
-            if let Some(belief) = available_beliefs(world, r, "Pantheon").into_iter().min() {
+            let choices = available_beliefs(world, r, "Pantheon");
+            // ReligionAutomation.choosePantheon picks the best rated; the
+            // classic AI took the first.
+            let pick = if world.classic_ai.contains(&civ_id) {
+                choices.iter().copied().min()
+            } else {
+                crate::world::belief_rating::best(world, r, civ_id, &choices)
+            };
+            if let Some(belief) = pick {
                 if let Some(c) = world.civ_mut(civ_id) {
                     c.faith.stored -= cost;
                     c.faith.beliefs.insert(belief);

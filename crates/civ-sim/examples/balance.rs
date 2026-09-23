@@ -24,6 +24,8 @@
 //!                      changes before bundling them
 //!   --out PATH         write every game as JSON
 //!   --quiet            no per-game lines
+//!   --mixed            odd-numbered major civs play the classic AI (without
+//!                      ENGINE-BRIEF B7's tactics); reports how the two fare
 //!
 //! Every game is deterministic in its seed, so any row can be replayed alone
 //! with `--seeds S..=S`. A game that panics is reported with its seed and does
@@ -57,6 +59,7 @@ struct Options {
     out: Option<String>,
     quiet: bool,
     overlay: Option<String>,
+    mixed: bool,
 }
 
 fn usage(error: &str) -> ! {
@@ -104,11 +107,16 @@ fn options() -> Options {
         out: None,
         quiet: false,
         overlay: None,
+        mixed: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         if flag == "--quiet" {
             o.quiet = true;
+            continue;
+        }
+        if flag == "--mixed" {
+            o.mixed = true;
             continue;
         }
         let value = args.next().unwrap_or_else(|| usage(&format!("{flag} needs a value")));
@@ -137,6 +145,8 @@ fn options() -> Options {
 #[serde(rename_all = "camelCase")]
 struct CivRecord {
     nation: String,
+    /// Played the classic AI (`--mixed`).
+    classic: bool,
     /// Cities owned at turns 25, 50 and 75 (absent if the game ended first).
     cities_at: BTreeMap<u32, usize>,
     cities_final: usize,
@@ -239,9 +249,12 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     let (mut world, rules, _) = civ_sim::new_game_in(&settings(o, seed), &[], ruleset(o)?)?;
     let r = &rules;
     let majors: Vec<CivId> = (0..o.civs).map(CivId).collect();
+    if o.mixed {
+        world.classic_ai = majors.iter().copied().filter(|c| c.0 % 2 == 1).collect();
+    }
     let mut civs: Vec<CivRecord> = majors
         .iter()
-        .map(|&c| CivRecord { nation: nation(&world, r, c), ..Default::default() })
+        .map(|&c| CivRecord { nation: nation(&world, r, c), classic: world.classic_ai.contains(&c), ..Default::default() })
         .collect();
     let mut eras = BTreeMap::new();
     let mut wonders = Vec::new();
@@ -415,6 +428,19 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
         lingua.iter().copied().fold(0.0, f64::max)
     );
     println!("Highest share of world trade held: median {:.0}%, max {:.0}%", median(trade.clone()), trade.iter().copied().fold(0.0, f64::max));
+    if o.mixed {
+        let won_by = |classic: bool| {
+            games
+                .iter()
+                .filter(|g| g.civs.iter().any(|c| Some(&c.nation) == g.winner.as_ref() && c.classic == classic))
+                .count()
+        };
+        let (new, old) = (won_by(false), won_by(true));
+        println!(
+            "Mixed: B7 tactics won {new} ({:.1}% of decided games), classic AI won {old}",
+            100.0 * new as f64 / (new + old).max(1) as f64
+        );
+    }
 
     println!("\n{:<20} {:>6} {:>5} {:>8} {:>7} {:>8} {:>8} {:>8}", "Nation", "played", "wins", "win rate", "× fair", "wars/g", "wonders", "founded");
     let mut nations: BTreeMap<String, (usize, usize, u32, u32, u32)> = BTreeMap::new();
