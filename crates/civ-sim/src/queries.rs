@@ -6,7 +6,7 @@ use civ_core::arena::{Arena, Id};
 use civ_core::ruleset::Ruleset;
 use civ_core::stats::Stat;
 use civ_core::world::commands::{self, Command};
-use civ_core::world::construction::{self, Construction, CostModifiers, Rejection};
+use civ_core::world::construction::{self, Construction, Rejection};
 use civ_core::modifiers::Layer;
 use civ_core::stats::Fixed;
 use civ_core::world::{air, combat, policies, purchase, research, CivId, World};
@@ -493,7 +493,7 @@ pub fn unit_options(
             world,
             r,
             id,
-            CostModifiers::default(),
+            civ_core::world::TurnModifiers::for_world(world, r).costs,
         ),
     })
 }
@@ -541,7 +541,7 @@ pub fn city_options(
     let (id, city) =
         entity(&world.cities, index, generation).filter(|(_, city)| city.owner == civ)?;
     let owner = world.civ(civ)?;
-    let modifiers = CostModifiers::default(); // Core derives current city/empire context.
+    let modifiers = civ_core::world::TurnModifiers::for_world(world, r).costs; // Core derives current city/empire context.
     let mut choices = Vec::new();
     for what in r
         .buildings
@@ -746,14 +746,14 @@ pub fn civ_options(world: &World, r: &Ruleset, civ: CivId) -> CivOptions {
                     r,
                     civ,
                     id,
-                    research::ScienceModifiers::default(),
+                    civ_core::world::TurnModifiers::for_world(world, r).science,
                 )?,
                 invested: research::invested(owner, id),
             })
         })
         .collect();
     let next_policy_cost =
-        policies::policy_cost_in(world, r, civ, policies::PolicyModifiers::default());
+        policies::policy_cost_in(world, r, civ, civ_core::world::TurnModifiers::for_world(world, r).policies);
     let policies = r
         .policies
         .iter()

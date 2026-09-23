@@ -430,12 +430,8 @@ impl Session {
             .all(|s| s.ready)
     }
     fn resolve_round(&mut self) -> Vec<civ_core::world::TurnEvent> {
-        let events = finish_round(
-            &mut self.world,
-            &self.rules,
-            CityFocus::default(),
-            TurnModifiers::default(),
-        );
+        let mods = TurnModifiers::for_world(&self.world, &self.rules);
+        let events = finish_round(&mut self.world, &self.rules, CityFocus::default(), mods);
         for s in &mut self.seats {
             s.ready = false;
             if let Some(human) = s.next_human.take() {

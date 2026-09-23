@@ -207,7 +207,7 @@ pub fn accept_in(
     b_gives: &[Item],
     turns: u32,
 ) -> Result<(), TradeRejection> {
-    let mut mods = crate::world::turn::TurnModifiers::default();
+    let mut mods = crate::world::turn::TurnModifiers::for_world(world, r);
     mods.costs.deal_duration = turns;
     accept_with(world, r, a, b, (a_gives, b_gives), mods)
 }

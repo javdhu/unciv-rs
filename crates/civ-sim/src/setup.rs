@@ -1,7 +1,8 @@
 //! Validated settings and the complete content bundle produce a deterministic initial world.
 
 use crate::content;
-use civ_core::ruleset::Ruleset;
+use civ_core::arena::Id;
+use civ_core::ruleset::{Ruleset, Speed};
 use civ_core::world::entities::Civilization;
 use civ_core::world::mapgen::{generate_with_biases, MapParameters};
 use civ_core::world::settling::is_settler;
@@ -21,7 +22,12 @@ pub struct Settings {
     pub majors: u8,
     pub city_states: u8,
     pub wrap_x: bool,
-    pub max_turns: u32,
+    /// The turn limit. Absent uses the speed's length (Speed.kt numTotalTurns): 330 on Quick,
+    /// 500 on Standard.
+    pub max_turns: Option<u32>,
+    /// Game speed by name; Standard when absent.
+    #[ts(optional)]
+    pub speed: Option<String>,
     /// Absent enables every bundled victory. Names are validated against the ruleset.
     pub victories: Option<Vec<String>>,
     /// The local player's nation by name; the first major in seeded order when absent.
@@ -37,10 +43,27 @@ impl Default for Settings {
             majors: 4,
             city_states: 2,
             wrap_x: false,
-            max_turns: 500,
+            max_turns: None,
+            speed: None,
             victories: None,
             nation: None,
         }
+    }
+}
+
+const DEFAULT_SPEED: &str = "Standard";
+
+impl Settings {
+    /// The chosen speed, validated against the ruleset.
+    pub fn speed_in(&self, r: &Ruleset) -> Result<Id<Speed>, String> {
+        let name = self.speed.as_deref().unwrap_or(DEFAULT_SPEED);
+        r.speeds.id(name).ok_or_else(|| format!("unknown speed: {name}"))
+    }
+
+    /// The explicit `maxTurns`, or else the chosen speed's length.
+    pub fn turn_limit(&self, r: &Ruleset) -> Result<u32, String> {
+        let speed = self.speed_in(r)?;
+        Ok(self.max_turns.unwrap_or_else(|| r.speeds[speed].total_turns.max(1) as u32))
     }
 }
 
@@ -182,7 +205,8 @@ pub fn new_game(s: &Settings) -> Result<(World, Ruleset, CivId), String> {
     civs.push(barbarians);
     let mut world = World::new(map.grid, civs);
     world.difficulty = rules.difficulties.id("Prince");
-    world.endgame.max_turns = s.max_turns;
+    world.speed = Some(s.speed_in(&rules)?);
+    world.endgame.max_turns = s.turn_limit(&rules)?;
     world.endgame.enabled_victories = enabled_victories;
     world.diplomacy.mark_hostile(barbarian);
     for i in 0..count {
@@ -260,7 +284,7 @@ pub fn validate_settings(s: &Settings) -> Result<(), String> {
     if !(1..=16).contains(&s.majors) || s.city_states > 16 {
         return Err("choose 1 to 16 civilizations and at most 16 city-states".into());
     }
-    if s.max_turns == 0 || s.max_turns > 10_000 {
+    if s.max_turns.is_some_and(|t| t == 0 || t > 10_000) {
         return Err("maximum turns must be between 1 and 10000".into());
     }
     if s.victories
@@ -271,6 +295,9 @@ pub fn validate_settings(s: &Settings) -> Result<(), String> {
     }
     if s.seed > 9_007_199_254_740_991 {
         return Err("seed exceeds the exact JSON integer range".into());
+    }
+    if s.speed.as_ref().is_some_and(|n| n.len() > 100) {
+        return Err("speed name is too long".into());
     }
     if s.nation.as_ref().is_some_and(|n| n.len() > 100) {
         return Err("nation name is too long".into());

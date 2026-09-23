@@ -50,7 +50,7 @@ fn chosen_victory_and_turn_limit_survive_session_save_and_replay() {
             majors: 2,
             city_states: 0,
             wrap_x: true,
-            max_turns: 2,
+            max_turns: Some(2),
             victories: Some(vec![time.1.name.clone()]),
             ..Settings::default()
         },
@@ -310,4 +310,53 @@ fn complete_matches_save_and_replay() {
         let (winner, condition) = s.world().winner.unwrap();
         println!("seed={seed} nation={nation} turn={} victory={} winner={} restores={restores} replay=ok",s.turn(),s.rules().victories[condition].name,winner.0);
     }
+}
+
+#[test]
+fn the_turn_limit_follows_speed_unless_set_explicitly() {
+    let limit = |speed: Option<&str>, max_turns: Option<u32>| {
+        let (world, rules, me) = new_game(&Settings {
+            speed: speed.map(Into::into),
+            max_turns,
+            ..Settings::default()
+        })
+        .unwrap();
+        (world, rules, me)
+    };
+    let (quick, rules, me) = limit(Some("Quick"), None);
+    assert_eq!(quick.endgame.max_turns, 330, "Speeds.json: Quick ends at turn 330");
+    let (standard, _, _) = limit(None, None);
+    assert_eq!(standard.endgame.max_turns, 500, "absent speed is Standard");
+    assert_eq!(standard.speed, rules.speeds.id("Standard"));
+    let (explicit, _, _) = limit(Some("Quick"), Some(42));
+    assert_eq!(explicit.endgame.max_turns, 42, "an explicit maxTurns overrides the speed");
+    assert_eq!(player_view(&explicit, &rules, me).endgame.max_turns, 42);
+
+    // The speed is the game's, not only its length: Quick research costs two thirds.
+    let tech = rules.technologies.id("Pottery").unwrap();
+    let cost = |w: &civ_core::world::World| {
+        civ_core::world::research::tech_cost_in(w, &rules, me, tech, TurnModifiers::for_world(w, &rules).science).unwrap()
+    };
+    assert!(cost(&quick) < cost(&standard), "{} vs {}", cost(&quick), cost(&standard));
+
+    // Saves keep it.
+    let save = civ_core::save::encode(&quick, &rules).unwrap();
+    assert_eq!(civ_core::save::decode(&save, &rules).unwrap().speed, rules.speeds.id("Quick"));
+
+    let unknown = new_game(&Settings { speed: Some("Ludicrous".into()), ..Settings::default() });
+    assert_eq!(unknown.unwrap_err(), "unknown speed: Ludicrous");
+    let zero = new_game(&Settings { max_turns: Some(0), ..Settings::default() });
+    assert!(zero.is_err());
+}
+
+#[test]
+fn standard_speed_changes_nothing_from_the_defaults() {
+    let rules = civ_sim::content::load().unwrap();
+    let standard = TurnModifiers::for_speed(&rules, rules.speeds.id("Standard"));
+    let default = TurnModifiers::default();
+    assert_eq!(standard.barbarian, default.barbarian);
+    assert_eq!(standard.growth, default.growth);
+    assert_eq!(standard.costs, default.costs);
+    assert_eq!(standard.science, default.science);
+    assert_eq!(standard.policies, default.policies);
 }
