@@ -984,6 +984,8 @@ fn battle_text(
             format!("Your {a} destroyed {d}")
         } else if attacker_died {
             format!("Your {a} fell attacking {d}")
+        } else if b.damage_to_defender == 0 {
+            format!("Your {a} attacked {d} to no effect")
         } else {
             format!("Your {a} hit {d} for {}", b.damage_to_defender)
         }
@@ -995,6 +997,8 @@ fn battle_text(
             format!("{them} destroyed {yours}")
         } else if attacker_died {
             format!("{} destroyed {} {a}", if city { defender.clone() } else { format!("Your {defender}") }, an(a))
+        } else if b.damage_to_defender == 0 {
+            format!("{them} attacked {yours} to no effect")
         } else {
             format!("{them} attacked {yours} for {}", b.damage_to_defender)
         }
