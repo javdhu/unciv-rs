@@ -121,6 +121,17 @@ pub struct CityOptions {
     /// Tiles the city may work (its centre always works for free), with their yields to the owner.
     pub workable_tiles: Vec<WorkableTile>,
     pub specialist_slots: Vec<SpecialistSlot>,
+    /// Enemy units the city can bombard this turn, empty once its attack is spent.
+    pub bombard: Vec<BombardTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+pub struct BombardTarget {
+    pub unit: EntityRef,
+    pub health: i32,
+    /// Damage at the lowest and the highest roll.
+    pub damage_min: i32,
+    pub damage_max: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -656,6 +667,22 @@ pub fn city_options(
                 }
             })
             .collect(),
+        bombard: if city.attacks_left > 0 && city.resistance == 0 {
+            combat::bombard_targets(world, r, id)
+                .into_iter()
+                .filter_map(|target| {
+                    let (low, high) = combat::preview_bombard(world, r, id, target)?;
+                    Some(BombardTarget {
+                        unit: EntityRef { id: target.index(), gen: target.generation() },
+                        health: i32::from(world.units.get(target)?.health),
+                        damage_min: low,
+                        damage_max: high,
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
         specialist_slots: civ_core::world::specialists::slots(r, city)
             .into_iter()
             .map(|(specialist, slots)| SpecialistSlot { specialist: specialist.index(), slots })

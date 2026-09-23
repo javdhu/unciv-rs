@@ -340,6 +340,8 @@ pub struct CityStateView {
     pub specialists: Vec<SpecialistAllocationView>,
     pub health: i32,
     pub max_health: i32,
+    /// Food the city needs stored to grow by one citizen.
+    pub food_to_grow: i32,
     pub attacks_left: u8,
     pub resistance: u32,
     pub puppet: bool,
@@ -570,6 +572,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     .collect(),
                 health: c.health,
                 max_health: civ_core::world::city::max_health(r, c),
+                food_to_grow: civ_core::world::city::food_to_next_population(c.population, TurnModifiers::default().growth),
                 attacks_left: c.attacks_left,
                 resistance: c.resistance,
                 puppet: c.puppet,
