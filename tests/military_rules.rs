@@ -608,3 +608,25 @@ fn human_cities_put_their_first_citizen_to_work() {
     assert!(!w.civ(CivId(0)).unwrap().is_ai);
     assert_eq!((city.population, city.worked.len()), (1, 1), "the founding citizen works a tile at once");
 }
+
+#[test]
+fn bombard_targets_and_previews_match_the_bombard() {
+    let (r, mut w) = fixture();
+    let city = w.found_city_in(&r, City::found("Walls", CivId(0), tile(&w, 4, 4)));
+    let near = unit(&mut w, &r, 1, "Warrior", 6, 4);
+    let far = unit(&mut w, &r, 1, "Warrior", 8, 4);
+    for t in [tile(&w, 6, 4), tile(&w, 8, 4)] {
+        w.visibility.observe(CivId(0), t);
+    }
+    let targets = combat::bombard_targets(&w, &r, city);
+    assert!(targets.contains(&near) && !targets.contains(&far), "{targets:?}");
+    let (low, high) = combat::preview_bombard(&w, &r, city, near).unwrap();
+    for turn in 0..16 {
+        let mut t = w.clone();
+        t.turn = turn;
+        let before = t.units.get(near).unwrap().health;
+        combat::city_bombard(&mut t, &r, city, near).unwrap();
+        let dealt = i32::from(before) - t.units.get(near).map_or(0, |u| i32::from(u.health));
+        assert!((low..=high).contains(&dealt), "turn {turn}: {dealt} not in {low}..={high}");
+    }
+}

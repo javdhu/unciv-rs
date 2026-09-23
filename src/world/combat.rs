@@ -1198,6 +1198,43 @@ pub(crate) fn city_combat_strength(
 }
 
 /// A city bombards an enemy unit within range (range 2).
+/// Enemy units a city could bombard now: at war, within two tiles, in its line of fire and in sight.
+/// The city also needs an attack left and no resistance, which [`city_bombard`]'s callers check.
+pub fn bombard_targets(world: &World, r: &Ruleset, city_id: Id<crate::world::city::City>) -> Vec<Id<Unit>> {
+    let Some(city) = world.cities.get(city_id) else { return Vec::new() };
+    world
+        .units
+        .iter()
+        .filter(|(id, u)| {
+            u.owner != city.owner
+                && world.diplomacy.at_war(city.owner, u.owner)
+                && world.grid.distance(city.centre, u.position) <= 2
+                && has_line_of_sight(&world.grid, r, city.centre, u.position, false)
+                && crate::world::fog::can_see_unit(world, r, city.owner, *id)
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// A bombard's damage to its target at the lowest and the highest roll, as [`city_bombard`] computes it.
+pub fn preview_bombard(
+    world: &World,
+    r: &Ruleset,
+    city_id: Id<crate::world::city::City>,
+    target: Id<Unit>,
+) -> Option<(i32, i32)> {
+    let t = world.units.get(target)?;
+    let health = i32::from(t.health);
+    if t.is_civilian(r) {
+        return Some((40.min(health), 40.min(health)));
+    }
+    let att = city_combat_strength(world, r, city_id, Some(target), true);
+    let def = combat_strength(world, r, target, crate::world::air::Target::City(city_id), true)?;
+    let ratio = strength_ratio(att, def);
+    let damage = |roll| (damage_modifier_precise(ratio, false, roll).round().max(0) as i32).min(health);
+    Some((damage(Fixed::ZERO), damage(Fixed::ONE)))
+}
+
 pub fn city_bombard(
     world: &mut World,
     r: &Ruleset,
