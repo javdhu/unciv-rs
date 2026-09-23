@@ -1087,3 +1087,290 @@ fn city_options_list_workable_tiles_with_yields() {
     assert!(options.workable_tiles.iter().any(|t| t.food > 0));
     assert!(crate::queries::city_options(&s.world, &s.rules, CivId(1), id.index(), id.generation()).is_none());
 }
+
+fn found_capital(s: Session, seat: u8) -> Session {
+    let settler = own_unit(&s, seat, true);
+    apply(
+        s,
+        seat,
+        &format!("found-{seat}"),
+        Action::FoundCity {
+            unit: settler,
+            name: format!("Capital {seat}"),
+        },
+    )
+}
+fn add_unit(s: &mut Session, seat: u8, name: &str) -> EntityRef {
+    let base = s.rules.units.id(name).unwrap();
+    let city = s.world.civ(CivId(seat)).unwrap().cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    let unit = civ_core::world::construction::prepare_unit_near(
+        &s.world,
+        &s.rules,
+        CivId(seat),
+        base,
+        centre,
+        Some(city),
+    )
+    .unwrap();
+    let id = s.world.place_unit(unit);
+    EntityRef {
+        id: id.index(),
+        gen: id.generation(),
+    }
+}
+fn clear_barbarians(s: &mut Session) {
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    s.world.barbarian_camps.clear();
+    let theirs: Vec<_> = s
+        .world
+        .units
+        .iter()
+        .filter(|(_, u)| u.owner == barbarians)
+        .map(|(id, _)| id)
+        .collect();
+    for id in theirs {
+        s.world.remove_unit(id);
+    }
+}
+fn next_round(s: Session) -> Session {
+    s.stage_timeout(s.turn()).unwrap().unwrap().next
+}
+fn automation_of(s: &Session, seat: u8, unit: EntityRef) -> Option<crate::view::UnitAutomation> {
+    s.current_update(seat)
+        .unwrap()
+        .view
+        .units
+        .iter()
+        .find(|u| u.id == unit.id && u.gen == unit.gen)
+        .and_then(|u| u.own.as_ref()?.automation)
+}
+fn unit_actions(s: &Session, seat: u8, unit: EntityRef) -> Vec<crate::queries::UnitActionKind> {
+    let reply = s.query(seat, Query::UnitOptions { unit }).unwrap();
+    let QueryResult::UnitOptions { options } = reply.result else {
+        panic!("unit options")
+    };
+    options.map_or_else(Vec::new, |o| o.actions.into_iter().map(|a| a.action).collect())
+}
+fn improved_tiles(s: &Session, seat: u8) -> usize {
+    s.world
+        .grid
+        .ids()
+        .filter(|t| {
+            s.world.grid.owner[t.0 as usize] == Some(CivId(seat))
+                && s.world.grid.improvement[t.0 as usize].is_some()
+        })
+        .count()
+}
+
+#[test]
+fn an_automated_worker_improves_tiles_over_twenty_rounds() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, worker);
+    assert!(offered.contains(&K::Automate) && !offered.contains(&K::Explore), "{offered:?}");
+    let before = improved_tiles(&s, 0);
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    assert!(!unit_actions(&s, 0, worker).contains(&K::Automate), "already automated");
+    // Barbarians wandering up would rightly stop the worker; keep them away.
+    for _ in 0..20 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(improved_tiles(&s, 0) >= before + 2, "{} tiles improved in 20 rounds", improved_tiles(&s, 0) - before);
+    assert_eq!(automation_of(&s, 0, worker), Some(crate::view::UnitAutomation::Work));
+    // Other seats never learn about the standing order.
+    let theirs = s.current_update(1).unwrap().view;
+    assert!(theirs.units.iter().filter(|u| u.owner == 0).all(|u| u.own.is_none()));
+}
+
+#[test]
+fn an_explorer_reveals_tiles_and_a_manual_order_cancels_it() {
+    let s = session();
+    let warrior = own_unit(&s, 0, false);
+    use crate::queries::UnitActionKind as K;
+    let offered = unit_actions(&s, 0, warrior);
+    assert!(offered.contains(&K::Explore) && !offered.contains(&K::Automate), "{offered:?}");
+    let explored = |s: &Session| {
+        s.world
+            .grid
+            .ids()
+            .filter(|t| s.world.visibility.has_explored(CivId(0), *t))
+            .count()
+    };
+    let before = explored(&s);
+    let mut s = apply(s, 0, "explore", Action::ExploreUnit { unit: warrior });
+    let moved = explored(&s);
+    assert!(moved > before, "the order acts as soon as it is given");
+    for _ in 0..5 {
+        clear_barbarians(&mut s);
+        s = next_round(s);
+    }
+    assert!(explored(&s) > moved, "exploring continued over the next rounds");
+    assert_eq!(automation_of(&s, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // A save keeps the order.
+    let restored = Session::restore(&s.save().unwrap()).unwrap();
+    assert_eq!(automation_of(&restored, 0, warrior), Some(crate::view::UnitAutomation::Explore));
+
+    // Any manual order ends it.
+    let s = apply(restored, 0, "skip", Action::SkipUnit { unit: warrior });
+    assert_eq!(automation_of(&s, 0, warrior), None);
+}
+
+#[test]
+fn a_visible_enemy_next_to_an_automated_unit_stops_it() {
+    let mut s = found_capital(session(), 0);
+    let worker = add_unit(&mut s, 0, "Worker");
+    s = apply(s, 0, "automate", Action::AutomateUnit { unit: worker });
+    let id = s
+        .world
+        .units
+        .iter()
+        .find(|(id, _)| id.index() == worker.id)
+        .unwrap()
+        .0;
+    let at = s.world.units.get(id).unwrap().position;
+    let barbarians = s.world.civs.iter().find(|c| c.is_barbarian).unwrap().id;
+    let brute = s.rules.units.id("Brute").or_else(|| s.rules.units.id("Warrior")).unwrap();
+    let spot = s
+        .world
+        .grid
+        .neighbours(at)
+        .find(|t| {
+            s.world.visibility.can_see(CivId(0), *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+        })
+        .unwrap();
+    s.world
+        .place_unit(civ_core::world::entities::Unit::new(brute, barbarians, spot, 1));
+    s = next_round(s);
+    assert_eq!(automation_of(&s, 0, worker), None);
+}
+
+#[test]
+fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
+    let mut s = Session::new(
+        Settings {
+            majors: 3,
+            city_states: 0,
+            ..Settings::default()
+        },
+        "replay".into(),
+        vec![0],
+    )
+    .unwrap();
+    for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+        s.world.diplomacy.meet(CivId(a), CivId(b));
+    }
+    s.world.diplomacy.declare_war(CivId(1), CivId(2));
+    let here = s
+        .world
+        .units
+        .iter()
+        .find(|(_, u)| u.owner == CivId(0))
+        .unwrap()
+        .1
+        .position;
+    let land: Vec<_> = s
+        .world
+        .grid
+        .within(here, 2)
+        .into_iter()
+        .filter(|t| {
+            *t != here
+                && s.world.visibility.can_see(CivId(0), *t)
+                && !s.world.grid.is_water(&s.rules, *t)
+                && civ_core::world::movement::is_passable(&s.world.grid, &s.rules, *t)
+                && s.world.units.iter().all(|(_, u)| u.position != *t)
+        })
+        .collect();
+    let (x, y) = land
+        .iter()
+        .flat_map(|x| land.iter().map(move |y| (*x, *y)))
+        .find(|(x, y)| s.world.grid.distance(*x, *y) == 1)
+        .expect("two adjacent visible land tiles");
+    let unit = |name: &str| s.rules.units.id(name).unwrap();
+    let strong = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Swordsman"), CivId(1), x, 2));
+    let weak = s
+        .world
+        .place_unit(civ_core::world::Unit::new(unit("Warrior"), CivId(2), y, 2));
+    s.refresh(&[], None).unwrap();
+
+    let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    let replay = update.replay.as_ref().expect("the round had something to replay");
+    let actors: Vec<u8> = replay.iter().map(|b| b.civ).collect();
+    let mut sorted = actors.clone();
+    sorted.sort();
+    assert_eq!(actors, sorted, "batches follow the order civs acted in");
+    assert!(actors.iter().all(|c| *c != 0), "never our own turn");
+    let fight = replay
+        .iter()
+        .flat_map(|b| b.events.iter().map(move |e| (b.civ, e)))
+        .find(|(_, e)| {
+            matches!(&e.event, crate::view::PresentationEvent::Attacked { attacker, .. }
+                if (attacker.id, attacker.gen) == (strong.index(), strong.generation())
+                    || (attacker.id, attacker.gen) == (weak.index(), weak.generation()))
+        })
+        .expect("the fight in view is in the replay");
+    assert!(fight.0 == 1 || fight.0 == 2);
+    let crate::view::PresentationEvent::Attacked { from, at, viewer_attacked, .. } = &fight.1.event else {
+        unreachable!()
+    };
+    assert!(!viewer_attacked);
+    assert!([x.0, y.0].contains(from) && [x.0, y.0].contains(at));
+
+    // Old clients: the field is optional on the wire.
+    let mut json = serde_json::to_value(update).unwrap();
+    json.as_object_mut().unwrap().remove("replay");
+    let old: GameUpdate = serde_json::from_value(json).unwrap();
+    assert!(old.replay.is_none());
+    let quiet = t.next.current_update(0).unwrap();
+    assert!(serde_json::to_value(&quiet).unwrap().get("replay").is_none());
+}
+
+#[test]
+fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
+    let mut s = Session::new(
+        Settings {
+            majors: 4,
+            city_states: 2,
+            ..Settings::default()
+        },
+        "replay-game".into(),
+        vec![0],
+    )
+    .unwrap();
+    let mut shown = 0;
+    for _ in 0..30 {
+        let t = s.stage_timeout(s.turn()).unwrap().unwrap();
+        s = t.next;
+        for (seat, update) in &t.updates {
+            for batch in update.replay.iter().flatten() {
+                assert_ne!(batch.civ, *seat);
+                for e in &batch.events {
+                    let tiles: Vec<u16> = match &e.event {
+                        crate::view::PresentationEvent::UnitMoved { from, to, .. } => vec![*from, *to],
+                        crate::view::PresentationEvent::Attacked { from, at, .. } => vec![*from, *at],
+                        _ => Vec::new(),
+                    };
+                    for t in tiles {
+                        assert!(
+                            s.world.visibility.has_explored(CivId(*seat), civ_core::world::TileId(t)),
+                            "replayed tile {t} was never seen"
+                        );
+                    }
+                    shown += 1;
+                }
+            }
+        }
+    }
+    assert!(shown > 0, "thirty rounds with nothing to replay");
+}

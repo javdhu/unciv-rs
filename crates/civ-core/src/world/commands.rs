@@ -35,6 +35,8 @@ pub enum Command {
     Bombard { city: Id<City>, target: Id<Unit> },
     FoundCity { unit: Id<Unit>, name: String },
     Improve { unit: Id<Unit>, improvement: Id<TileImprovement> },
+    /// Give a human's unit a standing order ([`crate::world::automation`]).
+    Automate { unit: Id<Unit>, mode: crate::world::automation::Automation },
     Fortify { unit: Id<Unit> },
     SetUp { unit: Id<Unit> },
     SkipUnit { unit: Id<Unit> },
@@ -124,9 +126,61 @@ pub fn execute_with(
     command: Command,
     mods: TurnModifiers,
 ) -> Result<ActionOutcome, CommandRejection> {
+    execute_inner(world, r, civ, command, mods, true)
+}
+
+/// A standing order's own step, which must not cancel the order it serves.
+pub(crate) fn execute_automated(
+    world: &mut World,
+    r: &Ruleset,
+    civ: CivId,
+    command: Command,
+    mods: TurnModifiers,
+) -> Result<ActionOutcome, CommandRejection> {
+    execute_inner(world, r, civ, command, mods, false)
+}
+
+/// The unit a command orders about, where a manual order ends automation.
+/// Promotions and belief choices are not orders to the unit.
+fn ordered_unit(command: &Command) -> Option<Id<Unit>> {
+    use Command::*;
+    match command {
+        MoveUnit { unit, .. }
+        | Attack { unit, .. }
+        | NuclearStrike { unit, .. }
+        | Rebase { unit, .. }
+        | AirSweep { unit, .. }
+        | Paradrop { unit, .. }
+        | FoundCity { unit, .. }
+        | Improve { unit, .. }
+        | Fortify { unit }
+        | SkipUnit { unit }
+        | SetUp { unit }
+        | Upgrade { unit }
+        | Pillage { unit }
+        | GreatPerson { unit, .. }
+        | Religious { unit, .. }
+        | AssembleSpaceshipPart { unit } => Some(*unit),
+        _ => None,
+    }
+}
+
+fn execute_inner(
+    world: &mut World,
+    r: &Ruleset,
+    civ: CivId,
+    command: Command,
+    mods: TurnModifiers,
+    manual: bool,
+) -> Result<ActionOutcome, CommandRejection> {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
     validate_actor(world, civ, &command)?;
     let mut staged = world.clone();
+    if manual {
+        if let Some(u) = ordered_unit(&command).and_then(|id| staged.units.get_mut(id)) {
+            u.automation = None;
+        }
+    }
     let events = apply(&mut staged, r, civ, command, mods)?;
     *world = staged;
     Ok(ActionOutcome { events })
@@ -150,6 +204,7 @@ fn validate_actor(world: &World, civ: CivId, command: &Command) -> Result<(), Co
         | Paradrop { unit, .. }
         | FoundCity { unit, .. }
         | Improve { unit, .. }
+        | Automate { unit, .. }
         | Fortify { unit }
         | SkipUnit { unit }
         | SetUp { unit }
@@ -515,6 +570,14 @@ fn apply(
             if let crate::world::improvements::WorkEvent::Finished { improvement, .. } = result {
                 events.push(TurnEvent::TileImproved { tile, improvement });
             }
+        }
+        Automate { unit, mode } => {
+            if !crate::world::automation::can_automate(world, r, unit, mode) {
+                return Err(NotAllowed);
+            }
+            world.units.get_mut(unit).expect("validated unit").automation = Some(mode);
+            // MapUnit.doAction: the order is carried out as soon as it is given.
+            events.extend(crate::world::automation::act(world, r, unit, mods));
         }
         Fortify { unit } => {
             moving(world, unit)?;

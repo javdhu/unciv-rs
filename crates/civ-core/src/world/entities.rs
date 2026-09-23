@@ -216,6 +216,10 @@ pub struct Unit {
     pub religion: Option<CivId>,
     pub religious_strength: i32,
     pub religious_uses_left: u8,
+    /// A human's standing order to work or explore on its own. AI units
+    /// never carry it; their plans already do this. Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub automation: Option<crate::world::automation::Automation>,
 }
 
 impl Unit {
@@ -241,6 +245,7 @@ impl Unit {
             religion: None,
             religious_strength: 0,
             religious_uses_left: 0,
+            automation: None,
         }
     }
 

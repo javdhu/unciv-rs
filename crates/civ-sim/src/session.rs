@@ -8,7 +8,7 @@ use civ_core::stats::Stat;
 use civ_core::world::assignment::CityFocus;
 use civ_core::world::commands::{self, Command};
 use civ_core::world::construction::Construction;
-use civ_core::world::turn::{finish_round, TurnModifiers};
+use civ_core::world::turn::TurnModifiers;
 use civ_core::world::{CivId, TileId, World};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -91,6 +91,9 @@ pub struct Session {
     records: Vec<RecordedCommand>,
     inputs: Vec<Input>,
     offers: crate::offers::Offers,
+    /// The last round's AI commands, for the next refresh's replays. Not saved:
+    /// a replay is shown once, as the round closes.
+    replay: Vec<civ_core::world::ReplayStep>,
 }
 
 /// The old session stays authoritative until its owner has persisted `next` successfully.
@@ -148,6 +151,7 @@ impl Session {
             records: Vec::new(),
             inputs: Vec::new(),
             offers: crate::offers::Offers::default(),
+            replay: Vec::new(),
         };
         session.refresh(&[], None)?;
         Ok(session)
@@ -203,6 +207,7 @@ impl Session {
             view: player_view(&self.world, &self.rules, CivId(seat)),
             offers: self.offers.visible(seat),
             events: Vec::new(),
+            replay: None,
         })
     }
     pub fn query(&self, seat: u8, query: Query) -> Result<QueryReply, SessionError> {
@@ -430,8 +435,15 @@ impl Session {
             .all(|s| s.ready)
     }
     fn resolve_round(&mut self) -> Vec<civ_core::world::TurnEvent> {
+        self.replay.clear();
         let mods = TurnModifiers::for_world(&self.world, &self.rules);
-        let events = finish_round(&mut self.world, &self.rules, CityFocus::default(), mods);
+        let events = civ_core::world::finish_round_recorded(
+            &mut self.world,
+            &self.rules,
+            CityFocus::default(),
+            mods,
+            &mut self.replay,
+        );
         for s in &mut self.seats {
             s.ready = false;
             if let Some(human) = s.next_human.take() {
@@ -499,7 +511,10 @@ impl Session {
             let visible_events = before
                 .map(|w| report_for(w, &self.world, &self.rules, CivId(seat), events).events)
                 .unwrap_or_default();
-            if self.seats[index].projection == projection && visible_events.is_empty() {
+            let replay = before
+                .map(|w| crate::view::replay_for(w, &self.world, &self.rules, CivId(seat), &self.replay))
+                .unwrap_or_default();
+            if self.seats[index].projection == projection && visible_events.is_empty() && replay.is_empty() {
                 continue;
             }
             let s = &mut self.seats[index];
@@ -526,9 +541,11 @@ impl Session {
                     view,
                     offers,
                     events,
+                    replay: (!replay.is_empty()).then_some(replay),
                 },
             ));
         }
+        self.replay.clear();
         Ok(updates)
     }
 
@@ -676,6 +693,7 @@ impl Session {
             records: save.records,
             inputs: save.inputs,
             offers: save.offers,
+            replay: Vec::new(),
         };
         for s in &session.seats {
             let view = player_view(&session.world, &session.rules, CivId(s.civ));
@@ -802,6 +820,14 @@ impl Session {
                 improvement: registry(&r.improvements, *improvement)?,
             },
             Action::Fortify { unit: u } => Command::Fortify { unit: unit(*u)? },
+            Action::AutomateUnit { unit: u } => Command::Automate {
+                unit: unit(*u)?,
+                mode: civ_core::world::automation::Automation::Work,
+            },
+            Action::ExploreUnit { unit: u } => Command::Automate {
+                unit: unit(*u)?,
+                mode: civ_core::world::automation::Automation::Explore,
+            },
             Action::SkipUnit { unit: u } => Command::SkipUnit { unit: unit(*u)? },
             Action::Promote { unit: u, promotion } => Command::Promote {
                 unit: unit(*u)?,

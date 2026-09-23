@@ -168,6 +168,15 @@ pub enum Action {
     Fortify {
         unit: EntityRef,
     },
+    /// Hand a worker to automation: it improves tiles on its own until given
+    /// another order or an enemy appears next to it.
+    AutomateUnit {
+        unit: EntityRef,
+    },
+    /// Send a unit exploring on its own, with the same stopping rules.
+    ExploreUnit {
+        unit: EntityRef,
+    },
     SkipUnit {
         unit: EntityRef,
     },
@@ -402,6 +411,13 @@ pub struct GameUpdate {
     /// Only this seat's incoming and outgoing offers; no global offer counter.
     pub offers: Vec<DiplomaticOffer>,
     pub events: Vec<PresentedEvent>,
+    /// The other civilizations' turns in the round that just closed, in the
+    /// order they acted, limited to what this seat saw as it happened. For a
+    /// fast replay before `view`, which is already the round's end state.
+    /// Absent when there is nothing to show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub replay: Option<Vec<crate::view::ReplayBatch>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]

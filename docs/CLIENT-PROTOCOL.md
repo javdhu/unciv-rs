@@ -161,7 +161,17 @@ Unhandled internal events stay internal; never export debug strings by default.
 The facade now reads persistent tile/city/civilization observations, gates resources by technology,
 and previews movement against permitted knowledge. Hidden-state invariance is tested. Presentation
 projection uses an explicit whitelist; foreign movement and battles without event-time attribution
-are conservatively omitted. Richer battle animations still require provenance from the engine.
+are conservatively omitted from `events`.
+
+The update that closes a round carries `replay`: the other civilizations' turns as ordered per-civ
+batches (`{ civ, events, units }`), for a fast replay before the new `view`. The engine records, for
+each AI command, what every human could see just before it ran; an event is kept only if its tiles
+were in the viewer's sight then, never by end-of-round visibility. A move step needs both of its tiles
+in sight, a third-party battle both its tiles (it carries the same `attacked` payload), and a city
+founded or taken its centre. Units that hide appear only if still seen at the end. Battles the viewer
+fought in are always kept and also stay in `events`. `units` names the owner and type of every unit in
+the batch, so units that ended out of view can still be drawn. The field is absent when there is
+nothing to replay, and older clients may ignore it.
 
 ## Reconnect, persistence and updates
 
