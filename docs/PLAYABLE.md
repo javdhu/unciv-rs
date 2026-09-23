@@ -47,7 +47,7 @@ Neither track edits the other's files.
 | Track | Owns |
 |---|---|
 | UI | `web/src/{state,hud,engine}/**`, `App.svelte`, `main.ts`, `app.css`, `world/overlays.ts`, new `world/{input,banners}.ts`, `crates/civ-sim`, `crates/civ-server`, this file |
-| Art | `web/src/{art,content}/**`, `world/{scene,units,terrain,cities,ink,animator,combat,fx}.ts`, `web/tools`, the review pages, PROCEDURAL.md |
+| Art | `web/src/{art,content}/**`, `world/{scene,units,troupe,perf,terrain,cities,ink,animator,combat,fx}.ts`, `web/tools`, the review pages, PROCEDURAL.md |
 
 Three seams, agreed once:
 
