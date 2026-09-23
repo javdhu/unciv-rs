@@ -2,7 +2,26 @@ use civ_server::{router, Config, Host};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
+    time::Duration,
 };
+
+/// Open sockets may outlive a graceful drain; stop waiting well inside Fly's 10 s kill_timeout.
+const DRAIN_LIMIT: Duration = Duration::from_secs(5);
+
+/// Ctrl-C locally, SIGTERM from Fly.io, Docker and systemd.
+async fn stop_requested() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,12 +52,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listener.local_addr()?
     );
     let clock = tokio::spawn(host.clone().run_clock());
-    let result = axum::serve(listener, router(host))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await;
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let server = axum::serve(listener, router(host.clone())).with_graceful_shutdown({
+        let mut stopped = stopped.clone();
+        async move {
+            let _ = stopped.wait_for(|&s| s).await;
+        }
+    });
+    let mut server = tokio::spawn(async move { server.await });
+    let result = tokio::select! {
+        result = &mut server => result?,
+        () = stop_requested() => {
+            eprintln!("Stopping: draining connections");
+            let _ = stop.send(true);
+            // WebSockets stay open until their clients leave, so the drain is bounded.
+            match tokio::time::timeout(DRAIN_LIMIT, &mut server).await {
+                Ok(result) => result?,
+                Err(_) => {
+                    server.abort();
+                    Ok(())
+                }
+            }
+        }
+    };
     clock.abort();
+    let _ = clock.await;
+    host.flush().await?;
+    eprintln!("Stopped; store flushed");
     result?;
     Ok(())
 }
