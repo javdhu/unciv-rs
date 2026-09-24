@@ -232,6 +232,10 @@ pub type Creed = Option<CivId>;
 /// A holy city pushes five times as hard as an ordinary one.
 pub const HOLY_CITY_MULTIPLIER: i32 = 5;
 
+/// Pressure a trade route carries each way between a city and its capital,
+/// in percent of one city's push, when faiths arise by era.
+pub const TRADE_ROUTE_PRESSURE_PERCENT: i32 = 50;
+
 /// Pressure a state faith adds in each of its adopter's cities, as a multiple
 /// of one city's push: a fifth of what a holy city applies.
 pub const STATE_FAITH_PRESSURE: i32 = 1;
@@ -585,6 +589,29 @@ pub fn spread_with_speed(world: &mut World, r: &Ruleset, pressure_per_city: i32,
             let amount = pressure_toward(world, r, city, target, pressure_per_city);
             if amount > 0 {
                 pushes.push((other, Some(majority), amount));
+            }
+        }
+    }
+
+    // Faiths travel with trade (docs/CONTENT.md, Religion): each city's
+    // route to its capital carries the majority faith of either end to the
+    // other, at half a city's push. Faiths by era only.
+    if r.faith_mode() {
+        let amount = pressure_per_city * TRADE_ROUTE_PRESSURE_PERCENT / 100;
+        let civs: Vec<CivId> = world.civs.iter().filter(|c| !c.is_barbarian && !c.defeated).map(|c| c.id).collect();
+        for civ in civs {
+            let connections = crate::world::connections::find(world, r, civ);
+            let Some(capital) = connections.capital() else { continue };
+            let majority = |id: Id<crate::world::city::City>| {
+                world.cities.get(id).and_then(|c| c.faith.majority(c.population)).filter(|m| religion_exists(world, *m))
+            };
+            for city in connections.trade_routes().filter(|c| *c != capital) {
+                if let Some(faith) = majority(city) {
+                    pushes.push((capital, Some(faith), amount));
+                }
+                if let Some(faith) = majority(capital) {
+                    pushes.push((city, Some(faith), amount));
+                }
             }
         }
     }

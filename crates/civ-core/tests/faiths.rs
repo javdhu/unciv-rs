@@ -290,3 +290,34 @@ fn a_state_faith_presses_gently_in_its_adopters_cities() {
         religion::HOLY_CITY_MULTIPLIER * 10
     );
 }
+
+#[test]
+fn trade_routes_carry_faith_between_a_city_and_its_capital() {
+    let r = rules();
+    const ME: CivId = CivId(0);
+    let rome = Civilization::new(ME, r.nations.id("Rome").unwrap(), false);
+    let mut w = World::new(TileGrid::new(40, 8, r.terrain("Grassland").unwrap()), vec![rome]);
+    w.civ_mut(ME).unwrap().techs.insert(r.technologies.id("The Wheel").unwrap());
+    let capital = w.found_city_in(&r, City::found("Rome", ME, w.grid.id_at(2, 4).unwrap()));
+    let far = w.found_city_in(&r, City::found("Far", ME, w.grid.id_at(30, 4).unwrap()));
+    let hinduism = faiths::key(0);
+    w.faiths.arisen.insert(0, faiths::Arisen { turn: 0, city: capital });
+    let c = w.cities.get_mut(capital).unwrap();
+    c.faith.add_pressure(Some(hinduism), 1000);
+    c.faith.recount(c.population);
+    let pressure = |w: &World| w.cities.get(far).unwrap().faith.pressure_of(Some(hinduism));
+
+    religion::spread(&mut w, &r, 10);
+    assert_eq!(pressure(&w), 0, "28 tiles away and no road");
+    for x in 2..=30 {
+        let t = w.grid.id_at(x, 4).unwrap();
+        w.grid.set_road(t, civ_core::world::grid::RoadLevel::Road);
+        w.grid.owner[t.0 as usize] = Some(ME);
+    }
+    religion::spread(&mut w, &r, 10);
+    assert_eq!(pressure(&w), 10 * religion::TRADE_ROUTE_PRESSURE_PERCENT / 100, "half a city's push along the road");
+
+    // The fixtures' founded religions do not travel this way.
+    let gk = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
+    assert!(!gk.faith_mode());
+}
