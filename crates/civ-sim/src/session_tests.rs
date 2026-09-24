@@ -1146,7 +1146,7 @@ fn automation_of(s: &Session, seat: u8, unit: EntityRef) -> Option<crate::view::
         .and_then(|u| u.own.as_ref()?.automation)
 }
 fn unit_actions(s: &Session, seat: u8, unit: EntityRef) -> Vec<crate::queries::UnitActionKind> {
-    let reply = s.query(seat, Query::UnitOptions { unit }).unwrap();
+    let reply = s.query(seat, Query::UnitOptions { unit, nuclear_target: None }).unwrap();
     let QueryResult::UnitOptions { options } = reply.result else {
         panic!("unit options")
     };
@@ -2047,4 +2047,304 @@ fn a_wonder_site_keeps_the_engines_own_pick_beside_the_players() {
     let after = sites(&s);
     assert_eq!(after.selected, Some(other));
     assert_eq!(after.best, before.best, "the suggestion stays the engine's");
+}
+
+fn events_for(t: &CommandTransition, seat: u8) -> Vec<crate::view::PresentationEvent> {
+    t.updates
+        .iter()
+        .filter(|(s, _)| *s == seat)
+        .flat_map(|(_, u)| u.events.iter().map(|e| e.event.event.clone()))
+        .collect()
+}
+fn solo() -> Session {
+    Session::new(Settings { majors: 2, city_states: 1, ..Settings::default() }, "solo".into(), vec![0]).unwrap()
+}
+fn reveal_to(s: &mut Session, seat: u8) {
+    for t in s.world.grid.ids().collect::<Vec<_>>() {
+        s.world.visibility.observe(CivId(seat), t);
+    }
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    s.refresh(&[], None).unwrap();
+}
+
+#[test]
+fn a_demand_waits_in_the_view_until_answered_and_the_promise_follows() {
+    use civ_core::world::diplomacy::Demand as Core;
+    let mut s = settle_capital(ai_session(), 0);
+    civ_core::world::promises::demand(&mut s.world, CivId(1), CivId(0), Core::DoNotSettleNearUs).unwrap();
+    s.refresh(&[], None).unwrap();
+    let turn = s.turn();
+    let view = s.current_update(0).unwrap().view;
+    assert_eq!(
+        view.demands,
+        Some(vec![crate::view::DemandView {
+            by: 1,
+            demand: Demand::DoNotSettleNearUs,
+            promise_until: turn + civ_core::world::promises::PROMISE_TURNS - 1,
+            refusal_declares_war: false,
+            may_refuse: true,
+        }])
+    );
+    assert!(view.promises.is_none());
+    assert!(s.current_update(2).unwrap().view.demands.is_none(), "only the one asked sees it");
+    let t = s
+        .stage_command(
+            0,
+            request(&s, 0, "agree", Action::AnswerDemand { by: 1, demand: Demand::DoNotSettleNearUs, agree: true }),
+        )
+        .unwrap();
+    assert_eq!(t.receipt.result, CommandStatus::Applied);
+    assert!(events_for(&t, 0).contains(&crate::view::PresentationEvent::DemandAnswered {
+        by: 0,
+        to: 1,
+        demand: Demand::DoNotSettleNearUs,
+        agreed: true,
+    }));
+    let view = t.next.current_update(0).unwrap().view;
+    assert!(view.demands.is_none());
+    assert_eq!(
+        view.promises,
+        Some(vec![crate::view::PromiseView {
+            by: 0,
+            to: 1,
+            demand: Demand::DoNotSettleNearUs,
+            until: turn + civ_core::world::promises::PROMISE_TURNS - 1,
+        }])
+    );
+
+    // An AI's demand arrives as an event for the one asked.
+    let made = crate::view::report_for(
+        &s.world,
+        &s.world,
+        &s.rules,
+        CivId(0),
+        &[civ_core::world::TurnEvent::DemandMade { by: CivId(1), of: CivId(0), demand: Core::DontSpyOnUs }],
+    );
+    assert_eq!(
+        made.events.into_iter().map(|e| e.event).collect::<Vec<_>>(),
+        vec![crate::view::PresentationEvent::DemandMade { by: 1, of: 0, demand: Demand::DontSpyOnUs }]
+    );
+    // A refusal that means war says so, and is refused while a treaty forbids war.
+    civ_core::world::promises::demand(&mut s.world, CivId(1), CivId(0), Core::DoNotAttackUs).unwrap();
+    let asked = crate::view::player_view(&s.world, &s.rules, CivId(0)).demands.unwrap();
+    let war = asked.iter().find(|d| d.demand == Demand::DoNotAttackUs).unwrap();
+    assert!(war.refusal_declares_war);
+    assert_eq!(war.may_refuse, s.world.diplomacy.can_declare_war(CivId(0), CivId(1)));
+}
+
+#[test]
+fn every_update_says_whether_the_last_command_can_be_taken_back() {
+    let mut s = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "undo-state".into(), vec![0])
+        .unwrap();
+    let state = |s: &Session| s.current_update(0).unwrap().undo.unwrap();
+    assert_eq!(state(&s), UndoState { available: false, refusal: Some(UndoRefusal::NothingToUndo) });
+    let (id, warrior) = warrior_of(&s, 0);
+    let to = covered_step(&mut s, 0, id);
+    let t = s.stage_command(0, request(&s, 0, "step", Action::MoveUnit { unit: warrior, to })).unwrap();
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    assert_eq!(update.undo, Some(UndoState { available: true, refusal: None }));
+    let s = next_round(t.next);
+    assert_eq!(state(&s), UndoState { available: false, refusal: Some(UndoRefusal::TurnEnded) });
+
+    // In a room only a move may be taken back.
+    let mut room = session();
+    let tech = room.rules.technologies.iter().find(|(id, _)| !room.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    room = apply(room, 0, "research", Action::SetResearch { technology: tech.index() });
+    assert_eq!(state(&room), UndoState { available: false, refusal: Some(UndoRefusal::NotAllowed) });
+}
+
+#[test]
+fn unit_options_list_mission_targets_and_a_strike_is_previewed_from_what_is_seen() {
+    let mut s = settle_capital(solo(), 0);
+    clear_barbarians(&mut s);
+    reveal_to(&mut s, 0);
+    let capital = s.world.civs[0].cities[0];
+    let centre = s.world.cities.get(capital).unwrap().centre;
+    let base = s.rules.units.id("Atomic Bomb").unwrap();
+    let bomb = s.world.place_unit(civ_core::world::Unit::new(base, CivId(0), centre, 1));
+    let bomb_ref = EntityRef { id: bomb.index(), gen: bomb.generation() };
+    s.refresh(&[], None).unwrap();
+    let targets = |s: &Session| {
+        let reply = s.query(0, Query::UnitOptions { unit: bomb_ref, nuclear_target: None }).unwrap();
+        let QueryResult::UnitOptions { options: Some(options) } = reply.result else { panic!("options") };
+        options.targets.unwrap_or_default()
+    };
+    let strike = targets(&s).into_iter().find(|t| t.action == crate::queries::UnitActionKind::NuclearStrike).unwrap();
+    assert!(!strike.tiles.is_empty());
+    let range = civ_core::world::air::attack_range(&s.world, &s.rules, bomb) as u32;
+    assert!(strike.tiles.iter().all(|t| s.world.grid.distance(centre, TileId(*t)) <= range && TileId(*t) != centre));
+
+    // A rival's unit, seen near the capital but not yet met: striking it would
+    // declare war on a nation this player does not know, which is refused.
+    let (theirs, _) = s.world.units.iter().find(|(_, u)| u.owner == CivId(1)).unwrap();
+    let near = s.world.grid.within(centre, 3).into_iter().find(|t| s.world.grid.distance(centre, *t) == 3).unwrap();
+    s.world.units.get_mut(theirs).unwrap().position = near;
+    assert!(!s.world.diplomacy.have_met(CivId(0), CivId(1)));
+    let preview = |s: &Session| {
+        let reply = s.query(0, Query::UnitOptions { unit: bomb_ref, nuclear_target: Some(near.0) }).unwrap();
+        let QueryResult::UnitOptions { options: Some(options) } = reply.result else { panic!("options") };
+        options.nuclear_preview.expect("preview")
+    };
+    let p = preview(&s);
+    assert_eq!(p.victims, vec![1]);
+    assert!(!p.legal);
+    assert_eq!(p.intercept_chance, 0);
+    assert_eq!(p.tiles.len(), s.world.grid.within(near, p.blast_radius).len());
+    assert!(!targets(&s).iter().any(|t| t.tiles.contains(&near.0)));
+    s.world.diplomacy.meet(CivId(0), CivId(1));
+    assert!(preview(&s).legal);
+    assert!(targets(&s).iter().any(|t| t.tiles.contains(&near.0)));
+    // Nobody else's in the blast: nobody to declare war on.
+    let own = s.world.grid.within(centre, 1).into_iter().find(|t| *t != centre).unwrap();
+    let reply = s.query(0, Query::UnitOptions { unit: bomb_ref, nuclear_target: Some(own.0) }).unwrap();
+    let QueryResult::UnitOptions { options: Some(options) } = reply.result else { panic!("options") };
+    let quiet = options.nuclear_preview.expect("preview");
+    assert!(quiet.victims.is_empty() || quiet.victims == vec![1], "{quiet:?}");
+}
+
+#[test]
+fn a_city_state_says_what_the_player_may_do_there() {
+    let mut s = settle_capital(solo(), 0);
+    let cs = s.world.civs.iter().find(|c| c.is_city_state()).unwrap().id;
+    s.world.diplomacy.meet(CivId(0), cs);
+    s.refresh(&[], None).unwrap();
+    let relation = |s: &Session| s.current_update(0).unwrap().view.city_states.into_iter().find(|c| c.civ == cs.0).unwrap();
+    let before = relation(&s);
+    assert!(before.may_pledge && !before.may_withdraw && !before.may_coup && before.coup_chance.is_none());
+    assert_eq!(before.resting_point, civ_core::world::city_states::resting_point_in(&s.world, &s.rules, cs, CivId(0)).to_string());
+    assert!(before.tribute_amount > 0);
+    let s = apply(s, 0, "pledge", Action::PledgeProtection { target: cs.0 });
+    let after = relation(&s);
+    assert!(!after.may_pledge && !after.may_withdraw, "a pledge stands for ten turns");
+    assert_ne!(after.resting_point, before.resting_point, "a protector's influence rests higher");
+    let t = crate::tables(&s.rules).influence_thresholds.unwrap();
+    assert_eq!((t.friend, t.ally, t.unforgivable), (30, 60, -30));
+}
+
+#[test]
+fn a_spy_shows_what_the_theft_costs_and_promises_forbid_spying() {
+    use civ_core::world::diplomacy::{Demand as Core, Flag};
+    use civ_core::world::espionage::{Spy, SpyAction};
+    let mut s = session();
+    for seat in [0, 1] {
+        s = found_capital(s, seat);
+    }
+    let theirs = s.world.civs[1].cities[0];
+    let tech = s
+        .rules
+        .technologies
+        .ids()
+        .find(|t| civ_core::world::research::can_research(&s.rules, s.world.civ(CivId(0)).unwrap(), *t).is_ok())
+        .unwrap();
+    s.world.civ_mut(CivId(1)).unwrap().techs.insert(tech);
+    s.world.civ_mut(CivId(0)).unwrap().espionage.spies.push(Spy {
+        rank: 1,
+        station: Some(theirs),
+        action: SpyAction::StealingTech,
+        turns_remaining: 4,
+        progress: 12,
+    });
+    s.world.diplomacy.meet(CivId(0), CivId(1));
+    s.world.diplomacy.set_flag(CivId(1), CivId(0), Flag::Agreed(Core::DontSpyOnUs), 30);
+    s.refresh(&[], None).unwrap();
+    let view = s.current_update(0).unwrap().view;
+    let speed = TurnModifiers::for_world(&s.world, &s.rules).science.speed;
+    let stealable = civ_core::world::espionage::stealable(&s.world, &s.rules, CivId(0), CivId(1));
+    assert_eq!(view.spies[0].steal_cost, Some(civ_core::world::espionage::steal_cost(&s.rules, &stealable, speed)));
+    assert_eq!(view.spying_forbidden, Some(vec![1]));
+    let promise = view.promises.unwrap();
+    assert_eq!(promise.len(), 1);
+    assert_eq!((promise[0].by, promise[0].to, promise[0].until), (0, 1, s.turn() + 29));
+}
+
+#[test]
+fn a_great_person_lists_every_ability_with_why_it_cannot_be_used_here() {
+    use crate::queries::GreatPersonRefusal;
+    let mut s = settle_capital(solo(), 0);
+    let scholar = add_unit(&mut s, 0, "Scholar");
+    s.refresh(&[], None).unwrap();
+    let abilities = |s: &Session| {
+        let reply = s.query(0, Query::UnitOptions { unit: scholar, nuclear_target: None }).unwrap();
+        let QueryResult::UnitOptions { options: Some(options) } = reply.result else { panic!("options") };
+        (options.great_person_abilities.unwrap(), options.great_person_actions)
+    };
+    let (list, legal) = abilities(&s);
+    let hurry = list.iter().find(|a| a.action == GreatPersonAction::HurryResearch).unwrap();
+    assert!(!hurry.available);
+    assert_eq!(hurry.why, Some(GreatPersonRefusal::NothingResearched));
+    assert!(list.iter().any(|a| matches!(a.action, GreatPersonAction::Construct { .. })));
+    for a in &list {
+        assert_eq!(a.available, legal.contains(&a.action), "{a:?}");
+        assert_eq!(a.available, a.why.is_none());
+    }
+    let tech = s.rules.technologies.iter().find(|(id, _)| !s.world.civ(CivId(0)).unwrap().has_tech(*id)).unwrap().0;
+    let s = apply(s, 0, "research", Action::SetResearch { technology: tech.index() });
+    let (list, _) = abilities(&s);
+    let hurry = list.iter().find(|a| a.action == GreatPersonAction::HurryResearch).unwrap();
+    assert!(hurry.available && hurry.why.is_none() && hurry.amount.is_some());
+}
+
+#[test]
+fn city_state_and_city_events_reach_the_player() {
+    use crate::view::PresentationEvent as P;
+    let mut s = settle_capital(solo(), 0);
+    let cs = s.world.civs.iter().find(|c| c.is_city_state()).unwrap().id;
+    s.world.diplomacy.meet(CivId(0), cs);
+    s.world.civs[0].gold = 500;
+    s.refresh(&[], None).unwrap();
+    let t = s.stage_command(0, request(&s, 0, "gift", Action::GiftGold { target: cs.0, gold: 250 })).unwrap();
+    assert!(events_for(&t, 0).iter().any(|e| matches!(e, P::GoldGifted { city_state, gold: 250, .. } if *city_state == cs.0)));
+    let s = t.next;
+    let capital = s.world.civs[0].cities[0];
+    let mut after = s.world.clone();
+    let base = s.rules.units.id("Scholar").unwrap();
+    let centre = after.cities.get(capital).unwrap().centre;
+    let born = after.place_unit(civ_core::world::Unit::new(base, CivId(0), centre, 2));
+    let monument = s.rules.buildings.id("Monument").unwrap();
+    let report = crate::view::report_for(
+        &s.world,
+        &after,
+        &s.rules,
+        CivId(0),
+        &[
+            civ_core::world::TurnEvent::GreatPersonBorn { civ: CivId(0), kind: "Scholar".into() },
+            civ_core::world::TurnEvent::CityCompleted { city: capital, what: Construction::Building(monument) },
+            civ_core::world::TurnEvent::TributePaid { city_state: cs, to: CivId(0), gold: 60, worker: false },
+            civ_core::world::TurnEvent::RebelSpawned { civ: CivId(0), unit: born },
+        ],
+    );
+    let events: Vec<_> = report.events.into_iter().map(|e| e.event).collect();
+    assert!(events.contains(&P::GreatPersonBorn { name: "Scholar".into(), unit: Some(born.into()) }));
+    assert!(events.contains(&P::CityCompleted {
+        city: capital.into(),
+        construction: ConstructionRef::Building { id: monument.index() }
+    }));
+    assert!(events.contains(&P::TributePaid { city_state: cs.0, gold: 60, worker: false }));
+    assert!(events.contains(&P::RebelsSpawned { tile: Some(centre.0), unit: Some(born.into()) }));
+    // Eras reached, from the first.
+    assert_eq!(s.current_update(0).unwrap().view.era_starts, Some(vec![0]));
+}
+
+#[test]
+fn a_room_sees_every_seats_readiness_and_connection() {
+    let s = session();
+    let seats = |s: &Session, seat: u8| s.current_update(seat).unwrap().seats.unwrap();
+    assert_eq!(
+        seats(&s, 0),
+        vec![
+            SeatStatusView { seat: 0, ready: false, controlled: true, connected: None, name: None, left: None },
+            SeatStatusView { seat: 1, ready: false, controlled: true, connected: None, name: None, left: None },
+        ]
+    );
+    let t = s.stage_command(1, request(&s, 1, "done", Action::FinishTurn)).unwrap();
+    assert!(t.updates.iter().any(|(seat, u)| *seat == 0 && u.seats.as_ref().unwrap()[1].ready), "the other seat hears");
+    let t = t.next.stage_presence(1, true).unwrap();
+    let (_, update) = t.updates.iter().find(|(seat, _)| *seat == 0).unwrap();
+    assert_eq!(update.seats.as_ref().unwrap()[1].connected, Some(true));
+    let s = t.next;
+    s.verify_replay().unwrap();
+    let restored = Session::restore(&s.save().unwrap()).unwrap();
+    assert_eq!(seats(&restored, 0), seats(&s, 0));
+    // Solo play has no room to show.
+    assert!(solo().current_update(0).unwrap().seats.is_none());
 }

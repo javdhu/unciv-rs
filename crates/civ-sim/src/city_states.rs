@@ -24,6 +24,40 @@ pub struct CityStateRelationsView {
     pub may_request_marriage: bool,
     pub quests: Vec<QuestView>,
     pub war_assistance: Vec<WarAssistanceView>,
+    /// `pledgeProtection` would be accepted now: at peace, influence of at
+    /// least zero, and not within twenty turns of withdrawing a pledge.
+    #[serde(default)]
+    pub may_pledge: bool,
+    /// `withdrawProtection` would be accepted now: protecting it, and not
+    /// within ten turns of pledging. Withdrawing costs 20 influence.
+    #[serde(default)]
+    pub may_withdraw: bool,
+    /// It would pay tribute in gold now (`demandTribute`, `worker: false`),
+    /// for `tributeAmount` gold and 15 influence.
+    #[serde(default)]
+    pub tribute_gold: bool,
+    /// It would hand over a worker now, for 50 influence.
+    #[serde(default)]
+    pub tribute_worker: bool,
+    /// The gold a tribute would bring.
+    #[serde(default)]
+    pub tribute_amount: i32,
+    /// `attemptCoup` would be accepted now: a spy of ours is established in
+    /// its capital and we are not its ally.
+    #[serde(default)]
+    pub may_coup: bool,
+    /// Percent chance a coup succeeds, not counting a spy that may be
+    /// defending the capital unseen. Present when `mayCoup`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coup_chance: Option<i32>,
+    /// How far influence moves next turn, toward `restingPoint` (a decimal
+    /// string; negative while it falls).
+    #[serde(default)]
+    pub influence_per_turn: String,
+    /// Where influence settles if left alone (a decimal string).
+    #[serde(default)]
+    pub resting_point: String,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +93,18 @@ pub fn for_player(w: &World, r: &Ruleset, me: CivId) -> Vec<CityStateRelationsVi
     w.civs.iter().filter(|c|c.is_city_state()&&c.is_alive()&&w.diplomacy.have_met(me,c.id)).map(|c| {
         let ally=city_states::ally_of(w,c.id);
         let allied_turns=if c.city_state.tracked_ally==Some(me){c.city_state.allied_turns}else{0};
+        let costs=civ_core::world::TurnModifiers::for_world(w,r).costs;
+        let may_coup=city_states::can_coup(w,r,me,c.id);
         CityStateRelationsView {
+            may_pledge:civ_core::world::administration::may_protect(w,me,c.id,true),
+            may_withdraw:civ_core::world::administration::may_protect(w,me,c.id,false),
+            tribute_gold:civ_core::world::tribute::may_demand(w,r,c.id,me,false),
+            tribute_worker:civ_core::world::tribute::may_demand(w,r,c.id,me,true),
+            tribute_amount:civ_core::world::tribute::gold_amount(w,costs.gold_gift_modifier,costs.tribute_interval),
+            may_coup,
+            coup_chance:may_coup.then(||city_states::visible_coup_chance(w,r,me,c.id)),
+            influence_per_turn:city_states::drift_in(w,r,c.id,me).to_string(),
+            resting_point:city_states::resting_point_in(w,r,c.id,me).to_string(),
             civ:c.id.0,kind:c.city_state_type.map(|id|r.city_state_types[id].name.clone()).unwrap_or_default(),
             personality:format!("{:?}",c.city_state.personality),influence:w.diplomacy.influence(c.id,me).to_string(),
             relationship:format!("{:?}",city_states::relationship(w,c.id,me)),

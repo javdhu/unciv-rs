@@ -128,6 +128,18 @@ pub enum Demand {
     DoNotSettleNearUs,
     DoNotAttackUs,
 }
+
+impl Demand {
+    pub fn of(demand: civ_core::world::diplomacy::Demand) -> Self {
+        use civ_core::world::diplomacy::Demand as Core;
+        match demand {
+            Core::DontSpyOnUs => Self::DontSpyOnUs,
+            Core::DoNotSpreadReligion => Self::DoNotSpreadReligion,
+            Core::DoNotSettleNearUs => Self::DoNotSettleNearUs,
+            Core::DoNotAttackUs => Self::DoNotAttackUs,
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum TradeItem {
@@ -536,13 +548,63 @@ pub struct GameUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub replay: Option<Vec<crate::view::ReplayBatch>>,
+    /// Whether this seat's last command may be taken back with `undo`, and
+    /// why not. In a room another seat may still act in between, and the
+    /// undo is then refused `othersActed`; that is never announced ahead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub undo: Option<UndoState>,
+    /// In a room: every human seat's readiness and control, and, from the
+    /// host, its connection and display name. Absent in solo play.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub seats: Option<Vec<SeatStatusView>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoState {
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub refusal: Option<UndoRefusal>,
+}
+
+/// One human seat of a room, as every member sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatStatusView {
+    pub seat: u8,
+    /// It has finished this turn.
+    pub ready: bool,
+    /// A person plays it; false while a bot has taken over.
+    pub controlled: bool,
+    /// The host holds a live connection for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub connected: Option<bool>,
+    /// The player's display name, from the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+    /// The player left the room for good; a bot plays the seat. From the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub left: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Query {
     Reachable { unit: EntityRef },
-    UnitOptions { unit: EntityRef },
+    UnitOptions {
+        unit: EntityRef,
+        /// For a nuclear weapon: also preview a strike on this tile
+        /// (`UnitOptions.nuclear_preview`).
+        #[ts(optional)]
+        #[serde(default, rename = "nuclearTarget", skip_serializing_if = "Option::is_none")]
+        nuclear_target: Option<u16>,
+    },
     CityOptions { city: EntityRef },
     CivOptions,
     View,
