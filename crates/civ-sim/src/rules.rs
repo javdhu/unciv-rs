@@ -251,18 +251,9 @@ macro_rules! yields {
     };
 }
 
-/// A unique as a player reads it: its conditionals appended, and Civ's coined
-/// names replaced by civ.game's (`civ_core::names`).
-fn rule_text(u: &civ_core::Unique) -> String {
-    civ_core::names::player_text(&raw_rule_text(u))
-}
-
-fn raw_rule_text(u: &civ_core::Unique) -> String {
-    let mut text = u.text.clone();
-    for c in &u.conditionals {
-        text.push_str(&format!(" <{}>", raw_rule_text(c)));
-    }
-    text
+/// A unique as a player reads it, in prose (`civ_core::names::unique_prose`).
+fn rule_text(u: &civ_core::Unique) -> Option<String> {
+    civ_core::names::unique_prose(u)
 }
 
 fn tech_row(r: &Ruleset, id: civ_core::arena::Id<civ_core::ruleset::Technology>, t: &civ_core::ruleset::Technology) -> TechRow {
@@ -331,7 +322,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 id: id.index(),
                 name: b.name.clone(),
                 kind: b.r#type.clone(),
-                effects: b.uniques.iter().map(rule_text).collect(),
+                effects: b.uniques.iter().filter_map(rule_text).collect(),
             })
             .collect(),
         max_wave: r.max_wave,
@@ -417,14 +408,14 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                     std::iter::once(LeaderRow {
                         name: n.leader_name.clone().unwrap_or_default(),
                         ability: n.unique_name.clone(),
-                        effects: n.uniques.iter().map(rule_text).collect(),
+                        effects: n.uniques.iter().filter_map(rule_text).collect(),
                         voice: n.voice.clone(),
                         what_we_know: n.what_we_know.clone(),
                     })
                     .chain(n.alt_leader.as_ref().map(|a| LeaderRow {
                         name: a.leader_name.clone(),
                         ability: a.unique_name.clone(),
-                        effects: a.uniques.iter().map(rule_text).collect(),
+                        effects: a.uniques.iter().filter_map(rule_text).collect(),
                         voice: a.voice.clone().or_else(|| n.voice.clone()),
                         what_we_know: a.what_we_know.clone(),
                     }))
@@ -466,7 +457,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 happiness: x.happiness.unwrap_or(0),
                 maintenance: x.maintenance.unwrap_or(0),
                 percent: x.percent_stat_bonus.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-                effects: x.uniques.iter().map(rule_text).collect(),
+                effects: x.uniques.iter().filter_map(rule_text).collect(),
                 requires: x.required_building.clone(),
                 what_we_know: x.what_we_know.clone(),
             })

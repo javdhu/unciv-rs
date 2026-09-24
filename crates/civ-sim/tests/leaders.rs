@@ -98,7 +98,7 @@ fn rule_tables_list_leaders_regions_and_the_raiders() {
         ["Marcus Aurelius", "Galla Placidia"]
     );
     assert_eq!(leaders[1].ability.as_deref(), Some("Regency"));
-    assert_eq!(leaders[1].effects, ["Starts with [Pottery]"]);
+    assert_eq!(leaders[1].effects, ["Starts with Pottery"]);
     assert_eq!(rome.region.as_deref(), Some("Europe"));
     let barbarians = t
         .nations

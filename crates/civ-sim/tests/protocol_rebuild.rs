@@ -207,3 +207,23 @@ fn construction_choices_agree_with_the_queue_check() {
             }));
     }
 }
+
+/// Every effect the rule tables send reads as prose: no brackets, braces or
+/// angle-bracketed conditionals, nothing meant only for the engine.
+#[test]
+fn every_effect_reads_as_prose() {
+    let t = tables(&content::load().unwrap());
+    let effects: Vec<&String> = t
+        .buildings
+        .iter()
+        .flat_map(|b| &b.effects)
+        .chain(t.beliefs.iter().flat_map(|b| &b.effects))
+        .chain(t.nations.iter().flat_map(|n| n.leaders.iter().flatten()).flat_map(|l| &l.effects))
+        .collect();
+    assert!(effects.len() > 200, "the base effects are all here: {}", effects.len());
+    for text in effects {
+        assert!(!text.chars().any(|c| matches!(c, '[' | ']' | '{' | '}' | '<' | '>')), "{text:?}");
+        assert!(!text.contains("Suppress warning") && !text.contains("  ") && text.trim() == text, "{text:?}");
+        assert!(!text.is_empty());
+    }
+}
