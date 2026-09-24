@@ -145,6 +145,10 @@ pub struct BuildingRow {
     pub effects: Vec<String>,
     /// The building it needs in the city first, by name.
     pub requires: Option<String>,
+    /// One line on what is attested, reconstructed and invented (wonders).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what_we_know: Option<String>,
 }
 
 /// A technology's place in the tree (Unciv's column and row) and what it opens.
@@ -215,6 +219,10 @@ pub struct LeaderRow {
     pub effects: Vec<String>,
     /// The leader's nearest living language.
     pub voice: Option<String>,
+    /// One line on what is attested, reconstructed and invented about them.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what_we_know: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -411,12 +419,14 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                         ability: n.unique_name.clone(),
                         effects: n.uniques.iter().map(rule_text).collect(),
                         voice: n.voice.clone(),
+                        what_we_know: n.what_we_know.clone(),
                     })
                     .chain(n.alt_leader.as_ref().map(|a| LeaderRow {
                         name: a.leader_name.clone(),
                         ability: a.unique_name.clone(),
                         effects: a.uniques.iter().map(rule_text).collect(),
                         voice: a.voice.clone().or_else(|| n.voice.clone()),
+                        what_we_know: a.what_we_know.clone(),
                     }))
                     .collect()
                 }),
@@ -458,6 +468,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 percent: x.percent_stat_bonus.iter().map(|(k, v)| (k.clone(), *v)).collect(),
                 effects: x.uniques.iter().map(rule_text).collect(),
                 requires: x.required_building.clone(),
+                what_we_know: x.what_we_know.clone(),
             })
             .collect(),
         technologies: r.technologies.iter().map(|(id, t)| tech_row(r, id, t)).collect(),

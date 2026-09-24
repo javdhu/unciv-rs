@@ -204,3 +204,45 @@ fn rome_settings() -> Settings {
         ..Settings::default()
     }
 }
+
+#[test]
+fn rule_tables_carry_what_we_know_for_leaders_and_wonders() {
+    let mut sources: Vec<_> = content::SOURCES
+        .iter()
+        .map(|(f, t)| (f.to_string(), t.to_string()))
+        .collect();
+    let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json")
+        .replace(
+            r#""voice": "Italian","#,
+            r#""voice": "Italian", "whatWeKnow": "Attested: his Meditations.","#,
+        )
+        .replace(
+            r#""uniqueName": "Regency","#,
+            r#""uniqueName": "Regency", "whatWeKnow": "Attested: her coins and letters.","#,
+        );
+    sources.push(("Nations.json".into(), nations));
+    sources.push((
+        "Buildings.json".into(),
+        r#"[{ "name": "Colosseum of Test", "isWonder": true, "whatWeKnow": "Reconstructed from ruins." }]"#.into(),
+    ));
+    let t = tables(&Ruleset::from_sources(&sources).unwrap());
+    let rome = t.nations.iter().find(|n| n.name == "Rome").unwrap();
+    let leaders = rome.leaders.as_ref().unwrap();
+    assert_eq!(
+        leaders[0].what_we_know.as_deref(),
+        Some("Attested: his Meditations.")
+    );
+    assert_eq!(
+        leaders[1].what_we_know.as_deref(),
+        Some("Attested: her coins and letters.")
+    );
+    let wonder = t
+        .buildings
+        .iter()
+        .find(|b| b.name == "Colosseum of Test")
+        .unwrap();
+    assert_eq!(
+        wonder.what_we_know.as_deref(),
+        Some("Reconstructed from ruins.")
+    );
+}

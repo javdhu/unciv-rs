@@ -141,7 +141,7 @@ pub fn score_leader(world: &World, r: &Ruleset) -> Option<CivId> {
     // defeated civilization still leads through its technologies.
     let mut best = None;
     let mut highest = i64::MIN;
-    for civ in &world.civs {
+    for civ in world.civs.iter().filter(|c| !r.chronicle_among_living_majors || (c.is_major() && c.is_alive())) {
         let value = score_fraction(world, r, civ.id).0;
         if value > highest {
             highest = value;
