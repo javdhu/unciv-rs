@@ -130,7 +130,7 @@ fn owned_city_progress_is_per_item_and_never_exposed_to_an_observer() {
 #[test]
 fn a_fresh_view_retains_the_victory_condition_and_original_win_turn() {
     let (mut w, r, _) = civ_sim::new_game(&civ_sim::Settings::default()).unwrap();
-    let condition = r.victories.id("Domination").unwrap();
+    let condition = r.victories.id("Conquest").unwrap();
     w.winner = Some((OTHER, condition));
     w.victory_turn = Some(7);
     w.turn = 12; // The legacy observer may keep simulating after the outcome.
@@ -145,7 +145,7 @@ fn a_fresh_view_retains_the_victory_condition_and_original_win_turn() {
     assert!(civ_sim::tables(&r)
         .victories
         .iter()
-        .any(|v| v.id == condition.index() && v.name == "Domination"));
+        .any(|v| v.id == condition.index() && v.name == "Conquest"));
 }
 
 #[test]

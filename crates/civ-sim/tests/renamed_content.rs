@@ -49,11 +49,21 @@ const NAMES: [(&str, &str); 13] = [
     ("SS Stasis Chamber", "Alignment"),
 ];
 
-fn renamed_sources() -> Vec<(String, String)> {
+/// The frozen Gods & Kings fixture, in the order `content::SOURCES` lists
+/// its files. `rules/base` itself is no longer G&K with new names.
+fn fixture_sources() -> Vec<(String, String)> {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../civ-core/rules/gods-and-kings/");
     content::SOURCES
         .iter()
+        .map(|(file, _)| (file.to_string(), std::fs::read_to_string(format!("{dir}{file}")).unwrap()))
+        .collect()
+}
+
+fn renamed_sources() -> Vec<(String, String)> {
+    fixture_sources()
+        .into_iter()
         .map(|(file, text)| {
-            let mut text = text.to_string();
+            let mut text = text;
             for (old, new) in ERAS {
                 text = text.replace(old, new);
             }
@@ -61,7 +71,7 @@ fn renamed_sources() -> Vec<(String, String)> {
                 text = text.replace(&format!("\"{old}\""), &format!("\"{new}\""));
                 text = text.replace(&format!("[{old}]"), &format!("[{new}]"));
             }
-            match *file {
+            match file.as_str() {
                 "Nations.json" => {
                     text = text.replace(
                         r#""name": "Barbarians","#,
@@ -124,7 +134,7 @@ fn digest(settings: &Settings, rules: Ruleset, turns: u32) -> Vec<String> {
 
 #[test]
 fn renamed_content_plays_the_same_game() {
-    let original = content::load().unwrap();
+    let original = Ruleset::from_sources(&fixture_sources()).unwrap();
     let renamed = Ruleset::from_sources(&renamed_sources()).unwrap();
     assert_eq!(renamed.first_era().unwrap().name, "Age of Bronze");
     assert_eq!(

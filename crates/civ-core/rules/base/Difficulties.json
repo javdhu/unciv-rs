@@ -1,6 +1,6 @@
 [
 	{
-		"name": "Settler",
+		"name": "Pupil",
 		"baseHappiness": 15,
 		"extraHappinessPerLuxury": 1,
 		"researchCostModifier": 0.9,
@@ -13,7 +13,7 @@
 		"barbarianBonus": 0.75,
 		"barbarianSpawnDelay": 8,
 		"playerBonusStartingUnits": [], // Note that the units from Eras.json are added to this pool. This should only contain bonus starting units.
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 1.6, // that is to say it'll take them 1.6 times as long to grow the city
 		"aiUnitCostModifier": 1.75,
 		"aiBuildingCostModifier": 1.6,
@@ -30,7 +30,7 @@
 		"clearBarbarianCampReward": 50
 	},
 	{
-		"name": "Chieftain",
+		"name": "Student",
 		"baseHappiness": 12,
 		"extraHappinessPerLuxury": 1,
 		"researchCostModifier": 0.95,
@@ -43,7 +43,7 @@
 		"barbarianBonus": 0.5,
 		"barbarianSpawnDelay": 5,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 1.3,
 		"aiUnitCostModifier": 1.3,
 		"aiBuildingCostModifier": 1.3,
@@ -60,7 +60,7 @@
 		"clearBarbarianCampReward": 40
 	},
 	{
-		"name": "Warlord",
+		"name": "Graduate",
 		"baseHappiness": 12,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -73,7 +73,7 @@
 		"barbarianBonus": 0.4,
 		"barbarianSpawnDelay": 3,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 1.1,
 		"aiUnitCostModifier": 1.1,
 		"aiBuildingCostModifier": 1.1,
@@ -90,7 +90,7 @@
 		"clearBarbarianCampReward": 30
 	},
 	{
-		"name": "Prince",
+		"name": "Tutor",
 		"baseHappiness": 9,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -103,7 +103,7 @@
 		"barbarianBonus": 0.33,
 		"barbarianSpawnDelay": 0,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Prince",
+        "aiDifficultyLevel": "Tutor",
 		"aiCityGrowthModifier": 1,
 		"aiUnitCostModifier": 1,
 		"aiBuildingCostModifier": 1,
@@ -120,7 +120,7 @@
 		"clearBarbarianCampReward": 25
 	},
 	{
-		"name": "King",
+		"name": "Lecturer",
 		"baseHappiness": 9,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -133,7 +133,7 @@
 		"barbarianBonus": 0.25,
 		"barbarianSpawnDelay": 0,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 0.9,
 		"aiUnitCostModifier": 0.85,
 		"aiBuildingCostModifier": 0.85,
@@ -150,7 +150,7 @@
 		"clearBarbarianCampReward": 25
 	},
 	{
-		"name": "Emperor",
+		"name": "Professor",
 		"baseHappiness": 9,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -163,7 +163,7 @@
 		"barbarianBonus": 0.2,
 		"barbarianSpawnDelay": 0,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 0.85,
 		"aiUnitCostModifier": 0.8,
 		"aiBuildingCostModifier": 0.8,
@@ -180,7 +180,7 @@
 		"clearBarbarianCampReward": 25
 	},
 	{
-		"name": "Immortal",
+		"name": "Dean",
 		"baseHappiness": 9,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -193,7 +193,7 @@
 		"barbarianBonus": 0.1,
 		"barbarianSpawnDelay": 0,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 0.75,
 		"aiUnitCostModifier": 0.65,
 		"aiBuildingCostModifier": 0.65,
@@ -210,7 +210,7 @@
 		"clearBarbarianCampReward": 25
 	},
 	{
-		"name": "Deity",
+		"name": "Chancellor",
 		"baseHappiness": 9,
 		"extraHappinessPerLuxury": 0,
 		"researchCostModifier": 1,
@@ -223,7 +223,7 @@
 		"barbarianBonus": 0,
 		"barbarianSpawnDelay": 0,
 		"playerBonusStartingUnits": [],
-        "aiDifficultyLevel": "Chieftain",
+        "aiDifficultyLevel": "Student",
 		"aiCityGrowthModifier": 0.6,
 		"aiUnitCostModifier": 0.5,
 		"aiBuildingCostModifier": 0.5,

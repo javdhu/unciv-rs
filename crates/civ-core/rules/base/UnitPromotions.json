@@ -675,11 +675,11 @@
 	},
 	{
 		"name": "Great Generals I", // only for Companion Cavalry, Keshik and their subsequent upgrades
-		"uniques": ["[Great General] is earned [50]% faster"]
+		"uniques": ["[Marshal] is earned [50]% faster"]
 	},
 	{
 		"name": "Great Generals II", // only for Samurai and subsequent upgrades
-		"uniques": ["[Great General] is earned [100]% faster"]
+		"uniques": ["[Marshal] is earned [100]% faster"]
 	},
 	{
 		"name": "Quick Study", // only for Keshik and subsequent upgrades
@@ -756,7 +756,7 @@
 	},
 	{
 		"name": "[Hakkapeliitta] ability",
-		"uniques": ["Transfer Movement to [Great General]", "[+15]% Strength <when stacked with a [Great General] unit>"]
+		"uniques": ["Transfer Movement to [Marshal]", "[+15]% Strength <when stacked with a [Marshal] unit>"]
 	},
 	{
 		"name": "[Zero] ability",
