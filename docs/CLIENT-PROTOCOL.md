@@ -316,6 +316,79 @@ These fields and actions are additive; the protocol version stays 4.
   the way; the action remains the authority, and a price that depends on unseen information carries no reason.
   Unit options still list only legal actions, so they carry no reasons.
 
+### Demands, undo, targets, city-states, spies, great people, eras and rooms
+
+Also additive; the protocol version stays 4. Every new field is optional in TypeScript unless marked otherwise.
+
+- **Demands.** `PlayerView.demands?: DemandView[]` lists what other nations asked of this player and it has not
+  answered: `{ by, demand: Demand, promiseUntil, refusalDeclaresWar, mayRefuse }`. `answerDemand { by, demand,
+  agree }` answers one. Agreeing makes a promise that runs through turn `promiseUntil`; refusing a
+  `doNotAttackUs` declares war on the asker (`refusalDeclaresWar`), which is refused while a treaty forbids war
+  (`mayRefuse: false`). A demand waits until answered or its asker is destroyed. `PlayerView.promises?:
+  PromiseView[]` lists promises in force either way, `{ by, to, demand, until }` (`until` is the last turn), and
+  `PlayerView.spyingForbidden?: number[]` the nations whose cities `assignSpy` refuses while a `dontSpyOnUs`
+  promise runs. Events: `demandMade { by, of, demand }`, `demandAnswered { by, to, demand, agreed }`,
+  `promiseBroken { by, to, demand }` and `promiseKept { by, to, demand }`, sent to the two nations involved.
+- **Undo.** `GameUpdate.undo?: { available: boolean, refusal?: UndoRefusal }` rides on every update (solo and
+  rooms): whether `undo` would take back this seat's last command, and the reason when not (`nothingToUndo` when
+  there is none). In a room another seat may act in between, and `undo` is then refused `othersActed`; the
+  field never announces that ahead, since it would leak others' actions. A change in `undo` alone does not send
+  an update; it rides on the next one.
+- **Mission targets.** `UnitOptions.targets?: ActionTargets[]`, `{ action: UnitActionKind, tiles: number[] }`,
+  lists where each `needsTarget` mission may aim now: `rebase` (own cities, and own units that can
+  carry it, in range), `airSweep` (visible tiles in attack range), `paradrop` (tiles within its drop range where
+  it may land) and `nuclearStrike`. Nuclear targets use what the player knows: a nation last seen holding a blast
+  tile, or whose units it sees there, must have been met; a nation it has not seen there can still make the
+  strike refused.
+- **Nuclear preview.** The `unitOptions` query takes an optional `nuclearTarget: tile`; for a nuclear weapon the
+  reply's `UnitOptions.nuclear_preview?: NuclearPreviewView` then says what a strike there would do: `{
+  blastRadius, tiles, victims, interceptChance, legal }`, the blast tiles, the nations the strike declares war on
+  as far as the player can see, the percent chance an interceptor the player can see stops it (0 when none is
+  seen or the weapon cannot be intercepted), and whether `nuclearStrike` would be accepted. It is absent for
+  other units and for a tile that does not exist. (A separate query kind was avoided so that code keyed on every
+  `Query['type']` keeps compiling.)
+- **Interception.** `CombatPreviewView.interceptChance?` is the percent chance an interceptor the player can see
+  stops an air strike first (absent for other attacks). An `airSweep` against a defended tile now produces an
+  `attacked` event for the sweep's dogfight, with the interceptor as the defender.
+- **City-states.** `CityStateRelationsView` gains `mayPledge`, `mayWithdraw` (the `pledgeProtection` and
+  `withdrawProtection` checks), `tributeGold`, `tributeWorker` and `tributeAmount` (what `demandTribute` would get
+  now), `mayCoup` with `coupChance?` (percent, not counting an unseen defending spy), and `influencePerTurn` and
+  `restingPoint` as decimal strings. These are required fields: the view is built only by the engine.
+  `RuleTables.influenceThresholds?: { friend, ally, unforgivable }` is 30, 60 and -30: `Ally` from `ally` (only
+  the major furthest ahead), `Friend` from `friend`, `Neutral` from 0, `Enemy` below 0, `Unforgivable` at
+  `unforgivable` or below, or at war.
+- **Spies.** `SpyView.stealCost?` is the science a stealing spy's `progress` must reach for the next theft.
+  Coup odds are `CityStateRelationsView.coupChance`; forbidden cities come from `spyingForbidden`.
+- **Great people.** `UnitOptions.great_person_abilities?: GreatPersonAbility[]` lists every ability a great person
+  has, `{ action: GreatPersonAction, available, why?: GreatPersonRefusal, amount? }`, legal or not.
+  `GreatPersonRefusal` is `noMovement | nothingResearched | cannotBeHurried | notInOwnCity | notABuilding |
+  nothingToAdd | notACityState | atWar | cannotBuildHere | notAble`. `amount` is the science (`hurryResearch`),
+  hammers here (`hurryProduction`) or gold (`tradeMission`) it would bring now. `great_person_actions` keeps
+  listing only the legal ones.
+- **Eras.** `PlayerView.eraStarts?: number[]` is the turn this player reached each era, indexed by era number (in
+  `RuleTables` era order) up to its current era. Starting eras and skipped eras read the turn it got there, so the
+  list never decreases. The engine records it at each round end and saves keep it; a save made before
+  this reads the turn it was loaded on for the eras already reached.
+- **Rooms.** `GameUpdate.seats?: SeatStatusView[]` appears when the session has more than one human seat:
+  `{ seat, ready, controlled, connected?, name?, left? }`. `ready` and `controlled` come from the session;
+  `connected`, `name` and `left` from the host (`connected` is recorded as a session input, so a connect or
+  drop sends the room an update and replays deterministically). Solo updates carry neither.
+- **Events.** `PresentationEvent` gains `greatPersonBorn { name, unit: EntityRef | null }`, `greatPersonActed {
+  outcome: GreatPersonOutcome }`, `cityCompleted { city, construction: ConstructionRef }`, `questOffered {
+  cityState, quest, name }`, `questCompleted { cityState, quest, name, influence }`, `questExpired { cityState,
+  quest, name }`, `cityStateRelationship { cityState, from, to }` (names as in `relationship`: `Unforgivable`,
+  `Enemy`, `Neutral`, `Friend`, `Ally`), `goldGifted { cityState, gold, influence }` (influence as a decimal
+  string), `tributePaid { cityState, gold, worker }`, `electionRigged { cityState }`, `denounced { by, target }`,
+  `cityConverted { city, religion }`, `weLoveTheKingDay { city, resource }`, `weLoveTheKingDayEnded { city }`,
+  `bordersExpanded { city, tile }`, `cityBurned { city, population }` and `cityRazed { city }`, plus the demand
+  events above. `rebelsSpawned` gains `tile?` and `unit?` when the rebel is seen. `GreatPersonOutcome` is
+  `science { amount, learned: number | null } | production { city, hammers } | tradeMission { cityState, gold,
+  influence } | goldenAge { turns } | constructed { tile, improvement }`.
+- **Puppets.** A human's puppet whose queue is empty now picks a building each turn as the AI would choose one
+  (buildings only: a puppet raises no units for a master who did not ask). AI puppets are unchanged.
+- **Restore.** `Session::restore` recomputes each seat's published projection instead of refusing a save whose
+  stored projection differs, so saves written before a view gains a field still open.
+
 The original `Game`/`worker.ts`/`transport.ts` path now serves only the art review page. Human controls use
 `openSolo`/`openRemote` in `session-transports.ts`.
 `openRemote` returns one `RemoteSession` across replacement sockets. Transient failures retry up to
