@@ -83,7 +83,7 @@ impl std::fmt::Display for Rejection {
             Rejection::NotCoastal => write!(f, "a ship needs a coastal city"),
             Rejection::Unknown => write!(f, "not in this ruleset"),
             Rejection::NotAvailable => write!(f, "not available in this city"),
-            Rejection::LimitReached => write!(f, "civilization construction limit reached"),
+            Rejection::LimitReached => write!(f, "this nation has reached its limit for this"),
             Rejection::TerrainRequirement => write!(f, "requires different surrounding terrain"),
         }
     }

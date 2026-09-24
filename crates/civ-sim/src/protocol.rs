@@ -284,6 +284,11 @@ pub enum Action {
     ChoosePantheon {
         belief: u32,
     },
+    /// Take an arisen faith as the nation's state faith; `religion` is its key
+    /// from `RuleTables.faiths`.
+    AdoptStateFaith {
+        religion: u8,
+    },
     Annex {
         city: EntityRef,
     },

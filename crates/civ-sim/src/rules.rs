@@ -19,6 +19,25 @@ pub struct RuleTables {
     pub promotions: Vec<Named>,
     pub specialists: Vec<Named>,
     pub beliefs: Vec<BeliefRow>,
+    /// Faiths that arise by era (absent for rulesets whose religions are
+    /// founded). `key` is how views name a religion: `CityReligionView`,
+    /// `UnitStateView.religion`, `CivView.stateFaith`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faiths: Option<Vec<FaithRow>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FaithRow {
+    pub key: u8,
+    pub name: String,
+    pub era: String,
+    /// Nations it arises in when present, in order.
+    pub homeland: Vec<String>,
+    /// Its fixed traits, by id in `beliefs`: `Follower` traits apply in
+    /// cities that follow it, `State` traits to nations that adopt it.
+    pub traits: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -200,10 +219,16 @@ macro_rules! yields {
     };
 }
 
+/// A unique as a player reads it: its conditionals appended, and Civ's coined
+/// names replaced by civ.game's (`civ_core::names`).
 fn rule_text(u: &civ_core::Unique) -> String {
+    civ_core::names::player_text(&raw_rule_text(u))
+}
+
+fn raw_rule_text(u: &civ_core::Unique) -> String {
     let mut text = u.text.clone();
     for c in &u.conditionals {
-        text.push_str(&format!(" <{}>", rule_text(c)));
+        text.push_str(&format!(" <{}>", raw_rule_text(c)));
     }
     text
 }
@@ -277,6 +302,19 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 effects: b.uniques.iter().map(rule_text).collect(),
             })
             .collect(),
+        faiths: r.faith_mode().then(|| {
+            r.faiths
+                .iter()
+                .enumerate()
+                .map(|(i, f)| FaithRow {
+                    key: civ_core::world::faiths::key(i).0,
+                    name: f.name.clone(),
+                    era: f.era.clone(),
+                    homeland: f.homeland.clone(),
+                    traits: f.beliefs.iter().filter_map(|b| r.beliefs.id(b)).map(|id| id.index()).collect(),
+                })
+                .collect()
+        }),
         victories: r
             .victories
             .iter()

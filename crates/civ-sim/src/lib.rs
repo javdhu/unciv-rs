@@ -31,7 +31,7 @@ pub fn rule_tables() -> Result<JsValue, JsError> {
     js(&tables(&content::load().map_err(|e| JsError::new(&e))?))
 }
 
-/// The rule tables of a bundled ruleset: `gods-and-kings` or `blitz`.
+/// The rule tables of a bundled ruleset: `base` or `blitz`.
 #[wasm_bindgen(js_name = ruleTablesFor)]
 pub fn rule_tables_for(ruleset: &str) -> Result<JsValue, JsError> {
     js(&tables(&content::load_ruleset(ruleset).map_err(|e| JsError::new(&e))?))

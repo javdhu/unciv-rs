@@ -197,6 +197,22 @@ pub struct CivOptions {
     pub free_great_people: Vec<u32>,
     pub pantheon_cost: i32,
     pub pantheons: Vec<u32>,
+    /// When faiths arise by era: the state faith and what may replace it.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_faith: Option<StateFaithOptions>,
+}
+
+/// The one religious choice a nation makes (docs/CONTENT.md, Religion).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StateFaithOptions {
+    /// Its key in `RuleTables.faiths`, if one is adopted.
+    pub current: Option<u8>,
+    /// Faiths the majority of at least one of our cities follows.
+    pub adoptable: Vec<u8>,
+    /// Turns before the state faith may change again; 0 when it may.
+    pub locked_turns: u32,
 }
 
 /// A modifier on a previewed strength: a label and percentage points (25 means +25%).
@@ -738,6 +754,7 @@ pub fn city_options(
 pub fn civ_options(world: &World, r: &Ruleset, civ: CivId) -> CivOptions {
     let Some(owner) = world.civ(civ) else {
         return CivOptions {
+            state_faith: None,
             pantheon_cost: 0,
             pantheons: Vec::new(),
             research: Vec::new(),
@@ -793,6 +810,19 @@ pub fn civ_options(world: &World, r: &Ruleset, civ: CivId) -> CivOptions {
         })
         .collect();
     CivOptions {
+        state_faith: r.faith_mode().then(|| {
+            let current = owner.faith.state;
+            let free_at = owner.faith.state_since.saturating_add(civ_core::world::faiths::STATE_FAITH_LOCK);
+            StateFaithOptions {
+                current: current.map(|k| k.0),
+                adoptable: civ_core::world::faiths::adoptable(world, r, civ)
+                    .into_iter()
+                    .filter(|k| civ_core::world::faiths::can_adopt(world, r, civ, *k).is_ok())
+                    .map(|k| k.0)
+                    .collect(),
+                locked_turns: if current.is_some() { free_at.saturating_sub(world.turn) } else { 0 },
+            }
+        }),
         pantheon_cost: civ_core::world::religion::pantheon_cost(world, civ_core::stats::Fixed::ONE),
         pantheons: if civ_core::world::religion::can_found_pantheon(world, r, civ) {
             civ_core::world::religion::available_beliefs(world, r, "Pantheon")
