@@ -1,0 +1,36 @@
+[
+    {
+        "name": "Scientific",
+        "victoryScreenHeader": "Build the Apollo Program and three spaceship parts to win!",
+        "milestones": [
+            "Build [Apollo Program]",
+            "Add all [spaceship parts] in capital"
+        ],
+        "requiredSpaceshipParts": [
+            "SS Booster",
+            "SS Cockpit",
+            "SS Engine"
+        ],
+        "victoryString": "You have achieved victory through mastery of Science! You have conquered the mysteries of nature and led your people on a voyage to a brave new world! Your triumph will be remembered as long as the stars burn in the night sky!",
+        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+    },
+    {
+        "name": "Cultural",
+        "victoryScreenHeader": "Complete 3 policy branches and build the Utopia Project to win!",
+        "milestones": [
+            "Complete [3] Policy branches",
+            "Build [Utopia Project]"
+        ],
+        "victoryString": "You have achieved victory through the awesome power of your Culture. Your civilization's greatness - the magnificence of its monuments and the power of its artists - have astounded the world! Poets will honor you as long as beauty brings gladness to a weary heart.",
+        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+    },
+    {
+        "name": "Wonders",
+        "victoryScreenHeader": "Be the first to build 9 world wonders!",
+        "milestones": [
+            "Build [9] [World Wonders]"
+        ],
+        "victoryString": "Nine wonders of the world stand in your lands. Travellers will speak of your civilization for as long as the stones endure.",
+        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+    }
+]

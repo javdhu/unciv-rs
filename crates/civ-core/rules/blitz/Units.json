@@ -1,0 +1,50 @@
+[
+    {
+        "name": "SS Booster",
+        "unitType": "Civilian",
+        "movement": 2,
+        "cost": 750,
+        "requiredTech": "Rocketry",
+        "uniques": [
+            "Spaceship part",
+            "Cannot be purchased",
+            "Only available <if [Apollo Program] is constructed>",
+            "Uncapturable",
+            "Can be added to [The Spaceship] in the Capital",
+            "Limited to [3] per Civilization",
+            "Only available <when [Scientific] Victory is enabled>"
+        ]
+    },
+    {
+        "name": "SS Cockpit",
+        "unitType": "Civilian",
+        "movement": 2,
+        "cost": 750,
+        "requiredTech": "Advanced Ballistics",
+        "uniques": [
+            "Spaceship part",
+            "Cannot be purchased",
+            "Only available <if [Apollo Program] is constructed>",
+            "Uncapturable",
+            "Can be added to [The Spaceship] in the Capital",
+            "Limited to [1] per Civilization",
+            "Only available <when [Scientific] Victory is enabled>"
+        ]
+    },
+    {
+        "name": "SS Engine",
+        "unitType": "Civilian",
+        "movement": 2,
+        "cost": 750,
+        "requiredTech": "Satellites",
+        "uniques": [
+            "Spaceship part",
+            "Cannot be purchased",
+            "Only available <if [Apollo Program] is constructed>",
+            "Uncapturable",
+            "Can be added to [The Spaceship] in the Capital",
+            "Limited to [1] per Civilization",
+            "Only available <when [Scientific] Victory is enabled>"
+        ]
+    }
+]

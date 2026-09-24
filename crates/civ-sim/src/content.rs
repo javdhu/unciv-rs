@@ -42,10 +42,13 @@ pub const RULESETS: &[&str] = &[DEFAULT_RULESET, BLITZ];
 /// Blitz's files, loaded after the full game's and overriding its objects by
 /// name (`Ruleset::from_sources`).
 pub const BLITZ_SOURCES: &[(&str, &str)] = &[
+    ("Buildings.json", include_str!("../../civ-core/rules/blitz/Buildings.json")),
     ("Difficulties.json", include_str!("../../civ-core/rules/blitz/Difficulties.json")),
     ("Eras.json", include_str!("../../civ-core/rules/blitz/Eras.json")),
     ("ModOptions.json", include_str!("../../civ-core/rules/blitz/ModOptions.json")),
     ("Speeds.json", include_str!("../../civ-core/rules/blitz/Speeds.json")),
+    ("Units.json", include_str!("../../civ-core/rules/blitz/Units.json")),
+    ("VictoryTypes.json", include_str!("../../civ-core/rules/blitz/VictoryTypes.json")),
 ];
 
 fn overlay(ruleset: &str) -> Result<&'static [(&'static str, &'static str)], String> {

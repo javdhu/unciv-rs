@@ -32,6 +32,10 @@ pub enum Milestone {
     BuiltBuilding(String),
     /// Anyone has it — a race, not a personal goal.
     BuildingBuiltGlobally(String),
+    /// This civ has built this many buildings matching a filter:
+    /// `Build [5] [World Wonders]`, Blitz's wonder race. Not an Unciv
+    /// milestone; Unciv's forms are all single buildings.
+    BuildCount(u32, String),
     /// Every original major capital is this civ's, with no living major still
     /// waiting to found its original capital.
     CaptureAllCapitals,
@@ -51,6 +55,13 @@ pub fn parse_milestone(text: &str) -> Milestone {
     let t = text.trim();
     let param = |prefix: &str, suffix: &str| -> Option<&str> { t.strip_prefix(prefix)?.strip_suffix(suffix) };
 
+    // `Build [5] [World Wonders]` before `Build [Apollo Program]`, which it
+    // would otherwise also match.
+    if let Some((n, filter)) = param("Build [", "]").and_then(|inner| inner.split_once("] [")) {
+        if let Ok(n) = n.parse() {
+            return Milestone::BuildCount(n, filter.to_string());
+        }
+    }
     if let Some(b) = param("Build [", "]") {
         return Milestone::BuiltBuilding(b.to_string());
     }
@@ -182,6 +193,16 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
     match m {
         Milestone::BuiltBuilding(name) => yes(has_building(Some(civ), name)),
         Milestone::BuildingBuiltGlobally(name) => yes(has_building(None, name)),
+        Milestone::BuildCount(n, filter) => {
+            let built = world
+                .cities
+                .iter()
+                .filter(|(_, c)| c.owner == civ)
+                .flat_map(|(_, c)| c.built.iter())
+                .filter(|b| crate::world::filters::building_matches(r, **b, filter) == Verdict::True)
+                .count();
+            yes(built >= *n as usize)
+        }
         Milestone::CompletePolicyBranches(n) => yes(completed_branches(world, r, civ) >= *n as usize),
         Milestone::DestroyAllPlayers => {
             yes(world.civs.iter().filter(|c| c.id != civ && c.is_major()).all(|c| !c.is_alive()))
