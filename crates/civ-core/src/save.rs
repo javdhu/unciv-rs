@@ -92,6 +92,14 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     );
     use std::fmt::Write;
     write!(&mut input, "{:?}", r.global_uniques).unwrap();
+    // civ.game additions, written only when present so the fixtures' identity
+    // reads as before.
+    if !r.faiths.is_empty() {
+        write!(&mut input, "\nfaiths {:?}", r.faiths).unwrap();
+    }
+    if let Some(name) = &r.default_difficulty_name {
+        write!(&mut input, "\ndefault difficulty {name}").unwrap();
+    }
     hash(input.as_bytes())
 }
 
@@ -166,6 +174,11 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
     crate::world::barbarians::validate(world, r).map_err(SaveError::InvalidWorld)?;
     world.cities.validate_snapshot().map_err(SaveError::InvalidWorld)?;
     world.units.validate_snapshot().map_err(SaveError::InvalidWorld)?;
+    for (index, arisen) in &world.faiths.arisen {
+        if usize::from(*index) >= r.faiths.len() || arisen.turn > world.turn {
+            return Err(invalid("invalid arisen faith"));
+        }
+    }
     if world.turn > 1_000_000_000 {
         return Err(invalid("turn count is outside snapshot bounds"));
     }
@@ -177,6 +190,12 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
     world.visibility.validate_snapshot_rules(r).map_err(SaveError::InvalidWorld)?;
     world.diplomacy.validate_snapshot(n).map_err(SaveError::InvalidWorld)?;
     let civ = |c: CivId| if (c.0 as usize) < n { Ok(()) } else { Err(invalid("invalid civilization reference")) };
+    // A religion is a founder civ, or a faith of the ruleset (`world::faiths`).
+    let creed = |c: CivId| match crate::world::faiths::index_of(c) {
+        Some(i) if i < r.faiths.len() => Ok(()),
+        Some(_) => Err(invalid("invalid faith reference")),
+        None => civ(c),
+    };
     let tile = |t: crate::world::grid::TileId| {
         if (t.0 as usize) < world.grid.len() {
             Ok(())
@@ -287,6 +306,9 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
         }
         for id in &c.faith.beliefs {
             rule(&r.beliefs, *id, "belief")?;
+        }
+        if c.faith.state.is_some_and(|s| crate::world::faiths::def(r, s).is_none()) {
+            return Err(invalid("invalid state faith"));
         }
         for id in &c.faith.pantheon_beliefs {
             rule(&r.beliefs, *id, "pantheon belief")?;
@@ -480,17 +502,17 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
             rule(&r.resources, id, "demanded resource")?;
         }
         for id in &city.faith.adopted_religions {
-            civ(*id)?;
+            creed(*id)?;
         }
         if let Some(id) = city.faith.holy_city_of {
-            civ(id)?;
+            creed(id)?;
         }
         let mut total = 0i64;
-        for (creed, pressure) in
+        for (creed_of, pressure) in
             city.faith.pressures().chain(city.faith.pantheon_pressures().map(|(c, p)| (Some(c), p)))
         {
-            if let Some(c) = creed {
-                civ(c)?;
+            if let Some(c) = creed_of {
+                creed(c)?;
             }
             if pressure < 0 {
                 return Err(invalid("negative religious pressure"));
@@ -501,7 +523,14 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
             return Err(invalid("invalid religious pressure total"));
         }
         let mut total_followers = 0u64;
-        for (creed, followers) in city.faith.followers().chain(city.faith.pantheon_followers()) {
+        for (creed_of, followers) in city.faith.followers() {
+            creed(creed_of)?;
+            if followers > city.population {
+                return Err(invalid("invalid follower count"));
+            }
+            total_followers += u64::from(followers);
+        }
+        for (creed, followers) in city.faith.pantheon_followers() {
             civ(creed)?;
             if followers > city.population {
                 return Err(invalid("invalid follower count"));
@@ -520,7 +549,7 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
             rule(&r.promotions, *id, "promotion")?;
         }
         if let Some(id) = unit.religion {
-            civ(id)?;
+            creed(id)?;
         }
         if unit.health > 100 || unit.movement_left.raw() < 0 || unit.movement_left.raw() > 1_000_000_000 {
             return Err(invalid("invalid unit health or movement"));

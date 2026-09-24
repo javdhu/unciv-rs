@@ -63,6 +63,9 @@ pub enum Command {
     GreatPerson { unit: Id<Unit>, action: crate::world::great_person_actions::Action },
     Religious { unit: Id<Unit>, action: crate::world::religious_units::ReligiousAction },
     ChoosePantheon { belief: Id<Belief> },
+    /// Take an arisen faith as the civ's own (`world::faiths`); `religion` is
+    /// its key.
+    AdoptStateFaith { religion: CivId },
     ChooseReligionBeliefs { unit: Id<Unit>, beliefs: Vec<Id<Belief>>, enhancing: bool },
     ClaimFreeTechnology { technology: Id<Technology> },
     ClaimFreeGreatPerson { unit: Id<BaseUnit> },
@@ -771,6 +774,14 @@ fn apply(
         ClaimFreeGreatPerson { unit } => {
             crate::world::effects::claim_free_great_person(world, r, civ, unit).ok_or(NotAllowed)?;
             events.push(TurnEvent::GreatPersonBorn { civ, kind: r.units[unit].name.clone() });
+        }
+        AdoptStateFaith { religion } => {
+            crate::world::faiths::adopt(world, r, civ, religion).map_err(|e| match e {
+                crate::world::faiths::StateFaithRejection::NotFaithMode
+                | crate::world::faiths::StateFaithRejection::NoSuchFaith => InvalidTarget,
+                _ => Unavailable,
+            })?;
+            events.push(TurnEvent::StateFaithAdopted { civ, religion });
         }
         ChoosePantheon { belief } => {
             let cost = crate::world::religion::pantheon_cost(world, mods.costs.faith_cost);

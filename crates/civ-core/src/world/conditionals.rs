@@ -573,11 +573,12 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         }
         UniqueType::ConditionalCityMajorReligion | UniqueType::ConditionalCityEnhancedReligion => {
             let Some(c) = ctx.world.zip(ctx.city).and_then(|(w, id)| w.cities.get(id)) else { return Verdict::Unknown };
-            verdict(c.faith.majority(c.population).and_then(|creed| ctx.world?.civ(creed)).is_some_and(|faith| {
+            let Some(world) = ctx.world else { return Verdict::Unknown };
+            verdict(c.faith.majority(c.population).is_some_and(|creed| {
                 if kind == UniqueType::ConditionalCityEnhancedReligion {
-                    faith.faith.enhanced
+                    world.civ(creed).is_some_and(|f| f.faith.enhanced)
                 } else {
-                    faith.faith.founded
+                    crate::world::religion::religion_exists(world, creed)
                 }
             }))
         }
@@ -649,7 +650,7 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             let holds = match cond.unique_type() {
                 Some(UniqueType::ConditionalBeforePantheon) => !c.faith.has_pantheon(),
                 Some(UniqueType::ConditionalAfterPantheon) => c.faith.has_pantheon(),
-                Some(UniqueType::ConditionalBeforeReligion) => !c.faith.founded,
+                Some(UniqueType::ConditionalBeforeReligion) => !c.faith.founded && c.faith.state.is_none(),
                 _ => c.faith.prophets_earned > 0,
             };
             if holds {

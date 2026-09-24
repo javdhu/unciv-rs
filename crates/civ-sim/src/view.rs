@@ -865,6 +865,17 @@ pub enum PresentationEvent {
         city: EntityRef,
         by: u8,
     },
+    /// A faith arose in its era. `religion` is its key (the faith's index
+    /// in the rules plus 128); `city` is its holy city, when it is yours.
+    FaithArose {
+        religion: u8,
+        name: String,
+        city: Option<EntityRef>,
+    },
+    StateFaithAdopted {
+        religion: u8,
+        name: String,
+    },
     /// The owner entered an era that calls the city by another name.
     CityRenamed {
         city: EntityRef,
@@ -1299,6 +1310,30 @@ pub fn report_for(
                     by: by.0,
                 },
             ),
+            TurnEvent::FaithArose { religion, city } => {
+                let name = civ_core::world::faiths::def(r, *religion).map_or_else(String::new, |f| f.name.clone());
+                let mine = after.cities.get(*city).filter(|c| c.owner == me);
+                (
+                    "FaithArose",
+                    match mine {
+                        Some(c) => format!("{name} arose in {}", c.name),
+                        None => format!("{name} arose"),
+                    },
+                    PresentationEvent::FaithArose {
+                        religion: religion.0,
+                        name,
+                        city: mine.map(|_| (*city).into()),
+                    },
+                )
+            }
+            TurnEvent::StateFaithAdopted { civ, religion } if *civ == me => {
+                let name = civ_core::world::faiths::def(r, *religion).map_or_else(String::new, |f| f.name.clone());
+                (
+                    "StateFaithAdopted",
+                    format!("{name} is now the state faith"),
+                    PresentationEvent::StateFaithAdopted { religion: religion.0, name },
+                )
+            }
             TurnEvent::CityRenamed { city, from, to } if own_city(*city) => (
                 "CityRenamed",
                 format!("{from} is now {to}"),

@@ -96,3 +96,38 @@ impl Nation {
         }
     }
 }
+
+/// A real faith that arises in its era (docs/CONTENT.md, Religion): an
+/// object in `Religions.json` rather than the fixtures' bare name. Any object
+/// there switches the ruleset to faiths by era: no pantheons, no founding and
+/// no belief picking.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FaithDef {
+    pub name: String,
+    /// The era it arises in, once the first major civ reaches it.
+    pub era: String,
+    /// Turns into that era before it arises, at Standard speed.
+    pub delay: i32,
+    /// Nations it arises in when present, in order of preference.
+    pub homeland: Vec<String>,
+    /// Its fixed traits, by name in Beliefs.json: `Follower` beliefs apply
+    /// in cities that follow it, `State` beliefs to civs that adopt it.
+    pub beliefs: Vec<String>,
+}
+
+/// Read one `Religions.json` entry: a faith object, or a fixture's name.
+pub fn read_faith(j: &Json) -> Option<FaithDef> {
+    let name = text(j, "name")?;
+    let homeland = match j.get("homeland") {
+        Some(h) if h.as_str().is_some() => vec![h.as_str().unwrap_or_default().to_string()],
+        Some(h) => h.strings(),
+        None => Vec::new(),
+    };
+    Some(FaithDef {
+        name,
+        era: text(j, "era").unwrap_or_default(),
+        delay: j.get("delay").and_then(|v| v.as_i32()).unwrap_or(0).max(0),
+        homeland,
+        beliefs: j.get("beliefs").map(|v| v.strings()).unwrap_or_default(),
+    })
+}

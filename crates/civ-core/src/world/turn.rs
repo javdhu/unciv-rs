@@ -226,6 +226,15 @@ pub enum TurnEvent {
     ReligionFounded {
         civ: CivId,
     },
+    /// A faith arose in its era (`world::faiths`); `religion` is its key.
+    FaithArose {
+        religion: CivId,
+        city: Id<City>,
+    },
+    StateFaithAdopted {
+        civ: CivId,
+        religion: CivId,
+    },
     CityCaptured {
         city: Id<City>,
         by: CivId,
@@ -1856,6 +1865,17 @@ fn finish_automatic(
         events.push(match e {
             crate::world::trade::TradeEvent::Ended { a, b } => TurnEvent::TradeEnded { a, b },
             crate::world::trade::TradeEvent::Cancelled { a, b } => TurnEvent::TradeCancelled { a, b },
+        });
+    }
+
+    // Faiths arise in their era before this turn's spread, so a new holy
+    // city pushes from the turn it appears.
+    for news in crate::world::faiths::tick(world, r, costs.speed) {
+        events.push(match news {
+            crate::world::faiths::FaithNews::Arose { religion, city } => TurnEvent::FaithArose { religion, city },
+            crate::world::faiths::FaithNews::StateFaithAdopted { civ, religion } => {
+                TurnEvent::StateFaithAdopted { civ, religion }
+            }
         });
     }
 

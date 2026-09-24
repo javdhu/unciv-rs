@@ -30,6 +30,7 @@ pub mod effects;
 pub mod entities;
 pub mod espionage;
 pub mod expansion;
+pub mod faiths;
 pub mod filters;
 pub mod fog;
 pub mod golden_age;

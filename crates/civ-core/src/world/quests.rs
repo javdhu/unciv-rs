@@ -258,7 +258,10 @@ pub fn judge(world: &World, r: &Ruleset, city_state: CivId, q: &Assigned) -> Ver
             else {
                 return Verdict::Unknown;
             };
-            yes(city.faith.majority(city.population) == Some(q.assignee))
+            // A founder's religion is keyed by the founder; a state faith by its own key.
+            let own =
+                if r.faith_mode() { crate::world::religion::civ_religion(world, q.assignee) } else { Some(q.assignee) };
+            yes(own.is_some() && city.faith.majority(city.population) == own)
         }
         // A contest is won by having gained the most since the clock started,
         // and is only decided when the clock runs out — leading on turn three
@@ -444,12 +447,10 @@ fn choose_target_with_speed(
             (Target::Self_, None)
         }
         Kind::SpreadReligion => {
-            if !world.civ(assignee)?.faith.founded {
-                return None;
-            }
+            let own = crate::world::religion::civ_religion(world, assignee)?;
             let capital =
                 crate::world::connections::capital_of(world, r, city_state).and_then(|id| world.cities.get(id))?;
-            if capital.faith.majority(capital.population) == Some(assignee) {
+            if capital.faith.majority(capital.population) == Some(own) {
                 return None;
             }
             (Target::Self_, None)

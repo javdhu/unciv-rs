@@ -1,0 +1,7 @@
+// Overlay on the gods-and-kings fixture: faiths that arise by era
+// (world::faiths), named with the fixture's eras and nations.
+[
+	{ "name": "Hinduism", "era": "Ancient era", "delay": 2, "homeland": ["India"], "beliefs": ["Test Follower", "Test State"] },
+	{ "name": "Judaism", "era": "Ancient era", "delay": 4, "beliefs": ["Test Shabbat"] },
+	{ "name": "Christianity", "era": "Medieval era", "delay": 3, "homeland": "Rome" }
+]

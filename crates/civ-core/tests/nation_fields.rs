@@ -12,20 +12,10 @@ use civ_core::world::turn::{advance_turn, TurnEvent, TurnModifiers};
 use civ_core::world::world::World;
 use civ_core::UniqueType;
 
-fn sources() -> Vec<(String, String)> {
-    let mut paths: Vec<_> = std::fs::read_dir("rules/gods-and-kings").unwrap().flatten().map(|e| e.path()).collect();
-    paths.sort();
-    let mut out: Vec<_> = paths
-        .into_iter()
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap()))
-        .collect();
-    out.push(("Nations.json".into(), std::fs::read_to_string("tests/data/rebuild/Nations.json").unwrap()));
-    out
-}
+mod common;
 
 fn rules() -> Ruleset {
-    Ruleset::from_sources(&sources()).unwrap()
+    common::rebuild_rules(&["Nations.json"])
 }
 
 fn rome_world(r: &Ruleset, alt_leader: bool) -> World {

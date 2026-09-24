@@ -158,3 +158,69 @@ fn mod_options_can_name_the_default_difficulty() {
     let r = Ruleset::from_sources(&sources).unwrap();
     assert_eq!(r.default_difficulty().unwrap().name, "Dean");
 }
+
+/// `rules/base`'s faiths and traits on the renamed Gods & Kings rules: they
+/// arise, spread, are adopted, and the game stays deterministic.
+#[test]
+fn base_faiths_arise_and_are_adopted_in_a_full_game() {
+    let mut sources = renamed_sources();
+    sources.push((
+        "Religions.json".into(),
+        include_str!("../../civ-core/rules/base/Religions.json").into(),
+    ));
+    sources.push((
+        "Beliefs.json".into(),
+        include_str!("../../civ-core/rules/base/Beliefs.json").into(),
+    ));
+    let play = || {
+        let rules = Ruleset::from_sources(&sources).unwrap();
+        assert!(rules.faith_mode());
+        let settings = Settings {
+            seed: 11,
+            majors: 6,
+            city_states: 3,
+            ..Settings::default()
+        };
+        let (mut w, r, _) = new_game_in(&settings, &[], rules).expect("game");
+        for _ in 0..140 {
+            advance(&mut w, &r);
+        }
+        (w, r)
+    };
+    let (w, r) = play();
+    let arisen: Vec<_> = w
+        .faiths
+        .arisen
+        .keys()
+        .map(|i| r.faiths[usize::from(*i)].name.clone())
+        .collect();
+    assert!(
+        arisen.len() >= 2,
+        "Hinduism and the first faiths of the Age of Iron arose: {arisen:?}"
+    );
+    assert!(
+        w.civs.iter().any(|c| c.faith.state.is_some()),
+        "someone adopted a state faith"
+    );
+    assert!(
+        w.civs
+            .iter()
+            .all(|c| !c.faith.founded && c.faith.beliefs.is_empty()),
+        "nobody founded or picked"
+    );
+    let followed = w
+        .cities
+        .iter()
+        .filter(|(_, c)| c.faith.majority(c.population).is_some())
+        .count();
+    let adopters = w.civs.iter().filter(|c| c.faith.state.is_some()).count();
+    println!(
+        "arisen {arisen:?}; {adopters} state faiths; {followed}/{} cities follow one",
+        w.cities.iter().count()
+    );
+    assert!(
+        followed > arisen.len(),
+        "faiths spread beyond their holy cities"
+    );
+    assert_eq!(play().0, w, "the same seed plays the same game");
+}

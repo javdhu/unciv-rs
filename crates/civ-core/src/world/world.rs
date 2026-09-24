@@ -39,6 +39,9 @@ pub struct World {
     pub endgame: crate::world::victory_actions::Endgame,
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pub barbarian_camps: std::collections::BTreeMap<TileId, crate::world::barbarians::Camp>,
+    /// Faiths that arise by era (civ.game); empty unless the ruleset has them.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub faiths: crate::world::faiths::FaithWorld,
 }
 
 impl World {
@@ -58,6 +61,7 @@ impl World {
             victory_turn: None,
             endgame: Default::default(),
             barbarian_camps: Default::default(),
+            faiths: Default::default(),
         }
     }
 
