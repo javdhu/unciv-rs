@@ -20,6 +20,7 @@
 //!   --max-turns N      turn limit; the speed's length when absent
 //!   --seeds A..B       seed range, `A..B` or `A..=B` [1..=20]
 //!   --threads N        worker threads [available cores]
+//!   --slice NAME       play one Blitz slice (Cradles, Crossroads, Engines)
 //!   --overlay DIR      also layer DIR's *.json over the ruleset, to try
 //!                      changes before bundling them
 //!   --out PATH         write every game as JSON
@@ -57,6 +58,7 @@ struct Options {
     out: Option<String>,
     quiet: bool,
     overlay: Option<String>,
+    slice: Option<String>,
 }
 
 fn usage(error: &str) -> ! {
@@ -104,6 +106,7 @@ fn options() -> Options {
         out: None,
         quiet: false,
         overlay: None,
+        slice: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -124,6 +127,7 @@ fn options() -> Options {
             "--threads" => o.threads = number(&value).max(1) as usize,
             "--out" => o.out = Some(value),
             "--overlay" => o.overlay = Some(value),
+            "--slice" => o.slice = Some(value),
             _ => usage(&format!("unknown option {flag}")),
         }
     }
@@ -147,6 +151,12 @@ struct CivRecord {
     techs: usize,
     era: i32,
     defeated_turn: Option<u32>,
+    /// Population of all its cities at the end.
+    population: u32,
+    /// Policies adopted, branch openers included.
+    policies: usize,
+    /// Luminaries born.
+    luminaries: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -212,6 +222,7 @@ fn settings(o: &Options, seed: u64) -> Settings {
         max_turns: o.max_turns,
         speed: o.speed.clone(),
         ruleset: Some(o.ruleset.clone()),
+        slice: o.slice.clone(),
         ..Settings::default()
     }
 }
@@ -277,6 +288,11 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
                         rec.cities_captured += 1;
                     }
                 }
+                TurnEvent::GreatPersonBorn { civ, .. } => {
+                    if let Some(rec) = civs.get_mut(civ.0 as usize) {
+                        rec.luminaries += 1;
+                    }
+                }
                 TurnEvent::CivDefeated { civ } => {
                     if let Some(rec) = civs.get_mut(civ.0 as usize) {
                         rec.defeated_turn.get_or_insert(world.turn);
@@ -303,6 +319,8 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
         let civ = world.civ(c).expect("major civ");
         rec.techs = civ.techs.len();
         rec.era = era_number(&world, r, c);
+        rec.policies = civ.adopted_policies.len();
+        rec.population = civ.cities.iter().filter_map(|id| world.cities.get(*id)).map(|city| city.population).sum();
     }
     let victory = world.winner.map(|(_, v)| r.victories[v].name.clone());
     let majors: Vec<_> = world.civs.iter().filter(|c| c.is_major() && c.is_alive()).map(|c| c.id).collect();
@@ -454,6 +472,19 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
             println!("{:<20} {:>7.1}% {:>12.0}", era, pct(t.len()), median(t));
         }
     }
+
+    // Growth, Luminaries and policies per surviving major civ at the end, the proportions Speeds.json tunes.
+    let alive: Vec<&CivRecord> = games.iter().flat_map(|g| g.civs.iter()).filter(|c| c.defeated_turn.is_none()).collect();
+    let per = |f: &dyn Fn(&CivRecord) -> f64| median(alive.iter().map(|c| f(c)).collect());
+    println!(
+        "\nPer civ at the end (median of {}): population {:.0}, per city {:.1}, policies {:.0}, Luminaries {:.0}, techs {:.0}",
+        alive.len(),
+        per(&|c| f64::from(c.population)),
+        per(&|c| f64::from(c.population) / c.cities_final.max(1) as f64),
+        per(&|c| c.policies as f64),
+        per(&|c| f64::from(c.luminaries)),
+        per(&|c| c.techs as f64)
+    );
 
     let wonders: Vec<f64> = games.iter().map(|g| g.wonders.len() as f64).collect();
     println!("\nWorld wonders built: mean {:.1} per game, median {:.0}", mean(&wonders), median(wonders.clone()));

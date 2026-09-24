@@ -355,13 +355,14 @@ fn standard_speed_changes_nothing_from_the_defaults() {
     let standard = TurnModifiers::for_speed(&rules, rules.speeds.id("Standard"));
     let default = TurnModifiers::default();
     assert_eq!(standard.barbarian, default.barbarian);
-    assert_eq!(standard.growth, default.growth);
+    // Growth and policy costs follow Speeds.json's growthModifier and cultureCostModifier, tuned for 240 turns.
+    assert_ne!(standard.growth, default.growth);
+    assert_ne!(standard.policies, default.policies);
     // Standard is now 240 turns; CostModifiers::default() still assumes Unciv's 500 (an Engine ask).
     let costs = civ_core::world::construction::CostModifiers { game_length: default.costs.game_length, ..standard.costs };
     assert_eq!(standard.costs.game_length, 240);
     assert_eq!(costs, default.costs);
     assert_eq!(standard.science, default.science);
-    assert_eq!(standard.policies, default.policies);
 }
 
 #[test]

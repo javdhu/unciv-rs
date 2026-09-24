@@ -3,13 +3,16 @@
     // from 4000 BCE to 2026, each era's years matching docs/CONTENT.md's era table. The pace itself lives in the
     // content's costs (Techs.json, Buildings.json, Units.json, TileImprovements.json), tuned with
     // crates/civ-sim/examples/balance.rs. Quick, Epic and Marathon keep Unciv's modifiers and scale the turns.
+    // growthModifier, greatPersonModifier and cultureCostModifier bring city growth, Luminaries and policies to a
+    // full Civ V game's proportions within 240 turns (AI play: about 12 citizens a city, 24 policies and 12
+    // Luminaries a nation at the end).
     {
         "name": "Quick",
         "modifier": 0.67,
         "productionCostModifier": 0.67,
         "goldCostModifier": 0.67,
         "scienceCostModifier": 0.67,
-        "cultureCostModifier": 0.67,
+        "cultureCostModifier": 0.1675,
         "faithCostModifier": 0.67,
         "improvementBuildLengthModifier": 0.67,
         "barbarianModifier": 0.67,
@@ -28,7 +31,9 @@
             {"yearsPerTurn": 7.5, "untilTurn": 100},
             {"yearsPerTurn": 2.25, "untilTurn": 140},
             {"yearsPerTurn": 1.8, "untilTurn": 160}
-        ]
+        ],
+        "growthModifier": 0.201,
+        "greatPersonModifier": 0.0804
     },
     {
         "name": "Standard",
@@ -36,7 +41,7 @@
         "productionCostModifier": 1.0,
         "goldCostModifier": 1.0,
         "scienceCostModifier": 1.0,
-        "cultureCostModifier": 1.0,
+        "cultureCostModifier": 0.25,
         "faithCostModifier": 1.0,
         "improvementBuildLengthModifier": 1.0,
         "barbarianModifier": 1.0,
@@ -55,7 +60,9 @@
             {"yearsPerTurn": 5.0, "untilTurn": 150},
             {"yearsPerTurn": 1.5, "untilTurn": 210},
             {"yearsPerTurn": 1.2, "untilTurn": 240}
-        ]
+        ],
+        "growthModifier": 0.3,
+        "greatPersonModifier": 0.12
     },
     {
         "name": "Epic",
@@ -63,7 +70,7 @@
         "productionCostModifier": 1.5,
         "goldCostModifier": 1.5,
         "scienceCostModifier": 1.5,
-        "cultureCostModifier": 1.5,
+        "cultureCostModifier": 0.375,
         "faithCostModifier": 1.5,
         "improvementBuildLengthModifier": 1.5,
         "barbarianModifier": 1.5,
@@ -82,7 +89,9 @@
             {"yearsPerTurn": 3.3333, "untilTurn": 225},
             {"yearsPerTurn": 1.0, "untilTurn": 315},
             {"yearsPerTurn": 0.8, "untilTurn": 360}
-        ]
+        ],
+        "growthModifier": 0.45,
+        "greatPersonModifier": 0.18
     },
     {
         "name": "Marathon",
@@ -90,7 +99,7 @@
         "productionCostModifier": 3.0,
         "goldCostModifier": 3.0,
         "scienceCostModifier": 3.0,
-        "cultureCostModifier": 3.0,
+        "cultureCostModifier": 0.75,
         "faithCostModifier": 3.0,
         "improvementBuildLengthModifier": 3.0,
         "barbarianModifier": 4.0,
@@ -109,6 +118,8 @@
             {"yearsPerTurn": 1.6667, "untilTurn": 450},
             {"yearsPerTurn": 0.5, "untilTurn": 630},
             {"yearsPerTurn": 0.4, "untilTurn": 720}
-        ]
+        ],
+        "growthModifier": 0.9,
+        "greatPersonModifier": 0.36
     }
 ]
