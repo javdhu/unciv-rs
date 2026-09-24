@@ -103,7 +103,9 @@ pub fn refresh_opinions(world: &mut World) {
 pub fn wants_to_sign(world: &World, r: &Ruleset, holder: CivId, other: CivId) -> bool {
     use super::ai::{self, ThreatLevel};
     let attitude = world.diplomacy.attitude(holder, other);
-    if attitude.opinion() < Fixed::whole(65) {
+    // DiplomacyAutomation.kt:307: `65 * inverseScaledFocus(Aggressive)`.
+    let leader = super::personality::of(world, r, holder);
+    if attitude.opinion() < Fixed::whole(65) * leader.inverse(super::personality::Trait::Aggressive) {
         return false;
     }
     let majors: Vec<_> = world.civs.iter().filter(|c| c.is_major() && c.is_alive()).map(|c| c.id).collect();

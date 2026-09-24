@@ -49,6 +49,7 @@ pub mod movement;
 pub mod natural_wonders;
 pub mod nuclear;
 pub mod opinion;
+pub mod personality;
 pub mod placement;
 pub mod policies;
 pub mod promises;

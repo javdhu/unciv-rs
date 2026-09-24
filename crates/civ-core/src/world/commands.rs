@@ -918,7 +918,7 @@ fn apply(
         OfferFriendship { target } => {
             known_party(world, civ, target)?;
             if !world.civ(target).is_some_and(|c| c.is_ai)
-                || !crate::world::research_agreements::wants_friendship(world, target, civ)
+                || !crate::world::research_agreements::wants_friendship(world, r, target, civ)
             {
                 return Err(NotAllowed);
             }
