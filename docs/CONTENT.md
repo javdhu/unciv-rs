@@ -176,6 +176,19 @@ Only obvious Civ coinages change; the rest stay (City-State, Golden Age, policy 
 | Leader abilities split from nation uniques (two leaders) | medium |
 | City renames by era | small |
 
+## As built (2026-09-24)
+
+What `rules/base` holds after the rebuild, where it differs from or adds to the plan above.
+
+- **Knowledge.** 85 techs in 27 columns; each era's first column holds only its namesake tech. Combined Arms (Tank, Anti-Tank Gun) sits in Electricity; Mobile Tactics, Advanced Ballistics, Robotics and Stealth, with the Nuclear Submarine and Bomb Shelter, in the Atom; Renewable Energy (Information) takes the Solar Plant (Smartphones was not needed). Ocean crossing comes with Navigation, not Astronomy.
+- **Wonders.** 49 world wonders: the list above plus Abu Simbel and the Great Ziggurat of Ur (Bronze) and the World Charter. The Ishtar Gate sits in the Age of Iron, where it was built (c. 575 BCE). Every wonder stands on a tile chosen from its real site; harbours, aqueducts and observatories stand on theirs.
+- **Units and buildings.** A Bombard on Gunpowder; the Turing Project's parts are Compute, Data, Models and Alignment; the Spaceship Factory is the Data Center.
+- **Policies.** Liberty opens in the Age of Iron. Cards were checked against their tree's era: Code of Hammurabi (Tradition), Pious Endowments (Piety), Translation Movement (Patronage; the House of Wisdom is the wonder), Hanseatic League, Letters of Credit and Caravanserais (Commerce), Learned Societies (Rationalism), Secret Ballot (Democracy), First International and Factory Acts (Socialism; Planned Economy is 1921, too late for the tree), Field Hospitals, War Bonds, Mobilization and Conscription (Militarism). Internationalism: Marshall Plan, World Heritage, Non-Aligned Movement, World Health Organization, Peacekeeping. Openness: Open Source, Open Access, Schengen Area, Bologna Process, World Wide Web. Mandate of Heaven stays in Tradition.
+- **Victories.** Named AGI, Lingua Franca, Perpetual Peace, Reserve Currency, Conquest and The Chronicle. Reserve Currency needs 60% of world trade for 15 turns (provisional).
+- **Pacing.** Standard runs 240 turns, 4000 BCE to 2026, each era's years matching the Spine table, and stays the engine's 1.0 reference; the pace lives in the content's costs. AI play on 12 seeds enters Iron at turn 30, Paper 60, Sail 91, Steam 121, Electricity 156, the Atom 190 and Information 220 (in 58% of games). Blitz is the 60-turn Cradles slice (BLITZ.md).
+- **Nations.** 51 nations (ROSTER.md): 16 in wave 1 and 35 in wave 2, marked by `"wave"`. Scythia is led by Ateas, with Tomyris second; Kilwa and Chimú have one leader. City renames follow each nation's own history, not conquest. Twelve nations have a unique building but no unit until one is reliably attested. The raiders are a nation flagged `isBarbarian`.
+- **What we know.** `whatWeKnow` holds the attested / reconstructed / disputed / invented line on every nation (its default leader), every second leader (`altLeader`) and every world wonder.
+
 ## Open
 
 - The new ruleset **replaces** `crates/civ-core/rules/gods-and-kings` (decided 2026-09-23). Build order still to agree.
