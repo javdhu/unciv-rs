@@ -79,7 +79,7 @@
 	{
 		"name": "Brute",
 		"unitType": "Sword",
-		"uniqueTo": "Barbarians",
+		"uniqueTo": "Raiders",
 		"replaces": "Warrior",
 		"movement": 2,
 		"strength": 8,
@@ -146,7 +146,7 @@
 	{
 		"name": "Skirmisher",
 		"unitType": "Archery",
-		"uniqueTo": "Barbarians",
+		"uniqueTo": "Raiders",
 		"replaces": "Archer",
 		"movement": 2,
 		"strength": 4,
@@ -210,7 +210,7 @@
 	{
 		"name": "Galley",
 		"unitType": "Melee Water",
-		"uniqueTo": "Barbarians",
+		"uniqueTo": "Raiders",
 		"movement": 3,
 		"strength": 7,
 		"cost": 40,
@@ -356,7 +356,7 @@
 		"name": "Marauder",
 		"unitType": "Sword",
 		"replaces": "Spearman",
-		"uniqueTo": "Barbarians",
+		"uniqueTo": "Raiders",
 		"movement": 2,
 		"strength": 10,
 		"cost": 56,

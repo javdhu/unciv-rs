@@ -105,6 +105,6 @@ fn rule_tables_list_leaders_regions_and_the_raiders() {
         .iter()
         .find(|n| n.barbarian == Some(true))
         .unwrap();
-    assert_eq!(barbarians.name, "Barbarians");
+    assert_eq!(barbarians.name, "Raiders");
     assert!(barbarians.leaders.is_none());
 }
