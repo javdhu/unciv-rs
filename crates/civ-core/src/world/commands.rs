@@ -54,6 +54,9 @@ pub enum Command {
     WithdrawSpy { spy: usize },
     AttemptCoup { target: CivId },
     SetProduction { city: Id<City>, queue: Vec<Construction> },
+    /// Choose the tile a wonder or placed building will stand on
+    /// (`world::placement`).
+    ChooseSite { city: Id<City>, building: Id<crate::ruleset::Building>, tile: TileId },
     SetProductionConversion { city: Id<City>, stat: Option<Stat> },
     SetAvoidGrowth { city: Id<City>, avoid: bool },
     SetResearch { technology: Id<Technology> },
@@ -63,6 +66,9 @@ pub enum Command {
     GreatPerson { unit: Id<Unit>, action: crate::world::great_person_actions::Action },
     Religious { unit: Id<Unit>, action: crate::world::religious_units::ReligiousAction },
     ChoosePantheon { belief: Id<Belief> },
+    /// Take an arisen faith as the civ's own (`world::faiths`); `religion` is
+    /// its key.
+    AdoptStateFaith { religion: CivId },
     ChooseReligionBeliefs { unit: Id<Unit>, beliefs: Vec<Id<Belief>>, enhancing: bool },
     ClaimFreeTechnology { technology: Id<Technology> },
     ClaimFreeGreatPerson { unit: Id<BaseUnit> },
@@ -223,6 +229,7 @@ fn validate_actor(world: &World, civ: CivId, command: &Command) -> Result<(), Co
         }
         Bombard { city, .. }
         | SetProduction { city, .. }
+        | ChooseSite { city, .. }
         | SetProductionConversion { city, .. }
         | SetAvoidGrowth { city, .. }
         | Purchase { city, .. }
@@ -637,6 +644,12 @@ fn apply(
             }
             c.avoid_growth = avoid;
         }
+        ChooseSite { city, building, tile } => {
+            if r.buildings.get(building).is_none() || !world.grid.contains(tile) {
+                return Err(InvalidTarget);
+            }
+            crate::world::placement::choose(world, r, city, building, tile).map_err(|_| NotAllowed)?;
+        }
         SetProduction { city, queue } => {
             if queue.len() > 32 {
                 return Err(InvalidTarget);
@@ -771,6 +784,14 @@ fn apply(
         ClaimFreeGreatPerson { unit } => {
             crate::world::effects::claim_free_great_person(world, r, civ, unit).ok_or(NotAllowed)?;
             events.push(TurnEvent::GreatPersonBorn { civ, kind: r.units[unit].name.clone() });
+        }
+        AdoptStateFaith { religion } => {
+            crate::world::faiths::adopt(world, r, civ, religion).map_err(|e| match e {
+                crate::world::faiths::StateFaithRejection::NotFaithMode
+                | crate::world::faiths::StateFaithRejection::NoSuchFaith => InvalidTarget,
+                _ => Unavailable,
+            })?;
+            events.push(TurnEvent::StateFaithAdopted { civ, religion });
         }
         ChoosePantheon { belief } => {
             let cost = crate::world::religion::pantheon_cost(world, mods.costs.faith_cost);

@@ -83,7 +83,7 @@ impl std::fmt::Display for Rejection {
             Rejection::NotCoastal => write!(f, "a ship needs a coastal city"),
             Rejection::Unknown => write!(f, "not in this ruleset"),
             Rejection::NotAvailable => write!(f, "not available in this city"),
-            Rejection::LimitReached => write!(f, "civilization construction limit reached"),
+            Rejection::LimitReached => write!(f, "this nation has reached its limit for this"),
             Rejection::TerrainRequirement => write!(f, "requires different surrounding terrain"),
         }
     }
@@ -433,7 +433,8 @@ fn can_construct_mode(
                 };
                 let on = matches(city.centre);
                 let adjacent = world.grid.neighbours(city.centre).any(matches)
-                    || (filter == "Fresh water" && world.grid.is_fresh_water(r, city.centre));
+                    || (matches!(filter.as_str(), "Fresh water" | "Fresh Water")
+                        && world.grid.is_fresh_water(r, city.centre));
                 let holds = match unique.unique_type().unwrap() {
                     UniqueType::MustBeOn => on,
                     UniqueType::MustNotBeOn => !on,
@@ -445,6 +446,15 @@ fn can_construct_mode(
                 }
             }
             _ => {}
+        }
+    }
+    // A building that stands on a tile needs a tile to stand on.
+    if let (Construction::Building(base), Some(city_id)) = (what, id) {
+        if crate::world::placement::is_placed(r, base)
+            && !city.built.contains(&base)
+            && crate::world::placement::valid_sites(world, r, city_id, base).is_empty()
+        {
+            return Err(Rejection::TerrainRequirement);
         }
     }
     if let Construction::Building(base) = what {
@@ -481,6 +491,9 @@ fn can_construct_mode(
                 if is_obsolete(r, owner, what, &ctx) {
                     return Err(Rejection::Obsolete);
                 }
+            }
+            if crate::world::slices::is_gone(world, r, id) {
+                return Err(Rejection::Obsolete);
             }
             if world.cities.iter().any(|(_, other)| {
                 other.built.contains(&id)
@@ -798,7 +811,7 @@ pub fn apply_production_in(
     m: CostModifiers,
 ) -> Option<Vec<ConstructionEvent>> {
     let science = crate::world::research::ScienceModifiers {
-        speed: r.speeds.iter().find(|(_, s)| s.modifier == m.speed).map_or(m.speed, |(_, s)| s.science_cost_modifier),
+        speed: world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier),
         ..Default::default()
     };
     apply_production_with_science(world, r, city, production, m, science)
@@ -849,7 +862,8 @@ pub fn apply_production_with_science(
     }
     events.push(ConstructionEvent::Completed { what: head, carried_over: c.production_overflow });
     if let Some(unit) = born {
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
     }
     crate::world::effects::on_construction_completed_with_science(world, r, city, head, m.speed, science);
     events.extend(revalidate_production(world, r, city));

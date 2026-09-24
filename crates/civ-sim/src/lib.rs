@@ -17,7 +17,7 @@ mod setup;
 mod view;
 
 pub use rules::{tables, RuleTables};
-pub use setup::{new_game, new_game_for, new_game_in, Settings};
+pub use setup::{new_game, new_game_for, new_game_in, SeatChoice, Settings};
 pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnReport};
 
 use civ_core::ruleset::Ruleset;
@@ -31,7 +31,7 @@ pub fn rule_tables() -> Result<JsValue, JsError> {
     js(&tables(&content::load().map_err(|e| JsError::new(&e))?))
 }
 
-/// The rule tables of a bundled ruleset: `gods-and-kings` or `blitz`.
+/// The rule tables of a bundled ruleset: `base` or `blitz`.
 #[wasm_bindgen(js_name = ruleTablesFor)]
 pub fn rule_tables_for(ruleset: &str) -> Result<JsValue, JsError> {
     js(&tables(&content::load_ruleset(ruleset).map_err(|e| JsError::new(&e))?))

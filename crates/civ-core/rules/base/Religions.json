@@ -1,0 +1,31 @@
+// Faiths arise in their era (docs/CONTENT.md, Religion; world::faiths).
+// era: the era they arise in, once the first major civ reaches it.
+// delay: turns into that era (Standard speed, 30 turns per era), from the
+//   dates in the comments; scaled by game speed.
+// homeland: roster nations it arises in when present, in order; else the
+//   city with the most faith.
+// beliefs: its fixed traits in Beliefs.json (one Follower, one State).
+[
+	// Vedic religion, c. 1500 BCE: 2500 of the era's 2800 years.
+	{ "name": "Hinduism", "era": "Age of Bronze", "delay": 27, "homeland": ["Maurya", "Chola"], "beliefs": ["Tirtha", "Temple Endowments"] },
+	// The Gathas, c. 1000 BCE (the dating is contested).
+	{ "name": "Zoroastrianism", "era": "Age of Iron", "delay": 4, "homeland": ["Persia"], "beliefs": ["Fire Temples", "Nowruz"] },
+	// The kingdom of Israel and the First Temple, c. 1000 BCE.
+	{ "name": "Judaism", "era": "Age of Iron", "delay": 4, "beliefs": ["Shabbat", "Synagogues"] },
+	// Mahavira, traditionally 599-527 BCE.
+	{ "name": "Jainism", "era": "Age of Iron", "delay": 11, "homeland": ["Maurya"], "beliefs": ["Ahimsa", "Jnana Bhandar"] },
+	// The Buddha, 5th century BCE.
+	{ "name": "Buddhism", "era": "Age of Iron", "delay": 12, "homeland": ["Maurya"], "beliefs": ["Viharas", "Dhamma Missions"] },
+	// Confucius, 551-479 BCE.
+	{ "name": "Confucianism", "era": "Age of Iron", "delay": 12, "homeland": ["Tang China"], "beliefs": ["Academies", "Civil Examinations"] },
+	// The Daodejing, c. 4th century BCE.
+	{ "name": "Taoism", "era": "Age of Iron", "delay": 14, "homeland": ["Tang China"], "beliefs": ["Ziran", "Sacred Mountains"] },
+	// Jesus's ministry in Roman Judea, c. 30 CE.
+	{ "name": "Christianity", "era": "Age of Iron", "delay": 22, "homeland": ["Rome"], "beliefs": ["Hospitals", "Sacred Music"] },
+	// Muhammad's first revelation, 610 CE.
+	{ "name": "Islam", "era": "Age of Paper", "delay": 3, "beliefs": ["Waqf", "Zakat"] },
+	// The Kojiki, 712 CE, first sets down the kami traditions.
+	{ "name": "Shinto", "era": "Age of Paper", "delay": 7, "homeland": ["Japan"], "beliefs": ["Chinju no Mori", "Matsuri"] },
+	// Guru Nanak's teaching, c. 1500.
+	{ "name": "Sikhism", "era": "Age of Sail", "delay": 5, "beliefs": ["Langar", "Seva"] }
+]

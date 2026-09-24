@@ -1,0 +1,248 @@
+//! Choosing a leader at setup (docs/REBUILD.md, Engine step 1).
+
+use civ_core::ruleset::Ruleset;
+use civ_sim::{content, new_game_in, player_view, tables, Settings};
+
+fn rules() -> Ruleset {
+    let mut sources: Vec<_> = content::SOURCES
+        .iter()
+        .map(|(f, t)| (f.to_string(), t.to_string()))
+        .collect();
+    sources.push((
+        "Nations.json".into(),
+        include_str!("../../civ-core/tests/data/rebuild/Nations.json").into(),
+    ));
+    Ruleset::from_sources(&sources).unwrap()
+}
+
+fn rome(leader: Option<&str>) -> Settings {
+    Settings {
+        nation: Some("Rome".into()),
+        leader: leader.map(String::from),
+        ..Settings::default()
+    }
+}
+
+#[test]
+fn the_player_leads_with_the_leader_they_chose() {
+    let (w, r, me) = new_game_in(&rome(Some("Galla Placidia")), &[0], rules()).unwrap();
+    let civ = w.civ(me).unwrap();
+    assert!(civ.alt_leader);
+    assert!(
+        civ.techs.contains(&r.technologies.id("Pottery").unwrap()),
+        "her ability applies from the start"
+    );
+    let view = player_view(&w, &r, me);
+    let mine = view.civs.iter().find(|c| c.id == me.0).unwrap();
+    assert_eq!(mine.leader.as_deref(), Some("Galla Placidia"));
+
+    let (w, r, me) = new_game_in(&rome(Some("Marcus Aurelius")), &[0], rules()).unwrap();
+    assert!(!w.civ(me).unwrap().alt_leader);
+    assert!(!w
+        .civ(me)
+        .unwrap()
+        .techs
+        .contains(&r.technologies.id("Pottery").unwrap()));
+    let (w, _, me) = new_game_in(&rome(None), &[0], rules()).unwrap();
+    assert!(
+        !w.civ(me).unwrap().alt_leader,
+        "a chosen nation without a chosen leader gets its default"
+    );
+}
+
+#[test]
+fn a_leader_from_another_nation_is_refused() {
+    assert!(new_game_in(&rome(Some("Hatshepsut")), &[0], rules()).is_err());
+    let persia = Settings {
+        nation: Some("Persia".into()),
+        leader: Some("Galla Placidia".into()),
+        ..Settings::default()
+    };
+    assert!(new_game_in(&persia, &[0], rules()).is_err());
+}
+
+#[test]
+fn computer_leaders_are_dealt_by_seed() {
+    let deal = |seed| {
+        let settings = Settings {
+            seed,
+            majors: 8,
+            ..Settings::default()
+        };
+        let (w, r, _) = new_game_in(&settings, &[], rules()).unwrap();
+        let rome = r.nations.id("Rome").unwrap();
+        w.civs
+            .iter()
+            .find(|c| c.nation == rome)
+            .map(|c| c.alt_leader)
+    };
+    let dealt: Vec<_> = (1..40).filter_map(deal).collect();
+    assert!(
+        dealt.contains(&true) && dealt.contains(&false),
+        "both leaders come up: {dealt:?}"
+    );
+    assert_eq!(
+        (1..40).filter_map(deal).collect::<Vec<_>>(),
+        dealt,
+        "the same seed deals the same leader"
+    );
+}
+
+#[test]
+fn rule_tables_list_leaders_regions_and_the_raiders() {
+    let t = tables(&rules());
+    let rome = t.nations.iter().find(|n| n.name == "Rome").unwrap();
+    let leaders = rome.leaders.as_ref().unwrap();
+    assert_eq!(
+        leaders.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(),
+        ["Marcus Aurelius", "Galla Placidia"]
+    );
+    assert_eq!(leaders[1].ability.as_deref(), Some("Regency"));
+    assert_eq!(leaders[1].effects, ["Starts with [Pottery]"]);
+    assert_eq!(rome.region.as_deref(), Some("Europe"));
+    let barbarians = t
+        .nations
+        .iter()
+        .find(|n| n.barbarian == Some(true))
+        .unwrap();
+    assert_eq!(barbarians.name, "Raiders");
+    assert!(barbarians.leaders.is_none());
+}
+
+#[test]
+fn every_human_seat_chooses_its_own_nation_and_leader() {
+    let seats = |a: &str, b: &str| {
+        Some(vec![
+            civ_sim::SeatChoice {
+                seat: 0,
+                nation: Some(a.into()),
+                leader: Some("Galla Placidia".into()),
+            },
+            civ_sim::SeatChoice {
+                seat: 1,
+                nation: Some(b.into()),
+                leader: None,
+            },
+        ])
+    };
+    let settings = Settings {
+        majors: 3,
+        seats: seats("Rome", "Persia"),
+        ..Settings::default()
+    };
+    let (w, r, _) = new_game_in(&settings, &[0, 1], rules()).unwrap();
+    assert_eq!(r.nations[w.civs[0].nation].name, "Rome");
+    assert!(w.civs[0].alt_leader);
+    assert_eq!(r.nations[w.civs[1].nation].name, "Persia");
+    assert!(
+        !w.civs[1].alt_leader,
+        "a chosen nation without a chosen leader gets its default"
+    );
+    assert!(w.civs[2].nation != w.civs[0].nation && w.civs[2].nation != w.civs[1].nation);
+
+    let clash = Settings {
+        majors: 3,
+        seats: seats("Rome", "Rome"),
+        ..Settings::default()
+    };
+    assert!(
+        new_game_in(&clash, &[0, 1], rules()).is_err(),
+        "two seats cannot take one nation"
+    );
+}
+
+#[test]
+fn a_launch_build_deals_only_the_first_waves_nations() {
+    let with_waves = |max: Option<i32>| {
+        let mut sources: Vec<_> = content::SOURCES
+            .iter()
+            .map(|(f, t)| (f.to_string(), t.to_string()))
+            .collect();
+        let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json").replace(
+            r#""region": "Europe","#,
+            r#""region": "Europe", "wave": 2,"#,
+        );
+        sources.push(("Nations.json".into(), nations));
+        if let Some(max) = max {
+            sources.push((
+                "ModOptions.json".into(),
+                format!(r#"{{ "maxWave": {max} }}"#),
+            ));
+        }
+        Ruleset::from_sources(&sources).unwrap()
+    };
+    let r = with_waves(Some(1));
+    assert_eq!(r.max_wave, Some(1));
+    assert_eq!(r.nations.by_name("Rome").unwrap().wave, Some(2));
+    assert_eq!(tables(&r).max_wave, Some(1));
+    let rome = r.nations.id("Rome").unwrap();
+    for seed in 1..30 {
+        let settings = Settings {
+            seed,
+            majors: 8,
+            ..Settings::default()
+        };
+        let (w, _, _) = new_game_in(&settings, &[], with_waves(Some(1))).unwrap();
+        assert!(
+            w.civs.iter().all(|c| c.nation != rome),
+            "a wave 2 nation is never dealt"
+        );
+    }
+    assert!(
+        new_game_in(&rome_settings(), &[0], with_waves(Some(1))).is_err(),
+        "nor chosen"
+    );
+    assert!(
+        new_game_in(&rome_settings(), &[0], with_waves(None)).is_ok(),
+        "every wave plays by default"
+    );
+}
+
+fn rome_settings() -> Settings {
+    Settings {
+        nation: Some("Rome".into()),
+        ..Settings::default()
+    }
+}
+
+#[test]
+fn rule_tables_carry_what_we_know_for_leaders_and_wonders() {
+    let mut sources: Vec<_> = content::SOURCES
+        .iter()
+        .map(|(f, t)| (f.to_string(), t.to_string()))
+        .collect();
+    let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json")
+        .replace(
+            r#""voice": "Italian","#,
+            r#""voice": "Italian", "whatWeKnow": "Attested: his Meditations.","#,
+        )
+        .replace(
+            r#""uniqueName": "Regency","#,
+            r#""uniqueName": "Regency", "whatWeKnow": "Attested: her coins and letters.","#,
+        );
+    sources.push(("Nations.json".into(), nations));
+    sources.push((
+        "Buildings.json".into(),
+        r#"[{ "name": "Colosseum of Test", "isWonder": true, "whatWeKnow": "Reconstructed from ruins." }]"#.into(),
+    ));
+    let t = tables(&Ruleset::from_sources(&sources).unwrap());
+    let rome = t.nations.iter().find(|n| n.name == "Rome").unwrap();
+    let leaders = rome.leaders.as_ref().unwrap();
+    assert_eq!(
+        leaders[0].what_we_know.as_deref(),
+        Some("Attested: his Meditations.")
+    );
+    assert_eq!(
+        leaders[1].what_we_know.as_deref(),
+        Some("Attested: her coins and letters.")
+    );
+    let wonder = t
+        .buildings
+        .iter()
+        .find(|b| b.name == "Colosseum of Test")
+        .unwrap();
+    assert_eq!(
+        wonder.what_we_know.as_deref(),
+        Some("Reconstructed from ruins.")
+    );
+}

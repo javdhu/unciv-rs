@@ -60,7 +60,9 @@ fn spawn(world: &mut World, r: &Ruleset, civ: CivId, city: Option<Id<City>>, bas
     let origin = world.cities.get(city)?.centre;
     let base = equivalent_unit(world, r, civ, base);
     let unit = crate::world::construction::prepare_unit_near(world, r, civ, base, origin, Some(city))?;
-    Some(world.place_unit(unit))
+    let id = world.place_unit(unit);
+    crate::world::luminaries::name_unit(world, r, id);
+    Some(id)
 }
 
 fn grant_building(world: &mut World, r: &Ruleset, civ: CivId, city: Id<City>, base: Id<Building>) -> bool {
@@ -139,10 +141,7 @@ pub fn apply_uniques(
                     world,
                     civ,
                     turns,
-                    r.speeds
-                        .iter()
-                        .find(|(_, s)| s.modifier == speed)
-                        .map_or(speed, |(_, s)| s.golden_age_length_modifier),
+                    world.speed_rules(r, speed).map_or(speed, |s| s.golden_age_length_modifier),
                 )
                 .is_some()
                 {
@@ -327,7 +326,7 @@ pub fn on_policy_adopted(world: &mut World, r: &Ruleset, civ: CivId, policy: Id<
 
 pub fn on_construction_completed(world: &mut World, r: &Ruleset, city: Id<City>, what: Construction, speed: Fixed) {
     let science = crate::world::research::ScienceModifiers {
-        speed: r.speeds.iter().find(|(_, s)| s.modifier == speed).map_or(speed, |(_, s)| s.science_cost_modifier),
+        speed: world.speed_rules(r, speed).map_or(speed, |s| s.science_cost_modifier),
         ..Default::default()
     };
     on_construction_completed_with_science(world, r, city, what, speed, science);
@@ -341,6 +340,9 @@ pub fn on_construction_completed_with_science(
     science: crate::world::research::ScienceModifiers,
 ) {
     let Some(civ) = world.cities.get(city).map(|c| c.owner) else { return };
+    if matches!(what, Construction::Building(_)) {
+        crate::world::placement::settle_city(world, r, city);
+    }
     if let Construction::Building(id) = what {
         crate::world::policies::rebuild_uniques(world, r, civ);
         if let Some(b) = r.buildings.get(id) {

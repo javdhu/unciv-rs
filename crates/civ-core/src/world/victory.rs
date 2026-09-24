@@ -42,6 +42,15 @@ pub enum Milestone {
     SpaceshipParts,
     DiplomaticVote,
     HighestScore,
+    /// Lingua Franca (civ.game): influential over every rival nation
+    /// (`world::influence`).
+    InfluentialOverAll,
+    /// Reserve Currency (civ.game): at least `percent` of world trade for
+    /// each of the last `turns` turns (`world::influence`).
+    WorldTradeShare {
+        percent: u32,
+        turns: u32,
+    },
     /// Milestones outside the bundled rules remain explicitly unsupported.
     Unsupported(String),
 }
@@ -62,12 +71,20 @@ pub fn parse_milestone(text: &str) -> Milestone {
             return Milestone::CompletePolicyBranches(n);
         }
     }
+    if let Some((percent, turns)) = param("Carry [", "] turns").and_then(|p| p.split_once("]% of world trade for [")) {
+        if let (Ok(percent), Ok(turns)) = (percent.parse::<u32>(), turns.parse::<u32>()) {
+            if percent <= 100 && (1..=crate::world::influence::TRADE_HISTORY as u32).contains(&turns) {
+                return Milestone::WorldTradeShare { percent, turns };
+            }
+        }
+    }
     match t {
         "Capture all capitals" => Milestone::CaptureAllCapitals,
         "Destroy all players" => Milestone::DestroyAllPlayers,
         "Add all [spaceship parts] in capital" => Milestone::SpaceshipParts,
         "Win diplomatic vote" => Milestone::DiplomaticVote,
         "Have highest score after max turns" => Milestone::HighestScore,
+        "Become influential over all rival nations" => Milestone::InfluentialOverAll,
         _ => Milestone::Unsupported(t.to_string()),
     }
 }
@@ -124,7 +141,7 @@ pub fn score_leader(world: &World, r: &Ruleset) -> Option<CivId> {
     // defeated civilization still leads through its technologies.
     let mut best = None;
     let mut highest = i64::MIN;
-    for civ in &world.civs {
+    for civ in world.civs.iter().filter(|c| !r.chronicle_among_living_majors || (c.is_major() && c.is_alive())) {
         let value = score_fraction(world, r, civ.id).0;
         if value > highest {
             highest = value;
@@ -193,6 +210,10 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
         Milestone::DiplomaticVote => yes(world.civ(civ).is_some_and(|c| c.victory.diplomatic_win)),
         Milestone::HighestScore => yes(world.turn >= world.endgame.max_turns && score_leader(world, r) == Some(civ)),
         Milestone::CaptureAllCapitals => yes(owns_all_original_capitals(world, civ)),
+        Milestone::InfluentialOverAll => yes(crate::world::influence::influential_over_all(world, r, civ)),
+        Milestone::WorldTradeShare { percent, turns } => {
+            yes(crate::world::influence::held_trade_share(world, civ, *percent, *turns))
+        }
         Milestone::Unsupported(_) => Verdict::Unknown,
     }
 }

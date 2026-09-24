@@ -675,10 +675,13 @@ pub enum UniqueType {
     ModMapPreselection,
     ConditionalModEnabled,
     ConditionalModNotEnabled,
+    // civ.game additions, after Unciv's so its discriminants are unchanged.
+    StandsOnTile,
+    StandsNextToTile,
 }
 
 impl UniqueType {
-    pub const ALL: [UniqueType; 638] = [
+    pub const ALL: [UniqueType; 640] = [
         UniqueType::Stats,
         UniqueType::StatsPerCity,
         UniqueType::StatsFromSpecialist,
@@ -1317,6 +1320,8 @@ impl UniqueType {
         UniqueType::ModMapPreselection,
         UniqueType::ConditionalModEnabled,
         UniqueType::ConditionalModNotEnabled,
+        UniqueType::StandsOnTile,
+        UniqueType::StandsNextToTile,
     ];
 
     /// The authored template, e.g. `"[stats] from [tileFilter] tiles [cityFilter]"`.
@@ -1496,6 +1501,8 @@ impl UniqueType {
             UniqueType::MustNotBeOn => "Must not be on [tileFilter]",
             UniqueType::MustBeNextTo => "Must be next to [tileFilter]",
             UniqueType::MustNotBeNextTo => "Must not be next to [tileFilter]",
+            UniqueType::StandsOnTile => "Stands on a [tileFilter] tile",
+            UniqueType::StandsNextToTile => "Stands next to a [tileFilter] tile",
             UniqueType::Unsellable => "Unsellable",
             UniqueType::ObsoleteWith => "Obsolete with [tech]",
             UniqueType::IndicatesCapital => "Indicates the capital city",
@@ -2140,6 +2147,8 @@ impl UniqueType {
             UniqueType::MustNotBeOn => "Must not be on []",
             UniqueType::MustBeNextTo => "Must be next to []",
             UniqueType::MustNotBeNextTo => "Must not be next to []",
+            UniqueType::StandsOnTile => "Stands on a [] tile",
+            UniqueType::StandsNextToTile => "Stands next to a [] tile",
             UniqueType::Unsellable => "Unsellable",
             UniqueType::ObsoleteWith => "Obsolete with []",
             UniqueType::IndicatesCapital => "Indicates the capital city",
@@ -2816,6 +2825,9 @@ impl UniqueType {
             UniqueType::MustNotBeOn => &[UniqueTarget::Building],
             UniqueType::MustBeNextTo => &[UniqueTarget::Building, UniqueTarget::Improvement],
             UniqueType::MustNotBeNextTo => &[UniqueTarget::Building],
+            // civ.game: a building placed on a tile of its city (world::placement).
+            UniqueType::StandsOnTile => &[UniqueTarget::Building],
+            UniqueType::StandsNextToTile => &[UniqueTarget::Building],
             UniqueType::Unsellable => &[UniqueTarget::Building],
             UniqueType::ObsoleteWith => &[UniqueTarget::Building, UniqueTarget::Improvement, UniqueTarget::Resource],
             UniqueType::IndicatesCapital => &[UniqueTarget::Building],

@@ -1,0 +1,6 @@
+// Overlay on the gods-and-kings fixture: civ.game's influence and trade
+// victories (docs/REBUILD.md data contract).
+[
+	{ "name": "Lingua Franca", "milestones": ["Become influential over all rival nations"] },
+	{ "name": "Reserve Currency", "milestones": ["Carry [50]% of world trade for [3] turns"] }
+]

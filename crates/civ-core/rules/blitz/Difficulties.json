@@ -1,6 +1,6 @@
 [
     {
-        "name": "Prince",
+        "name": "Tutor",
         "baseHappiness": 9,
         "extraHappinessPerLuxury": 0,
         "researchCostModifier": 1,
@@ -15,7 +15,7 @@
         "playerBonusStartingUnits": [
             "Scout"
         ],
-        "aiDifficultyLevel": "Prince",
+        "aiDifficultyLevel": "Tutor",
         "aiCityGrowthModifier": 1,
         "aiUnitCostModifier": 1,
         "aiBuildingCostModifier": 1,

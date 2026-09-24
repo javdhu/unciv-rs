@@ -33,6 +33,23 @@ pub struct Ruleset {
     pub beliefs: Registry<Belief>,
     /// Available religion names/symbols also bound how many religions may be founded.
     pub religions: Vec<String>,
+    /// Faiths that arise by era (civ.game), from `Religions.json` objects.
+    /// Empty for the fixtures, whose entries are bare names; see
+    /// [`Ruleset::faith_mode`].
+    pub faiths: Vec<super::civgame::FaithDef>,
+    /// Names for great people and other named units, from `UnitNameGroups.json`.
+    pub name_groups: Vec<super::civgame::NameGroup>,
+    /// `ModOptions.json` `chronicleAmongLivingMajors`: The Chronicle (the
+    /// highest score) is chosen among living major nations only. Unciv, and
+    /// so the fixtures, counts every civ, defeated ones included.
+    pub chronicle_among_living_majors: bool,
+    /// Tuning for the influence and trade victories (`ModOptions.json`).
+    pub victory_knobs: super::civgame::VictoryKnobs,
+    /// The last roster wave setup deals (`ModOptions.json` `maxWave`); None
+    /// deals every nation.
+    pub max_wave: Option<i32>,
+    /// Blitz slices a game may be set up as, from `ModOptions.json` `slices`.
+    pub slices: Vec<super::civgame::SliceDef>,
     pub difficulties: Registry<Difficulty>,
     pub eras: Registry<Era>,
     pub speeds: Registry<Speed>,
@@ -49,6 +66,9 @@ pub struct Ruleset {
     /// production penalties are conditional uniques here, not code — so a
     /// ruleset that does not load this file has an empire that cannot suffer.
     pub global_uniques: Vec<crate::Unique>,
+    /// `defaultDifficulty` from `ModOptions.json` (civ.game). Absent, the
+    /// middle difficulty is the default: see [`Ruleset::default_difficulty`].
+    pub default_difficulty_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,22 +136,40 @@ impl Ruleset {
             let doc = Json::parse(text).map_err(|error| LoadError::Json { file: file.clone(), error })?;
             let stem = file.rsplit('/').next().unwrap_or(file);
             match stem {
-                "Buildings.json" => flat(&mut r.buildings, &doc, Building::from_json),
+                "Buildings.json" => flat(&mut r.buildings, &doc, |j| {
+                    Building::from_json(j).map(|mut b| {
+                        super::civgame::read_building(j, &mut b);
+                        b
+                    })
+                }),
                 "Units.json" => flat(&mut r.units, &doc, BaseUnit::from_json),
                 "UnitTypes.json" => flat(&mut r.unit_types, &doc, UnitType::from_json),
                 "Terrains.json" => flat(&mut r.terrains, &doc, Terrain::from_json),
                 "TileResources.json" => flat(&mut r.resources, &doc, TileResource::from_json),
                 "TileImprovements.json" => flat(&mut r.improvements, &doc, TileImprovement::from_json),
                 "UnitPromotions.json" => flat(&mut r.promotions, &doc, Promotion::from_json),
-                "Nations.json" => flat(&mut r.nations, &doc, Nation::from_json),
+                "Nations.json" => flat(&mut r.nations, &doc, |j| {
+                    Nation::from_json(j).map(|mut n| {
+                        super::civgame::read_nation(j, &mut n);
+                        n
+                    })
+                }),
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
                 "Religions.json" => {
-                    r.religions = doc
-                        .as_array()
-                        .unwrap_or_default()
+                    let entries = doc.as_array().unwrap_or_default();
+                    r.faiths = entries.iter().filter_map(super::civgame::read_faith).collect();
+                    r.religions = entries
                         .iter()
-                        .filter_map(|name| name.as_str().map(str::to_owned))
+                        .filter_map(|e| {
+                            e.as_str().map(str::to_owned).or_else(|| Some(super::civgame::read_faith(e)?.name))
+                        })
                         .collect();
+                }
+                "UnitNameGroups.json" => {
+                    for group in doc.as_array().unwrap_or_default().iter().filter_map(super::civgame::read_name_group) {
+                        r.name_groups.retain(|g| g.name != group.name);
+                        r.name_groups.push(group);
+                    }
                 }
                 "Ruins.json" => flat(&mut r.ruin_rewards, &doc, RuinReward::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),
@@ -153,6 +191,10 @@ impl Ruleset {
                             .last()
                             .and_then(|t| t.get("untilTurn"))
                             .and_then(|t| t.as_i32());
+                        if let Some(s) = r.speeds.id(name).and_then(|id| r.speeds.get_mut(id)) {
+                            s.growth_modifier = item.get("growthModifier").and_then(|v| v.as_fixed());
+                            s.great_person_modifier = item.get("greatPersonModifier").and_then(|v| v.as_fixed());
+                        }
                         if let (Some(id), Some(last)) = (r.speeds.id(name), last) {
                             if let Some(s) = r.speeds.get_mut(id) {
                                 s.total_turns = last;
@@ -171,6 +213,19 @@ impl Ruleset {
                 "ModOptions.json" => {
                     for (key, names) in &mut removals {
                         names.extend(doc.get(key).map(|v| v.strings()).unwrap_or_default());
+                    }
+                    if let Some(name) = doc.get("defaultDifficulty").and_then(|v| v.as_str()) {
+                        r.default_difficulty_name = Some(name.to_string());
+                    }
+                    super::civgame::read_victory_knobs(&doc, &mut r.victory_knobs);
+                    if let Some(flag) = doc.get("chronicleAmongLivingMajors").and_then(|v| v.as_bool()) {
+                        r.chronicle_among_living_majors = flag;
+                    }
+                    if let Some(wave) = doc.get("maxWave").and_then(|v| v.as_i32()) {
+                        r.max_wave = Some(wave);
+                    }
+                    if let Some(slices) = doc.get("slices").and_then(|v| v.as_array()) {
+                        r.slices = slices.iter().filter_map(super::civgame::read_slice).collect();
                     }
                 }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
@@ -405,5 +460,44 @@ impl Ruleset {
     }
     pub fn unit(&self, name: &str) -> Option<Id<BaseUnit>> {
         self.units.id(name)
+    }
+
+    /// Faiths arise by era (`Religions.json` objects) instead of being
+    /// founded: no pantheons, no prophets founding, no belief picking.
+    pub fn faith_mode(&self) -> bool {
+        !self.faiths.is_empty()
+    }
+
+    /// The era a new game starts in: the first in Eras.json, whatever it is
+    /// called (`Ancient era` in the fixtures, `Age of Bronze` in `base`).
+    pub fn first_era(&self) -> Option<&Era> {
+        self.eras.iter().map(|(_, e)| e).min_by_key(|e| e.era_number)
+    }
+
+    /// The nation that plays the barbarians (`isBarbarian`), whatever it is
+    /// called.
+    pub fn barbarian_nation(&self) -> Option<Id<Nation>> {
+        self.nations.iter().find(|(_, n)| n.is_barbarian).map(|(id, _)| id)
+    }
+
+    /// Whether `unique_to` names the barbarian nation.
+    pub fn is_barbarian_name(&self, unique_to: &str) -> bool {
+        self.nations.by_name(unique_to).is_some_and(|n| n.is_barbarian)
+    }
+
+    /// The difficulty a game uses when none is chosen, and the one AI civs
+    /// are paid by: `ModOptions.json`'s `defaultDifficulty`, or else the
+    /// middle entry of Difficulties.json (Prince among the fixtures' eight).
+    pub fn default_difficulty(&self) -> Option<&Difficulty> {
+        let named = self.default_difficulty_name.as_deref().and_then(|name| self.difficulties.by_name(name));
+        named.or_else(|| {
+            let n = self.difficulties.len();
+            self.difficulties.iter().nth(n.saturating_sub(1) / 2).map(|(_, d)| d)
+        })
+    }
+
+    pub fn default_difficulty_id(&self) -> Option<Id<Difficulty>> {
+        let name = &self.default_difficulty()?.name;
+        self.difficulties.id(name)
     }
 }

@@ -20,6 +20,14 @@ pub struct Civilization {
     pub id: CivId,
     pub nation: Id<Nation>,
     pub is_ai: bool,
+    /// Led by the nation's second leader (`altLeader`), whose ability
+    /// replaces the nation's own uniques. Chosen at setup.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub alt_leader: bool,
+    /// The last era this civ may research into: a Blitz slice's
+    /// (`world::slices`). None is no limit.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tech_era_cap: Option<i32>,
     /// Barbarians are a civilization in the data model and not one in the
     /// game: permanently hostile, never at peace, never diplomatic.
     pub is_barbarian: bool,
@@ -113,6 +121,8 @@ impl Civilization {
             id,
             nation,
             is_ai,
+            alt_leader: false,
+            tech_era_cap: None,
             is_barbarian: false,
             city_state_type: None,
             city_state: Default::default(),
@@ -180,6 +190,12 @@ impl Civilization {
     pub fn has_tech(&self, t: Id<Technology>) -> bool {
         self.techs.contains(&t)
     }
+
+    /// The ability of whoever leads this civ: the nation's uniques, or its
+    /// second leader's.
+    pub fn leader_uniques<'r>(&self, r: &'r crate::ruleset::Ruleset) -> &'r [crate::Unique] {
+        r.nations.get(self.nation).map_or(&[], |n| n.leader_uniques(self.alt_leader))
+    }
 }
 
 /// A unit on the map.
@@ -220,6 +236,9 @@ pub struct Unit {
     /// never carry it; their plans already do this. Absent from older saves.
     #[cfg_attr(feature = "serde", serde(default))]
     pub automation: Option<crate::world::automation::Automation>,
+    /// A Luminary's own name (`world::luminaries`). Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub name: Option<String>,
 }
 
 impl Unit {
@@ -246,6 +265,7 @@ impl Unit {
             religious_strength: 0,
             religious_uses_left: 0,
             automation: None,
+            name: None,
         }
     }
 

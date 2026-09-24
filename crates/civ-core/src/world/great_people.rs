@@ -219,7 +219,8 @@ pub fn process_turn(world: &mut World, r: &Ruleset, civ: CivId, speed: Fixed) ->
                 },
             );
         let Some(unit) = prepared else { break };
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
         let people = &mut world.civ_mut(civ).unwrap().great_people;
         if combat {
             let needed = people.combat_thresholds.get(&kind).copied().unwrap_or(200);
@@ -241,6 +242,17 @@ pub fn process_turn(world: &mut World, r: &Ruleset, civ: CivId, speed: Fixed) ->
 /// toward zero, matching Speed.turnToYear(...).toInt().
 pub fn calendar_year(r: &Ruleset, speed: Fixed, turn: u32) -> i32 {
     let Some(s) = r.speeds.iter().find(|(_, s)| s.modifier == speed).map(|(_, s)| s) else { return -4000 };
+    speed_year(s, turn)
+}
+
+/// The year on `turn` of this game, by its own speed (speeds are told apart
+/// by id: Blitz and Standard may share a modifier).
+pub fn calendar_year_in(world: &World, r: &Ruleset, turn: u32) -> i32 {
+    let modifier = crate::world::turn::TurnModifiers::for_world(world, r).costs.speed;
+    world.speed_rules(r, modifier).map_or(-4000, |s| speed_year(s, turn))
+}
+
+fn speed_year(s: &crate::ruleset::Speed, turn: u32) -> i32 {
     let mut year = Fixed::whole(s.start_year);
     let mut start = 0;
     for (length, end) in &s.year_intervals {
@@ -261,7 +273,10 @@ fn maya_cycle(year: i32) -> i32 {
 }
 pub fn begin_round(world: &mut World, r: &Ruleset, speed: Fixed) {
     if world.turn == 0
-        || maya_cycle(calendar_year(r, speed, world.turn)) == maya_cycle(calendar_year(r, speed, world.turn - 1))
+        || {
+            let year = |turn| world.speed_rules(r, speed).map_or(-4000, |s| speed_year(s, turn));
+            maya_cycle(year(world.turn)) == maya_cycle(year(world.turn - 1))
+        }
     {
         return;
     }

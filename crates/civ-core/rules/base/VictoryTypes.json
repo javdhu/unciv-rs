@@ -1,0 +1,45 @@
+[
+    {
+        "name": "AGI",
+        "victoryScreenHeader": "Complete the Turing Project and assemble its four parts in your capital to win!",
+        "milestones": ["Build [The Turing Project]", "Add all [spaceship parts] in capital"],
+        "requiredSpaceshipParts": ["Compute", "Data", "Models", "Alignment"],
+        "victoryString": "Your scholars have built a mind to match their own. From Turing's question in 1950 to this day, the work of generations has come together in your capital, and the age that follows will be shaped by what your people made.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Lingua Franca",
+        "victoryScreenHeader": "Become influential over every rival nation to win!",
+        "milestones": ["Become influential over all rival nations"],
+        "victoryString": "Your language is spoken in every market and court, as Aramaic, Greek, Latin, Arabic, Persian and French once were. Rival nations read your books, sing your songs and trade in your words.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Perpetual Peace",
+        "victoryScreenHeader": "Found the World Charter and win its ratification vote to win!",
+        "milestones": ["Build [World Charter]", "Win diplomatic vote"],
+        "victoryString": "The nations of the world have ratified your charter. What Westphalia, Vienna and the founders of the United Nations attempted, your diplomacy has carried through: a lasting peace among nations.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Reserve Currency",
+        "victoryScreenHeader": "Carry three fifths of world trade in your coin for 15 turns to win!",
+        "milestones": ["Carry [60]% of world trade for [15] turns"],
+        "victoryString": "Your coin is the one the world trusts. Like the Athenian owl, the Spanish dollar and sterling before it, it carries the trade of every nation, and every treasury keeps it in reserve.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Conquest",
+        "victoryScreenHeader": "Hold every original capital to win!",
+        "milestones": ["Capture all capitals"],
+        "victoryString": "Every capital of the world flies your banner. Your armies have done what few empires ever managed, and the chroniclers will remember the name of your nation.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "The Chronicle",
+        "hiddenInVictoryScreen": true,
+        "milestones": ["Have highest score after max turns"],
+        "victoryString": "The age has ended and the chronicle is written. Of all the nations of the world, yours has done the most, and the record will say so.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    }
+]

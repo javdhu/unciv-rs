@@ -70,7 +70,7 @@ fn civ_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType) -> bool {
     world.civ(unit.owner).is_some_and(|c| {
         c.uniques
             .matching(kind)
-            .chain(r.nations[c.nation].uniques.iter().filter(|u| u.unique_type() == Some(kind)))
+            .chain(c.leader_uniques(r).iter().filter(|u| u.unique_type() == Some(kind)))
             .chain(c.techs.iter().flat_map(|t| &r.technologies[*t].uniques).filter(|u| u.unique_type() == Some(kind)))
             .any(|u| crate::world::conditionals::applies(u, &ctx).holds())
     })
@@ -532,7 +532,9 @@ fn can_traverse_with_borders(
         }
     }
     let water = world.grid.is_water(r, to);
-    if unit.is_water_unit(r) && !water && !world.cities.iter().any(|(_, c)| c.centre == to) {
+    // Ships enter land only at a city or through a canal (world::placement).
+    if unit.is_water_unit(r) && !water && !world.grid.is_canal(to) && !world.cities.iter().any(|(_, c)| c.centre == to)
+    {
         return false;
     }
     let floating = unit.has_unique(r, UniqueType::CanMoveOnWater);

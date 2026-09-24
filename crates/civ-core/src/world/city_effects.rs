@@ -165,14 +165,24 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
 pub fn founder_yields(world: &World, r: &Ruleset, civ: crate::world::grid::CivId) -> Stats {
     let Some(c) = world.civ(civ) else { return Stats::ZERO };
     let mut total = Stats::ZERO;
-    for u in crate::world::religion::founder_uniques(r, &c.faith) {
+    // "Following this religion" counts the civ's own: founded, or its state faith.
+    let own = crate::world::religion::civ_religion(world, civ);
+    let state = c.faith.state.into_iter().flat_map(|s| crate::world::faiths::traits(r, s, "State"));
+    let sources: Vec<_> = crate::world::religion::founder_uniques(r, &c.faith)
+        .into_iter()
+        .chain(state.flat_map(|b| &b.uniques))
+        .collect();
+    for u in sources {
         if applies(u, &GameContext::new(r).with_world(world).for_civ(civ)) != Verdict::True {
             continue;
         }
         let n = match u.unique_type() {
             Some(UniqueType::StatsFromGlobalCitiesFollowingReligion) => Fixed::whole(
-                world.cities.iter().filter(|(_, city)| city.faith.majority(city.population) == Some(civ)).count()
-                    as i32,
+                world
+                    .cities
+                    .iter()
+                    .filter(|(_, city)| own.is_some() && city.faith.majority(city.population) == own)
+                    .count() as i32,
             ),
             Some(UniqueType::StatsFromGlobalFollowers) => {
                 let per = u.params.get(1).and_then(|p| p.parse::<i32>().ok()).unwrap_or(0);
@@ -190,7 +200,7 @@ pub fn founder_yields(world: &World, r: &Ruleset, civ: crate::world::grid::CivId
                         }
                         _ => true,
                     })
-                    .map(|(_, city)| city.faith.followers_of(civ))
+                    .map(|(_, city)| own.map_or(0, |own| city.faith.followers_of(own)))
                     .sum();
                 Fixed::from_fraction(i64::from(followers), i64::from(per))
             }

@@ -140,6 +140,12 @@ pub enum TurnEvent {
         city: Id<City>,
         by: CivId,
     },
+    /// The owner's era calls the city something else now (`cityRenames`).
+    CityRenamed {
+        city: Id<City>,
+        from: String,
+        to: String,
+    },
     CivsMet {
         a: CivId,
         b: CivId,
@@ -219,6 +225,15 @@ pub enum TurnEvent {
     },
     ReligionFounded {
         civ: CivId,
+    },
+    /// A faith arose in its era (`world::faiths`); `religion` is its key.
+    FaithArose {
+        religion: CivId,
+        city: Id<City>,
+    },
+    StateFaithAdopted {
+        civ: CivId,
+        religion: CivId,
     },
     CityCaptured {
         city: Id<City>,
@@ -467,7 +482,7 @@ impl TurnModifiers<'_> {
         let Some(s) = speed.and_then(|id| r.speeds.get(id)) else { return m };
         // BarbarianEncampment.kt:64 scales the spawn countdown by barbarianModifier.
         m.barbarian.speed = s.barbarian_modifier;
-        m.growth.speed = s.modifier;
+        m.growth.speed = s.growth_modifier.unwrap_or(s.modifier);
         m.costs.speed = s.production_cost_modifier;
         m.costs.game_length = s.total_turns;
         m.costs.religious_pressure = s.religious_pressure_adjacent_city;
@@ -1136,7 +1151,8 @@ fn apply_plan_inner(
                 }
             }
             UnitOrder::FoundCity => {
-                let name = format!("City {}", world.cities.len() + 1);
+                let name = crate::world::city_names::next_city_name(world, r, plan.civ, &[])
+                    .unwrap_or_else(|| format!("City {}", world.cities.len() + 1));
                 if let Ok(city) = crate::world::settling::found_city_with(world, r, *unit, name) {
                     crate::world::promises::on_city_founded(world, city);
                     events.push(TurnEvent::CityFounded { city, by: plan.civ });
@@ -1348,7 +1364,13 @@ fn apply_plan_inner(
     }
     events.extend(religious_events(plan.civ, crate::world::religious_units::end_turn(world, r, plan.civ)));
 
-    for kind in crate::world::great_people::process_turn(world, r, plan.civ, m.speed) {
+    // Luminaries may be priced apart from growth (`greatPersonModifier`).
+    let luminary_speed = world
+        .speed
+        .and_then(|id| r.speeds.get(id))
+        .and_then(|s| s.great_person_modifier)
+        .unwrap_or(m.speed);
+    for kind in crate::world::great_people::process_turn(world, r, plan.civ, luminary_speed) {
         events.push(TurnEvent::GreatPersonBorn { civ: plan.civ, kind });
     }
 
@@ -1660,7 +1682,16 @@ fn ai_commands(
             UnitOrder::Attack(target) => Command::Attack { unit: *unit, target: AttackTarget::Unit(*target) },
             UnitOrder::Assault(city) => Command::Attack { unit: *unit, target: AttackTarget::City(*city) },
             UnitOrder::FoundCity => {
-                Command::FoundCity { unit: *unit, name: format!("City {}", world.cities.len() + commands.len() + 1) }
+                let pending: Vec<String> = commands
+                    .iter()
+                    .filter_map(|c| match c {
+                        Command::FoundCity { name, .. } => Some(name.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                let name = crate::world::city_names::next_city_name(world, r, plan.civ, &pending)
+                    .unwrap_or_else(|| format!("City {}", world.cities.len() + commands.len() + 1));
+                Command::FoundCity { unit: *unit, name }
             }
             UnitOrder::Improve(improvement) => Command::Improve { unit: *unit, improvement: *improvement },
             UnitOrder::GreatPerson(action) => Command::GreatPerson { unit: *unit, action: *action },
@@ -1728,6 +1759,15 @@ fn finish_automatic(
             ..mods.barbarian
         };
         events.extend(crate::world::barbarians::tick(world, r, barbarians, settings));
+    }
+
+    // Wonders and terrain-bound buildings stand where they should.
+    crate::world::placement::settle(world, r);
+
+    // Cities take the names their owners' eras give them.
+    for renamed in crate::world::city_names::apply_era_renames(world, r) {
+        let crate::world::city_names::Renamed { city, from, to } = renamed;
+        events.push(TurnEvent::CityRenamed { city, from, to });
     }
 
     // Spies. New eras grant them, idle ones are posted, and the posted ones
@@ -1837,12 +1877,27 @@ fn finish_automatic(
         });
     }
 
+    // Faiths arise in their era before this turn's spread, so a new holy
+    // city pushes from the turn it appears.
+    for news in crate::world::faiths::tick(world, r, costs.speed) {
+        events.push(match news {
+            crate::world::faiths::FaithNews::Arose { religion, city } => TurnEvent::FaithArose { religion, city },
+            crate::world::faiths::FaithNews::StateFaithAdopted { civ, religion } => {
+                TurnEvent::StateFaithAdopted { civ, religion }
+            }
+        });
+    }
+
     // Religions spread once the whole map has moved, not inside any one civ's
     // turn — a missionary does not care whose turn it is, and doing it per civ
     // would let the civ that goes first push before the others had grown.
     for c in crate::world::religion::spread_with_speed(world, r, costs.religious_pressure, costs.speed) {
         events.push(TurnEvent::CityConverted { city: c.city, from: c.from, to: c.to });
     }
+
+    // Influence and trade shares are counted once the round's culture and
+    // trade are in, before anyone's victory is judged.
+    crate::world::influence::tick(world, r);
 
     events.extend(crate::world::victory_actions::finish_voting(world, r, all_ai).into_iter().map(TurnEvent::Endgame));
 

@@ -165,6 +165,18 @@ impl Store {
             .optional()?
             .ok_or(HostError::NotFound)
     }
+    /// A lobby change to a room's settings (a seat's nation or leader).
+    /// Caller holds the lobby mutex; a started room is never changed.
+    pub fn update_settings(&self, room: &str, settings: &civ_sim::Settings) -> Result<(), HostError> {
+        if self.lock()?.execute(
+            "UPDATE rooms SET settings=?1 WHERE id=?2 AND match_id IS NULL",
+            params![serde_json::to_string(settings)?, room],
+        )? != 1
+        {
+            return Err(HostError::Conflict);
+        }
+        Ok(())
+    }
     /// Caller holds the lobby mutex, including its read of room capacity/start state.
     pub fn join(&self, room: &str, seat: u8, guest: &str) -> Result<(), HostError> {
         self.lock()?.execute(

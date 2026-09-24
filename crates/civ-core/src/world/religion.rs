@@ -47,6 +47,13 @@ pub struct Faith {
     pub founded: bool,
     /// An enhancer and a second follower belief have been selected.
     pub enhanced: bool,
+    /// The faith this civ has adopted as its own, when faiths arise by era
+    /// (`world::faiths`): its religion key.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub state: Option<CivId>,
+    /// The turn the state faith was adopted.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub state_since: u32,
 }
 
 impl Faith {
@@ -75,7 +82,7 @@ pub fn prophet_cost(earned: i32, speed: Fixed) -> i32 {
 pub fn prophet_cost_in(world: &World, r: &Ruleset, civ: CivId, speed: Fixed) -> i32 {
     let Some(c) = world.civ(civ) else { return PROPHET_BASE };
     let n = c.faith.prophets_earned.max(0);
-    let faith_speed = r.speeds.iter().find(|(_, s)| s.modifier == speed).map_or(speed, |(_, s)| s.faith_cost_modifier);
+    let faith_speed = world.speed_rules(r, speed).map_or(speed, |s| s.faith_cost_modifier);
     let mut cost = Fixed::whole(PROPHET_BASE + PROPHET_STEP * n * (n + 1) / 2) * faith_speed;
     let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ);
     for u in c
@@ -96,6 +103,27 @@ pub fn available_beliefs(world: &World, r: &Ruleset, kind: &str) -> Vec<Id<Belie
     r.beliefs.iter().filter(|(id, b)| b.r#type == kind && !taken.contains(id)).map(|(id, _)| id).collect()
 }
 
+/// Whether a religion key names a religion that exists: one a civ founded, or
+/// a faith that has arisen by era (`world::faiths`).
+pub fn religion_exists(world: &World, creed: CivId) -> bool {
+    if crate::world::faiths::index_of(creed).is_some() {
+        crate::world::faiths::has_arisen(world, creed)
+    } else {
+        world.civ(creed).is_some_and(|c| c.faith.founded)
+    }
+}
+
+/// The religion a civ calls its own: the one it founded, or else its state
+/// faith. What "your religion" means to quests, missionaries and beliefs.
+pub fn civ_religion(world: &World, civ: CivId) -> Option<CivId> {
+    let c = world.civ(civ)?;
+    if c.faith.founded {
+        Some(civ)
+    } else {
+        c.faith.state
+    }
+}
+
 /// Bundled rules: one religion plus half the original major-civilization count,
 /// bounded by available symbols. Defeated civilizations still count.
 pub fn max_religions(world: &World, r: &Ruleset) -> usize {
@@ -104,6 +132,9 @@ pub fn max_religions(world: &World, r: &Ruleset) -> usize {
 
 /// Founding also needs an unclaimed founder and follower belief.
 pub fn remaining_foundable_religions(world: &World, r: &Ruleset) -> usize {
+    if r.faith_mode() {
+        return 0;
+    }
     max_religions(world, r)
         .saturating_sub(world.civs.iter().filter(|c| c.faith.founded).count())
         .min(available_beliefs(world, r, "Founder").len())
@@ -113,7 +144,8 @@ pub fn remaining_foundable_religions(world: &World, r: &Ruleset) -> usize {
 /// Eligibility for an initial pantheon, excluding faith affordability.
 /// Once any religion is enhanced, the religion limit also closes late pantheons.
 pub fn can_found_pantheon(world: &World, r: &Ruleset, civ: CivId) -> bool {
-    world.civ(civ).is_some_and(|c| c.is_major() && !c.faith.has_pantheon())
+    !r.faith_mode()
+        && world.civ(civ).is_some_and(|c| c.is_major() && !c.faith.has_pantheon())
         && !available_beliefs(world, r, "Pantheon").is_empty()
         && !(world.civs.iter().any(|c| c.faith.enhanced)
             && world.civs.iter().filter(|c| c.faith.has_pantheon()).count() >= max_religions(world, r))
@@ -136,6 +168,10 @@ pub fn apply_faith(world: &mut World, r: &Ruleset, civ_id: CivId, gained: i32, s
         c.add_faith(gained.max(0));
     }
     let stored = world.civ(civ_id).map_or(0, |c| c.faith.stored);
+    // Faiths that arise by era take no founding: faith is only spent.
+    if r.faith_mode() {
+        return FaithEvent::Stored { faith: stored };
+    }
     let has_pantheon = world.civ(civ_id).is_some_and(|c| c.faith.has_pantheon());
 
     // A pantheon comes first and is cheap.
@@ -195,6 +231,14 @@ pub type Creed = Option<CivId>;
 /// Pressure a city applies to its neighbours, before the speed multiplier.
 /// A holy city pushes five times as hard as an ordinary one.
 pub const HOLY_CITY_MULTIPLIER: i32 = 5;
+
+/// Pressure a trade route carries each way between a city and its capital,
+/// in percent of one city's push, when faiths arise by era.
+pub const TRADE_ROUTE_PRESSURE_PERCENT: i32 = 50;
+
+/// Pressure a state faith adds in each of its adopter's cities, as a multiple
+/// of one city's push: a fifth of what a holy city applies.
+pub const STATE_FAITH_PRESSURE: i32 = 1;
 
 /// How far a religion reaches, in tiles, before uniques adjust it.
 pub const BASE_SPREAD_RANGE: u32 = 10;
@@ -519,13 +563,18 @@ pub fn spread_with_speed(world: &mut World, r: &Ruleset, pressure_per_city: i32,
 
     for &id in &ids {
         let Some(city) = world.cities.get(id) else { continue };
+        // A state promotes its faith at home (Ashoka, Constantine), more gently
+        // than a holy city pushes: one city's worth of pressure in each of its own.
+        if let Some(state) = world.civ(city.owner).and_then(|c| c.faith.state) {
+            pushes.push((id, Some(state), STATE_FAITH_PRESSURE * pressure_per_city));
+        }
         if !city.faith.holy_city_blocked {
             if let Some(holy) = city.faith.holy_city_of {
                 pushes.push((id, Some(holy), HOLY_CITY_MULTIPLIER * pressure_per_city));
             }
         }
         let Some(majority) = city.faith.majority(city.population) else { continue };
-        if !world.civ(majority).is_some_and(|c| c.faith.founded) {
+        if !religion_exists(world, majority) {
             continue;
         }
         let range = spread_range(world, r, city);
@@ -540,6 +589,29 @@ pub fn spread_with_speed(world: &mut World, r: &Ruleset, pressure_per_city: i32,
             let amount = pressure_toward(world, r, city, target, pressure_per_city);
             if amount > 0 {
                 pushes.push((other, Some(majority), amount));
+            }
+        }
+    }
+
+    // Faiths travel with trade (docs/CONTENT.md, Religion): each city's
+    // route to its capital carries the majority faith of either end to the
+    // other, at half a city's push. Faiths by era only.
+    if r.faith_mode() {
+        let amount = pressure_per_city * TRADE_ROUTE_PRESSURE_PERCENT / 100;
+        let civs: Vec<CivId> = world.civs.iter().filter(|c| !c.is_barbarian && !c.defeated).map(|c| c.id).collect();
+        for civ in civs {
+            let connections = crate::world::connections::find(world, r, civ);
+            let Some(capital) = connections.capital() else { continue };
+            let majority = |id: Id<crate::world::city::City>| {
+                world.cities.get(id).and_then(|c| c.faith.majority(c.population)).filter(|m| religion_exists(world, *m))
+            };
+            for city in connections.trade_routes().filter(|c| *c != capital) {
+                if let Some(faith) = majority(city) {
+                    pushes.push((capital, Some(faith), amount));
+                }
+                if let Some(faith) = majority(capital) {
+                    pushes.push((city, Some(faith), amount));
+                }
             }
         }
     }
@@ -634,6 +706,9 @@ pub fn city_belief_uniques<'a>(
     city: &crate::world::city::City,
 ) -> Vec<&'a crate::Unique> {
     let major = city.faith.majority(city.population);
+    if let Some(faith) = major.filter(|m| crate::world::faiths::index_of(*m).is_some()) {
+        return crate::world::faiths::traits(r, faith, "Follower").flat_map(|b| b.uniques.iter()).collect();
+    }
     let Some(creed) = major.or_else(|| city.faith.majority_pantheon(city.population)) else { return Vec::new() };
     let Some(civ) = world.civ(creed) else { return Vec::new() };
     let beliefs = if major.is_some() || civ.faith.pantheon_beliefs.is_empty() && !civ.faith.founded {

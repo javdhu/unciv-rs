@@ -720,7 +720,7 @@ fn an_unseen_recipient_elimination_does_not_remove_or_reject_offers() {
 fn human_production_switches_preserve_work_across_rounds_save_and_replay() {
     let s = Session::new(
         Settings {
-            nation: Some("America".into()),
+            nation: Some("United States".into()),
             majors: 2,
             city_states: 1,
             ..Settings::default()
@@ -927,7 +927,7 @@ fn defensive_pact_requires_saved_bilateral_consent_and_hides_other_technology() 
         .civ_mut(CivId(0))
         .unwrap()
         .techs
-        .insert(s.rules.technologies.id("Chivalry").unwrap());
+        .insert(s.rules.technologies.id("Stirrups").unwrap());
     for civ in [CivId(0), CivId(1)] {
         civ_core::world::policies::rebuild_uniques(&mut s.world, &s.rules, civ);
     }
@@ -988,7 +988,7 @@ fn defensive_pact_requires_saved_bilateral_consent_and_hides_other_technology() 
         .civ_mut(CivId(1))
         .unwrap()
         .techs
-        .insert(s.rules.technologies.id("Chivalry").unwrap());
+        .insert(s.rules.technologies.id("Stirrups").unwrap());
     civ_core::world::policies::rebuild_uniques(&mut s.world, &s.rules, CivId(1));
     let accepted = s
         .stage_command(
@@ -1340,6 +1340,8 @@ fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
 fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
     let mut s = Session::new(
         Settings {
+            // A seed whose deal brings another nation into view within thirty rounds.
+            seed: 4,
             majors: 4,
             city_states: 2,
             ..Settings::default()
@@ -1691,5 +1693,81 @@ fn a_human_cannot_forge_an_ai_offer_id() {
     let t = s
         .stage_command(0, request(&s, 0, "ai:7", Action::OfferFriendship { target: 1 }))
         .unwrap();
+    assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
+}
+
+#[test]
+fn a_human_adopts_a_state_faith_by_action() {
+    let s = session();
+    assert!(s.rules.faith_mode(), "the shipped rules raise faiths by era");
+    let settler = own_unit(&s, 0, true);
+    let s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let mut s = s;
+    let city = s.world.civs[0].cities[0];
+    let hinduism = civ_core::world::faiths::key(0);
+    let turn = s.world.turn;
+    s.world
+        .faiths
+        .arisen
+        .insert(0, civ_core::world::faiths::Arisen { turn, city });
+    let c = s.world.cities.get_mut(city).unwrap();
+    c.faith.add_pressure(Some(hinduism), 5000);
+    c.faith.recount(c.population);
+
+    let options = crate::queries::civ_options(&s.world, &s.rules, CivId(0)).state_faith.unwrap();
+    assert_eq!(options.current, None);
+    assert_eq!(options.adoptable, [hinduism.0]);
+
+    let other = request(&s, 0, "wrong", Action::AdoptStateFaith { religion: 129 });
+    let t = s.stage_command(0, other).unwrap();
+    assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }), "Judaism has not arisen");
+
+    let s = apply(s, 0, "adopt", Action::AdoptStateFaith { religion: hinduism.0 });
+    assert_eq!(s.world.civs[0].faith.state, Some(hinduism));
+    let options = crate::queries::civ_options(&s.world, &s.rules, CivId(0)).state_faith.unwrap();
+    assert_eq!(options.current, Some(hinduism.0));
+    assert_eq!(options.locked_turns, civ_core::world::faiths::STATE_FAITH_LOCK);
+    let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    assert_eq!(view.civs.iter().find(|c| c.id == 0).unwrap().state_faith, Some(hinduism.0));
+}
+
+#[test]
+fn choose_site_reaches_the_engine_and_is_refused_for_a_building_that_stands_nowhere() {
+    let s = session();
+    let settler = own_unit(&s, 0, true);
+    let s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let city = s.world.civs[0].cities[0];
+    let monument = s.rules.buildings.id("Monument").unwrap();
+    let tile = s.world.cities.get(city).unwrap().tiles[0];
+    let req = request(
+        &s,
+        0,
+        "site",
+        Action::ChooseSite {
+            city: EntityRef {
+                id: city.index(),
+                gen: city.generation(),
+            },
+            building: monument.index(),
+            tile: tile.0,
+        },
+    );
+    let t = s.stage_command(0, req).unwrap();
     assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
 }

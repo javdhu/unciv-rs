@@ -139,7 +139,7 @@ impl Session {
             || unique.iter().any(|&s| s >= settings.majors)
         {
             return Err(SessionError::InvalidSettings(
-                "human seats must be distinct major civilizations".into(),
+                "human seats must be distinct major nations".into(),
             ));
         }
         let (mut world, rules, _) =
@@ -1101,6 +1101,18 @@ impl Session {
             },
             Action::ChoosePantheon { belief } => Command::ChoosePantheon {
                 belief: registry(&r.beliefs, *belief)?,
+            },
+            Action::AdoptStateFaith { religion } => Command::AdoptStateFaith {
+                religion: CivId(*religion),
+            },
+            Action::ChooseSite {
+                city: c,
+                building,
+                tile: t,
+            } => Command::ChooseSite {
+                city: city(*c)?,
+                building: registry(&r.buildings, *building)?,
+                tile: tile(*t)?,
             },
             Action::Annex { city: c } => Command::Annex { city: city(*c)? },
             Action::Raze { city: c } => Command::Raze { city: city(*c)? },

@@ -1,0 +1,6 @@
+// Overlay on the gods-and-kings fixture: fixed traits for the test faiths.
+[
+	{ "name": "Test Follower", "type": "Follower", "uniques": ["[+3 Culture] from every [Monument]"] },
+	{ "name": "Test State", "type": "State", "uniques": ["[+2 Gold] for each global city following this religion"] },
+	{ "name": "Test Shabbat", "type": "Follower", "uniques": ["[+1 Happiness] [in cities following this religion]"] }
+]

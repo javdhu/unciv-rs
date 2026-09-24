@@ -284,6 +284,18 @@ pub enum Action {
     ChoosePantheon {
         belief: u32,
     },
+    /// Take an arisen faith as the nation's state faith; `religion` is its key
+    /// from `RuleTables.faiths`.
+    AdoptStateFaith {
+        religion: u8,
+    },
+    /// Choose the tile a wonder or terrain-bound building will stand on once
+    /// built (one of `ConstructionChoice.sites.tiles`).
+    ChooseSite {
+        city: EntityRef,
+        building: u32,
+        tile: u16,
+    },
     Annex {
         city: EntityRef,
     },

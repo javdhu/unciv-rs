@@ -1,0 +1,51 @@
+// Faith traits (docs/CONTENT.md, Religion): each is a real teaching or
+// institution. "Follower" traits apply in cities that follow the faith;
+// "State" traits apply to civs that adopt it as their state faith.
+// Nobody picks beliefs in this ruleset, so there are no pantheons,
+// founder or enhancer beliefs.
+[
+	// Hinduism. Pilgrimage to sacred rivers and fords (tirtha), such as the Ganges at Varanasi.
+	{ "name": "Tirtha", "type": "Follower", "uniques": ["[+1 Happiness] in cities on [River] tiles"] },
+	// Hinduism. Land and gifts endowed to temples, recorded in inscriptions such as those of the Brihadeeswarar temple at Thanjavur.
+	{ "name": "Temple Endowments", "type": "State", "uniques": ["[+1 Culture] from every [Temple]"] },
+	// Zoroastrianism. Sacred fires kept burning in temples.
+	{ "name": "Fire Temples", "type": "Follower", "uniques": ["[+1 Faith] from every [Temple]"] },
+	// Zoroastrianism. The spring new year, a Zoroastrian festival still kept across Iran and Central Asia.
+	{ "name": "Nowruz", "type": "State", "uniques": ["[+1 Culture] for each global city following this religion"] },
+	// Judaism. The weekly day of rest.
+	{ "name": "Shabbat", "type": "Follower", "uniques": ["[+1 Happiness] [in cities following this religion]"] },
+	// Judaism. Houses of prayer, study and assembly.
+	{ "name": "Synagogues", "type": "State", "uniques": ["[+2 Faith] for each global city following this religion"] },
+	// Jainism. Non-violence toward every living being.
+	{ "name": "Ahimsa", "type": "Follower", "uniques": ["[+15]% growth [in this city] <when not at war>"] },
+	// Jainism. Manuscript libraries kept by Jain communities, such as the collections at Jaisalmer.
+	{ "name": "Jnana Bhandar", "type": "State", "uniques": ["[+1 Culture] from every [Library]"] },
+	// Buddhism. Monasteries of the sangha, some of which became centres of learning such as Nalanda.
+	{ "name": "Viharas", "type": "Follower", "uniques": ["[+1 Science] from every [Temple]"] },
+	// Buddhism. Teachers sent abroad, such as Ashoka's mission to Sri Lanka, c. 250 BCE.
+	{ "name": "Dhamma Missions", "type": "State", "uniques": ["[+1 Culture] from every [5] global followers [in foreign cities]"] },
+	// Confucianism. Schools of the classics, such as the Imperial Academy (Taixue) of 124 BCE.
+	{ "name": "Academies", "type": "Follower", "uniques": ["[+1 Science] from every [Library]"] },
+	// Confucianism. Officials chosen by examination in the classics, from the Sui dynasty (605).
+	{ "name": "Civil Examinations", "type": "State", "uniques": ["[+1 Science] for each global city following this religion"] },
+	// Taoism. Naturalness: living in accord with the way of nature (Daodejing, chapter 25).
+	{ "name": "Ziran", "type": "Follower", "uniques": ["[+1 Culture] from every [Forest]"] },
+	// Taoism. Pilgrimage mountains such as Mount Tai and Mount Wudang.
+	{ "name": "Sacred Mountains", "type": "State", "uniques": ["[+4 Faith] from every [Natural Wonder]"] },
+	// Christianity. Houses of care for the sick and poor, such as Basil of Caesarea's at Caesarea (369).
+	{ "name": "Hospitals", "type": "Follower", "uniques": ["[+10]% growth [in this city]"] },
+	// Christianity. Liturgical chant and the choirs that sang it.
+	{ "name": "Sacred Music", "type": "State", "uniques": ["[+2 Culture] from every [Temple] <in cities with at least [5] [Followers of this Religion]>"] },
+	// Islam. Charitable endowments that kept mosques, schools, fountains and hospitals.
+	{ "name": "Waqf", "type": "Follower", "uniques": ["[+2 Happiness] from every [Temple] <in cities with at least [5] [Followers of this Religion]>"] },
+	// Islam. Obligatory almsgiving, one of the Five Pillars.
+	{ "name": "Zakat", "type": "State", "uniques": ["[+1 Happiness] for each global city following this religion"] },
+	// Shinto. The sacred groves kept around shrines.
+	{ "name": "Chinju no Mori", "type": "Follower", "uniques": ["[+1 Faith] from every [Forest]"] },
+	// Shinto. Shrine festivals.
+	{ "name": "Matsuri", "type": "State", "uniques": ["[+1 Culture] from every [Shrine]"] },
+	// Sikhism. The gurdwara's free communal kitchen, open to all.
+	{ "name": "Langar", "type": "Follower", "uniques": ["[+1 Food] from every [Shrine]", "[+1 Food] from every [Temple]"] },
+	// Sikhism. Selfless service, such as the volunteer labour (kar seva) that builds and keeps gurdwaras.
+	{ "name": "Seva", "type": "State", "uniques": ["[+1 Production] from every [Temple]"] }
+]

@@ -5,6 +5,7 @@
 //! actually ships rather than hand-written from the Kotlin — the schema is the
 //! data's, so inferring it is more faithful than transcribing it.
 
+pub mod civgame;
 pub mod generated;
 pub mod load;
 pub mod queries;

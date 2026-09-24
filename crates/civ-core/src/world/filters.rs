@@ -111,7 +111,9 @@ fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
         "Land" => movement.map_or(Verdict::Unknown, |m| yes(m == "Land")),
         "Water" => movement.map_or(Verdict::Unknown, |m| yes(m == "Water")),
         "Air" => movement.map_or(Verdict::Unknown, |m| yes(m == "Air")),
-        "Great Person" => yes(base.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::GreatPerson))),
+        "Great Person" | "Luminary" => {
+            yes(base.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::GreatPerson)))
+        }
         "non-air" => movement.map_or(Verdict::Unknown, |m| yes(m != "Air")),
         _ => {
             if base
@@ -269,7 +271,7 @@ pub fn city_matches(
         "cities in which the majority religion is a major religion" => yes(subject
             .faith
             .majority(subject.population)
-            .is_some_and(|creed| world.civ(creed).is_some_and(|c| c.faith.founded))),
+            .is_some_and(|creed| crate::world::religion::religion_exists(world, creed))),
         // What a conquest made of it (`City.matchesFilter`).
         "puppeted cities" | "Puppeted" => yes(subject.puppet),
         "annexed cities" | "Annexed" => yes(subject.founder != subject.owner && !subject.puppet),

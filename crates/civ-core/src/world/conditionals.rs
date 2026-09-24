@@ -181,6 +181,26 @@ pub fn tile_matches(ctx: &GameContext, tile: TileId, filter: &str) -> Verdict {
                 };
             }
         }
+        // Resource words hold only for a resource this civ can see.
+        let resource_word = matches!(term, "resource" | "Water resource")
+            || term
+                .strip_suffix(" resource")
+                .is_some_and(|k| ctx.ruleset.resources.iter().any(|(_, x)| x.resource_type == k));
+        if resource_word {
+            if let (Some(civ), Some(resource)) =
+                (ctx.civ.and_then(|id| world.civ(id)), world.grid.resource[tile.0 as usize])
+            {
+                if !crate::world::resources::is_visible(ctx.ruleset, civ, resource) {
+                    return Verdict::False;
+                }
+            }
+        }
+        // Unciv's `isEnemyTerritory`: owned by someone this civ is at war with.
+        if matches!(term, "Enemy Land" | "Enemy") {
+            let Some(civ) = ctx.civ else { return Verdict::Unknown };
+            let enemy = world.grid.owner[tile.0 as usize].is_some_and(|owner| world.diplomacy.at_war(civ, owner));
+            return if enemy { Verdict::True } else { Verdict::False };
+        }
         if term == "City center" {
             return if world.cities.iter().any(|(_, city)| city.centre == tile) {
                 Verdict::True
@@ -240,11 +260,21 @@ fn tile_matches_term(
         }
         "your" => return civ.map_or(Verdict::Unknown, |owner| yes(world.0.owner[tile.0 as usize] == Some(owner))),
         "River" => return yes(world.0.has_river(tile)),
-        "Fresh water" => return yes(world.0.is_fresh_water(r, tile)),
+        // Unciv writes both spellings (`Constants.freshWater`, `freshWaterFilter`).
+        "Fresh water" | "Fresh Water" => return yes(world.0.is_fresh_water(r, tile)),
+        "non-fresh water" => return yes(!world.0.is_fresh_water(r, tile)),
+        // Resource words (Tile.kt `matchesSingleTerrainFilter`). Visibility
+        // needs the civ's technologies, which only `tile_matches` has.
+        "resource" => return yes(world.0.resource[tile.0 as usize].is_some()),
+        "Water resource" => {
+            return yes(world.0.resource[tile.0 as usize].is_some() && terrains.iter().any(|t| t.r#type == "Water"))
+        }
         "All" | "all" => return Verdict::True,
         "Land" => return yes(terrains.iter().any(|t| t.r#type == "Land")),
         "Water" => return yes(terrains.iter().any(|t| t.r#type == "Water")),
         "Natural Wonder" => return yes(world.0.natural_wonder[tile.0 as usize].is_some()),
+        // civ.game: a land tile between two separate bodies of water.
+        "Isthmus" => return yes(world.0.is_isthmus(r, tile)),
         "unimproved" => return yes(world.0.unpillaged_improvement(tile).is_none()),
         // Features are everything after the base terrain.
         "Featureless" => return yes(world.0.features[tile.0 as usize].is_empty()),
@@ -264,6 +294,18 @@ fn tile_matches_term(
 
     if let Some(id) = r.resources.id(filter) {
         return yes(world.0.resource[tile.0 as usize] == Some(id));
+    }
+    // "Bonus resource", "Luxury resource", "Strategic resource": the type of
+    // the tile's resource (Tile.kt, the last check of the filter).
+    if let Some(kind) = filter.strip_suffix(" resource") {
+        if r.resources.iter().any(|(_, x)| x.resource_type == kind) {
+            let here = world.0.resource[tile.0 as usize].and_then(|id| r.resources.get(id));
+            return yes(here.is_some_and(|x| x.resource_type == kind));
+        }
+    }
+    // civ.game: a building's name is the tile it stands on (world::placement).
+    if let Some(id) = r.buildings.id(filter) {
+        return yes(world.0.placed_at(tile).is_some_and(|p| p.building == id));
     }
     if let Some(id) = r.improvements.id(filter) {
         return yes(world.0.unpillaged_improvement(tile) == Some(id));
@@ -573,11 +615,12 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
         }
         UniqueType::ConditionalCityMajorReligion | UniqueType::ConditionalCityEnhancedReligion => {
             let Some(c) = ctx.world.zip(ctx.city).and_then(|(w, id)| w.cities.get(id)) else { return Verdict::Unknown };
-            verdict(c.faith.majority(c.population).and_then(|creed| ctx.world?.civ(creed)).is_some_and(|faith| {
+            let Some(world) = ctx.world else { return Verdict::Unknown };
+            verdict(c.faith.majority(c.population).is_some_and(|creed| {
                 if kind == UniqueType::ConditionalCityEnhancedReligion {
-                    faith.faith.enhanced
+                    world.civ(creed).is_some_and(|f| f.faith.enhanced)
                 } else {
-                    faith.faith.founded
+                    crate::world::religion::religion_exists(world, creed)
                 }
             }))
         }
@@ -649,7 +692,7 @@ pub fn evaluate(cond: &Unique, ctx: &GameContext) -> Verdict {
             let holds = match cond.unique_type() {
                 Some(UniqueType::ConditionalBeforePantheon) => !c.faith.has_pantheon(),
                 Some(UniqueType::ConditionalAfterPantheon) => c.faith.has_pantheon(),
-                Some(UniqueType::ConditionalBeforeReligion) => !c.faith.founded,
+                Some(UniqueType::ConditionalBeforeReligion) => !c.faith.founded && c.faith.state.is_none(),
                 _ => c.faith.prophets_earned > 0,
             };
             if holds {
@@ -920,6 +963,7 @@ fn for_each_conditional(r: &Ruleset, f: &mut impl FnMut(&Unique)) {
         .chain(r.policies.values().map(|p| &p.uniques))
         .chain(r.technologies.values().map(|t| &t.uniques))
         .chain(r.nations.values().map(|n| &n.uniques))
+        .chain(r.nations.values().filter_map(|n| n.alt_leader.as_ref()).map(|a| &a.uniques))
         .chain(r.beliefs.values().map(|b| &b.uniques));
     // City-state bonuses are stored as raw strings rather than parsed uniques,
     // because they are granted to a *different* civ than the one that holds

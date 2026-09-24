@@ -12,7 +12,7 @@
 //! ```
 //!
 //! Options (defaults in brackets):
-//!   --ruleset NAME     gods-and-kings | blitz [gods-and-kings]
+//!   --ruleset NAME     base | blitz [base]
 //!   --speed NAME       game speed [the ruleset's: Standard, or Blitz]
 //!   --map SIZE         tiny | small | medium | large | huge, or WxH [small]
 //!   --civs N           major civilizations [4]
@@ -174,6 +174,12 @@ struct GameRecord {
     engine_ms: f64,
     /// Engine time for the first 60 turns, the length PLATFORM.md §5 estimated.
     engine_ms_60: Option<f64>,
+    /// Lingua Franca at the end: the best civ's influence over its least
+    /// influenced rival, in tenths of a percent of the way (1000 wins).
+    lingua_best: i64,
+    /// Reserve Currency: the highest share of world trade any civ held on
+    /// any turn, in tenths of a percent.
+    trade_best: u16,
 }
 
 #[derive(Serialize)]
@@ -299,10 +305,20 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
         rec.era = era_number(&world, r, c);
     }
     let victory = world.winner.map(|(_, v)| r.victories[v].name.clone());
+    let majors: Vec<_> = world.civs.iter().filter(|c| c.is_major() && c.is_alive()).map(|c| c.id).collect();
+    let progress = |a, b| civ_core::world::influence::influence_progress(&world, r, a, b);
+    let lingua_best = majors
+        .iter()
+        .map(|a| majors.iter().filter(|b| *b != a).map(|b| progress(*a, *b)).min().unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+    let trade_best = world.influence.trade_shares.values().flatten().copied().max().unwrap_or(0);
     Ok(GameRecord {
+        lingua_best,
+        trade_best,
         seed,
         turns: world.turn,
-        ended_by_capture: victory.as_deref() == Some("Domination") && world.victory_turn.is_some_and(|t| t < limit),
+        ended_by_capture: victory.as_deref() == Some("Conquest") && world.victory_turn.is_some_and(|t| t < limit),
         victory,
         victory_turn: world.victory_turn,
         winner: world.winner.map(|(c, _)| nation(&world, r, c)),
@@ -391,6 +407,14 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
     }
     let captured = games.iter().filter(|g| g.ended_by_capture).count();
     println!("Ended early by capture: {captured} ({:.1}%)", pct(captured));
+    let lingua: Vec<f64> = games.iter().map(|g| g.lingua_best as f64 / 10.0).collect();
+    let trade: Vec<f64> = games.iter().map(|g| f64::from(g.trade_best) / 10.0).collect();
+    println!(
+        "Lingua Franca at the end: best civ {:.0}% of the way over its weakest rival (median; max {:.0}%)",
+        median(lingua.clone()),
+        lingua.iter().copied().fold(0.0, f64::max)
+    );
+    println!("Highest share of world trade held: median {:.0}%, max {:.0}%", median(trade.clone()), trade.iter().copied().fold(0.0, f64::max));
 
     println!("\n{:<20} {:>6} {:>5} {:>8} {:>7} {:>8} {:>8} {:>8}", "Nation", "played", "wins", "win rate", "× fair", "wars/g", "wonders", "founded");
     let mut nations: BTreeMap<String, (usize, usize, u32, u32, u32)> = BTreeMap::new();

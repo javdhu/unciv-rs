@@ -91,3 +91,20 @@ pub fn ruleset_files(root: &str) -> Vec<PathBuf> {
     v.sort();
     v
 }
+
+/// The gods-and-kings fixture with civ.game test files from
+/// `tests/data/rebuild` layered over it, object by object.
+pub fn rebuild_rules(overlays: &[&str]) -> civ_core::ruleset::Ruleset {
+    let mut paths: Vec<_> = std::fs::read_dir("rules/gods-and-kings").unwrap().flatten().map(|e| e.path()).collect();
+    paths.sort();
+    let mut sources: Vec<_> = paths
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap()))
+        .collect();
+    for file in overlays {
+        let text = std::fs::read_to_string(format!("tests/data/rebuild/{file}")).unwrap();
+        sources.push((file.to_string(), text));
+    }
+    civ_core::ruleset::Ruleset::from_sources(&sources).unwrap()
+}

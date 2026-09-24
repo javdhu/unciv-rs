@@ -133,12 +133,12 @@ pub fn initialize_unit(world: &World, r: &Ruleset, unit: &mut Unit, birth_city: 
     unit.religious_strength = r.units.get(unit.base).and_then(|b| b.religious_strength).unwrap_or(0);
     unit.religious_uses_left = initial_uses(r, unit);
     unit.religion = if unit.has_unique(r, UniqueType::TakeReligionOverBirthCity) {
-        world.civ(unit.owner).filter(|c| c.faith.founded).map(|c| c.id)
+        crate::world::religion::civ_religion(world, unit.owner)
     } else {
         birth_city
             .and_then(|id| world.cities.get(id))
             .and_then(|c| c.faith.majority(c.population))
-            .filter(|religion| world.civ(*religion).is_some_and(|c| c.faith.founded))
+            .filter(|religion| crate::world::religion::religion_exists(world, *religion))
     };
 }
 
@@ -166,7 +166,9 @@ pub fn spawn_prophet(world: &mut World, r: &Ruleset, civ: CivId) -> Option<Id<Un
     let centre = world.cities.get(home)?.centre;
     let mut unit = crate::world::construction::prepare_unit_near(world, r, civ, base, centre, Some(home))?;
     crate::world::military::train(world, r, home, &mut unit);
-    Some(world.place_unit(unit))
+    let id = world.place_unit(unit);
+    crate::world::luminaries::name_unit(world, r, id);
+    Some(id)
 }
 
 /// Available slots include a missing pantheon and nation-specific extra beliefs.
@@ -309,6 +311,10 @@ pub fn can(world: &World, r: &Ruleset, id: Id<Unit>, action: ReligiousAction) ->
     let fresh = unit.religious_uses_left == initial_uses(r, unit);
     match action {
         ReligiousAction::FoundReligion | ReligiousAction::EnhanceReligion => {
+            // Faiths arise by era; nobody founds or enhances one.
+            if r.faith_mode() {
+                return Err(E::NotAble);
+            }
             if !fresh {
                 return Err(E::AlreadyUsed);
             }
@@ -342,7 +348,7 @@ pub fn can(world: &World, r: &Ruleset, id: Id<Unit>, action: ReligiousAction) ->
                 return Err(E::NoUses);
             }
             let religion =
-                unit.religion.filter(|c| world.civ(*c).is_some_and(|c| c.faith.founded)).ok_or(E::NoReligion)?;
+                unit.religion.filter(|c| crate::world::religion::religion_exists(world, *c)).ok_or(E::NoReligion)?;
             let target = world.cities.get(city).ok_or(E::NoSuchCity)?;
             if !in_city(world, unit, target) {
                 return Err(E::NotInCity);
@@ -742,13 +748,16 @@ pub fn choose_purchase(
     costs: CostModifiers,
 ) -> Option<(Id<City>, Construction)> {
     let c = world.civ(civ)?;
-    if !c.is_ai || !c.faith.enhanced {
+    // A founder buys once its religion is enhanced; a state faith, at once.
+    let ready = c.faith.enhanced || (r.faith_mode() && c.faith.state.is_some());
+    if !c.is_ai || !ready {
         return None;
     }
+    let own = crate::world::religion::civ_religion(world, civ)?;
     let needs_conversion = world.cities.iter().any(|(id, city)| {
-        city.faith.majority(city.population) != Some(civ)
+        city.faith.majority(city.population) != Some(own)
             && !world.diplomacy.at_war(civ, city.owner)
-            && !protected_by_inquisitor(world, r, id, civ)
+            && !protected_by_inquisitor(world, r, id, own)
     });
     let heresy = world.cities.iter().any(|(_, city)| {
         let majority_pressure = city
@@ -764,8 +773,8 @@ pub fn choose_purchase(
         // ReligionAutomation prefers a missionary unless an unconverted city
         // has at least 3000 more pressure for its current majority.
         city.owner == civ
-            && city.faith.majority(city.population) != Some(civ)
-            && majority_pressure.saturating_sub(city.faith.pressure_of(Some(civ))) >= 3000
+            && city.faith.majority(city.population) != Some(own)
+            && majority_pressure.saturating_sub(city.faith.pressure_of(Some(own))) >= 3000
     });
     let count = |kind| c.units.iter().filter_map(|id| world.units.get(*id)).filter(|u| u.has_unique(r, kind)).count();
     let kind = if heresy && count(UniqueType::CanRemoveHeresy) == 0 {
@@ -777,7 +786,7 @@ pub fn choose_purchase(
     };
     for &city in &c.cities {
         let home = world.cities.get(city)?;
-        if home.faith.majority(home.population) != Some(civ) {
+        if home.faith.majority(home.population) != Some(own) {
             continue;
         }
         for (id, base) in r.units.iter() {

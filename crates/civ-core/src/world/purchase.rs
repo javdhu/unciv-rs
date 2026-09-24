@@ -387,7 +387,7 @@ pub fn purchase(
     m: CostModifiers,
 ) -> Result<i64, PurchaseRejection> {
     let science = crate::world::research::ScienceModifiers {
-        speed: r.speeds.iter().find(|(_, s)| s.modifier == m.speed).map_or(m.speed, |(_, s)| s.science_cost_modifier),
+        speed: world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier),
         ..Default::default()
     };
     purchase_with_science(world, r, city, what, stat, m, science)
@@ -444,7 +444,8 @@ pub fn purchase_with_science(
         {
             unit.movement_left = Fixed::ZERO;
         }
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
     }
     let name = item_name(r, what).to_string();
     if let Some(c) = world.civ_mut(owner) {

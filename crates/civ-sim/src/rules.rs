@@ -19,6 +19,44 @@ pub struct RuleTables {
     pub promotions: Vec<Named>,
     pub specialists: Vec<Named>,
     pub beliefs: Vec<BeliefRow>,
+    /// Faiths that arise by era (absent for rulesets whose religions are
+    /// founded). `key` is how views name a religion: `CityReligionView`,
+    /// `UnitStateView.religion`, `CivView.stateFaith`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faiths: Option<Vec<FaithRow>>,
+    /// The last roster wave setup deals; absent deals every nation.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_wave: Option<i32>,
+    /// Blitz slices a game may be set up as (`Settings.slice`).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slices: Option<Vec<SliceRow>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SliceRow {
+    pub name: String,
+    /// The eras it plays, by name, in order.
+    pub eras: Vec<String>,
+    pub turns: u32,
+    /// Victories that can be won within it, by id in `victories`.
+    pub victories: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FaithRow {
+    pub key: u8,
+    pub name: String,
+    pub era: String,
+    /// Nations it arises in when present, in order.
+    pub homeland: Vec<String>,
+    /// Its fixed traits, by id in `beliefs`: `Follower` traits apply in
+    /// cities that follow it, `State` traits to nations that adopt it.
+    pub traits: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -107,6 +145,10 @@ pub struct BuildingRow {
     pub effects: Vec<String>,
     /// The building it needs in the city first, by name.
     pub requires: Option<String>,
+    /// One line on what is attested, reconstructed and invented (wonders).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what_we_know: Option<String>,
 }
 
 /// A technology's place in the tree (Unciv's column and row) and what it opens.
@@ -146,6 +188,41 @@ pub struct NationRow {
     pub city_state: bool,
     /// Suggested names for new cities, in the nation's order.
     pub cities: Vec<String>,
+    /// The raiders' nation (`isBarbarian`): never playable, always hostile.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barbarian: Option<bool>,
+    /// One of Europe, WestAsia, Africa, SouthAsia, EastAsia, SoutheastAsia,
+    /// Steppe, Americas.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// The roster wave (1 at launch); setup offers only nations within
+    /// `RuleTables.maxWave`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wave: Option<i32>,
+    /// Who may lead a major nation, the default first; choose one with
+    /// `Settings.leader`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaders: Option<Vec<LeaderRow>>,
+}
+
+/// A leader and the ability they bring (the nation's unique units and
+/// buildings stay with the nation).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaderRow {
+    pub name: String,
+    pub ability: Option<String>,
+    pub effects: Vec<String>,
+    /// The leader's nearest living language.
+    pub voice: Option<String>,
+    /// One line on what is attested, reconstructed and invented about them.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what_we_know: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -174,10 +251,16 @@ macro_rules! yields {
     };
 }
 
+/// A unique as a player reads it: its conditionals appended, and Civ's coined
+/// names replaced by civ.game's (`civ_core::names`).
 fn rule_text(u: &civ_core::Unique) -> String {
+    civ_core::names::player_text(&raw_rule_text(u))
+}
+
+fn raw_rule_text(u: &civ_core::Unique) -> String {
     let mut text = u.text.clone();
     for c in &u.conditionals {
-        text.push_str(&format!(" <{}>", rule_text(c)));
+        text.push_str(&format!(" <{}>", raw_rule_text(c)));
     }
     text
 }
@@ -251,6 +334,35 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 effects: b.uniques.iter().map(rule_text).collect(),
             })
             .collect(),
+        max_wave: r.max_wave,
+        slices: (!r.slices.is_empty()).then(|| {
+            r.slices
+                .iter()
+                .map(|s| SliceRow {
+                    name: s.name.clone(),
+                    eras: s.eras.clone(),
+                    turns: s.turns,
+                    victories: civ_core::world::slices::resolve(r, &s.name)
+                        .map(|slice| {
+                            civ_core::world::slices::victories_within(r, &slice).into_iter().map(|v| v.index()).collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        }),
+        faiths: r.faith_mode().then(|| {
+            r.faiths
+                .iter()
+                .enumerate()
+                .map(|(i, f)| FaithRow {
+                    key: civ_core::world::faiths::key(i).0,
+                    name: f.name.clone(),
+                    era: f.era.clone(),
+                    homeland: f.homeland.clone(),
+                    traits: f.beliefs.iter().filter_map(|b| r.beliefs.id(b)).map(|id| id.index()).collect(),
+                })
+                .collect()
+        }),
         victories: r
             .victories
             .iter()
@@ -298,6 +410,26 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 inner_color: n.inner_color.clone(),
                 city_state: n.city_state_type.is_some(),
                 cities: n.cities.clone(),
+                barbarian: n.is_barbarian.then_some(true),
+                wave: n.wave,
+                region: n.region.clone(),
+                leaders: n.is_major().then(|| {
+                    std::iter::once(LeaderRow {
+                        name: n.leader_name.clone().unwrap_or_default(),
+                        ability: n.unique_name.clone(),
+                        effects: n.uniques.iter().map(rule_text).collect(),
+                        voice: n.voice.clone(),
+                        what_we_know: n.what_we_know.clone(),
+                    })
+                    .chain(n.alt_leader.as_ref().map(|a| LeaderRow {
+                        name: a.leader_name.clone(),
+                        ability: a.unique_name.clone(),
+                        effects: a.uniques.iter().map(rule_text).collect(),
+                        voice: a.voice.clone().or_else(|| n.voice.clone()),
+                        what_we_know: a.what_we_know.clone(),
+                    }))
+                    .collect()
+                }),
             })
             .collect(),
         resources: r
@@ -336,6 +468,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 percent: x.percent_stat_bonus.iter().map(|(k, v)| (k.clone(), *v)).collect(),
                 effects: x.uniques.iter().map(rule_text).collect(),
                 requires: x.required_building.clone(),
+                what_we_know: x.what_we_know.clone(),
             })
             .collect(),
         technologies: r.technologies.iter().map(|(id, t)| tech_row(r, id, t)).collect(),
@@ -363,7 +496,7 @@ mod tests {
         let opens = |t: &TechRow, name: &str| t.unlocks.iter().any(|u| u.name == name);
         assert!(opens(tech("Mining"), "Mine"));
         assert!(opens(tech("Bronze Working"), "Spearman"));
-        assert!(tech("Bronze Working").unlocks.iter().any(|u| u.kind == "wonder"));
+        assert!(tech("Masonry").unlocks.iter().any(|u| u.kind == "wonder"));
         let spearman = t.units.iter().find(|u| u.name == "Spearman").unwrap();
         assert!(spearman.strength > 0 && spearman.cost > 0 && spearman.ranged_strength == 0);
         let resource = |name: &str| t.resources.iter().find(|x| x.name == name).unwrap();

@@ -24,7 +24,7 @@ The nations of civ.game, who leads them and what voice they speak. Agreed 2026-0
 | Ottomans | Osman I | Kösem Sultan (regent) | Turkish |
 | Egypt | Thutmose III | Hatshepsut | Coptic (liturgical) |
 | Mali | Sundiata Keita | Mansa Musa | Maninka |
-| Ndongo | Njinga Mbande | Ngola Kiluanje | Kimbundu |
+| Ndongo | Njinga Mbande | Ngola Kiluanje kia Samba | Kimbundu |
 | Maurya | Ashoka | Chandragupta | Magahi |
 | Chola | Rajaraja I | Rajendra I | Tamil |
 | Tang China | Taizong | Wu Zetian | Mandarin |
@@ -44,7 +44,7 @@ Wave 2 nations are free content, never paid DLC. Selling the non-European nation
 
 **West Asia:** Babylon (Hammurabi / Nabonidus, Neo-Aramaic) · Carthage (Hannibal / Mago I, Hebrew) · Abbasid Caliphate (al-Ma'mun / Harun al-Rashid, Arabic) · Georgia (David IV the Builder / Tamar, Georgian)
 
-**Africa:** Aksum (Ezana / Kaleb, Tigrinya) · Kush (Piye / Amanirenas, Nobiin) · Mutapa (Nyatsimba Mutota / Matope, Shona) · Songhai (Askia Muhammad I / Sonni Ali, Songhay) · Kilwa (al-Hasan ibn Sulaiman / TBD, Swahili) · Numidia (Masinissa / Jugurtha, Tamazight)
+**Africa:** Aksum (Ezana / Kaleb, Tigrinya) · Kush (Piye / Amanirenas, Nobiin) · Mutapa (Nyatsimba Mutota / Matope, Shona) · Songhai (Askia Muhammad I / Sonni Ali, Songhay) · Kilwa (al-Hasan ibn Sulaiman, Swahili) · Numidia (Masinissa / Jugurtha, Tamazight)
 
 **South Asia:** Vijayanagara (Krishnadevaraya / Harihara I, Telugu) · Mughal (Akbar / Nur Jahan, Hindustani)
 
@@ -52,9 +52,9 @@ Wave 2 nations are free content, never paid DLC. Selling the non-European nation
 
 **Southeast Asia:** Khmer (Suryavarman II / Jayavarman VII, Khmer) · Ayutthaya (Naresuan / Narai, Thai) · Đại Việt (Lê Lợi / Trưng Trắc, Vietnamese) · Srivijaya (Jayanasa / Balaputradewa, Malay) · Champa (Chế Bồng Nga / Po Romé, Cham)
 
-**Steppe:** Scythia (Tomyris / Ateas, Ossetian) · Timurids (Ulugh Beg / Shah Rukh, Uzbek)
+**Steppe:** Scythia (Ateas / Tomyris, queen of the Massagetae, Ossetian) · Timurids (Ulugh Beg / Shah Rukh, Uzbek)
 
-**Americas:** Maya of Palenque (Yohl Ik'nal / Pakal, Ch'ol) · Brazil (Princess Isabel / Pedro II, Portuguese) · Haiti (Toussaint Louverture / Henri Christophe, Haitian Creole) · Purépecha (Tzitzipandácuare / Tariácuri, Purépecha) · Mixtec (Eight Deer Jaguar Claw / Lady Six Monkey, Mixtec) · Chimú (Minchançaman / TBD, Quechua)
+**Americas:** Maya of Palenque (Yohl Ik'nal / Pakal, Ch'ol) · Brazil (Princess Isabel / Pedro II, Portuguese) · Haiti (Toussaint Louverture / Henri Christophe, Haitian Creole) · Purépecha (Tzitzipandácuare / Tariácuri, Purépecha) · Mixtec (Eight Deer Jaguar Claw / Lady Six Monkey, Mixtec) · Chimú (Minchançaman, Quechua)
 
 Across all 51, a woman leads or co-leads 25. Byzantium has none because Irene, its only sole-ruling empress, blinded her son; Joseon's regent Munjeong is remembered for persecutions.
 
@@ -72,5 +72,5 @@ Netherlands, Sweden, Portugal, Austria, Venice, Gaul, Morocco, Assyria, Armenia 
 
 - The engine ships the Civ 5 nations; the roster swap is a ruleset change in `crates/civ-core` data plus leader art and voice.
 - Alternate leaders need an ability each (engine: leader abilities split from nation uniques).
-- TBD second leaders: Kilwa, Chimú.
+- Kilwa and Chimú ship with one leader until a second is found.
 - City-state list gets the same regional balance.

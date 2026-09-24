@@ -1,0 +1,114 @@
+[
+    // Standard is the reference (every modifier 1.0; faith delays count Standard turns): 30 turns per era, 240 turns
+    // from 4000 BCE to 2026, each era's years matching docs/CONTENT.md's era table. The pace itself lives in the
+    // content's costs (Techs.json, Buildings.json, Units.json, TileImprovements.json), tuned with
+    // crates/civ-sim/examples/balance.rs. Quick, Epic and Marathon keep Unciv's modifiers and scale the turns.
+    {
+        "name": "Quick",
+        "modifier": 0.67,
+        "productionCostModifier": 0.67,
+        "goldCostModifier": 0.67,
+        "scienceCostModifier": 0.67,
+        "cultureCostModifier": 0.67,
+        "faithCostModifier": 0.67,
+        "improvementBuildLengthModifier": 0.67,
+        "barbarianModifier": 0.67,
+        "goldGiftModifier": 1.25,
+        "cityStateTributeScalingInterval": 5.0,
+        "goldenAgeLengthModifier": 0.8,
+        "religiousPressureAdjacentCity": 9,
+        "peaceDealDuration": 10,
+        "dealDuration": 25,
+        "startYear": -4000,
+        "turns": [
+            {"yearsPerTurn": 139.995, "untilTurn": 20},
+            {"yearsPerTurn": 85.005, "untilTurn": 40},
+            {"yearsPerTurn": 47.505, "untilTurn": 60},
+            {"yearsPerTurn": 15.0, "untilTurn": 80},
+            {"yearsPerTurn": 7.5, "untilTurn": 100},
+            {"yearsPerTurn": 2.25, "untilTurn": 140},
+            {"yearsPerTurn": 1.8, "untilTurn": 160}
+        ]
+    },
+    {
+        "name": "Standard",
+        "modifier": 1.0,
+        "productionCostModifier": 1.0,
+        "goldCostModifier": 1.0,
+        "scienceCostModifier": 1.0,
+        "cultureCostModifier": 1.0,
+        "faithCostModifier": 1.0,
+        "improvementBuildLengthModifier": 1.0,
+        "barbarianModifier": 1.0,
+        "goldGiftModifier": 1.0,
+        "cityStateTributeScalingInterval": 6.5,
+        "goldenAgeLengthModifier": 1.0,
+        "religiousPressureAdjacentCity": 6,
+        "peaceDealDuration": 10,
+        "dealDuration": 30,
+        "startYear": -4000,
+        "turns": [
+            {"yearsPerTurn": 93.33, "untilTurn": 30},
+            {"yearsPerTurn": 56.67, "untilTurn": 60},
+            {"yearsPerTurn": 31.67, "untilTurn": 90},
+            {"yearsPerTurn": 10.0, "untilTurn": 120},
+            {"yearsPerTurn": 5.0, "untilTurn": 150},
+            {"yearsPerTurn": 1.5, "untilTurn": 210},
+            {"yearsPerTurn": 1.2, "untilTurn": 240}
+        ]
+    },
+    {
+        "name": "Epic",
+        "modifier": 1.5,
+        "productionCostModifier": 1.5,
+        "goldCostModifier": 1.5,
+        "scienceCostModifier": 1.5,
+        "cultureCostModifier": 1.5,
+        "faithCostModifier": 1.5,
+        "improvementBuildLengthModifier": 1.5,
+        "barbarianModifier": 1.5,
+        "goldGiftModifier": 0.75,
+        "cityStateTributeScalingInterval": 14.0,
+        "goldenAgeLengthModifier": 1.25,
+        "religiousPressureAdjacentCity": 4,
+        "peaceDealDuration": 15,
+        "dealDuration": 45,
+        "startYear": -4000,
+        "turns": [
+            {"yearsPerTurn": 62.22, "untilTurn": 45},
+            {"yearsPerTurn": 37.78, "untilTurn": 90},
+            {"yearsPerTurn": 21.1133, "untilTurn": 135},
+            {"yearsPerTurn": 6.6667, "untilTurn": 180},
+            {"yearsPerTurn": 3.3333, "untilTurn": 225},
+            {"yearsPerTurn": 1.0, "untilTurn": 315},
+            {"yearsPerTurn": 0.8, "untilTurn": 360}
+        ]
+    },
+    {
+        "name": "Marathon",
+        "modifier": 3.0,
+        "productionCostModifier": 3.0,
+        "goldCostModifier": 3.0,
+        "scienceCostModifier": 3.0,
+        "cultureCostModifier": 3.0,
+        "faithCostModifier": 3.0,
+        "improvementBuildLengthModifier": 3.0,
+        "barbarianModifier": 4.0,
+        "goldGiftModifier": 0.67,
+        "cityStateTributeScalingInterval": 32.0,
+        "goldenAgeLengthModifier": 2.0,
+        "religiousPressureAdjacentCity": 2,
+        "peaceDealDuration": 30,
+        "dealDuration": 90,
+        "startYear": -4000,
+        "turns": [
+            {"yearsPerTurn": 31.11, "untilTurn": 90},
+            {"yearsPerTurn": 18.89, "untilTurn": 180},
+            {"yearsPerTurn": 10.5567, "untilTurn": 270},
+            {"yearsPerTurn": 3.3333, "untilTurn": 360},
+            {"yearsPerTurn": 1.6667, "untilTurn": 450},
+            {"yearsPerTurn": 0.5, "untilTurn": 630},
+            {"yearsPerTurn": 0.4, "untilTurn": 720}
+        ]
+    }
+]

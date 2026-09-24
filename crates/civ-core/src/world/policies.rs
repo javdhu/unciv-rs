@@ -285,9 +285,7 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     let Some(civ) = world.civ(civ_id) else { return };
 
     let mut uniques = Vec::new();
-    if let Some(nation) = r.nations.get(civ.nation) {
-        uniques.extend(nation.uniques.iter().cloned());
-    }
+    uniques.extend(civ.leader_uniques(r).iter().cloned());
     for policy in &civ.adopted_policies {
         if let Some(p) = r.policies.get(*policy) {
             for unique in &p.uniques {
@@ -310,6 +308,10 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     // Beliefs are uniques too, so a pantheon has to reach the index or it
     // grants nothing.
     uniques.extend(crate::world::religion::founder_uniques(r, &civ.faith).into_iter().cloned());
+    // A state faith's traits belong to every civ that adopts it.
+    if let Some(state) = civ.faith.state {
+        uniques.extend(crate::world::faiths::traits(r, state, "State").flat_map(|b| b.uniques.iter()).cloned());
+    }
     for city in &civ.cities {
         if let Some(city) = world.cities.get(*city) {
             for building in &city.built {

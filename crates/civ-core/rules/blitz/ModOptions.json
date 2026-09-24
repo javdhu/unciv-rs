@@ -1,9 +1,9 @@
 {
     "isBaseRuleset": false,
     "victoryTypesToRemove": [
-        "Diplomatic"
+        "Perpetual Peace"
     ],
     "buildingsToRemove": [
-        "United Nations"
+        "World Charter"
     ]
 }

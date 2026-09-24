@@ -5,7 +5,7 @@ use civ_sim::{new_game, player_view, Settings};
 #[test]
 fn initial_world_grants_starting_rules_and_national_units_in_legal_slots() {
     let (world, rules, me) = new_game(&Settings {
-        nation: Some("Polynesia".into()),
+        nation: Some("Triple Alliance".into()),
         wrap_x: true,
         ..Settings::default()
     })
@@ -15,11 +15,11 @@ fn initial_world_grants_starting_rules_and_national_units_in_legal_slots() {
     assert!(civ
         .units
         .iter()
-        .any(|id| rules.units[world.units.get(*id).unwrap().base].name == "Maori Warrior"));
+        .any(|id| rules.units[world.units.get(*id).unwrap().base].name == "Jaguar"));
     assert_eq!(
         civ.units.len(),
         2,
-        "the bundled Ancient era starts with one Settler and one military unit"
+        "the bundled Age of Bronze starts with one Settler and one military unit"
     );
     for a in &civ.units {
         for b in &civ.units {
@@ -228,8 +228,8 @@ fn city_state_view_shares_only_our_quests_and_relationship() {
         expires_on: 25,
         baseline: 0,
     };
-    let artist = r.units.id("Great Artist").unwrap();
-    let scientist = r.units.id("Great Scientist").unwrap();
+    let artist = r.units.id("Virtuoso").unwrap();
+    let scientist = r.units.id("Scholar").unwrap();
     w.civ_mut(cs).unwrap().quests.active.extend([
         make(me, Target::Unit(artist)),
         make(CivId(1), Target::Unit(scientist)),
@@ -261,7 +261,7 @@ fn city_state_view_shares_only_our_quests_and_relationship() {
 #[test]
 #[ignore = "long match gate: cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --nocapture"]
 fn complete_matches_save_and_replay() {
-    for (seed, nation) in [(1, "The Maya"), (7, "Austria"), (19, "Songhai")] {
+    for (seed, nation) in [(1, "Mali"), (7, "Majapahit"), (19, "Chola")] {
         let mut s = Session::new(
             Settings {
                 seed,
@@ -324,9 +324,9 @@ fn the_turn_limit_follows_speed_unless_set_explicitly() {
         (world, rules, me)
     };
     let (quick, rules, me) = limit(Some("Quick"), None);
-    assert_eq!(quick.endgame.max_turns, 330, "Speeds.json: Quick ends at turn 330");
+    assert_eq!(quick.endgame.max_turns, 160, "Speeds.json: Quick ends at turn 160");
     let (standard, _, _) = limit(None, None);
-    assert_eq!(standard.endgame.max_turns, 500, "absent speed is Standard");
+    assert_eq!(standard.endgame.max_turns, 240, "absent speed is Standard");
     assert_eq!(standard.speed, rules.speeds.id("Standard"));
     let (explicit, _, _) = limit(Some("Quick"), Some(42));
     assert_eq!(explicit.endgame.max_turns, 42, "an explicit maxTurns overrides the speed");
@@ -356,7 +356,10 @@ fn standard_speed_changes_nothing_from_the_defaults() {
     let default = TurnModifiers::default();
     assert_eq!(standard.barbarian, default.barbarian);
     assert_eq!(standard.growth, default.growth);
-    assert_eq!(standard.costs, default.costs);
+    // Standard is now 240 turns; CostModifiers::default() still assumes Unciv's 500 (an Engine ask).
+    let costs = civ_core::world::construction::CostModifiers { game_length: default.costs.game_length, ..standard.costs };
+    assert_eq!(standard.costs.game_length, 240);
+    assert_eq!(costs, default.costs);
     assert_eq!(standard.science, default.science);
     assert_eq!(standard.policies, default.policies);
 }
@@ -366,13 +369,13 @@ fn blitz_layers_over_the_full_game() {
     use civ_sim::content;
     let full = content::load().unwrap();
     let blitz = content::load_ruleset(content::BLITZ).unwrap();
-    // Its own speed, eighty turns long; the full game's speeds are still there.
+    // Its own speed, sixty turns long (the Cradles slice); the full game's speeds are still there.
     let speed = blitz.speeds.by_name("Blitz").unwrap();
-    assert_eq!(speed.total_turns, 80);
+    assert_eq!(speed.total_turns, 60);
     assert!(blitz.speeds.by_name("Standard").is_some() && full.speeds.by_name("Blitz").is_none());
     // No diplomatic victory, and no United Nations to build towards one.
-    assert!(blitz.victories.by_name("Diplomatic").is_none() && full.victories.by_name("Diplomatic").is_some());
-    assert!(blitz.building("United Nations").is_none() && full.building("United Nations").is_some());
+    assert!(blitz.victories.by_name("Perpetual Peace").is_none() && full.victories.by_name("Perpetual Peace").is_some());
+    assert!(blitz.building("World Charter").is_none() && full.building("World Charter").is_some());
     assert!(blitz.dangling_refs().len() <= full.dangling_refs().len(), "{:?}", blitz.dangling_refs());
     // Everything not overridden is the full game's.
     assert_eq!(blitz.technologies.len(), full.technologies.len());
@@ -388,7 +391,7 @@ fn a_blitz_game_starts_small_and_fast() {
         ..Settings::default()
     };
     let (world, rules, me) = civ_sim::new_game_for(&settings, &[0]).unwrap();
-    assert_eq!(world.endgame.max_turns, 80);
+    assert_eq!(world.endgame.max_turns, 60);
     assert_eq!(world.speed, rules.speeds.id("Blitz"));
     let names = |civ: CivId| {
         let mut v: Vec<_> = world
@@ -410,8 +413,8 @@ fn a_blitz_game_starts_small_and_fast() {
     // The full game's start is untouched.
     let (full, full_rules, _) = civ_sim::new_game_for(&Settings::default(), &[0]).unwrap();
     assert_eq!(full.civ(CivId(0)).unwrap().units.len(), 2);
-    assert_eq!(full.endgame.max_turns, 500);
-    assert!(full_rules.victories.by_name("Diplomatic").is_some());
+    assert_eq!(full.endgame.max_turns, 240);
+    assert!(full_rules.victories.by_name("Perpetual Peace").is_some());
 }
 
 #[test]
