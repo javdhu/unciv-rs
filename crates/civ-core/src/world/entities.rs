@@ -231,6 +231,9 @@ pub struct Unit {
     /// never carry it; their plans already do this. Absent from older saves.
     #[cfg_attr(feature = "serde", serde(default))]
     pub automation: Option<crate::world::automation::Automation>,
+    /// A Luminary's own name (`world::luminaries`). Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub name: Option<String>,
 }
 
 impl Unit {
@@ -257,6 +260,7 @@ impl Unit {
             religious_strength: 0,
             religious_uses_left: 0,
             automation: None,
+            name: None,
         }
     }
 

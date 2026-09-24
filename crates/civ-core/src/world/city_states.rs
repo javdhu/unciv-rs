@@ -133,13 +133,11 @@ fn matching_bonus(world: &World, r: Option<&Ruleset>, major: CivId, kind: crate:
 }
 
 fn shares_religion(world: &World, r: Option<&Ruleset>, cs: CivId, major: CivId) -> bool {
-    if !world.civ(major).is_some_and(|c| c.faith.founded) {
-        return false;
-    }
+    let Some(own) = crate::world::religion::civ_religion(world, major) else { return false };
     let capital = r
         .and_then(|r| crate::world::connections::capital_of(world, r, cs))
         .or_else(|| world.civ(cs).and_then(|c| c.cities.first().copied()));
-    capital.and_then(|id| world.cities.get(id)).is_some_and(|city| city.faith.majority(city.population) == Some(major))
+    capital.and_then(|id| world.cities.get(id)).is_some_and(|city| city.faith.majority(city.population) == Some(own))
 }
 
 fn resting_point_impl(world: &World, r: Option<&Ruleset>, cs: CivId, major: CivId) -> Fixed {

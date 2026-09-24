@@ -226,6 +226,15 @@ pub enum TurnEvent {
     ReligionFounded {
         civ: CivId,
     },
+    /// A faith arose in its era (`world::faiths`); `religion` is its key.
+    FaithArose {
+        religion: CivId,
+        city: Id<City>,
+    },
+    StateFaithAdopted {
+        civ: CivId,
+        religion: CivId,
+    },
     CityCaptured {
         city: Id<City>,
         by: CivId,
@@ -1859,12 +1868,27 @@ fn finish_automatic(
         });
     }
 
+    // Faiths arise in their era before this turn's spread, so a new holy
+    // city pushes from the turn it appears.
+    for news in crate::world::faiths::tick(world, r, costs.speed) {
+        events.push(match news {
+            crate::world::faiths::FaithNews::Arose { religion, city } => TurnEvent::FaithArose { religion, city },
+            crate::world::faiths::FaithNews::StateFaithAdopted { civ, religion } => {
+                TurnEvent::StateFaithAdopted { civ, religion }
+            }
+        });
+    }
+
     // Religions spread once the whole map has moved, not inside any one civ's
     // turn — a missionary does not care whose turn it is, and doing it per civ
     // would let the civ that goes first push before the others had grown.
     for c in crate::world::religion::spread_with_speed(world, r, costs.religious_pressure, costs.speed) {
         events.push(TurnEvent::CityConverted { city: c.city, from: c.from, to: c.to });
     }
+
+    // Influence and trade shares are counted once the round's culture and
+    // trade are in, before anyone's victory is judged.
+    crate::world::influence::tick(world, r);
 
     events.extend(crate::world::victory_actions::finish_voting(world, r, all_ai).into_iter().map(TurnEvent::Endgame));
 

@@ -33,6 +33,12 @@ pub struct Ruleset {
     pub beliefs: Registry<Belief>,
     /// Available religion names/symbols also bound how many religions may be founded.
     pub religions: Vec<String>,
+    /// Faiths that arise by era (civ.game), from `Religions.json` objects.
+    /// Empty for the fixtures, whose entries are bare names; see
+    /// [`Ruleset::faith_mode`].
+    pub faiths: Vec<super::civgame::FaithDef>,
+    /// Names for great people and other named units, from `UnitNameGroups.json`.
+    pub name_groups: Vec<super::civgame::NameGroup>,
     pub difficulties: Registry<Difficulty>,
     pub eras: Registry<Era>,
     pub speeds: Registry<Speed>,
@@ -134,12 +140,20 @@ impl Ruleset {
                 }),
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
                 "Religions.json" => {
-                    r.religions = doc
-                        .as_array()
-                        .unwrap_or_default()
+                    let entries = doc.as_array().unwrap_or_default();
+                    r.faiths = entries.iter().filter_map(super::civgame::read_faith).collect();
+                    r.religions = entries
                         .iter()
-                        .filter_map(|name| name.as_str().map(str::to_owned))
+                        .filter_map(|e| {
+                            e.as_str().map(str::to_owned).or_else(|| Some(super::civgame::read_faith(e)?.name))
+                        })
                         .collect();
+                }
+                "UnitNameGroups.json" => {
+                    for group in doc.as_array().unwrap_or_default().iter().filter_map(super::civgame::read_name_group) {
+                        r.name_groups.retain(|g| g.name != group.name);
+                        r.name_groups.push(group);
+                    }
                 }
                 "Ruins.json" => flat(&mut r.ruin_rewards, &doc, RuinReward::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),
@@ -416,6 +430,12 @@ impl Ruleset {
     }
     pub fn unit(&self, name: &str) -> Option<Id<BaseUnit>> {
         self.units.id(name)
+    }
+
+    /// Faiths arise by era (`Religions.json` objects) instead of being
+    /// founded: no pantheons, no prophets founding, no belief picking.
+    pub fn faith_mode(&self) -> bool {
+        !self.faiths.is_empty()
     }
 
     /// The era a new game starts in: the first in Eras.json, whatever it is

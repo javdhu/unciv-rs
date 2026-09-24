@@ -849,7 +849,8 @@ pub fn apply_production_with_science(
     }
     events.push(ConstructionEvent::Completed { what: head, carried_over: c.production_overflow });
     if let Some(unit) = born {
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
     }
     crate::world::effects::on_construction_completed_with_science(world, r, city, head, m.speed, science);
     events.extend(revalidate_production(world, r, city));

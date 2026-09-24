@@ -444,7 +444,8 @@ pub fn purchase_with_science(
         {
             unit.movement_left = Fixed::ZERO;
         }
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
     }
     let name = item_name(r, what).to_string();
     if let Some(c) = world.civ_mut(owner) {

@@ -60,7 +60,9 @@ fn spawn(world: &mut World, r: &Ruleset, civ: CivId, city: Option<Id<City>>, bas
     let origin = world.cities.get(city)?.centre;
     let base = equivalent_unit(world, r, civ, base);
     let unit = crate::world::construction::prepare_unit_near(world, r, civ, base, origin, Some(city))?;
-    Some(world.place_unit(unit))
+    let id = world.place_unit(unit);
+    crate::world::luminaries::name_unit(world, r, id);
+    Some(id)
 }
 
 fn grant_building(world: &mut World, r: &Ruleset, civ: CivId, city: Id<City>, base: Id<Building>) -> bool {

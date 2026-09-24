@@ -1,34 +1,110 @@
+// Luminaries' names (docs/CONTENT.md, Great people; world::luminaries).
+// A nation draws first from its region's pool, then from "unitNames", then
+// from the other regions in turn. Real people only, each in historical
+// order, placed by the polity they worked in; Sages ("Prophet") are
+// teachers and scholars, never founders of religions. Group names are the
+// keys Units.json uses: "[This Unit] gets a name from the [Scientist] group".
 [
-    {
-        "name": "General",
-        "unitNames": ["Ahuitzotl", "Akbar", "Albrecht von Wallenstein", "Arminius", "Belisarius", "Bernard Montgomery", "Cao Cao", "Chandragupta Maurya", "Charles Martel", "El Cid", "Epaminondas", "Erwin Rommel", "Eugene of Savoy", "Francisco Pizarro", "Gaius Marius", "George Patton", "Georgy Zhukov", "Geronimo", "Hamilcar Barca", "Hannibal Barca", "Heinz Guderian", "Hernan Cortez", "Ivan the Terrible", "Jeanne d'Arc", "Johann Tserclaes", "Khaled ibn al-Walid", "Leonidas", "Lysander", "Maurice of Nassau", "Oliver Cromwell", "Pompey", "Pyrrhus", "Robert E. Lee", "Sargon", "Scipio Africanus", "Sitting Bull", "Spartacus", "Subutai", "Sun Tzu", "Timur", "Vercingetorix", "William the Conqueror", "Winfield Scott", "Zhuge Liang"]
-    },
-    {
-        "name": "Admiral",
-        "unitNames": ["Afonso de Albuquerque", "Alfred von Tirpitz", "Álvaro de Bazán", "Andrea Doria", "Andrew Cunningham", "Calonymus of Alexandria", "Chester W. Nimitz", "Christopher Columbus", "Comte de Grasse", "David Farragut", "Don John of Austria", "Erik the Red", "Ferdinand Magellan", "Fernando Villaamil", "Francis Drake", "Fyodor Ushakov", "George Dewey", "Hanno", "Hayreddin Barbarossa", "Henry the Navigator", "Himilco", "Horatio Nelson", "Isoroku Yamamoto", "Jacques Cartier", "James Cook", "John Doukas", "John Hawkins", "John Paul Jones", "Leif Ericson", "Marcus Atilius Regulus", "Marcus Vipsanius Agrippa", "Matthew Perry", "Michiel de Ruyter", "Murat Reis", "Peter Wessel Tordenskjold", "Phormio", "Pytheas", "Roger of Lauria", "Shi Lang", "Togo Heihachiro", "Turgut Reis", "Vasco da Gama", "Yi Sun-sin", "Zheng He", "Zinovy Rozhestvensky"]
-    },
-    {
-        "name": "Artist",
-        "unitNames": ["Adrien Carpentiers", "Alphonse-Marie-Adolphe de Neuville", "Amedeo Modigliani", "Amir Khusro", "Ansel Adams", "Antonello da Messina", "Antoni Gaudi", "Antonín Dvořák", "Arthur Conan Doyle", "Asher Brown Durand", "August Haake", "Bahram Kirmanshahi", "Bartolomé de las Casas", "Bartholomeus Spranger", "Bernardo Martorell", "Caravaggio", "Caspar David Friedrich", "Claude Monet", "Dante Alighieri", "Du Fu", "Duke Ellington", "Edgar Degas", "Edmund Leighton", "Edouard Manet", "El Greco", "Emanuel Leutze", "Ernest Hemingway", "Eugène Delacroix", "Francisco de Goya", "Francisco de Zurbaran", "Francesco Hayez", "Frederic Remington", "Frank Kafka", "Frans Post", "Friedensreich Hundertwasser", "George Gower", "George P. A. Healy", "George Seurat", "Gilbert Stuart", "Giovanni Bellini", "Giotto di Bondone", "Giuseppe Arcimboldo", "Grant DeVolson Wood", "Gustav Klimt", "Gustave Caillebotte", "Hans Holbein the Younger", "Huang Gongwang", "Henri de Toulouse-Lautrec", "Henri Rousseau", "Hiranand", "Horace Vernet", "Ibn Muqlah", "Ilya Repin", "Jacques-Louis David", "James Abbott McNeill Whistler", "Jan van Eyck", "Jan Vermeer", "Jean Clouet", "Jean Honore Fragonard", "Jean Fouquet", "Jiao Bingzhen", "Johann Friedrich von Schiller", "Johann Sebastian Bach", "Johann Wolfgang von Goethe", "Johannes Brahms", "Joseph Conrad", "József Borsos", "Homer", "Kālidāsa", "Kamaleddin Behzad", "Kano Masanobu", "Karl Briullov", "Katsushika Hokusai", "Leonardo da Vinci", "Leo Tolstoy", "Li Po", "Ling Lun", "Louis Armstrong", "Ludwig van Beethoven", "Leo Tolstoy", "Mark Twain", "Martin Johnson Heade", "Mary Cassatt", "Michelangelo Buonarroti", "Miguel de Cervantes", "Miles Davis", "Omar Khayyám", "Pablo Neruda", "Pablo Picasso", "Paul Cezanne", "Paul Delaroche", "Paul Gauguin", "Paolo Uccello", "Peter Paul Rubens", "Petrus Christus", "Pierre-Auguste Renoir", "Pieter Bruegel (the Younger)", "Pieter Bruegel the Elder", "Qian Xuan", "Qiu Ying", "Raffaello Sanzio", "Raja Ravi Varma", "Rembrandt van Rijn", "Jalal al-Din Muhammad Rumi", "Salvador Dali", "Samuel F. B. Morse", "Sandro Botticelli", "Sergey Vasilyevich Ivanov", "Stanley Kubrick", "Sultan Muhammad", "Thespis", "Thomas Gainsborough", "Tintoretto", "Titian", "Torajiro Kasai", "Toyokuni Utagawa", "Utagawa Hiroshige", "Utagawa Kuniyoshi", "Valmiki", "Victor Hugo", "Viktor M. Vasnetsov", "Vincent van Gogh", "Virgil", "Wang Ximeng", "Wang Xizhi", "Willem van de Velde the Younger", "William Butler Yeats", "William Bouguereau", "William Shakespeare", "William Simpson", "Winslow Homer", "Wolfgang Amadeus Mozart", "Yan Liben", "Yanagawa Shigenobu", "Yunus Emre", "Zhang Zeduan"]
-    },
-    {
-        "name": "Merchant",
-        "unitNames": ["Aretas III", "Andrew Carnegie", "Coco Chanel", "Marcus Licinius Crassus", "Enrico Dandolo", "Anthony van Diemen", "Jakob Fugger", "Harkuf", "Edward Harriman", "Milton S. Hershey", "Ibn Battuta", "Steve Jobs", "John Maynard Keynes", "Sir James Lancaster", "Sir Alexander Mackenzie", "Giovanni de Medici", "John Stuart Mill", "Henri Nestlé", "Marco Polo", "John D. Rockefeller", "Sir Thomas Roe", "Shah Jahan", "Adam Smith", "Levi Strauss", "Raja Todar Mal", "Thomas Twining", "Cornelius Vanderbilt", "Richard Whittington", "Wang Anshi", "Zhang Qian"]
-    },
-    { 
-        "name": "Engineer",
-        "unitNames": ["Archimedes", "Alexander Graham Bell", "Isambard Kingdom Brunel", "Karl Benz", "Henry Bessemer", "Bi Sheng", "Cai Lun", "Charles Augustin de Coulomb", "Louis Daguerre", "Gottlieb Daimler", "Charles Stark Draper", "George Eastman", "Thomas Edison", "Alexandre Gustave Eiffel", "Henry Ford", "Benjamin Franklin", "Robert Goddard", "George Washington Goethals", "Heron", "Imhotep", "Joseph Marie Jacquard", "Ferdinand de Lesseps", "Guglielmo Marconi", "William Morton", "Nikolaus August Otto", "Blaise Pascal", "Norbert Rillieux", "John Roebling", "Wilhelm Schickard", "Mimar Sinan", "Nain Singh", "Nikola Tesla", "James Watt", "Frank Lloyd Wright", "Orville Wright", "Wilbur Wright", "Zhang Heng"]
-    },
-    {
-        "name": "Scientist",
-        "unitNames": ["Al-Khwarizmi", "Al-Razi", "Abu al-Qasim al-Zahrawi", "Alhazen", "Aristotle", "Aryabhata", "Francis Bacon", "Tycho Brahe", "Niels Bohr", "Nicolaus Copernicus", "Marie Curie", "John Dalton", "Charles Darwin", "René Descartes", "Albert Einstein", "Euclid", "Leonard Euler", "Michael Faraday", "Enrico Fermi", "Richard Feynman", "Rosalind Franklin", "Galileo Galilei", "Carl Friedrich Gauss", "Werner Heisenberg", "Alexander von Humboldt", "Hypatia", "Johannes Kepler", "Andrey Kolmogorov", "Antoine Laurent Lavoisier", "Mary Leakey", "Antony van Leeuwenhoek", "Gottfried Leibniz", "Carl Linnaeus", "Mikhail Lomonosov", "James Clerk Maxwell", "Gregor Mendel", "Dmitri Mendeleev", "Merit-Ptah", "Nasir al-Din al-Tusi", "Nabu-rimanni", "John von Neumann", "Isaac Newton", "Louis Pasteur", "Plato", "Ptolemy", "Ernest Rutherford", "Andrey Sakharov", "Claude Shannon", "Shen Kuo", "Socrates", "Alan Turing", "Xi Ling Shi", "Zu Chongzhi"]
-    },
-    {
-        "name": "Khan",
-        "unitNames": ["Batu", "Berke", "Genghis", "Guyuk", "Hulegu", "Kublai", "Mongke", "Mongke Temur", "Ogedei", "Temur Khagan"]
-    },
-    {
-        "name": "Prophet",
-        "unitNames": [] // The original has no Great Prophet names, but we leave it here to enable mod support
-    }
+	{
+		"name": "General",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Epaminondas", "Scipio Africanus", "Belisarius", "El Cid", "Jeanne d'Arc", "Maurice of Nassau", "Eugene of Savoy", "Alexander Suvorov", "Georgy Zhukov"],
+			"WestAsia": ["Hamilcar Barca", "Surena", "Bahram Chobin", "Khalid ibn al-Walid", "Gazi Osman Pasha"],
+			"Africa": ["Tariq ibn Ziyad", "Alula Engida", "Yaa Asantewaa"],
+			"SouthAsia": ["Tanaji Malusare", "Bajirao I", "Hari Singh Nalwa", "Sam Manekshaw"],
+			"EastAsia": ["Han Xin", "Wei Qing", "Huo Qubing", "Zhuge Liang", "Eulji Mundeok", "Yue Fei", "Minamoto no Yoshitsune", "Qi Jiguang"],
+			"SoutheastAsia": ["Trần Hưng Đạo", "Gajah Mada", "Diponegoro", "Võ Nguyên Giáp"],
+			"Steppe": ["Muqali", "Jebe", "Subutai", "Bayan of the Baarin"],
+			"Americas": ["Tlacaelel", "Rumiñawi", "Quizquiz", "José de San Martín", "Winfield Scott", "Antonio José de Sucre"]
+		}
+	},
+	{
+		"name": "Admiral",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Themistocles", "Marcus Vipsanius Agrippa", "Roger of Lauria", "Andrea Doria", "Michiel de Ruyter", "Fyodor Ushakov", "Horatio Nelson"],
+			"WestAsia": ["Hanno the Navigator", "Himilco", "Kemal Reis", "Piri Reis", "Hayreddin Barbarossa", "Turgut Reis"],
+			"Africa": ["Ahmose, son of Ebana"],
+			"SouthAsia": ["Kunhali Marakkar", "Kanhoji Angre"],
+			"EastAsia": ["Zheng He", "Kuki Yoshitaka", "Yi Sun-sin", "Shi Lang", "Zheng Chenggong", "Tōgō Heihachirō"],
+			"SoutheastAsia": ["Trần Khánh Dư", "Malahayati"],
+			"Steppe": [],
+			"Americas": ["John Paul Jones", "William Brown", "David Farragut", "Joaquim Marques Lisboa", "Miguel Grau", "Chester W. Nimitz"]
+		}
+	},
+	{
+		"name": "Artist",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Sappho", "Virgil", "Dante Alighieri", "Leonardo da Vinci", "Michelangelo Buonarroti", "William Shakespeare", "Rembrandt van Rijn", "Johann Sebastian Bach", "Ludwig van Beethoven", "Jane Austen", "Leo Tolstoy", "Claude Monet"],
+			"WestAsia": ["Enheduanna", "Firdawsi", "Nizami Ganjavi", "Hafez", "Reza Abbasi"],
+			"Africa": ["Umm Kulthum", "Naguib Mahfouz", "Chinua Achebe", "Miriam Makeba", "Fela Kuti", "Ali Farka Touré"],
+			"SouthAsia": ["Kālidāsa", "Kambar", "Amir Khusrau", "Tansen", "Mirza Ghalib", "Raja Ravi Varma", "Rabindranath Tagore"],
+			"EastAsia": ["Wang Xizhi", "Gu Kaizhi", "Li Bai", "Du Fu", "Sei Shōnagon", "Murasaki Shikibu", "Matsuo Bashō", "Katsushika Hokusai", "Utagawa Hiroshige"],
+			"SoutheastAsia": ["Mpu Prapanca", "Nguyễn Du", "Hồ Xuân Hương", "Sunthorn Phu", "Francisco Balagtas", "Raden Saleh", "José Rizal"],
+			"Steppe": ["Alisher Navoi", "Kamāl ud-Dīn Behzād", "Magtymguly", "Abai Kunanbayev"],
+			"Americas": ["Inca Garcilaso de la Vega", "Sor Juana Inés de la Cruz", "Mark Twain", "Heitor Villa-Lobos", "Duke Ellington", "Louis Armstrong", "Pablo Neruda", "Frida Kahlo"]
+		}
+	},
+	{
+		"name": "Merchant",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Marco Polo", "Francesco Datini", "Richard Whittington", "Giovanni di Bicci de' Medici", "Jakob Fugger", "Josiah Wedgwood", "Coco Chanel"],
+			"WestAsia": ["Pushu-ken", "Calouste Gulbenkian"],
+			"Africa": ["Harkuf"],
+			"SouthAsia": ["Virji Vora", "Fateh Chand", "Jamsetji Tata"],
+			"EastAsia": ["Lü Buwei", "Mitsui Takatoshi", "Wu Bingjian", "Iwasaki Yatarō"],
+			"SoutheastAsia": ["Loke Yew", "Oei Tiong Ham", "Tan Kah Kee"],
+			"Steppe": ["Nanaivandak", "Maniakh"],
+			"Americas": ["Cornelius Vanderbilt", "Irineu Evangelista de Sousa", "Levi Strauss", "Andrew Carnegie", "Milton Hershey", "Madam C. J. Walker"]
+		}
+	},
+	{
+		"name": "Engineer",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Archimedes", "Vitruvius", "Apollodorus of Damascus", "Anthemius of Tralles", "Filippo Brunelleschi", "James Watt", "Isambard Kingdom Brunel", "Gustave Eiffel", "Karl Benz"],
+			"WestAsia": ["Maryam al-Ijliya", "Al-Jazari", "Mimar Sinan", "Taqi al-Din"],
+			"Africa": ["Imhotep", "Hemiunu", "Senenmut", "Ctesibius", "Hero of Alexandria"],
+			"SouthAsia": ["Ustad Ahmad Lahauri", "M. Visvesvaraya", "Vikram Sarabhai", "Satish Dhawan"],
+			"EastAsia": ["Cai Lun", "Zhang Heng", "Yuwen Kai", "Li Chun", "Bi Sheng", "Su Song", "Jang Yeong-sil"],
+			"SoutheastAsia": ["Trần Đại Nghĩa"],
+			"Steppe": ["Guillaume Boucher", "Qavam al-Din Shirazi"],
+			"Americas": ["Thomas Edison", "Nikola Tesla", "Frank Lloyd Wright", "Wilbur Wright", "Orville Wright", "Alberto Santos-Dumont", "Oscar Niemeyer"]
+		}
+	},
+	{
+		"name": "Scientist",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Aristotle", "Nicolaus Copernicus", "Galileo Galilei", "Johannes Kepler", "Isaac Newton", "Adam Smith", "Charles Darwin", "Dmitri Mendeleev", "Marie Curie", "Lise Meitner", "Albert Einstein", "Alan Turing", "Rosalind Franklin"],
+			"WestAsia": ["Al-Khwarizmi", "Thabit ibn Qurra", "Abu Bakr al-Razi", "Ibn al-Haytham", "Ibn Sina", "Omar Khayyam", "Nasir al-Din al-Tusi"],
+			"Africa": ["Euclid", "Eratosthenes", "Ptolemy", "Hypatia", "Ibn al-Nafis", "Ibn Khaldun"],
+			"SouthAsia": ["Aryabhata", "Varahamihira", "Brahmagupta", "Bhaskara II", "Madhava of Sangamagrama", "Srinivasa Ramanujan", "C. V. Raman"],
+			"EastAsia": ["Zu Chongzhi", "Shen Kuo", "Guo Shoujing", "Li Shizhen", "Seki Takakazu", "Kitasato Shibasaburō", "Hideki Yukawa"],
+			"SoutheastAsia": ["Tuệ Tĩnh", "Lê Quý Đôn", "Fe del Mundo"],
+			"Steppe": ["Al-Biruni", "Qadi Zada al-Rumi", "Jamshid al-Kashi", "Ali Qushji"],
+			"Americas": ["Benjamin Franklin", "Carlos Chagas", "Bernardo Houssay", "Linus Pauling", "Barbara McClintock", "Katherine Johnson", "Richard Feynman", "Mario Molina"]
+		}
+	},
+	{
+		"name": "Prophet",
+		"unitNames": [],
+		"regions": {
+			"Europe": ["Socrates", "Plato", "Boethius", "Hildegard of Bingen", "Thomas Aquinas", "Desiderius Erasmus", "Immanuel Kant"],
+			"WestAsia": ["Hillel the Elder", "Rabia al-Adawiyya", "Al-Ghazali", "Rumi", "Yunus Emre", "Mulla Sadra"],
+			"Africa": ["Origen", "Augustine of Hippo", "Maimonides", "Ahmad Baba", "Nana Asma'u"],
+			"SouthAsia": ["Nagarjuna", "Adi Shankara", "Ramanuja", "Hemachandra", "Mirabai", "Tulsidas", "Swami Vivekananda"],
+			"EastAsia": ["Mencius", "Zhuangzi", "Xuanzang", "Wonhyo", "Kūkai", "Zhu Xi", "Wang Yangming", "Motoori Norinaga"],
+			"SoutheastAsia": ["Dharmakirti of Suvarnadvipa", "Hamzah Fansuri", "Nuruddin ar-Raniri", "Buddhadasa Bhikkhu"],
+			"Steppe": ["Muhammad al-Bukhari", "Al-Tirmidhi", "Al-Farabi", "Ahmad Yasawi"],
+			"Americas": ["Bartolomé de las Casas", "Antônio Vieira", "Frederick Douglass", "Martin Luther King Jr."]
+		}
+	},
+	{
+		"name": "Khan",
+		"unitNames": ["Batu", "Berke", "Guyuk", "Hulegu", "Kublai", "Mongke", "Mongke Temur", "Ogedei", "Temur Khagan"]
+	}
 ]
