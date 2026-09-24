@@ -13,6 +13,7 @@ pub mod automation;
 pub mod barbarians;
 pub mod city;
 pub mod city_effects;
+pub mod city_names;
 pub mod city_state_actions;
 pub mod city_states;
 pub mod combat;

@@ -63,6 +63,12 @@ DERIVED = {
                    ("year_intervals", "Vec<(Fixed, i32)>", "Parsed calendar intervals: years per turn and inclusive end turn.")],
     "Terrain":    [("damage_per_turn", "i32",
                     "Summed from DamagesContainingUnits uniques (Terrain.kt:212).")],
+    # civ.game's own fields, read by ruleset/civgame.rs (docs/REBUILD.md data contract).
+    "Nation":     [("region", "Option<String>", "civ.game: one of `civgame::REGIONS`."),
+                   ("voice", "Option<String>", "civ.game: the leader's nearest living language."),
+                   ("alt_leader", "Option<super::civgame::AltLeader>", "civ.game: the second leader, chosen at setup."),
+                   ("city_renames", "Vec<super::civgame::CityRename>", "civ.game: city renames keyed by the owner's era."),
+                   ("is_barbarian", "bool", "civ.game: `isBarbarian`, or the fixtures' name `Barbarians`.")],
 }
 
 STAT_FIELDS = ["food","production","gold","science","culture","happiness","faith"]

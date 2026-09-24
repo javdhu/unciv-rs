@@ -70,7 +70,7 @@ fn civ_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType) -> bool {
     world.civ(unit.owner).is_some_and(|c| {
         c.uniques
             .matching(kind)
-            .chain(r.nations[c.nation].uniques.iter().filter(|u| u.unique_type() == Some(kind)))
+            .chain(c.leader_uniques(r).iter().filter(|u| u.unique_type() == Some(kind)))
             .chain(c.techs.iter().flat_map(|t| &r.technologies[*t].uniques).filter(|u| u.unique_type() == Some(kind)))
             .any(|u| crate::world::conditionals::applies(u, &ctx).holds())
     })

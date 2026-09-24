@@ -142,6 +142,7 @@ struct RoomRequest {
     majors: u8,
     city_states: u8,
     nation: Option<String>,
+    leader: Option<String>,
     wrap_x: bool,
     max_turns: Option<u32>,
     speed: Option<String>,
@@ -157,6 +158,7 @@ impl Default for RoomRequest {
             majors: 4,
             city_states: 2,
             nation: None,
+            leader: None,
             wrap_x: false,
             max_turns: None,
             speed: None,
@@ -249,6 +251,7 @@ async fn create_room(
         speed: request.speed,
         ruleset: request.ruleset,
         victories: request.victories,
+        leader: request.leader,
     };
     room_response(
         host.create_room(&guest, settings, request.turn_seconds)

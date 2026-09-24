@@ -62,7 +62,7 @@ impl World {
     }
 
     pub fn game_difficulty<'r>(&self, r: &'r crate::ruleset::Ruleset) -> Option<&'r crate::ruleset::Difficulty> {
-        self.difficulty.and_then(|id| r.difficulties.get(id)).or_else(|| r.difficulties.by_name("Prince"))
+        self.difficulty.and_then(|id| r.difficulties.get(id)).or_else(|| r.default_difficulty())
     }
 
     pub fn civ(&self, id: CivId) -> Option<&Civilization> {

@@ -430,6 +430,10 @@ pub struct ProductionProgressView {
 pub struct CivView {
     pub id: u8,
     pub nation: u32,
+    /// Who leads: the nation's leader or its second leader.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leader: Option<String>,
     pub city_state: bool,
     pub alive: bool,
     /// Own civ only, from here down.
@@ -675,6 +679,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
         .map(|c| CivView {
             id: c.id.0,
             nation: c.nation.index(),
+            leader: leader_of(w, r, c.id),
             city_state: c.city_state,
             alive: c.alive,
             gold: None,
@@ -689,6 +694,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
         civs.push(CivView {
             id: me.0,
             nation: c.nation.index(),
+            leader: leader_of(w, r, me),
             city_state: c.is_city_state(),
             alive: c.is_alive(),
             gold: Some(c.gold),
@@ -858,6 +864,12 @@ pub enum PresentationEvent {
     CityFounded {
         city: EntityRef,
         by: u8,
+    },
+    /// The owner entered an era that calls the city by another name.
+    CityRenamed {
+        city: EntityRef,
+        from: String,
+        to: String,
     },
     CityCaptured {
         city: EntityRef,
@@ -1212,6 +1224,12 @@ pub fn replay_for(
     batches
 }
 
+/// A leader is public once the civ is known; it never changes after setup.
+fn leader_of(w: &World, r: &Ruleset, civ: CivId) -> Option<String> {
+    let c = w.civ(civ)?;
+    r.nations.get(c.nation)?.leader(c.alt_leader).map(String::from)
+}
+
 fn presentation(kind: &str, text: String, event: PresentationEvent) -> EventView {
     EventView {
         kind: kind.into(),
@@ -1279,6 +1297,15 @@ pub fn report_for(
                 PresentationEvent::CityFounded {
                     city: (*city).into(),
                     by: by.0,
+                },
+            ),
+            TurnEvent::CityRenamed { city, from, to } if own_city(*city) => (
+                "CityRenamed",
+                format!("{from} is now {to}"),
+                PresentationEvent::CityRenamed {
+                    city: (*city).into(),
+                    from: from.clone(),
+                    to: to.clone(),
                 },
             ),
             TurnEvent::CityCaptured { city, by }
