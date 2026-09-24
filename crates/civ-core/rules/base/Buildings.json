@@ -22,15 +22,15 @@
 		"uniques": ["Destroyed when the city is captured"]
 	},
 	{
-		"name": "Stele",
-        "replaces": "Monument",
-		"uniqueTo": "Ethiopia",
+		"name": "Stupa",
+		"replaces": "Monument",
+		"uniqueTo": "Maurya",
 		"culture": 2,
-		"faith": 2,
 		"cost": 40,
 		"hurryCostModifier": 40,
 		"maintenance": 1,
-		"uniques": ["Destroyed when the city is captured"] //"Only available <when religion is enabled>"
+		"uniques": ["Destroyed when the city is captured"],
+		"faith": 1
 	},
 	// Column 1
 	{
@@ -44,19 +44,28 @@
 		"requiredTech": "Pottery"
 	},
 	{
-		"name": "Shrine",
-		"faith": 1,
-		"cost": 40,
+		"name": "Qullqa",
+		"replaces": "Granary",
+		"uniqueTo": "Tawantinsuyu",
+		"food": 2,
 		"maintenance": 1,
-		"requiredTech": "Pottery",
-		"uniques": ["Only available <when religion is enabled>"]
+		"hurryCostModifier": 25,
+		"uniques": ["[+1 Food] from [Deer] tiles [in this city]", "[+1 Food] from [Bananas] tiles [in this city]", "[+1 Food] from [Wheat] tiles [in this city]", "[25]% Food is carried over after population increases [in this city]"],
+		"requiredTech": "Pottery"
 	},
 	{
-		"name": "Pyramid",
-		"replaces": "Shrine",
-		"uniqueTo": "The Maya",
-		"faith": 2,
-		"science": 2,
+		"name": "Eri",
+		"replaces": "Granary",
+		"uniqueTo": "Chola",
+		"food": 2,
+		"maintenance": 1,
+		"hurryCostModifier": 25,
+		"uniques": ["[+1 Food] from [Deer] tiles [in this city]", "[+1 Food] from [Bananas] tiles [in this city]", "[+1 Food] from [Wheat] tiles [in this city]", "[+1 Food] from [Farm] tiles [in this city]"],
+		"requiredTech": "Pottery"
+	},
+	{
+		"name": "Shrine",
+		"faith": 1,
 		"cost": 40,
 		"maintenance": 1,
 		"requiredTech": "Pottery",
@@ -94,18 +103,18 @@
 		"quote": "'Time crumbles things; everything grows old and is forgotten under the power of time' - Aristotle"
 	},
 	{
+		"name": "Abu Simbel",
+		"greatPersonPoints": {"Virtuoso": 1},
+		"culture": 2,
+		"faith": 2,
+		"isWonder": true,
+		"requiredTech": "Calendar",
+		"uniques": ["[+1 Culture] from every [Monument]"]
+	},
+	{
 		"name": "Library",
 		"hurryCostModifier": 25,
 		"maintenance": 1,
-		"uniques": ["[+1 Science] per [2] population [in this city]"],
-		"requiredTech": "Writing"
-	},
-	{
-		"name": "Paper Maker",
-		"replaces": "Library",
-		"uniqueTo": "China",
-		"hurryCostModifier": 25,
-		"gold": 2,
 		"uniques": ["[+1 Science] per [2] population [in this city]"],
 		"requiredTech": "Writing"
 	},
@@ -136,9 +145,21 @@
 		"requiredTech": "The Wheel"
 	},
 	{
-		"name": "Floating Gardens",
+		"name": "Nilometer",
 		"replaces": "Water Mill",
-		"uniqueTo": "Aztecs",
+		"uniqueTo": "Egypt",
+		"maintenance": 1,
+		"food": 2,
+		"production": 1,
+		"hurryCostModifier": 25,
+		"uniques": ["Must be on [River]"],
+		"requiredTech": "The Wheel",
+		"gold": 1
+	},
+	{
+		"name": "Chinampa",
+		"replaces": "Water Mill",
+		"uniqueTo": "Triple Alliance",
 		"food": 2,
 		"production": 1,
 		"uniques": ["[+2 Food] from [Lakes] tiles [in this city]", "Must be next to [Fresh water]"],
@@ -156,17 +177,6 @@
 		"uniques": ["Destroyed when the city is captured"]
 	},
 	{
-		"name": "Walls of Babylon",
-		"replaces": "Walls",
-		"cost": 65,
-		"uniqueTo": "Babylon",
-		"cityStrength": 6,
-		"cityHealth": 100,
-		"hurryCostModifier": 25,
-		"requiredTech": "Masonry",
-		"uniques": ["Destroyed when the city is captured"]
-	},
-	{
 		"name": "The Pyramids",
 		"culture": 1,
 		"greatPersonPoints": {"Master Builder": 1},
@@ -174,6 +184,15 @@
 		"uniques": ["Can build [all] improvements at a [+25]% rate","[2] free [Worker] units appear"],
 		"requiredTech": "Masonry",
 		"quote": "'O, let not the pains of death which come upon thee enter into my body. I am the god Tem, and I am the foremost part of the sky, and the power which protecteth me is that which is with all the gods forever.' - The Book of the Dead, translated by Sir Ernest Alfred Wallis Budge"
+	},
+	{
+		"name": "Great Ziggurat of Ur",
+		"greatPersonPoints": {"Master Builder": 1},
+		"culture": 2,
+		"faith": 3,
+		"isWonder": true,
+		"requiredTech": "Masonry",
+		"uniques": ["[+25]% growth [in this city]"]
 	},
 	{
 		"name": "Mausoleum of Halicarnassus",
@@ -193,13 +212,12 @@
 		"requiredTech": "Bronze Working"
 	},
 	{
-		"name": "Krepost",
+		"name": "Kilombo",
 		"replaces": "Barracks",
-		"uniqueTo": "Russia",
+		"uniqueTo": "Ndongo",
 		"hurryCostModifier": 25,
 		"maintenance": 1,
-		"uniques": ["[-25]% Culture cost of natural border growth [in this city]","[-25]% Gold cost of acquiring tiles [in this city]",
-			"New [Military] units start with [15] XP [in this city]", "Destroyed when the city is captured"],
+		"uniques": ["New [Military] units start with [20] XP [in this city]", "[+15]% Production when constructing [Military] units [in this city]", "Destroyed when the city is captured"],
 		"requiredTech": "Bronze Working"
 	},
 	{
@@ -246,6 +264,16 @@
 		"requiredTech": "Horseback Riding"
 	},
 	{
+		"name": "Örtöö",
+		"replaces": "Stable",
+		"uniqueTo": "Mongols",
+		"maintenance": 1,
+		"hurryCostModifier": 25,
+		"uniques": ["[+15]% Production when constructing [Mounted] units [in this city]", "[+1 Production] from [Cattle] tiles [in this city]", "[+1 Production] from [Horses] tiles [in this city]", "[+1 Production] from [Sheep] tiles [in this city]"],
+		"requiredTech": "Horseback Riding",
+		"gold": 1
+	},
+	{
 		"name": "Circus Maximus",
 		"cost": 125,
 		"happiness": 5,
@@ -269,6 +297,7 @@
 		"hurryCostModifier": 25,
 		"requiredTech": "Construction"
 	},
+	{"name": "Thermae", "replaces": "Colosseum", "uniqueTo": "Rome", "maintenance": 1, "happiness": 3, "hurryCostModifier": 25, "requiredTech": "Construction"},
 	{
 		"name": "Terracotta Army",
 		"culture": 6,
@@ -294,29 +323,6 @@
 		"hurryCostModifier": 25,
 		"requiredTech": "Philosophy",
 		"uniques": ["Only available <when religion is enabled>", "Destroyed when the city is captured"]
-	},
-	{
-		"name": "Burial Tomb",
-		"replaces": "Temple",
-		"uniqueTo": "Egypt",
-		"maintenance": 0,
-		"uniques": ["[+100]% Gold given to enemy if city is captured <in this city>"],
-		"faith": 2,
-		"happiness": 2,
-		"requiredBuilding": "Shrine",
-		"hurryCostModifier": 25,
-		"requiredTech": "Philosophy"
-	},
-	{
-		"name": "Mud Pyramid Mosque",
-		"replaces": "Temple",
-		"uniqueTo": "Songhai",
-		"maintenance": 0,
-		"hurryCostModifier": 25,
-		"culture": 2,
-		"faith": 2,
-		"requiredBuilding": "Shrine",
-		"requiredTech": "Philosophy"
 	},
 	{
 		"name": "National College",
@@ -364,16 +370,15 @@
 		"requiredTech": "Currency"
 	},
 	{
-		"name": "Bazaar",
+		"name": "Bedesten",
 		"replaces": "Market",
-		"uniqueTo": "Arabia",
+		"uniqueTo": "Ottomans",
 		"gold": 2,
 		"specialistSlots": {"Merchant": 1},
 		"hurryCostModifier": 25,
 		"percentStatBonus": {"gold": 25},
-		"uniques": ["Provides 1 extra copy of each improved luxury resource near this City",
-			"[+2 Gold] from [Oil] tiles [in this city]", "[+2 Gold] from [Oasis] tiles [in this city]"],
-		"requiredTech": "Currency"
+		"requiredTech": "Currency",
+		"uniques": ["Provides 1 extra copy of each improved luxury resource near this City"]
 	},
 	{
 		"name": "Mint",
@@ -397,6 +402,15 @@
 		"maintenance": 1,
 		"hurryCostModifier": 0,
 		"uniques": ["[40]% Food is carried over after population increases [in this city]"],
+		"requiredTech": "Engineering"
+	},
+	{
+		"name": "Qanat",
+		"replaces": "Aqueduct",
+		"uniqueTo": "Persia",
+		"maintenance": 0,
+		"hurryCostModifier": 0,
+		"uniques": ["[40]% Food is carried over after population increases [in this city]", "[+1 Food] from [Desert] tiles [in this city]"],
 		"requiredTech": "Engineering"
 	},
 	{
@@ -563,18 +577,6 @@
 		"requiredTech": "Steel"
 	},
 	{
-		"name": "Longhouse",
-		"replaces": "Workshop",
-		"uniqueTo": "Iroquois",
-		"cost": 100,
-		"maintenance": 2,
-		"production": 2,
-		"specialistSlots": {"Engineer": 1},
-		"hurryCostModifier": 25,
-		"uniques": ["[+1 Production] from [Forest] tiles [in this city]"],
-		"requiredTech": "Steel"
-	},
-	{
 		"name": "Forge",
 		"maintenance": 1,
 		"hurryCostModifier": 25,
@@ -594,6 +596,17 @@
 		"requiredTech": "Compass"
 	},
 	{
+		"name": "Bandar",
+		"replaces": "Harbor",
+		"uniqueTo": "Majapahit",
+		"cost": 120,
+		"maintenance": 2,
+		"hurryCostModifier": 25,
+		"uniques": ["[+1 Production] from [Water resource] tiles [in this city]", "Connects trade routes over water", "Must be next to [Coast]"],
+		"requiredTech": "Compass",
+		"gold": 2
+	},
+	{
 		"name": "University",
 		"maintenance": 2,
 		"hurryCostModifier": 15,
@@ -604,17 +617,29 @@
 		"requiredTech": "Education"
 	},
 	{
-		"name": "Wat",
+		"name": "Hanlin Academy",
 		"replaces": "University",
-		"uniqueTo": "Siam",
+		"uniqueTo": "Tang China",
 		"maintenance": 2,
 		"hurryCostModifier": 15,
 		"percentStatBonus": {"science": 33},
 		"specialistSlots": {"Scientist": 2},
-		"culture": 3,
+		"requiredBuilding": "Library",
+		"uniques": ["[+2 Science] from [Jungle] tiles [in this city]", "[+25]% Great Person generation [in this city]"],
+		"requiredTech": "Education"
+	},
+	{
+		"name": "Sankore Madrasa",
+		"replaces": "University",
+		"uniqueTo": "Mali",
+		"maintenance": 2,
+		"hurryCostModifier": 15,
+		"percentStatBonus": {"science": 33},
+		"specialistSlots": {"Scientist": 2},
 		"requiredBuilding": "Library",
 		"uniques": ["[+2 Science] from [Jungle] tiles [in this city]"],
-		"requiredTech": "Education"
+		"requiredTech": "Education",
+		"culture": 2
 	},
 	{
 		"name": "Oxford University",
@@ -651,19 +676,6 @@
 		"requiredBuilding": "Walls",
 		"requiredTech": "Stirrups",
 		"uniques": ["Destroyed when the city is captured"]
-	},
-	{
-		"name": "Mughal Fort",
-		"cost": 150,
-		"replaces": "Castle",
-		"uniqueTo": "India",
-		"cityStrength": 7,
-		"cityHealth": 25,
-		"culture": 2,
-		"hurryCostModifier": 25,
-		"requiredBuilding": "Walls",
-		"uniques": ["[+1 Gold] [in this city] <after discovering [Flight]>", "Destroyed when the city is captured"],
-		"requiredTech": "Stirrups"
 	},
 	{
 		"name": "Alhambra",
@@ -725,19 +737,6 @@
 		"uniques": ["Destroyed when the city is captured"]
 	},
 	{
-		"name": "Ceilidh Hall",
-		"replaces": "Opera House",
-		"uniqueTo": "Celts",
-		"culture": 4,
-		"happiness": 3,
-		"specialistSlots": {"Artist": 1},
-		"hurryCostModifier": 10,
-		"requiredBuilding": "Amphitheater",
-		"maintenance": 2,
-		"requiredTech": "Architecture",
-		"uniques": ["Destroyed when the city is captured"]
-	},
-	{
 		"name": "Sistine Chapel",
 		"culture": 1,
 		"isWonder": true,
@@ -750,18 +749,6 @@
 		"name": "Bank",
 		"gold": 2,
 		"specialistSlots": {"Merchant": 1},
-		"hurryCostModifier": 15,
-		"percentStatBonus": {"gold": 25},
-		"requiredBuilding": "Market",
-		"requiredTech": "Banking"
-	},
-	{
-		"name": "Satrap's Court",
-		"replaces": "Bank",
-		"uniqueTo": "Persia",
-		"gold": 2,
-		"specialistSlots": {"Merchant": 1},
-		"happiness": 2,
 		"hurryCostModifier": 15,
 		"percentStatBonus": {"gold": 25},
 		"requiredBuilding": "Market",
@@ -872,18 +859,6 @@
 		"requiredTech": "Economics"
 	},
 	{
-		"name": "Coffee House",
-		"replaces": "Windmill",
-		"uniqueTo": "Austria",
-		"production": 2,
-		"percentStatBonus": {"production": 5},
-		"specialistSlots": {"Engineer": 1},
-		"hurryCostModifier": 25,
-		"maintenance": 2,
-		"uniques": ["[+25]% Great Person generation [in this city]"],
-		"requiredTech": "Economics"
-	},
-	{
 		"name": "Arsenal",
 		"cost": 300,
 		"cityStrength": 9,
@@ -936,6 +911,19 @@
 		"requiredTech": "Scientific Method"
 	},
 	{
+		"name": "Terakoya",
+		"replaces": "Public School",
+		"uniqueTo": "Japan",
+		"science": 3,
+		"specialistSlots": {"Scientist": 1},
+		"requiredBuilding": "University",
+		"maintenance": 1,
+		"hurryCostModifier": 0,
+		"uniques": ["[+1 Science] per [2] population [in this city]"],
+		"requiredTech": "Scientific Method",
+		"culture": 1
+	},
+	{
 		"name": "Factory",
 		"cost": 360,
 		"production": 4,
@@ -945,6 +933,19 @@
 		"maintenance": 3,
 		"hurryCostModifier": 0,
 		"requiredResource": "Coal",
+		"requiredTech": "Industrialization"
+	},
+	{
+		"name": "Cotton Mill",
+		"replaces": "Factory",
+		"uniqueTo": "England",
+		"cost": 360,
+		"production": 4,
+		"percentStatBonus": {"production": 10},
+		"specialistSlots": {"Engineer": 2},
+		"requiredBuilding": "Workshop",
+		"maintenance": 3,
+		"hurryCostModifier": 0,
 		"requiredTech": "Industrialization"
 	},
 	{
@@ -1081,6 +1082,17 @@
 		"requiredTech": "Plastics"
 	},
 	{
+		"name": "National Laboratory",
+		"replaces": "Research Lab",
+		"uniqueTo": "United States",
+		"science": 5,
+		"percentStatBonus": {"science": 50},
+		"specialistSlots": {"Scientist": 2},
+		"requiredBuilding": "Public School",
+		"maintenance": 3,
+		"requiredTech": "Plastics"
+	},
+	{
 		"name": "Cristo Redentor",
 		"culture": 5,
 		"isWonder": true,
@@ -1122,7 +1134,7 @@
 		"percentStatBonus": {"production": 15},
 		"requiredBuilding": "Factory",
 		"maintenance": 3,
-		"requiredTech": "Ecology",
+		"requiredTech": "Renewable Energy",
 		"uniques": ["Must be next to [Desert]", "Only available <in cities without a [Nuclear Plant]>"]
 	},
 	{
@@ -1175,7 +1187,7 @@
 		"name": "Bomb Shelter",
 		"cost": 300,
 		"maintenance": 1,
-		"requiredTech": "Telecommunications",
+		"requiredTech": "Nuclear Fission",
 		"uniques": ["Population loss from nuclear attacks [-75]% [in this city]",
 			"Damage to garrison from nuclear attacks [-75]% [in this city]",
 			"Only available <when nuclear weapons are enabled> <hidden from users>"]

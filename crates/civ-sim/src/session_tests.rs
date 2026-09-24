@@ -720,7 +720,7 @@ fn an_unseen_recipient_elimination_does_not_remove_or_reject_offers() {
 fn human_production_switches_preserve_work_across_rounds_save_and_replay() {
     let s = Session::new(
         Settings {
-            nation: Some("America".into()),
+            nation: Some("United States".into()),
             majors: 2,
             city_states: 1,
             ..Settings::default()
@@ -1340,6 +1340,8 @@ fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
 fn replays_over_a_real_game_stay_inside_what_the_human_explored() {
     let mut s = Session::new(
         Settings {
+            // A seed whose deal brings another nation into view within thirty rounds.
+            seed: 4,
             majors: 4,
             city_states: 2,
             ..Settings::default()

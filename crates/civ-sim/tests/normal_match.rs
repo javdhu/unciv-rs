@@ -5,7 +5,7 @@ use civ_sim::{new_game, player_view, Settings};
 #[test]
 fn initial_world_grants_starting_rules_and_national_units_in_legal_slots() {
     let (world, rules, me) = new_game(&Settings {
-        nation: Some("Polynesia".into()),
+        nation: Some("Triple Alliance".into()),
         wrap_x: true,
         ..Settings::default()
     })
@@ -15,11 +15,11 @@ fn initial_world_grants_starting_rules_and_national_units_in_legal_slots() {
     assert!(civ
         .units
         .iter()
-        .any(|id| rules.units[world.units.get(*id).unwrap().base].name == "Maori Warrior"));
+        .any(|id| rules.units[world.units.get(*id).unwrap().base].name == "Jaguar"));
     assert_eq!(
         civ.units.len(),
         2,
-        "the bundled Ancient era starts with one Settler and one military unit"
+        "the bundled Age of Bronze starts with one Settler and one military unit"
     );
     for a in &civ.units {
         for b in &civ.units {
@@ -261,7 +261,7 @@ fn city_state_view_shares_only_our_quests_and_relationship() {
 #[test]
 #[ignore = "long match gate: cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --nocapture"]
 fn complete_matches_save_and_replay() {
-    for (seed, nation) in [(1, "The Maya"), (7, "Austria"), (19, "Songhai")] {
+    for (seed, nation) in [(1, "Mali"), (7, "Majapahit"), (19, "Chola")] {
         let mut s = Session::new(
             Settings {
                 seed,

@@ -53,12 +53,12 @@ fn the_player_leads_with_the_leader_they_chose() {
 #[test]
 fn a_leader_from_another_nation_is_refused() {
     assert!(new_game_in(&rome(Some("Hatshepsut")), &[0], rules()).is_err());
-    let greece = Settings {
-        nation: Some("Greece".into()),
+    let persia = Settings {
+        nation: Some("Persia".into()),
         leader: Some("Galla Placidia".into()),
         ..Settings::default()
     };
-    assert!(new_game_in(&greece, &[0], rules()).is_err());
+    assert!(new_game_in(&persia, &[0], rules()).is_err());
 }
 
 #[test]

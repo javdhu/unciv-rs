@@ -16,7 +16,7 @@ const OTHER: CivId = CivId(1);
 
 fn fixture() -> (World, Ruleset, Id<Unit>, Id<City>, Id<City>) {
     let r = civ_sim::content::load().unwrap();
-    let civs = ["Rome", "Greece"]
+    let civs = ["Rome", "Persia"]
         .into_iter()
         .enumerate()
         .map(|(i, nation)| Civilization::new(CivId(i as u8), r.nations.id(nation).unwrap(), false))
