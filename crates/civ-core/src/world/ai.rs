@@ -25,17 +25,37 @@ use crate::world::grid::{CivId, TileId};
 use crate::world::policies::{is_adoptable, PolicyModifiers};
 use crate::world::research::{available_techs, tech_cost_in, ScienceModifiers};
 use crate::world::world::World;
+use crate::world::goals::{self, Goal};
 use crate::UniqueType;
+
+/// What a tech on the goal's route counts for, as a percent of its cost.
+const BEELINE_PERCENT: i32 = 55;
+
+/// How much the war threshold moves with the goal, in thousandths of the
+/// rival's strength: a conqueror needs less of an edge, a builder more.
+const CONQUEROR_EDGE: i64 = 300;
+const BUILDER_CAUTION: i64 = 250;
 
 /// What to research next.
 ///
 /// Cheapest first. A crude opinion, but a defensible one: early techs unlock
 /// the things later techs build on, so rushing an expensive one usually costs
 /// more than it returns. Ties break on id.
+///
+/// Techs on the route to the civ's goal ([`goals::beeline`]) count as
+/// [`BEELINE_PERCENT`] of their cost, so a conqueror heads for its next
+/// soldier and a scientist for the victory's buildings without neglecting
+/// the cheap techs on the way.
 pub fn choose_research(world: &World, r: &Ruleset, civ: CivId, m: ScienceModifiers) -> Option<Id<Technology>> {
+    let route = if world.is_legacy_ai(civ) {
+        std::collections::BTreeSet::new()
+    } else {
+        goals::beeline(world, r, civ, goals::goal(world, r, civ))
+    };
     available_techs(r, world.civ(civ)?)
         .into_iter()
         .filter_map(|t| tech_cost_in(world, r, civ, t, m).map(|c| (c, t)))
+        .map(|(c, t)| (if route.contains(&t) { c * BEELINE_PERCENT / 100 } else { c }, t))
         .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)))
         .map(|(_, t)| t)
 }
@@ -172,7 +192,11 @@ pub fn choose_construction(
                         // well as its cost; raw strength/cost ties Scout with
                         // Warrior and otherwise keeps obsolete armies forever.
                         if want_military {
-                            military_value(strength)
+                            if world.is_legacy_ai(civ) {
+                                military_value(strength)
+                            } else {
+                                military_value(strength) * army_need(world, r, civ, id)
+                            }
                         } else {
                             return None;
                         }
@@ -1180,6 +1204,11 @@ pub fn should_raze(world: &World, r: &Ruleset, civ: CivId, city: Id<City>) -> bo
     let _ = r;
     let Some(c) = world.cities.get(city) else { return false };
     let city_state = world.civ(civ).is_some_and(|x| x.is_city_state());
+    // A civ playing for conquest or score keeps what it takes: every city
+    // is score, and a razed one is a capital it must take again.
+    if !city_state && !world.is_legacy_ai(civ) && matches!(goals::goal(world, r, civ), Goal::Conquest | Goal::Score) {
+        return false;
+    }
     (c.population < 4 || city_state) && c.founder != civ && crate::world::conquest::can_raze(world, city).is_ok()
 }
 
@@ -1316,6 +1345,75 @@ fn unit_strength(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> i32 {
     r.units.get(base).map_or(0, |u| u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0))).max(0)
 }
 
+/// What a unit does in an army.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    Melee,
+    Ranged,
+    Siege,
+    Naval,
+    Air,
+}
+
+fn role(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> Role {
+    let Some(b) = r.units.get(base) else { return Role::Melee };
+    match r.unit_types.by_name(&b.unit_type).map(|t| t.movement_type.as_str()) {
+        Some("Water") => Role::Naval,
+        Some("Air") => Role::Air,
+        _ if b.unit_type == "Siege" => Role::Siege,
+        _ if b.ranged_strength.unwrap_or(0) > 0 => Role::Ranged,
+        _ => Role::Melee,
+    }
+}
+
+/// How much the army wants one more unit of this unit's role, as a
+/// multiplier on its value (docs/AI.md, level 2). Strength per hammer alone
+/// fills an army with whatever is cheapest per point, which on a coast is
+/// ships that can never reach an inland city, and never siege.
+///
+/// Each role has a share of the army it aims for; below it the role is worth
+/// more, above twice it much less. A conqueror wants siege and melee to take
+/// cities; everyone keeps the navy and air force to a minority.
+fn army_need(world: &World, r: &Ruleset, civ: CivId, base: Id<crate::ruleset::BaseUnit>) -> Fixed {
+    let Some(c) = world.civ(civ) else { return Fixed::ONE };
+    let queued = c.cities.iter().filter_map(|id| world.cities.get(*id)).flat_map(|city| &city.queue).filter_map(|what| {
+        match what {
+            Construction::Unit(b) if unit_strength(r, *b) > 0 => Some(*b),
+            _ => None,
+        }
+    });
+    let army: Vec<Role> = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| unit_strength(r, u.base) > 0)
+        .map(|u| u.base)
+        .chain(queued)
+        .map(|b| role(r, b))
+        .collect();
+    let conqueror = goals::goal(world, r, civ) == Goal::Conquest;
+    let want = role(r, base);
+    // Shares in thousandths.
+    let target: i64 = match (want, conqueror) {
+        (Role::Siege, true) => 250,
+        (Role::Siege, false) => 60,
+        (Role::Ranged, _) => 250,
+        (Role::Melee, true) => 400,
+        (Role::Melee, false) => 450,
+        (Role::Naval, true) => 100,
+        (Role::Naval, false) => 200,
+        (Role::Air, _) => 200,
+    };
+    let have = army.iter().filter(|r| **r == want).count() as i64 * 1000 / (army.len() as i64 + 1);
+    if have < target {
+        Fixed::permille(if conqueror && want == Role::Siege { 2_500 } else { 1_600 })
+    } else if have > target * 2 {
+        Fixed::permille(300)
+    } else {
+        Fixed::ONE
+    }
+}
+
 fn military_value(strength: i32) -> Fixed {
     // Preserve the old Warrior value (24) while rewarding stronger units
     // for limited frontage. All scoring stays in deterministic fixed point.
@@ -1329,7 +1427,8 @@ fn military_value(strength: i32) -> Fixed {
 /// rather than merely noticed.
 pub fn target_military(world: &World, r: &Ruleset, civ: CivId) -> usize {
     let Some(c) = world.civ(civ) else { return 0 };
-    let base = c.cities.len() * 2;
+    let per_city = if !world.is_legacy_ai(civ) && goals::goal(world, r, civ) == Goal::Conquest { 3 } else { 2 };
+    let base = c.cities.len() * per_city;
     let mine = military_strength(world, r, civ);
     let strongest_rival = world
         .civ_ids()
@@ -1409,6 +1508,13 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
         L::Friend => Fixed::permille(1_750),
         L::Ally => Fixed::whole(2),
     };
+    let needed = if world.is_legacy_ai(civ) {
+        needed
+    } else if goals::goal(world, r, civ) == Goal::Conquest {
+        (needed - Fixed::permille(CONQUEROR_EDGE)).max(Fixed::permille(900))
+    } else {
+        needed + Fixed::permille(BUILDER_CAUTION)
+    };
     if mine < theirs * needed || mine.is_zero() {
         return false;
     }
@@ -1451,6 +1557,10 @@ pub fn wants_peace(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool
     // Winning clearly: press on.
     if mine > (theirs * Fixed::whole(2)) {
         return false;
+    }
+    // A conqueror that is not losing keeps going far longer.
+    if !world.is_legacy_ai(civ) && mine >= theirs && goals::goal(world, r, civ) == Goal::Conquest {
+        return turns > STALEMATE_LENGTH * 3;
     }
     // A grinding stalemate is worth ending.
     turns > STALEMATE_LENGTH

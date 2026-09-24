@@ -54,10 +54,40 @@ city-site scoring, victory-building urgency, determinism.
 Still true after level 1: no game ends in conquest; Standard ends by Reserve Currency or the turn cap,
 Blitz on score. Level 2 is for that.
 
+**Level 2, first pass (2026-09-24), `world/goals.rs`.** Each AI reads its goal off the board every
+turn (Conquest, Trade, Influence, Science, Score in the last 15%). The goal moves the war threshold
+(conqueror −0.3×, builder +0.25×), keeps a winning conqueror at war, beelines research (route techs
+at 55% of cost), sizes the army (3 per city for a conqueror), stops razing, and aims the march at
+original capitals. Units are weighted by the role the army lacks (`ai::army_need`); before this a
+coastal "army" was nine ships and a pikeman. A melee hit that brings a city to 1 health now counts as
+decisive, so wounded units take a falling city instead of retreating from it.
+
+All-new AI, 20 Standard seeds (after level 1 → after this pass):
+
+| How games end | After level 1 | Level 2, first pass |
+|---|---|---|
+| Turn cap (The Chronicle) | 80% | 60% |
+| Reserve Currency | 15% | 35% |
+| Conquest | 0% | 5% (turn 107) |
+
+Against the old AI: 87.5% of 40 Blitz games, 90% of 20 Standard games. Goals at turn 50: about 22%
+Conquest, 75% Science, a few Trade. Engine time is unchanged within noise.
+
+**Found on the way:** `victory::score_leader` ranked city-states too, so a city-state that took two
+majors' cities held the lead and the game never ended (seed 8). It now ranks living majors only.
+
+**Blitz is a rules problem, not an AI one.** In 60 turns no civ ever gets a world trade share (the
+15-gold-per-major floor is never reached) or influences one rival, and the best conqueror holds 2 of
+4 capitals. Every Blitz game ends on score whatever the AI does, until the Blitz victories (brief B4)
+or the floors are tuned.
+
 ## Method
 
-- The old AI stays callable while levels 1–3 land: `TurnModifiers::legacy_ai` lists the seats that
-  play the pre-2026-09-24 AI. Only the balance runner sets it. It is deleted once level 3 is in.
+- The old AI stays callable while levels 1–3 land: `Civilization::legacy_ai` (never saved) marks the
+  seats that play the pre-2026-09-24 AI. Only the balance runner sets it. It is deleted once level 3
+  is in.
+- `balance --trace N` prints each major's goal, strength, wars and march objective every N turns;
+  `TRACE_UNITS=1` adds its units. That is how the ship army and the stalled sieges were found.
 - Every level keeps determinism and "planning never touches the world".
 - The live tactics run in `finish_round` (the game and the balance runner). `advance_turn`, the
   all-AI test driver behind the determinism fingerprint, still plans the old way until the legacy AI

@@ -79,6 +79,11 @@ impl World {
         self.difficulty.and_then(|id| r.difficulties.get(id)).or_else(|| r.default_difficulty())
     }
 
+    /// Whether this civ plays the old AI (`Civilization::legacy_ai`).
+    pub fn is_legacy_ai(&self, id: CivId) -> bool {
+        self.civ(id).is_some_and(|c| c.legacy_ai)
+    }
+
     pub fn civ(&self, id: CivId) -> Option<&Civilization> {
         self.civs.get(id.0 as usize)
     }

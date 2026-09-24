@@ -472,17 +472,9 @@ pub struct TurnModifiers<'a> {
     pub science: ScienceModifiers,
     pub policies: PolicyModifiers,
     pub difficulty: Option<&'a crate::ruleset::Difficulty>,
-    /// Seats that play the AI as it stood before docs/AI.md's levels, so the
-    /// balance runner can seat old against new in one game. Empty in play.
-    pub legacy_ai: &'a [CivId],
 }
 
 impl TurnModifiers<'_> {
-    /// Whether `civ` plays the old AI (see `legacy_ai`).
-    pub fn is_legacy(&self, civ: CivId) -> bool {
-        self.legacy_ai.contains(&civ)
-    }
-
     /// Everything a game speed scales (Speed.kt). `None` is Standard, whose
     /// values are the defaults, so an unset speed changes nothing.
     pub fn for_speed(r: &Ruleset, speed: Option<Id<crate::ruleset::Speed>>) -> Self {
@@ -1619,7 +1611,7 @@ fn finish_round_inner(
         }
     };
     for plan in &plans {
-        let live = !mods.is_legacy(plan.civ);
+        let live = !world.is_legacy_ai(plan.civ);
         for command in ai_commands(world, r, plan, mods, live) {
             run(world, plan.civ, command);
         }

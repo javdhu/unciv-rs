@@ -20,6 +20,10 @@ pub struct Civilization {
     pub id: CivId,
     pub nation: Id<Nation>,
     pub is_ai: bool,
+    /// Plays the AI as it stood before docs/AI.md's levels, so the balance
+    /// runner can seat old against new in one game. Never saved; false in play.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub legacy_ai: bool,
     /// Led by the nation's second leader (`altLeader`), whose ability
     /// replaces the nation's own uniques. Chosen at setup.
     #[cfg_attr(feature = "serde", serde(default))]
@@ -117,6 +121,7 @@ impl Civilization {
             id,
             nation,
             is_ai,
+            legacy_ai: false,
             alt_leader: false,
             is_barbarian: false,
             city_state_type: None,

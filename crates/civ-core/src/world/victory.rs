@@ -137,11 +137,13 @@ pub fn score(world: &World, r: &Ruleset, civ: CivId) -> crate::stats::Fixed {
 }
 
 pub fn score_leader(world: &World, r: &Ruleset) -> Option<CivId> {
-    // Kotlin maxByOrNull keeps the first entry on a tie, including when a
-    // defeated civilization still leads through its technologies.
+    // Kotlin maxByOrNull keeps the first entry on a tie. Only living major
+    // civs are ranked: a city-state that took a rival's cities, or a defeated
+    // civ still leading on its technologies, would otherwise hold the lead
+    // and no one could win at the turn limit — the game would never end.
     let mut best = None;
     let mut highest = i64::MIN;
-    for civ in &world.civs {
+    for civ in world.civs.iter().filter(|c| c.is_major() && c.is_alive()) {
         let value = score_fraction(world, r, civ.id).0;
         if value > highest {
             highest = value;

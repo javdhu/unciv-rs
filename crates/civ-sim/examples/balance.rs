@@ -28,6 +28,8 @@
 //!                      game half the seats play the old one, alternating
 //!                      with the seed, and the summary compares the halves
 //!   --legacy           every seat plays the old AI, for timing and baselines
+//!   --trace N          every N turns, print each major civ's goal, cities,
+//!                      strength and wars (use with one seed)
 //!
 //! Every game is deterministic in its seed, so any row can be replayed alone
 //! with `--seeds S..=S`. A game that panics is reported with its seed and does
@@ -63,6 +65,7 @@ struct Options {
     overlay: Option<String>,
     ab: bool,
     legacy: bool,
+    trace: Option<u32>,
 }
 
 fn usage(error: &str) -> ! {
@@ -112,6 +115,7 @@ fn options() -> Options {
         overlay: None,
         ab: false,
         legacy: false,
+        trace: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -140,6 +144,7 @@ fn options() -> Options {
             "--threads" => o.threads = number(&value).max(1) as usize,
             "--out" => o.out = Some(value),
             "--overlay" => o.overlay = Some(value),
+            "--trace" => o.trace = Some(number(&value).max(1)),
             _ => usage(&format!("unknown option {flag}")),
         }
     }
@@ -167,6 +172,14 @@ struct CivRecord {
     legacy: bool,
     /// Final score, the Chronicle's measure.
     score: i64,
+    /// Original major capitals held at the end (Conquest).
+    capitals: usize,
+    /// Highest share of world trade held in any turn, in percent (Reserve Currency).
+    trade_peak: u16,
+    /// Rivals this civ was influential over at the end (Lingua Franca).
+    influential_over: usize,
+    /// The AI's goal (docs/AI.md) at turns 25, 50 and 75.
+    goals_at: BTreeMap<u32, String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -259,6 +272,11 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     // the same starts.
     let legacy: Vec<CivId> =
         majors.iter().copied().filter(|c| o.legacy || (o.ab && (c.0 as u64 + seed) % 2 == 1)).collect();
+    for c in &legacy {
+        if let Some(civ) = world.civ_mut(*c) {
+            civ.legacy_ai = true;
+        }
+    }
     let mut civs: Vec<CivRecord> = majors
         .iter()
         .map(|&c| CivRecord { nation: nation(&world, r, c), legacy: legacy.contains(&c), ..Default::default() })
@@ -270,7 +288,7 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     let started = Instant::now();
     let mut engine_ms_60 = None;
     while world.winner.is_none() && world.turn <= limit + 1 {
-        let mods = TurnModifiers { legacy_ai: &legacy, ..TurnModifiers::for_world(&world, r) };
+        let mods = TurnModifiers::for_world(&world, r);
         let events = finish_round(&mut world, r, CityFocus::default(), mods);
         for e in &events {
             match e {
@@ -305,6 +323,16 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
                 _ => {}
             }
         }
+        for (civ, share) in civ_core::world::influence::trade_shares(&world, r) {
+            if let Some(rec) = civs.get_mut(civ.0 as usize) {
+                rec.trade_peak = rec.trade_peak.max(share);
+            }
+        }
+        if let Some(every) = o.trace {
+            if world.turn % every == 0 {
+                trace(&world, r, &majors, seed);
+            }
+        }
         if world.turn == 60 {
             engine_ms_60 = Some(started.elapsed().as_secs_f64() * 1000.0);
         }
@@ -313,6 +341,8 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
             eras.entry(era_name(era)).or_insert(world.turn);
             if SAMPLES.contains(&world.turn) {
                 civs[c.0 as usize].cities_at.insert(world.turn, cities(&world, c));
+                let goal = civ_core::world::goals::goal(&world, r, c);
+                civs[c.0 as usize].goals_at.insert(world.turn, format!("{goal:?}"));
             }
         }
     }
@@ -324,6 +354,11 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
         rec.techs = civ.techs.len();
         rec.era = era_number(&world, r, c);
         rec.score = civ_core::world::victory::score(&world, r, c).round();
+        rec.capitals = world.cities.iter().filter(|(_, city)| city.original_capital && city.owner == c).count();
+        rec.influential_over = majors
+            .iter()
+            .filter(|&&o| o != c && civ_core::world::influence::is_influential(&world, c, o))
+            .count();
     }
     let victory = world.winner.map(|(_, v)| r.victories[v].name.clone());
     Ok(GameRecord {
@@ -481,12 +516,108 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
             println!("{:<10} {:>12.2} {:>14.0} {:>10}", t, mean(&c), median(c.clone()), played);
         }
     }
+    progress_summary(games);
     if o.ab {
         ab_summary(games);
     }
     for (seed, message) in panics {
         println!("\nPANIC seed {seed}: {message}");
     }
+}
+
+fn trace(world: &World, r: &Ruleset, majors: &[CivId], seed: u64) {
+    for &c in majors {
+        let Some(civ) = world.civ(c) else { continue };
+        let wars: Vec<String> = majors
+            .iter()
+            .filter(|o| **o != c && world.diplomacy.at_war(c, **o))
+            .map(|o| o.0.to_string())
+            .collect();
+        let objective = civ_core::world::tactics::choose_objective(world, r, c).and_then(|id| world.cities.get(id)).map(|city| {
+            let nearest = civ
+                .units
+                .iter()
+                .filter_map(|u| world.units.get(*u))
+                .filter(|u| u.is_military(r))
+                .map(|u| world.grid.distance(u.position, city.centre))
+                .min();
+            let near: Vec<_> = civ
+                .units
+                .iter()
+                .filter_map(|u| world.units.get(*u))
+                .filter(|u| u.is_military(r) && world.grid.distance(u.position, city.centre) <= 4)
+                .collect();
+            let names: Vec<String> =
+                near.iter().map(|u| format!("{}@{}hp", r.units[u.base].name, u.health)).collect();
+            let id = world.cities.iter().find(|(_, c)| c.centre == city.centre).map(|(id, _)| id).unwrap();
+            if std::env::var("TRACE_UNITS").is_ok() {
+                for u in civ.units.iter().filter_map(|u| world.units.get(*u)).filter(|u| u.is_military(r)) {
+                    let home = world.cities.iter().any(|(_, x)| x.owner == c && x.centre == u.position);
+                    println!(
+                        "    {} {}hp d{} {}",
+                        r.units[u.base].name,
+                        u.health,
+                        world.grid.distance(u.position, city.centre),
+                        if home { "in city" } else { "" }
+                    );
+                }
+            }
+            format!(
+                " -> {} of civ {} (nearest {:?}, hp {}, defence {}, near: {})",
+                city.name,
+                city.owner.0,
+                nearest,
+                city.health,
+                civ_core::world::combat::city_defense_strength(world, r, id).round(),
+                names.join(" ")
+            )
+        });
+        println!(
+            "seed {seed} t{:<3} civ {} {:<12} {:<9} cities {:>2} capitals {} units {:>2} strength {:>4} techs {:>3} war [{}]{}{}",
+            world.turn,
+            c.0,
+            nation(world, r, c),
+            format!("{:?}", civ_core::world::goals::goal(world, r, c)),
+            cities(world, c),
+            civ_core::world::goals::capitals_held(world, c),
+            civ.units.len(),
+            civ_core::world::ai::military_strength(world, r, c).round(),
+            civ.techs.len(),
+            wars.join(","),
+            objective.unwrap_or_default(),
+            if civ.legacy_ai { " (old)" } else { "" },
+        );
+    }
+}
+
+/// How close the leading civ of each game came to each victory.
+fn progress_summary(games: &[GameRecord]) {
+    let best = |f: &dyn Fn(&CivRecord) -> f64| -> Vec<f64> {
+        games.iter().map(|g| g.civs.iter().map(f).fold(0.0, f64::max)).collect()
+    };
+    let capitals = best(&|c| c.capitals as f64);
+    let trade = best(&|c| f64::from(c.trade_peak) / 10.0);
+    let influence = best(&|c| c.influential_over as f64);
+    let mut goals: BTreeMap<(u32, &str), usize> = BTreeMap::new();
+    for c in games.iter().flat_map(|g| g.civs.iter()).filter(|c| !c.legacy) {
+        for (t, g) in &c.goals_at {
+            *goals.entry((*t, g.as_str())).or_default() += 1;
+        }
+    }
+    if !goals.is_empty() {
+        println!("\nGoals of the new AI's seats:");
+        for t in SAMPLES {
+            let row: Vec<String> =
+                goals.iter().filter(|((at, _), _)| *at == t).map(|((_, g), n)| format!("{g} {n}")).collect();
+            if !row.is_empty() {
+                println!("  turn {t:<3} {}", row.join(", "));
+            }
+        }
+    }
+    println!("\nClosest approach per game (median, max):");
+    println!("  capitals held by one civ   {:>5.1} {:>5.0}", median(capitals.clone()), capitals.iter().cloned().fold(0.0, f64::max));
+    println!("  peak world trade share, %  {:>5.1} {:>5.0}", median(trade.clone()), trade.iter().cloned().fold(0.0, f64::max));
+    println!("  rivals influenced          {:>5.1} {:>5.0}", median(influence.clone()), influence.iter().cloned().fold(0.0, f64::max));
 }
 
 /// New AI against old, from games where each played half the seats.

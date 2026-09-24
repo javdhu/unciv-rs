@@ -157,7 +157,8 @@ fn ai_peace_compensation_preserves_its_war_and_trade_decisions() {
     let before = w.clone();
     assert!(execute(&mut w, &r, A, offer.clone()).is_err(), "fresh wars are still refused");
     assert_eq!(w, before);
-    for _ in 0..31 {
+    // Past even a conqueror's patience for a stalemate (ai::wants_peace).
+    for _ in 0..91 {
         w.diplomacy.tick();
     }
     let before = w.clone();

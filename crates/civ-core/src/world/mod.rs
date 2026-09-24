@@ -33,6 +33,7 @@ pub mod expansion;
 pub mod faiths;
 pub mod filters;
 pub mod fog;
+pub mod goals;
 pub mod golden_age;
 pub mod great_people;
 pub mod great_person_actions;

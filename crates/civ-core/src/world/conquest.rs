@@ -693,9 +693,21 @@ mod tests {
         let r = ruleset();
         let (mut w, city) = world(&r);
         w.civ_mut(CivId(0)).unwrap().is_ai = true;
+        // Unciv's rule, which the old AI keeps. The new one keeps every city
+        // while it plays for conquest or score (`ai::should_raze`).
+        w.civ_mut(CivId(0)).unwrap().legacy_ai = true;
         w.cities.get_mut(city).unwrap().population = 3;
+        let mut kept = w.clone();
         crate::world::combat::capture_city(&mut w, &r, city, CivId(0));
         assert!(w.cities.get(city).unwrap().razing, "two citizens left: burn it");
+        kept.civ_mut(CivId(0)).unwrap().legacy_ai = false;
+        if matches!(
+            crate::world::goals::goal(&kept, &r, CivId(0)),
+            crate::world::goals::Goal::Conquest | crate::world::goals::Goal::Score
+        ) {
+            crate::world::combat::capture_city(&mut kept, &r, city, CivId(0));
+            assert!(!kept.cities.get(city).unwrap().razing, "a conqueror keeps what it takes");
+        }
 
         let (mut w, city) = world(&r);
         w.civ_mut(CivId(0)).unwrap().is_ai = true;

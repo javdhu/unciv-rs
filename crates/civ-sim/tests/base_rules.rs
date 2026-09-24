@@ -30,7 +30,8 @@ fn base_faiths_arise_in_the_age_of_bronze() {
         .arisen
         .get(&0)
         .expect("Hinduism arose after its delay");
-    assert!(arisen.turn as i32 >= hinduism.delay);
+    // It waits out its delay, unless a civ has already moved past its era.
+    assert!(arisen.turn as i32 >= hinduism.delay || w.faiths.era_reached.keys().any(|era| *era > 0));
     let holy = w.cities.get(arisen.city).unwrap();
     assert_eq!(
         holy.faith.holy_city_of,

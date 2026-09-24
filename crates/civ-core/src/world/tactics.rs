@@ -51,6 +51,9 @@ const MUSTER_RADIUS: u32 = 4;
 /// Enemy military this close to a city makes it want a garrison.
 const THREAT_RADIUS: u32 = 3;
 
+/// Tiles nearer a conqueror counts an enemy's original capital.
+const CAPITAL_PULL: u32 = 4;
+
 /// How far a unit will travel to garrison a threatened city.
 const GARRISON_REACH: u32 = 5;
 
@@ -286,7 +289,7 @@ impl Tactics {
             .filter(|(_, at, _, _)| world.grid.distance(*at, city.centre) <= 1)
             .map(|e| e.2)
             .sum();
-        let ready = mustered * 2 >= (defence + guard) * 3;
+        let ready = mustered >= defence + guard;
         if !ready {
             // Wait outside the city's bombard range (2).
             return (distance < 3).then(|| step_away(world, r, unit, city.centre, 3)).flatten();
@@ -467,11 +470,24 @@ fn best_attack(world: &World, r: &Ruleset, civ: CivId, unit: Id<Unit>, enemies: 
         let sure_kill = !is_city && i64::from(preview.defender.damage.0) >= health;
         let may_die = i64::from(preview.attacker.damage.1) >= own;
         let will_die = i64::from(preview.attacker.damage.0) >= own;
-        let mut score = dealt.min(health) * value * AGGRESSION / (max_health * 1000) - taken * mine / 100;
+        // A melee hit that brings a city to one health takes it, if the
+        // attacker lives through it.
+        let takes_city = is_city && !ranged && !will_die && (preview.capture || dealt >= health - 1);
+        // A city falls to the army, not to one unit: when everything in reach
+        // this turn can bring it down, each hit is a share of the capture.
+        let falls = match target {
+            Target::City(id) => siege_damage(world, r, civ, id) >= health,
+            Target::Unit(_) => false,
+        };
+        let mut score = if falls {
+            dealt.min(health) * value * 2 / health - taken * mine / 200
+        } else {
+            dealt.min(health) * value * AGGRESSION / (max_health * 1000) - taken * mine / 100
+        };
         if kills {
             score += value;
         }
-        if preview.capture {
+        if preview.capture || takes_city {
             score += value * 2;
         }
         if will_die {
@@ -486,13 +502,13 @@ fn best_attack(world: &World, r: &Ruleset, civ: CivId, unit: Id<Unit>, enemies: 
             score -= mine * exposure.min(own_strength * 3) / (own_strength * 6);
         }
         // Melee on a city that will not fall trades health for little.
-        if is_city && !ranged && !preview.capture && dealt * 3 < health {
+        if is_city && !ranged && !takes_city && !falls && dealt * 3 < health {
             score -= mine / 2;
         }
         if score <= 0 {
             continue;
         }
-        let decisive = preview.capture || (sure_kill && !may_die);
+        let decisive = takes_city || (preview.capture && !is_city) || (sure_kill && !may_die);
         let mut commands = Vec::new();
         if origin != u.position {
             commands.push(Command::MoveUnit { unit, to: origin });
@@ -513,6 +529,27 @@ fn best_attack(world: &World, r: &Ruleset, civ: CivId, unit: Id<Unit>, enemies: 
         }
     }
     best
+}
+
+/// What every unit of ours that can still strike `city` this turn would deal
+/// it, by the combat preview's middle roll.
+fn siege_damage(world: &World, r: &Ruleset, civ: CivId, city: Id<City>) -> i64 {
+    let Some(c) = world.cities.get(city) else { return 0 };
+    let Some(owner) = world.civ(civ) else { return 0 };
+    owner
+        .units
+        .iter()
+        .filter_map(|id| world.units.get(*id).map(|u| (*id, u)))
+        .filter(|(_, u)| u.attacks_left > 0 && u.movement_left > Fixed::ZERO && u.is_military(r) && !u.is_air(r))
+        .filter(|(id, u)| {
+            let reach = crate::world::movement::max_movement(world, r, u).max(1) as u32
+                + crate::world::air::attack_range(world, r, *id).max(1) as u32;
+            world.grid.distance(u.position, c.centre) <= reach
+                && crate::world::military::may_attack(world, r, *id, Target::City(city))
+        })
+        .filter_map(|(id, _)| crate::world::combat::preview_attack(world, r, id, Target::City(city)))
+        .map(|p| i64::from(p.defender.damage.0 + p.defender.damage.1) / 2)
+        .sum()
 }
 
 /// A city's bombard: the kill if there is one, else the most damage by worth.
@@ -537,20 +574,28 @@ fn bombard(world: &World, r: &Ruleset, city: Id<City>) -> Option<Command> {
 }
 
 /// The enemy city the army marches on: the nearest to any of our cities,
-/// weaker ones first when two are equally near.
-fn choose_objective(world: &World, r: &Ruleset, civ: CivId) -> Option<Id<City>> {
+/// weaker ones first when two are equally near. A conqueror counts an
+/// original capital as [`CAPITAL_PULL`] tiles nearer.
+pub fn choose_objective(world: &World, r: &Ruleset, civ: CivId) -> Option<Id<City>> {
     if !at_war_with_anyone_who_has_cities(world, civ) {
         return None;
     }
     let ours: Vec<TileId> =
         world.civ(civ)?.cities.iter().filter_map(|c| world.cities.get(*c)).map(|c| c.centre).collect();
+    let conqueror = crate::world::goals::goal(world, r, civ) == crate::world::goals::Goal::Conquest;
+    let is_major = |owner: CivId| world.civ(owner).is_some_and(|c| c.is_major());
+    // A conqueror marches on majors; city-states only when no major is left to fight.
+    let majors_at_war =
+        world.cities.iter().any(|(_, c)| c.owner != civ && world.diplomacy.at_war(civ, c.owner) && is_major(c.owner));
     world
         .cities
         .iter()
         .filter(|(_, c)| c.owner != civ && world.diplomacy.at_war(civ, c.owner))
+        .filter(|(_, c)| !(conqueror && majors_at_war) || is_major(c.owner))
         .filter(|(_, c)| world.visibility.has_explored(civ, c.centre))
         .map(|(id, c)| {
             let near = ours.iter().map(|t| world.grid.distance(*t, c.centre)).min().unwrap_or(u32::MAX / 2);
+            let near = if conqueror && c.original_capital { near.saturating_sub(CAPITAL_PULL) } else { near };
             let defence = crate::world::combat::city_defense_strength(world, r, id).round();
             ((near, defence, id), id)
         })
