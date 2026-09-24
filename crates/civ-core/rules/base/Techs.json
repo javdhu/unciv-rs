@@ -1,12 +1,14 @@
 [
-	// 84 techs in eight eras (docs/CONTENT.md, Knowledge). An era's first column holds only its namesake tech,
+	// 85 techs in eight eras (docs/CONTENT.md, Knowledge). An era's first column holds only its namesake tech,
 	// and every later tech of the era requires it, so discovering it is what moves a nation into the era.
+	// Costs are tuned so an era takes about 30 turns of AI play at Standard, which stays the engine's 1.0 reference
+	// (crates/civ-sim/examples/balance.rs). Buildings and units carry the same production scale.
 	{
 		"columnNumber": 0,
 		"era": "Age of Bronze",
-		"techCost": 20,
-		"buildingCost": 40,
-		"wonderCost": 185,
+		"techCost": 5,
+		"buildingCost": 14,
+		"wonderCost": 65,
 		"techs": [
 			{
 				"name": "Agriculture",
@@ -19,9 +21,9 @@
 	{
 		"columnNumber": 1,
 		"era": "Age of Bronze",
-		"techCost": 35,
-		"buildingCost": 60,
-		"wonderCost": 185,
+		"techCost": 9,
+		"buildingCost": 21,
+		"wonderCost": 65,
 		"techs": [
 			{
 				"name": "Pottery",
@@ -55,9 +57,9 @@
 	{
 		"columnNumber": 2,
 		"era": "Age of Bronze",
-		"techCost": 55,
-		"buildingCost": 75,
-		"wonderCost": 185,
+		"techCost": 14,
+		"buildingCost": 26,
+		"wonderCost": 65,
 		"techs": [
 			{
 				"name": "Sailing",
@@ -112,9 +114,9 @@
 	{
 		"columnNumber": 3,
 		"era": "Age of Iron",
-		"techCost": 105,
-		"buildingCost": 100,
-		"wonderCost": 250,
+		"techCost": 20,
+		"buildingCost": 35,
+		"wonderCost": 88,
 		"techs": [
 			{
 				"name": "Iron Working",
@@ -128,15 +130,15 @@
 	{
 		"columnNumber": 4,
 		"era": "Age of Iron",
-		"techCost": 140,
-		"buildingCost": 100,
-		"wonderCost": 250,
+		"techCost": 24,
+		"buildingCost": 35,
+		"wonderCost": 88,
 		"techs": [
 			{
 				"name": "Optics",
 				"row": 1,
 				"prerequisites": ["Sailing", "Iron Working"],
-				"cost": 115,
+				"cost": 20,
 				"uniques": ["Enables embarkation for land units"],
 				"quote": "'He made an instrument to know if the moon shine at full or no.' - Samuel Butler"
 			},
@@ -177,9 +179,9 @@
 	{
 		"columnNumber": 5,
 		"era": "Age of Iron",
-		"techCost": 175,
-		"buildingCost": 100,
-		"wonderCost": 250,
+		"techCost": 27,
+		"buildingCost": 35,
+		"wonderCost": 88,
 		"techs": [
 			{
 				"name": "Astronomy",
@@ -207,9 +209,9 @@
 	{
 		"columnNumber": 6,
 		"era": "Age of Paper",
-		"techCost": 275,
-		"buildingCost": 120,
-		"wonderCost": 300,
+		"techCost": 28,
+		"buildingCost": 42,
+		"wonderCost": 105,
 		"techs": [
 			{
 				"name": "Paper",
@@ -222,15 +224,15 @@
 	{
 		"columnNumber": 7,
 		"era": "Age of Paper",
-		"techCost": 380,
-		"buildingCost": 140,
-		"wonderCost": 350,
+		"techCost": 31,
+		"buildingCost": 49,
+		"wonderCost": 122,
 		"techs": [
 			{
 				"name": "Compass",
 				"row": 1,
 				"prerequisites": ["Paper", "Optics"],
-				"cost": 295,
+				"cost": 25,
 				"uniques": ["[-50]% weight to this choice for AI decisions"],
 				"quote": "'I find the great thing in this world is not so much where we stand, as in what direction we are moving.' - Oliver Wendell Holmes"
 			},
@@ -271,9 +273,9 @@
 	{
 		"columnNumber": 8,
 		"era": "Age of Paper",
-		"techCost": 485,
-		"buildingCost": 160,
-		"wonderCost": 400,
+		"techCost": 34,
+		"buildingCost": 56,
+		"wonderCost": 140,
 		"techs": [
 			{
 				"name": "Education",
@@ -315,9 +317,9 @@
 	{
 		"columnNumber": 9,
 		"era": "Age of Sail",
-		"techCost": 780,
-		"buildingCost": 200,
-		"wonderCost": 500,
+		"techCost": 52,
+		"buildingCost": 70,
+		"wonderCost": 175,
 		"techs": [
 			{
 				"name": "Navigation",
@@ -331,9 +333,9 @@
 	{
 		"columnNumber": 10,
 		"era": "Age of Sail",
-		"techCost": 965,
-		"buildingCost": 225,
-		"wonderCost": 560,
+		"techCost": 62,
+		"buildingCost": 79,
+		"wonderCost": 196,
 		"techs": [
 			{
 				"name": "Architecture",
@@ -366,9 +368,9 @@
 	{
 		"columnNumber": 11,
 		"era": "Age of Sail",
-		"techCost": 1150,
-		"buildingCost": 250,
-		"wonderCost": 625,
+		"techCost": 72,
+		"buildingCost": 88,
+		"wonderCost": 219,
 		"techs": [
 			{
 				"name": "Economics",
@@ -396,9 +398,9 @@
 	{
 		"columnNumber": 12,
 		"era": "Age of Steam",
-		"techCost": 1600,
-		"buildingCost": 300,
-		"wonderCost": 750,
+		"techCost": 78,
+		"buildingCost": 105,
+		"wonderCost": 262,
 		"techs": [
 			{
 				"name": "Steam Power",
@@ -412,9 +414,9 @@
 	{
 		"columnNumber": 13,
 		"era": "Age of Steam",
-		"techCost": 1975,
-		"buildingCost": 330,
-		"wonderCost": 825,
+		"techCost": 90,
+		"buildingCost": 115,
+		"wonderCost": 289,
 		"techs": [
 			{
 				"name": "Archaeology",
@@ -455,9 +457,9 @@
 	{
 		"columnNumber": 14,
 		"era": "Age of Steam",
-		"techCost": 2350,
-		"buildingCost": 360,
-		"wonderCost": 900,
+		"techCost": 102,
+		"buildingCost": 126,
+		"wonderCost": 315,
 		"techs": [
 			{
 				"name": "Biology",
@@ -491,9 +493,9 @@
 	{
 		"columnNumber": 15,
 		"era": "Age of Electricity",
-		"techCost": 3100,
-		"buildingCost": 500,
-		"wonderCost": 1060,
+		"techCost": 110,
+		"buildingCost": 175,
+		"wonderCost": 371,
 		"techs": [
 			{
 				"name": "Electricity",
@@ -507,9 +509,9 @@
 	{
 		"columnNumber": 16,
 		"era": "Age of Electricity",
-		"techCost": 3450,
-		"buildingCost": 500,
-		"wonderCost": 1120,
+		"techCost": 118,
+		"buildingCost": 175,
+		"wonderCost": 392,
 		"techs": [
 			{
 				"name": "Refrigeration",
@@ -544,9 +546,9 @@
 	{
 		"columnNumber": 17,
 		"era": "Age of Electricity",
-		"techCost": 3800,
-		"buildingCost": 500,
-		"wonderCost": 1190,
+		"techCost": 126,
+		"buildingCost": 175,
+		"wonderCost": 416,
 		"techs": [
 			{
 				"name": "Plastics",
@@ -585,9 +587,9 @@
 	{
 		"columnNumber": 18,
 		"era": "Age of Electricity",
-		"techCost": 4100,
-		"buildingCost": 500,
-		"wonderCost": 1250,
+		"techCost": 134,
+		"buildingCost": 175,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Radar",
@@ -595,15 +597,21 @@
 				"prerequisites": ["Electronics", "Flight"],
 				"uniques": ["[+100]% weight to this choice for AI decisions"],
 				"quote": "'Vision is the art of seeing things invisible.' - Jonathan Swift"
+			},
+			{
+				"name": "Combined Arms",
+				"row": 8,
+				"prerequisites": ["Ballistics", "Combustion"],
+				"quote": "'The root of the evil is not the construction of new, more dreadful weapons. It is the spirit of conquest.' - Ludwig von Mises"
 			}
 		]
 	},
 	{
 		"columnNumber": 19,
 		"era": "Age of the Atom",
-		"techCost": 5100,
-		"buildingCost": 500,
-		"wonderCost": 1250,
+		"techCost": 145,
+		"buildingCost": 175,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Nuclear Fission",
@@ -616,9 +624,9 @@
 	{
 		"columnNumber": 20,
 		"era": "Age of the Atom",
-		"techCost": 5750,
-		"buildingCost": 500,
-		"wonderCost": 1250,
+		"techCost": 158,
+		"buildingCost": 175,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Pharmaceuticals",
@@ -640,19 +648,19 @@
 				"quote": "'A good rule for rocket experimenters to follow is this: always assume that it will explode.' - Astronautics Magazine, 1937"
 			},
 			{
-				"name": "Combined Arms",
+				"name": "Mobile Tactics",
 				"row": 8,
-				"prerequisites": ["Nuclear Fission", "Ballistics"],
-				"quote": "'The root of the evil is not the construction of new, more dreadful weapons. It is the spirit of conquest.' - Ludwig von Mises"
+				"prerequisites": ["Nuclear Fission", "Combined Arms"],
+				"quote": "'All men can see these tactics whereby I conquer, but what none can see is the strategy out of which victory is evolved.' - Sun Tzu"
 			}
 		]
 	},
 	{
 		"columnNumber": 21,
 		"era": "Age of the Atom",
-		"techCost": 6400,
-		"buildingCost": 500,
-		"wonderCost": 1250,
+		"techCost": 171,
+		"buildingCost": 175,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Ecology",
@@ -669,10 +677,16 @@
 			},
 			{
 				"name": "Lasers",
-				"row": 5,
+				"row": 4,
 				"prerequisites": ["Computers"],
 				"uniques": ["[-100]% weight to this choice for AI decisions"],
 				"quote": "'The night is far spent, the day is at hand: let us therefore cast off the works of darkness, and let us put on the armor of light.' - The Holy Bible: Romans, 13:12"
+			},
+			{
+				"name": "Robotics",
+				"row": 5,
+				"prerequisites": ["Computers", "Rocketry"],
+				"quote": "'1. A robot may not injure a human being or, through inaction, allow a human being to come to harm. 2. A robot must obey any orders given to it by human beings, except when such orders would conflict with the First Law. 3. A robot must protect its own existence as long as such protection does not conflict with the First or Second Law.' - Isaac Asimov"
 			},
 			{
 				"name": "Satellites",
@@ -685,10 +699,32 @@
 	},
 	{
 		"columnNumber": 22,
+		"era": "Age of the Atom",
+		"techCost": 184,
+		"buildingCost": 175,
+		"wonderCost": 438,
+		"techs": [
+			{
+				"name": "Stealth",
+				"row": 5,
+				"prerequisites": ["Robotics", "Lasers"],
+				"uniques": ["[-100]% weight to this choice for AI decisions"],
+				"quote": "'Be extremely subtle, even to the point of formlessness, be extremely mysterious, even to the point of soundlessness. Thereby you can be the director of the opponent's fate.' - Sun Tzu"
+			},
+			{
+				"name": "Advanced Ballistics",
+				"row": 7,
+				"prerequisites": ["Satellites"],
+				"quote": "'Our scientific power has outrun our spiritual power, we have guided missiles and misguided men.' – Martin Luther King Jr."
+			}
+		]
+	},
+	{
+		"columnNumber": 23,
 		"era": "Age of Information",
-		"techCost": 7700,
-		"buildingCost": 750,
-		"wonderCost": 1250,
+		"techCost": 300,
+		"buildingCost": 262,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "The Internet",
@@ -700,11 +736,11 @@
 		]
 	},
 	{
-		"columnNumber": 23,
+		"columnNumber": 24,
 		"era": "Age of Information",
-		"techCost": 8250,
-		"buildingCost": 750,
-		"wonderCost": 1250,
+		"techCost": 340,
+		"buildingCost": 262,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Genomics",
@@ -714,7 +750,7 @@
 			},
 			{
 				"name": "Telecommunications",
-				"row": 2,
+				"row": 3,
 				"prerequisites": ["The Internet"],
 				"quote": "'The more we elaborate our means of communication, the less we communicate.' - J.B. Priestly"
 			},
@@ -725,31 +761,18 @@
 				"uniques": ["[+100]% weight to this choice for AI decisions"]
 			},
 			{
-				"name": "Mobile Tactics",
-				"row": 5,
-				"prerequisites": ["The Internet", "Combined Arms"],
-				"quote": "'All men can see these tactics whereby I conquer, but what none can see is the strategy out of which victory is evolved.' - Sun Tzu"
-			},
-			{
-				"name": "Advanced Ballistics",
+				"name": "Renewable Energy",
 				"row": 6,
-				"prerequisites": ["The Internet", "Satellites"],
-				"quote": "'Our scientific power has outrun our spiritual power, we have guided missiles and misguided men.' – Martin Luther King Jr."
-			},
-			{
-				"name": "Robotics",
-				"row": 8,
-				"prerequisites": ["The Internet", "Satellites"],
-				"quote": "'1. A robot may not injure a human being or, through inaction, allow a human being to come to harm. 2. A robot must obey any orders given to it by human beings, except when such orders would conflict with the First Law. 3. A robot must protect its own existence as long as such protection does not conflict with the First or Second Law.' - Isaac Asimov"
+				"prerequisites": ["The Internet", "Ecology"]
 			}
 		]
 	},
 	{
-		"columnNumber": 24,
+		"columnNumber": 25,
 		"era": "Age of Information",
-		"techCost": 8800,
-		"buildingCost": 750,
-		"wonderCost": 1250,
+		"techCost": 380,
+		"buildingCost": 262,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "Globalization",
@@ -766,25 +789,18 @@
 			},
 			{
 				"name": "Nanotechnology",
-				"row": 7,
-				"prerequisites": ["Robotics"],
+				"row": 6,
+				"prerequisites": ["Genomics", "Robotics"],
 				"quote": "'The impact of nanotechnology is expected to exceed the impact that the electronics revolution has had on our lives.' - Richard Schwartz"
-			},
-			{
-				"name": "Stealth",
-				"row": 8,
-				"prerequisites": ["Robotics", "Mobile Tactics"],
-				"uniques": ["[-100]% weight to this choice for AI decisions"],
-				"quote": "'Be extremely subtle, even to the point of formlessness, be extremely mysterious, even to the point of soundlessness. Thereby you can be the director of the opponent's fate.' - Sun Tzu"
 			}
 		]
 	},
 	{
-		"columnNumber": 25,
+		"columnNumber": 26,
 		"era": "Age of Information",
-		"techCost": 9500,
-		"buildingCost": 750,
-		"wonderCost": 1250,
+		"techCost": 430,
+		"buildingCost": 262,
+		"wonderCost": 438,
 		"techs": [
 			{
 				"name": "AGI",

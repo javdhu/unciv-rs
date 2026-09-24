@@ -24,7 +24,7 @@
                 "column": 1
             },
             {
-                "name": "Legalism",
+                "name": "Code of Hammurabi",
                 "uniques": [
                     "Provides the cheapest [Culture] building in your first [4] cities for free"
                 ],
@@ -45,7 +45,7 @@
                     "[+10]% growth [in capital]",
                     "[+2 Food] [in capital]"
                 ],
-                "requires": ["Legalism"],
+                "requires": ["Code of Hammurabi"],
                 "row": 2,
                 "column": 2
             },
@@ -54,7 +54,7 @@
                 "uniques": [
                     "[+1 Gold, +1 Happiness] per [2] population [in capital]"
                 ],
-                "requires": ["Legalism"],
+                "requires": ["Code of Hammurabi"],
                 "row": 2,
                 "column": 4
             },
@@ -70,7 +70,7 @@
     },
     {
         "name": "Liberty",
-        "era": "Age of Bronze",
+        "era": "Age of Iron",
         "priorities": {
             "Neutral": 10,
             "Lingua Franca": 10,
@@ -319,7 +319,7 @@
                 "column": 4
             },
             {
-                "name": "House of Wisdom",
+                "name": "Translation Movement",
                 "uniques": [
                     "Allied City-States provide [Science] equal to [25]% of what they produce for themselves"
                 ],
@@ -333,13 +333,13 @@
                     "[+100]% resources gifted by City-States",
                     "[+50]% Happiness from luxury resources gifted by City-States"
                 ],
-                "requires": ["House of Wisdom"],
+                "requires": ["Translation Movement"],
                 "row": 3,
                 "column": 2
             },
             {
                 "name": "Educated Elite",
-                "requires": ["House of Wisdom", "Aesthetics"],
+                "requires": ["Translation Movement", "Aesthetics"],
                 "uniques": [
                     "Allied City-States will occasionally gift Great People"
                 ],
@@ -382,7 +382,7 @@
                 "column": 2
             },
             {
-                "name": "Trade Unions",
+                "name": "Hanseatic League",
                 "uniques": [
                     "[-33]% maintenance on road & railroads",
                     "[+1 Gold] from every [Harbor]",
@@ -401,7 +401,7 @@
                 "column": 2
             },
             {
-                "name": "Mercantilism",
+                "name": "Letters of Credit",
                 "uniques": [
                     "[Gold] cost of purchasing items in cities [-25]%",
                     "[+1 Science] from every [Mint]",
@@ -409,16 +409,16 @@
                     "[+1 Science] from every [Bank]",
                     "[+1 Science] from every [Stock Exchange]"
                 ],
-                "requires": ["Trade Unions"],
+                "requires": ["Hanseatic League"],
                 "row": 2,
                 "column": 4
             },
             {
-                "name": "Protectionism",
+                "name": "Caravanserais",
                 "uniques": [
                     "[+2] Happiness from each type of luxury resource"
                 ],
-                "requires": ["Mercantilism"],
+                "requires": ["Letters of Credit"],
                 "row": 3,
                 "column": 4
             },
@@ -449,7 +449,7 @@
         ],
         "policies": [
             {
-                "name": "Secularism",
+                "name": "Learned Societies",
                 "uniques": [
                     "[+2 Science] from every specialist [in all cities]"
                 ],
@@ -473,7 +473,7 @@
                     "[+1 Science] from every [Trading post]",
                     "[+17]% [Science] from every [University]"
                 ],
-                "requires": ["Secularism"],
+                "requires": ["Learned Societies"],
                 "row": 2,
                 "column": 2
             },
@@ -668,7 +668,7 @@
         ],
         "policies": [
             {
-                "name": "United Front",
+                "name": "First International",
                 "uniques": [
                     "Militaristic City-States grant units [2] times as fast when you are at war with a common nation",
                     "[-100]% weight to this choice for AI decisions"
@@ -677,7 +677,7 @@
                 "column": 1
             },
             {
-                "name": "Planned Economy",
+                "name": "Factory Acts",
                 "uniques": [
                     "[+25]% [Science] from every [Factory]",
                     "[+100]% Production when constructing [Factory] buildings [in all cities]"
@@ -695,7 +695,7 @@
             },
             {
                 "name": "Cooperatives",
-                "requires": ["Planned Economy"],
+                "requires": ["Factory Acts"],
                 "uniques": [
                     "[-15]% maintenance cost for [all] buildings [in all cities]"
                 ],
@@ -827,7 +827,7 @@
                 "column": 2
             },
             {
-                "name": "Erasmus Programme",
+                "name": "Bologna Process",
                 "requires": ["Open Access"],
                 "uniques": [
                     "[+25]% Great Person generation [in all cities]"
@@ -837,7 +837,7 @@
             },
             {
                 "name": "World Wide Web",
-                "requires": ["Schengen Area", "Erasmus Programme"],
+                "requires": ["Schengen Area", "Bologna Process"],
                 "uniques": [
                     "[+10]% [Science] [in all cities]"
                 ],

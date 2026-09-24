@@ -22,8 +22,8 @@ pub struct Settings {
     pub majors: u8,
     pub city_states: u8,
     pub wrap_x: bool,
-    /// The turn limit. Absent uses the speed's length (Speed.kt numTotalTurns): 330 on Quick,
-    /// 500 on Standard.
+    /// The turn limit. Absent uses the speed's length (Speed.kt numTotalTurns): 160 on Quick,
+    /// 240 on Standard.
     pub max_turns: Option<u32>,
     /// Game speed by name; the ruleset's own when absent (Standard, or Blitz
     /// for the Blitz ruleset).

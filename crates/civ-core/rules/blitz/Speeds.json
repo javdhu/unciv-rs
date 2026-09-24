@@ -1,34 +1,27 @@
 [
+    // Blitz plays a slice of eras at the full game's pace (docs/CONTENT.md, Spine). Until the engine can start a
+    // game in a later era, the slice is Cradles: the Age of Bronze and the Age of Iron, 60 turns from 4000 BCE to
+    // 500 CE. Costs are Standard's; only the turn count and the length of deals change.
     {
         "name": "Blitz",
-        "modifier": 0.15,
-        "productionCostModifier": 0.15,
-        "goldCostModifier": 0.15,
-        "scienceCostModifier": 0.035,
-        "cultureCostModifier": 0.15,
-        "faithCostModifier": 0.15,
-        "improvementBuildLengthModifier": 0.3,
-        "barbarianModifier": 0.3,
-        "goldGiftModifier": 3.0,
-        "cityStateTributeScalingInterval": 1.0,
-        "goldenAgeLengthModifier": 0.4,
-        "religiousPressureAdjacentCity": 18,
+        "modifier": 1.0,
+        "productionCostModifier": 1.0,
+        "goldCostModifier": 1.0,
+        "scienceCostModifier": 1.0,
+        "cultureCostModifier": 1.0,
+        "faithCostModifier": 1.0,
+        "improvementBuildLengthModifier": 1.0,
+        "barbarianModifier": 1.0,
+        "goldGiftModifier": 1.0,
+        "cityStateTributeScalingInterval": 6.5,
+        "goldenAgeLengthModifier": 1.0,
+        "religiousPressureAdjacentCity": 6,
         "peaceDealDuration": 5,
-        "dealDuration": 10,
+        "dealDuration": 15,
         "startYear": -4000,
         "turns": [
-            {
-                "yearsPerTurn": 100,
-                "untilTurn": 30
-            },
-            {
-                "yearsPerTurn": 50,
-                "untilTurn": 60
-            },
-            {
-                "yearsPerTurn": 78,
-                "untilTurn": 80
-            }
+            {"yearsPerTurn": 93.33, "untilTurn": 30},
+            {"yearsPerTurn": 56.67, "untilTurn": 60}
         ]
     }
 ]
