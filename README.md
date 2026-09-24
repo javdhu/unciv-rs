@@ -8,6 +8,7 @@ in every empty seat and historical leader encounters.
 - Accepted client contract: [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md)
 - Visual direction: [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md)
 - Procedural art plan and coverage: [docs/PROCEDURAL.md](docs/PROCEDURAL.md)
+- Art tool research and proposal: [docs/STUDIO.md](docs/STUDIO.md)
 
 ## Run it
 
