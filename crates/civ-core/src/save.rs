@@ -177,6 +177,9 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
     crate::world::barbarians::validate(world, r).map_err(SaveError::InvalidWorld)?;
     world.cities.validate_snapshot().map_err(SaveError::InvalidWorld)?;
     world.units.validate_snapshot().map_err(SaveError::InvalidWorld)?;
+    for placed in world.grid.placed.values() {
+        rule(&r.buildings, placed.building, "placed building")?;
+    }
     for (index, arisen) in &world.faiths.arisen {
         if usize::from(*index) >= r.faiths.len() || arisen.turn > world.turn {
             return Err(invalid("invalid arisen faith"));
@@ -503,6 +506,10 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
         }
         if let Some(id) = city.demanded_resource {
             rule(&r.resources, id, "demanded resource")?;
+        }
+        for (building, site) in &city.sites {
+            rule(&r.buildings, *building, "chosen site")?;
+            tile(*site)?;
         }
         for id in &city.faith.adopted_religions {
             creed(*id)?;

@@ -34,6 +34,9 @@ pub struct PlayerView {
     pub units: Vec<UnitView>,
     pub cities: Vec<CityView>,
     pub civs: Vec<CivView>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trade: Option<TradeView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -144,6 +147,46 @@ pub struct RelationView {
     pub attitude: String,
     /// Their public score, rounded, as a met civilization's score is shown in Civ V.
     pub score: i32,
+    /// Cultural influence both ways, when a victory counts it (Lingua Franca).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub influence: Option<InfluenceView>,
+}
+
+/// Influence between this player and one rival, as progress rather than raw
+/// culture (a rival's culture is private): tenths of a percent of the way to
+/// being influential, which is reached at 1000.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InfluenceView {
+    pub ours: u32,
+    pub theirs: u32,
+    /// We are influential over them.
+    pub influential: bool,
+    /// They are influential over us.
+    pub influenced: bool,
+    /// Percent of our new culture reaching them this turn (0 at war or before meeting).
+    pub rate: u32,
+}
+
+/// Shares of world trade, when a victory counts them (Reserve Currency).
+/// Tenths of a percent; zero while world trade is still too small to count.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TradeView {
+    /// Our share, this turn and on each recorded turn before it (oldest first,
+    /// at most 20).
+    pub share: u16,
+    pub history: Vec<u16>,
+    /// Our own and every met major's current share.
+    pub shares: Vec<TradeShareView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TradeShareView {
+    pub civ: u8,
+    pub share: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -321,6 +364,10 @@ pub struct UnitView {
     pub embarked: bool,
     /// Private action and progression state is supplied only to the owner.
     pub own: Option<UnitStateView>,
+    /// A Luminary's own name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -396,6 +443,8 @@ pub struct CityStateView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+/// Religions are named by key: a founder's civ id, or (when faiths arise by
+/// era) 128 and up, a faith in `RuleTables.faiths`.
 pub struct CityReligionView {
     pub majority: Option<u8>,
     pub majority_pantheon: Option<u8>,
@@ -406,6 +455,7 @@ pub struct CityReligionView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 pub struct CityFollowersView {
+    /// The religion's key (see `CityReligionView`); the wire name predates faiths.
     pub founder: u8,
     pub pantheon: bool,
     pub followers: u32,
@@ -434,6 +484,10 @@ pub struct CivView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leader: Option<String>,
+    /// The nation's state faith, by its key in `RuleTables.faiths`. Public.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_faith: Option<u8>,
     pub city_state: bool,
     pub alive: bool,
     /// Own civ only, from here down.
@@ -514,6 +568,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             moves: moves(u.movement_left.raw()),
             fortified: u.fortified,
             embarked: u.embarked,
+            name: u.name.clone(),
             own: (u.owner == me).then(|| UnitStateView {
                 attacks_left: u.attacks_left,
                 set_up: u.set_up,
@@ -680,6 +735,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             id: c.id.0,
             nation: c.nation.index(),
             leader: leader_of(w, r, c.id),
+            state_faith: w.civ(c.id).and_then(|c| c.faith.state).map(|k| k.0),
             city_state: c.city_state,
             alive: c.alive,
             gold: None,
@@ -695,6 +751,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             id: me.0,
             nation: c.nation.index(),
             leader: leader_of(w, r, me),
+            state_faith: c.faith.state.map(|k| k.0),
             city_state: c.is_city_state(),
             alive: c.is_alive(),
             gold: Some(c.gold),
@@ -711,6 +768,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
     }
     civs.sort_by_key(|c| c.id);
     PlayerView {
+        trade: trade_view(w, r, me),
         economy: EconomyView {
             gold: economy.gold,
             science: economy.science,
@@ -755,6 +813,8 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     protecting: w.diplomacy.is_protector(me, c.id),
                     attitude: attitude(w, c.id, me),
                     score: rounded_score(w, r, c.id),
+                    influence: (c.is_major() && civ_core::world::influence::tracks_influence(r))
+                        .then(|| influence_view(w, me, c.id)),
                 }
             })
             .collect(),
@@ -1235,6 +1295,47 @@ pub fn replay_for(
     batches
 }
 
+/// Progress toward influence, both ways, in tenths of a percent.
+fn influence_view(w: &World, me: CivId, them: CivId) -> InfluenceView {
+    use civ_core::world::influence as inf;
+    let progress = |from: CivId, over: CivId| -> u32 {
+        let need = inf::lifetime_culture(w, over).max(inf::INFLUENCE_FLOOR - 1) + 1;
+        (inf::influence_over(w, from, over).max(0) * 1000 / need).min(u32::MAX as i64) as u32
+    };
+    InfluenceView {
+        ours: progress(me, them),
+        theirs: progress(them, me),
+        influential: inf::is_influential(w, me, them),
+        influenced: inf::is_influential(w, them, me),
+        rate: inf::influence_rate(w, me, them).max(0) as u32,
+    }
+}
+
+fn trade_view(w: &World, r: &Ruleset, me: CivId) -> Option<TradeView> {
+    if !civ_core::world::influence::tracks_trade(r) {
+        return None;
+    }
+    let recorded = |c: CivId| w.influence.trade_shares.get(&c).and_then(|h| h.last().copied()).unwrap_or(0);
+    let history = w.influence.trade_shares.get(&me).cloned().unwrap_or_default();
+    let history = history[history.len().saturating_sub(20)..].to_vec();
+    Some(TradeView {
+        share: recorded(me),
+        history,
+        shares: w
+            .civs
+            .iter()
+            .filter(|c| c.is_major() && (c.id == me || w.diplomacy.have_met(me, c.id)))
+            .map(|c| TradeShareView { civ: c.id.0, share: recorded(c.id) })
+            .collect(),
+    })
+}
+
+/// A unit's kind as a player reads it, for event text.
+fn unit_kind(w: &World, r: &Ruleset, unit: Id<civ_core::world::entities::Unit>, fallback: &str) -> String {
+    let name = w.units.get(unit).and_then(|u| r.units.get(u.base)).map_or(fallback, |b| b.name.as_str());
+    civ_core::names::player_text(name)
+}
+
 /// A leader is public once the civ is known; it never changes after setup.
 fn leader_of(w: &World, r: &Ruleset, civ: CivId) -> Option<String> {
     let c = w.civ(civ)?;
@@ -1418,7 +1519,7 @@ pub fn report_for(
             }
             TurnEvent::ProphetBorn { civ, unit } if *civ == me => (
                 "ProphetBorn",
-                "A Great Prophet was born".into(),
+                format!("A {} was born", unit_kind(after, r, *unit, "Great Prophet")),
                 PresentationEvent::ProphetBorn {
                     unit: (*unit).into(),
                 },
@@ -1441,7 +1542,7 @@ pub fn report_for(
             ),
             TurnEvent::CivsMet { a, b } if *a == me || *b == me => (
                 "CivsMet",
-                "Met a civilization".into(),
+                "Met a nation".into(),
                 PresentationEvent::CivsMet {
                     other: if *a == me { b.0 } else { a.0 },
                 },
@@ -1469,7 +1570,7 @@ pub fn report_for(
                 total,
             }) if *civ == me => (
                 "PartAssembled",
-                "Spaceship part assembled".into(),
+                format!("{} assembled", r.units.get(*part).map_or("Project part", |u| u.name.as_str())),
                 PresentationEvent::PartAssembled {
                     part: part.index(),
                     total: *total,
@@ -1508,21 +1609,21 @@ pub fn report_for(
             ),
             TurnEvent::FriendshipSigned { a, b } if *a == me || *b == me => (
                 "FriendshipSigned",
-                "Declaration of friendship signed".into(),
+                "Treaty of friendship signed".into(),
                 PresentationEvent::FriendshipSigned {
                     other: if *a == me { b.0 } else { a.0 },
                 },
             ),
             TurnEvent::ResearchAgreementSigned { a, b } if *a == me || *b == me => (
                 "ResearchAgreementSigned",
-                "Research agreement signed".into(),
+                "Scholarly exchange agreed".into(),
                 PresentationEvent::ResearchAgreementSigned {
                     other: if *a == me { b.0 } else { a.0 },
                 },
             ),
             TurnEvent::ResearchAgreementCompleted { a, b } if *a == me || *b == me => (
                 "ResearchAgreementCompleted",
-                "Research agreement completed".into(),
+                "Scholarly exchange completed".into(),
                 PresentationEvent::ResearchAgreementCompleted {
                     other: if *a == me { b.0 } else { a.0 },
                 },
@@ -1593,7 +1694,7 @@ pub fn report_for(
             ),
             TurnEvent::BarbarianCampAppeared { civ, tile } if *civ == me => (
                 "BarbarianCampAppeared",
-                "A barbarian camp has appeared".into(),
+                "A raider camp has appeared".into(),
                 PresentationEvent::BarbarianCampAppeared { tile: tile.0 },
             ),
             TurnEvent::CampCleared {
@@ -1603,7 +1704,7 @@ pub fn report_for(
                 recruited,
             } if *civ == me => (
                 "CampCleared",
-                "Barbarian camp cleared".into(),
+                "Raider camp cleared".into(),
                 PresentationEvent::CampCleared {
                     tile: tile.0,
                     gold: *gold,
@@ -1633,7 +1734,7 @@ pub fn report_for(
                 gold,
             } if *by == me => (
                 "CityStateMarried",
-                "A city-state has joined your civilization".into(),
+                "A city-state has joined your nation".into(),
                 PresentationEvent::CityStateMarried {
                     city_state: city_state.0,
                     gold: *gold,
@@ -1670,7 +1771,7 @@ pub fn report_for(
             ),
             TurnEvent::CivDefeated { civ } if *civ == me => (
                 "CivDefeated",
-                "Your civilization was defeated".into(),
+                "Your nation was defeated".into(),
                 PresentationEvent::Notice {
                     notice: NoticeKind::CivDefeated,
                 },

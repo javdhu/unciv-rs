@@ -131,6 +131,9 @@ impl RoadLevel {
     }
 }
 
+/// How far around an isthmus two bodies of water may not meet.
+pub const ISTHMUS_REACH: u32 = 3;
+
 /// The map. One array per attribute.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
@@ -161,8 +164,24 @@ pub struct TileGrid {
     pub river_edges: Vec<u8>,
     /// Whether the improvement on this tile is pillaged.
     pub improvement_pillaged: Vec<bool>,
+    /// Buildings standing on a tile of their city (`world::placement`):
+    /// wonders and terrain-bound buildings in civ.game's rules. Sparse, and
+    /// absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default, with = "crate::serialization::map_as_entries"))]
+    pub placed: std::collections::BTreeMap<TileId, Placed>,
     /// Precomputed once. `None` at the map edge.
     neighbours: Vec<[Option<TileId>; 6]>,
+}
+
+/// A building standing on a tile.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placed {
+    pub building: Id<crate::ruleset::Building>,
+    /// A wonder takes its tile: nobody works it.
+    pub takes_tile: bool,
+    /// Ships may pass through (a wonder standing on an isthmus: a canal).
+    pub canal: bool,
 }
 
 impl TileGrid {
@@ -191,6 +210,7 @@ impl TileGrid {
             road_pillaged: vec![false; n],
             river_edges: vec![0; n],
             improvement_pillaged: vec![false; n],
+            placed: Default::default(),
             neighbours: Vec::new(),
         };
         grid.neighbours = (0..n).map(|i| grid.compute_neighbours(TileId(i as u16))).collect();
@@ -290,6 +310,52 @@ impl TileGrid {
     }
 
     /// Whether this tile is open water.
+    /// What stands on this tile, if anything.
+    pub fn placed_at(&self, tile: TileId) -> Option<&Placed> {
+        self.placed.get(&tile)
+    }
+
+    /// A wonder stands here, so no citizen works the tile.
+    pub fn is_taken(&self, tile: TileId) -> bool {
+        self.placed.get(&tile).is_some_and(|p| p.takes_tile)
+    }
+
+    /// Ships may pass through this land tile.
+    pub fn is_canal(&self, tile: TileId) -> bool {
+        self.placed.get(&tile).is_some_and(|p| p.canal)
+    }
+
+    /// A land tile between two separate bodies of water: its water
+    /// neighbours fall into two or more runs around it, and no water path of
+    /// [`ISTHMUS_REACH`] tiles or fewer joins them without crossing it.
+    pub fn is_isthmus(&self, r: &Ruleset, tile: TileId) -> bool {
+        if !self.contains(tile) || self.is_water(r, tile) {
+            return false;
+        }
+        let ring = self.neighbours[tile.0 as usize];
+        let wet = |i: usize| ring[i % 6].is_some_and(|t| self.is_water(r, t));
+        // The first water tile of each run, walking the ring.
+        let runs: Vec<TileId> = (0..6).filter(|&i| wet(i) && !wet(i + 5)).filter_map(|i| ring[i]).collect();
+        if runs.len() < 2 {
+            return false;
+        }
+        // Water within reach of the first run, never through `tile` itself.
+        let mut seen = std::collections::BTreeSet::from([runs[0]]);
+        let mut frontier = vec![runs[0]];
+        while let Some(t) = frontier.pop() {
+            for next in self.neighbours(t) {
+                if next != tile
+                    && self.distance(next, tile) <= ISTHMUS_REACH
+                    && self.is_water(r, next)
+                    && seen.insert(next)
+                {
+                    frontier.push(next);
+                }
+            }
+        }
+        runs[1..].iter().any(|t| !seen.contains(t))
+    }
+
     pub fn is_water(&self, r: &Ruleset, tile: TileId) -> bool {
         r.terrains.get(self.terrain[tile.0 as usize]).is_some_and(|t| t.r#type == "Water")
     }
@@ -455,6 +521,9 @@ impl TileGrid {
         ];
         if lengths.iter().any(|n| *n != len) {
             return Err("grid columns have inconsistent lengths".into());
+        }
+        if self.placed.keys().any(|t| t.0 as usize >= len) {
+            return Err("a placed building stands off the map".into());
         }
         for i in 0..len {
             if self.neighbours[i] != self.compute_neighbours(TileId(i as u16)) {

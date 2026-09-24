@@ -343,6 +343,9 @@ pub fn on_construction_completed_with_science(
     science: crate::world::research::ScienceModifiers,
 ) {
     let Some(civ) = world.cities.get(city).map(|c| c.owner) else { return };
+    if matches!(what, Construction::Building(_)) {
+        crate::world::placement::settle_city(world, r, city);
+    }
     if let Construction::Building(id) = what {
         crate::world::policies::rebuild_uniques(world, r, civ);
         if let Some(b) = r.buildings.get(id) {

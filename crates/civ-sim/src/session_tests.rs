@@ -1695,3 +1695,46 @@ fn a_human_cannot_forge_an_ai_offer_id() {
         .unwrap();
     assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
 }
+
+#[test]
+fn a_human_adopts_a_state_faith_by_action() {
+    let s = session();
+    assert!(s.rules.faith_mode(), "the shipped rules raise faiths by era");
+    let settler = own_unit(&s, 0, true);
+    let s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let mut s = s;
+    let city = s.world.civs[0].cities[0];
+    let hinduism = civ_core::world::faiths::key(0);
+    let turn = s.world.turn;
+    s.world
+        .faiths
+        .arisen
+        .insert(0, civ_core::world::faiths::Arisen { turn, city });
+    let c = s.world.cities.get_mut(city).unwrap();
+    c.faith.add_pressure(Some(hinduism), 5000);
+    c.faith.recount(c.population);
+
+    let options = crate::queries::civ_options(&s.world, &s.rules, CivId(0)).state_faith.unwrap();
+    assert_eq!(options.current, None);
+    assert_eq!(options.adoptable, [hinduism.0]);
+
+    let other = request(&s, 0, "wrong", Action::AdoptStateFaith { religion: 129 });
+    let t = s.stage_command(0, other).unwrap();
+    assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }), "Judaism has not arisen");
+
+    let s = apply(s, 0, "adopt", Action::AdoptStateFaith { religion: hinduism.0 });
+    assert_eq!(s.world.civs[0].faith.state, Some(hinduism));
+    let options = crate::queries::civ_options(&s.world, &s.rules, CivId(0)).state_faith.unwrap();
+    assert_eq!(options.current, Some(hinduism.0));
+    assert_eq!(options.locked_turns, civ_core::world::faiths::STATE_FAITH_LOCK);
+    let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    assert_eq!(view.civs.iter().find(|c| c.id == 0).unwrap().state_faith, Some(hinduism.0));
+}

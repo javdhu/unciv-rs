@@ -532,7 +532,9 @@ fn can_traverse_with_borders(
         }
     }
     let water = world.grid.is_water(r, to);
-    if unit.is_water_unit(r) && !water && !world.cities.iter().any(|(_, c)| c.centre == to) {
+    // Ships enter land only at a city or through a canal (world::placement).
+    if unit.is_water_unit(r) && !water && !world.grid.is_canal(to) && !world.cities.iter().any(|(_, c)| c.centre == to)
+    {
         return false;
     }
     let floating = unit.has_unique(r, UniqueType::CanMoveOnWater);

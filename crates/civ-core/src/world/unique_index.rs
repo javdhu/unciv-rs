@@ -21,7 +21,7 @@
 
 use crate::{Unique, UniqueKind, UniqueType};
 
-/// `ceil(638 / 64)`.
+/// `ceil(640 / 64)`: Unciv's 638 unique types and civ.game's two.
 const WORDS: usize = 10;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -128,7 +128,8 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for t in UniqueType::ALL {
             let index = UniqueIndex::build(&[Unique::parse(t.template())]);
-            let bits: Vec<usize> = (0..638).filter(|b| index.present[b / 64] & (1u64 << (b % 64)) != 0).collect();
+            let bits: Vec<usize> =
+                (0..UniqueType::ALL.len()).filter(|b| index.present[b / 64] & (1u64 << (b % 64)) != 0).collect();
             assert_eq!(bits.len(), 1, "{t:?} should set exactly one bit");
             assert!(seen.insert(bits[0]), "{t:?} collides with an earlier type");
         }

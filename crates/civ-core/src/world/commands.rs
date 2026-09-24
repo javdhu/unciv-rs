@@ -54,6 +54,9 @@ pub enum Command {
     WithdrawSpy { spy: usize },
     AttemptCoup { target: CivId },
     SetProduction { city: Id<City>, queue: Vec<Construction> },
+    /// Choose the tile a wonder or placed building will stand on
+    /// (`world::placement`).
+    ChooseSite { city: Id<City>, building: Id<crate::ruleset::Building>, tile: TileId },
     SetProductionConversion { city: Id<City>, stat: Option<Stat> },
     SetAvoidGrowth { city: Id<City>, avoid: bool },
     SetResearch { technology: Id<Technology> },
@@ -226,6 +229,7 @@ fn validate_actor(world: &World, civ: CivId, command: &Command) -> Result<(), Co
         }
         Bombard { city, .. }
         | SetProduction { city, .. }
+        | ChooseSite { city, .. }
         | SetProductionConversion { city, .. }
         | SetAvoidGrowth { city, .. }
         | Purchase { city, .. }
@@ -639,6 +643,12 @@ fn apply(
                 return Err(NotAllowed);
             }
             c.avoid_growth = avoid;
+        }
+        ChooseSite { city, building, tile } => {
+            if r.buildings.get(building).is_none() || !world.grid.contains(tile) {
+                return Err(InvalidTarget);
+            }
+            crate::world::placement::choose(world, r, city, building, tile).map_err(|_| NotAllowed)?;
         }
         SetProduction { city, queue } => {
             if queue.len() > 32 {

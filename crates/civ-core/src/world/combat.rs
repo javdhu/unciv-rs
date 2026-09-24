@@ -85,7 +85,7 @@ impl std::fmt::Display for CombatRejection {
         f.write_str(match self {
             CombatRejection::NoSuchUnit => "no such unit",
             CombatRejection::NotAtWar => "not at war",
-            CombatRejection::SameOwner => "both belong to the same civilization",
+            CombatRejection::SameOwner => "both belong to the same nation",
             CombatRejection::NotAdjacent => "a melee attack needs an adjacent target",
             CombatRejection::OutOfRange => "the target is out of range",
             CombatRejection::NoMovement => "no movement or attacks left",

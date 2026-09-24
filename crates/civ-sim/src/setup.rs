@@ -212,7 +212,7 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
         || majors.len() < usize::from(s.majors)
         || city_states.len() < usize::from(s.city_states)
     {
-        return Err("the requested civilizations do not fit this map or ruleset".into());
+        return Err("the requested nations do not fit this map or ruleset".into());
     }
     let starts = wanted;
     let n_majors = usize::from(s.majors);
@@ -362,7 +362,7 @@ pub fn validate_settings(s: &Settings) -> Result<(), String> {
         return Err("map dimensions must be between 16x10 and 128x80".into());
     }
     if !(1..=16).contains(&s.majors) || s.city_states > 16 {
-        return Err("choose 1 to 16 civilizations and at most 16 city-states".into());
+        return Err("choose 1 to 16 nations and at most 16 city-states".into());
     }
     if s.max_turns.is_some_and(|t| t == 0 || t > 10_000) {
         return Err("maximum turns must be between 1 and 10000".into());
