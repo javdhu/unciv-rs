@@ -37,6 +37,10 @@ pub struct PlayerView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trade: Option<TradeView>,
+    /// Wall wonders' runs along their borders, where this player knows the tiles.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walls: Option<Vec<WallView>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -348,6 +352,34 @@ pub struct TileView {
     pub owner: Option<u8>,
     pub visible: bool,
     pub observed_turn: u32,
+    /// The wonder or building seen standing on this tile.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placed: Option<PlacedView>,
+}
+
+/// A wonder or terrain-bound building standing on a tile (the renderer draws
+/// it there, rather than guessing a tile).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacedView {
+    /// Its id in `RuleTables.buildings`.
+    pub building: u32,
+    /// A world wonder, which takes the tile: nobody works it.
+    pub wonder: bool,
+    /// Ships pass through this land tile (Suez, Panama).
+    pub canal: bool,
+}
+
+/// A wall wonder's run along its city's land border (the Great Wall).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WallView {
+    pub owner: u8,
+    /// Its id in `RuleTables.buildings`.
+    pub building: u32,
+    /// Border tiles the wall runs along, those this player knows.
+    pub tiles: Vec<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -552,6 +584,11 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             owner: seen.owner.map(|c| c.0),
             visible: w.visibility.can_see(me, tile),
             observed_turn: seen.observed_turn,
+            placed: seen.placed.map(|p| PlacedView {
+                building: p.building.index(),
+                wonder: p.takes_tile,
+                canal: p.canal,
+            }),
         })
         .collect();
     let units = w
@@ -768,6 +805,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
     }
     civs.sort_by_key(|c| c.id);
     PlayerView {
+        walls: wall_views(w, r, me),
         trade: trade_view(w, r, me),
         economy: EconomyView {
             gold: economy.gold,
@@ -1309,6 +1347,30 @@ fn influence_view(w: &World, me: CivId, them: CivId) -> InfluenceView {
         influenced: inf::is_influential(w, them, me),
         rate: inf::influence_rate(w, me, them).max(0) as u32,
     }
+}
+
+fn wall_views(w: &World, r: &Ruleset, me: CivId) -> Option<Vec<WallView>> {
+    use civ_core::world::placement;
+    let walls: Vec<WallView> = w
+        .cities
+        .iter()
+        .filter_map(|(id, c)| {
+            let tiles: Vec<u16> = placement::wall_segments(w, r, id)
+                .into_iter()
+                .filter(|t| w.visibility.has_explored(me, *t))
+                .map(|t| t.0)
+                .collect();
+            let building = c.built.iter().copied().find(|b| {
+                placement::is_placed(r, *b)
+                    && r.buildings[*b]
+                        .uniques
+                        .iter()
+                        .any(|u| u.unique_type() == Some(civ_core::UniqueType::EnemyUnitsSpendExtraMovement))
+            })?;
+            (!tiles.is_empty()).then(|| WallView { owner: c.owner.0, building: building.index(), tiles })
+        })
+        .collect();
+    (!walls.is_empty()).then_some(walls)
 }
 
 fn trade_view(w: &World, r: &Ruleset, me: CivId) -> Option<TradeView> {

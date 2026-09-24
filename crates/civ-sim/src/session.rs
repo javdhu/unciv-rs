@@ -1105,6 +1105,15 @@ impl Session {
             Action::AdoptStateFaith { religion } => Command::AdoptStateFaith {
                 religion: CivId(*religion),
             },
+            Action::ChooseSite {
+                city: c,
+                building,
+                tile: t,
+            } => Command::ChooseSite {
+                city: city(*c)?,
+                building: registry(&r.buildings, *building)?,
+                tile: tile(*t)?,
+            },
             Action::Annex { city: c } => Command::Annex { city: city(*c)? },
             Action::Raze { city: c } => Command::Raze { city: city(*c)? },
             Action::AssignSpy { spy, city: c } => Command::AssignSpy {

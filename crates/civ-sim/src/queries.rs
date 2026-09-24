@@ -113,6 +113,21 @@ pub struct ConstructionChoice {
     pub availability: Availability,
     pub gold: Option<PriceQuote>,
     pub faith: Option<PriceQuote>,
+    /// For a wonder or building that stands on a tile: every tile it may
+    /// stand on, and the one it will (the player's choice, else the best).
+    /// Choose another with `chooseSite`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sites: Option<SiteChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteChoice {
+    pub tiles: Vec<u16>,
+    pub selected: Option<u16>,
+    /// A world wonder takes its tile (nobody works it again).
+    pub takes_tile: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -662,6 +677,14 @@ pub fn city_options(
             },
             gold,
             faith,
+            sites: match what {
+                Construction::Building(b) if civ_core::world::placement::is_placed(r, b) => Some(SiteChoice {
+                    tiles: civ_core::world::placement::valid_sites(world, r, id, b).into_iter().map(|t| t.0).collect(),
+                    selected: civ_core::world::placement::site_for(world, r, id, b).map(|t| t.0),
+                    takes_tile: civ_core::world::placement::takes_tile(r, b),
+                }),
+                _ => None,
+            },
         });
     }
     Some(CityOptions {
