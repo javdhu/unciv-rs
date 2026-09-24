@@ -29,7 +29,8 @@ The 3D observer renders the map, units and growing cities. Every visual is gener
 `web/src/art/`; imported-model work was archived on 2026-09-23 (see [the procedural plan](docs/PROCEDURAL.md)).
 Terrain and resources have their own recipes; units, improvements, natural wonders and cities use
 placeholders until their phases land. `npm --prefix web run art -- sheet` renders a contact sheet of the
-art entries, and `/art-review.html` is a deterministic map study.
+art entries, `/contact.html?filter=unit/` draws a labelled one with the game's renderer, and `/art-review.html`
+is a deterministic map study.
 Human commands, persistent player knowledge, save/replay,
 solo storage and private multiplayer rooms now exist below it; the UI has not yet been connected to
 that interface. The engine targets the bundled Gods & Kings rules and normal matches. Unciv editor/mod-only behavior and public-platform features are outside this engine work.
