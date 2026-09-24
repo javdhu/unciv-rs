@@ -219,7 +219,8 @@ pub fn process_turn(world: &mut World, r: &Ruleset, civ: CivId, speed: Fixed) ->
                 },
             );
         let Some(unit) = prepared else { break };
-        world.place_unit(unit);
+        let id = world.place_unit(unit);
+        crate::world::luminaries::name_unit(world, r, id);
         let people = &mut world.civ_mut(civ).unwrap().great_people;
         if combat {
             let needed = people.combat_thresholds.get(&kind).copied().unwrap_or(200);

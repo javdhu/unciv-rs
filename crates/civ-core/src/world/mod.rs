@@ -40,6 +40,8 @@ pub mod grid;
 pub mod happiness;
 pub mod healing;
 pub mod improvements;
+pub mod influence;
+pub mod luminaries;
 pub mod mapgen;
 pub mod military;
 pub mod movement;

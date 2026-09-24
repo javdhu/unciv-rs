@@ -131,3 +131,28 @@ pub fn read_faith(j: &Json) -> Option<FaithDef> {
         beliefs: j.get("beliefs").map(|v| v.strings()).unwrap_or_default(),
     })
 }
+
+/// A list of names for units that get one (`[This Unit] gets a name from
+/// the [X] group`): Luminaries in `rules/base`. `regions` holds a pool per
+/// region, drawn from first by a nation of that region; `unitNames` is a
+/// pool for everyone, drawn from next, then the other regions in turn.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NameGroup {
+    pub name: String,
+    pub unit_names: Vec<String>,
+    pub regions: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+pub fn read_name_group(j: &Json) -> Option<NameGroup> {
+    Some(NameGroup {
+        name: text(j, "name")?,
+        unit_names: j.get("unitNames").map(|v| v.strings()).unwrap_or_default(),
+        regions: j
+            .get("regions")
+            .and_then(|v| v.as_object())
+            .unwrap_or_default()
+            .iter()
+            .map(|(region, names)| (region.clone(), names.strings()))
+            .collect(),
+    })
+}

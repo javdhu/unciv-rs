@@ -166,7 +166,9 @@ pub fn spawn_prophet(world: &mut World, r: &Ruleset, civ: CivId) -> Option<Id<Un
     let centre = world.cities.get(home)?.centre;
     let mut unit = crate::world::construction::prepare_unit_near(world, r, civ, base, centre, Some(home))?;
     crate::world::military::train(world, r, home, &mut unit);
-    Some(world.place_unit(unit))
+    let id = world.place_unit(unit);
+    crate::world::luminaries::name_unit(world, r, id);
+    Some(id)
 }
 
 /// Available slots include a missing pantheon and nation-specific extra beliefs.

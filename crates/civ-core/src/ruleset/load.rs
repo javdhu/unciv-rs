@@ -37,6 +37,8 @@ pub struct Ruleset {
     /// Empty for the fixtures, whose entries are bare names; see
     /// [`Ruleset::faith_mode`].
     pub faiths: Vec<super::civgame::FaithDef>,
+    /// Names for great people and other named units, from `UnitNameGroups.json`.
+    pub name_groups: Vec<super::civgame::NameGroup>,
     pub difficulties: Registry<Difficulty>,
     pub eras: Registry<Era>,
     pub speeds: Registry<Speed>,
@@ -146,6 +148,12 @@ impl Ruleset {
                             e.as_str().map(str::to_owned).or_else(|| Some(super::civgame::read_faith(e)?.name))
                         })
                         .collect();
+                }
+                "UnitNameGroups.json" => {
+                    for group in doc.as_array().unwrap_or_default().iter().filter_map(super::civgame::read_name_group) {
+                        r.name_groups.retain(|g| g.name != group.name);
+                        r.name_groups.push(group);
+                    }
                 }
                 "Ruins.json" => flat(&mut r.ruin_rewards, &doc, RuinReward::from_json),
                 "Difficulties.json" => flat(&mut r.difficulties, &doc, Difficulty::from_json),

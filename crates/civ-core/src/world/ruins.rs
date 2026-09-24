@@ -374,7 +374,8 @@ fn grant(
             let Some(spot) = placement_near(world, r, &new_unit, tile) else { return false };
             new_unit.position = spot;
             crate::world::military::initialize_promotions(world, r, &mut new_unit);
-            world.place_unit(new_unit);
+            let id = world.place_unit(new_unit);
+            crate::world::luminaries::name_unit(world, r, id);
             true
         }
         Some(UniqueType::OneTimeUnitGainXP) => {

@@ -39,6 +39,14 @@ pub struct World {
     pub endgame: crate::world::victory_actions::Endgame,
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     pub barbarian_camps: std::collections::BTreeMap<TileId, crate::world::barbarians::Camp>,
+    /// Every name a unit has been given (`world::luminaries`), so no two
+    /// Luminaries in a game share one.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub given_names: std::collections::BTreeSet<String>,
+    /// Cultural influence and trade shares (civ.game victories); empty unless
+    /// a victory in the ruleset names them.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub influence: crate::world::influence::Influence,
     /// Faiths that arise by era (civ.game); empty unless the ruleset has them.
     #[cfg_attr(feature = "serde", serde(default))]
     pub faiths: crate::world::faiths::FaithWorld,
@@ -61,6 +69,8 @@ impl World {
             victory_turn: None,
             endgame: Default::default(),
             barbarian_camps: Default::default(),
+            given_names: Default::default(),
+            influence: Default::default(),
             faiths: Default::default(),
         }
     }

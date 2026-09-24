@@ -1886,6 +1886,10 @@ fn finish_automatic(
         events.push(TurnEvent::CityConverted { city: c.city, from: c.from, to: c.to });
     }
 
+    // Influence and trade shares are counted once the round's culture and
+    // trade are in, before anyone's victory is judged.
+    crate::world::influence::tick(world, r);
+
     events.extend(crate::world::victory_actions::finish_voting(world, r, all_ai).into_iter().map(TurnEvent::Endgame));
 
     // Units get their movement back for the turn that is starting.

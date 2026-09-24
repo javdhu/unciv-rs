@@ -279,7 +279,9 @@ fn gift(world: &mut World, r: &Ruleset, cs: CivId, major: CivId, great: bool) ->
         unit.xp = (i32::from(unit.xp) + bonus(world, r, major, UniqueType::CityStateGiftedUnitsStartWithXp))
             .clamp(0, u16::MAX as i32) as u16;
     }
-    Some(world.place_unit(unit))
+    let id = world.place_unit(unit);
+    super::luminaries::name_unit(world, r, id);
+    Some(id)
 }
 fn gp_interval(world: &World, major: CivId, speed: Fixed) -> u32 {
     let mut rng = Rng::from_parts(&[0xC59F, world.turn as u64, major.0 as u64]);

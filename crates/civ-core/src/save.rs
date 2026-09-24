@@ -97,6 +97,9 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     if !r.faiths.is_empty() {
         write!(&mut input, "\nfaiths {:?}", r.faiths).unwrap();
     }
+    if !r.name_groups.is_empty() {
+        write!(&mut input, "\nname groups {:?}", r.name_groups).unwrap();
+    }
     if let Some(name) = &r.default_difficulty_name {
         write!(&mut input, "\ndefault difficulty {name}").unwrap();
     }
