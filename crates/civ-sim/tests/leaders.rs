@@ -127,13 +127,13 @@ fn every_human_seat_chooses_its_own_nation_and_leader() {
     };
     let settings = Settings {
         majors: 3,
-        seats: seats("Rome", "Greece"),
+        seats: seats("Rome", "Persia"),
         ..Settings::default()
     };
     let (w, r, _) = new_game_in(&settings, &[0, 1], rules()).unwrap();
     assert_eq!(r.nations[w.civs[0].nation].name, "Rome");
     assert!(w.civs[0].alt_leader);
-    assert_eq!(r.nations[w.civs[1].nation].name, "Greece");
+    assert_eq!(r.nations[w.civs[1].nation].name, "Persia");
     assert!(
         !w.civs[1].alt_leader,
         "a chosen nation without a chosen leader gets its default"

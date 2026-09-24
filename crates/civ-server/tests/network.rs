@@ -347,10 +347,10 @@ async fn every_seat_chooses_its_nation_in_the_lobby() {
     let path = format!("/api/rooms/{room_id}/seat");
     assert_eq!(server.post(&client, &b, &path, seat("Rome")).await.status(), 409, "Rome is seat 0's");
     assert_eq!(server.post(&client, &b, &path, seat("Atlantis")).await.status(), 400);
-    let chosen: Value = server.post(&client, &b, &path, seat("Greece")).await.json().await.unwrap();
+    let chosen: Value = server.post(&client, &b, &path, seat("Persia")).await.json().await.unwrap();
     let seats = chosen["seats"].as_array().unwrap();
     assert_eq!(seats[0]["nation"], "Rome");
-    assert_eq!(seats[1]["nation"], "Greece");
+    assert_eq!(seats[1]["nation"], "Persia");
 
     let started: Value =
         server.post(&client, &a, &format!("/api/rooms/{room_id}/start"), json!({})).await.json().await.unwrap();
@@ -358,5 +358,5 @@ async fn every_seat_chooses_its_nation_in_the_lobby() {
     let (_socket, update) = server.socket(&b, started["matchId"].as_str().unwrap()).await;
     let rules = civ_sim::content::load().unwrap();
     let mine = update.view.civs.iter().find(|c| c.id == update.view.me).unwrap();
-    assert_eq!(rules.nations.iter().nth(mine.nation as usize).unwrap().1.name, "Greece");
+    assert_eq!(rules.nations.iter().nth(mine.nation as usize).unwrap().1.name, "Persia");
 }
