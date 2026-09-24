@@ -220,7 +220,9 @@ pub fn can(world: &World, r: &Ruleset, unit: Id<Unit>, action: Action, s: Scalin
     Ok(())
 }
 
-fn hurry_amount(
+/// Hammers an Engineer adds to this city's building now: stopping one short
+/// of done.
+pub fn hurry_amount(
     world: &World,
     r: &Ruleset,
     city: Id<crate::world::city::City>,

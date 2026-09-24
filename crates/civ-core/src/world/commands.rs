@@ -541,8 +541,17 @@ fn apply(
         }
         AirSweep { unit, target } => {
             target_tile(world, target)?;
+            // A sweep that meets an aircraft is a dogfight, reported like any
+            // other fight; one that meets ground fire or nothing is not.
+            let watch = crate::world::air::sweep_interceptor(world, r, unit, target)
+                .filter(|id| world.units.get(*id).is_some_and(|u| u.is_air(r)))
+                .and_then(|id| crate::world::combat::BattleWatch::before(world, r, unit, crate::world::air::Target::Unit(id)));
             let result = crate::world::air::sweep(world, r, unit, target).map_err(|_| NotAllowed)?;
-            events.push(TurnEvent::Battle { attacker_died: result.attacker_died, defender_died: result.defender_died, report: None });
+            events.push(TurnEvent::Battle {
+                attacker_died: result.attacker_died,
+                defender_died: result.defender_died,
+                report: watch.map(|w| w.report(world)),
+            });
         }
         Paradrop { unit, to } => {
             target_tile(world, to)?;

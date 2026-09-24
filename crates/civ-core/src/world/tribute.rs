@@ -259,6 +259,11 @@ fn check(world: &World, r: &Ruleset, cs: CivId, demander: CivId, worker: bool) -
     Ok(())
 }
 
+/// Whether the city-state would pay tribute now, gold or a worker.
+pub fn may_demand(world: &World, r: &Ruleset, cs: CivId, demander: CivId, worker: bool) -> bool {
+    check(world, r, cs, demander, worker).is_ok()
+}
+
 /// Take gold (`tributeGold`). Returns the gold taken.
 pub fn demand_gold(
     world: &mut World,

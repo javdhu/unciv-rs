@@ -84,6 +84,36 @@ pub fn choose_construction(
     net_gold: i32,
     wants: Priorities,
 ) -> Option<Construction> {
+    choose_construction_among(world, r, civ, city, m, net_gold, wants, true)
+}
+
+/// What a puppet's governor builds for a human owner: buildings only, chosen
+/// as the AI chooses them. A puppet raises no settlers, workers or armies for
+/// a master who did not ask for them, and builds no wonders.
+pub fn choose_puppet_construction(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    city: &City,
+    m: CostModifiers,
+    net_gold: i32,
+    happiness: i32,
+) -> Option<Construction> {
+    let wants = Priorities { happiness, ..Priorities::default() };
+    choose_construction_among(world, r, civ, city, m, net_gold, wants, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn choose_construction_among(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    city: &City,
+    m: CostModifiers,
+    net_gold: i32,
+    wants: Priorities,
+    units: bool,
+) -> Option<Construction> {
     let Priorities { want_settler, want_worker, want_scout, want_military, happiness } = wants;
     let civ_ref = world.civ(civ)?;
     let leader = crate::world::personality::of(world, r, civ);
@@ -131,6 +161,7 @@ pub fn choose_construction(
 
     available(r, civ_ref, city)
         .into_iter()
+        .filter(|what| units || matches!(what, Construction::Building(_)))
         .filter(|what| crate::world::construction::can_construct_in(world, r, civ, city, *what).is_ok())
         .filter_map(|what| {
             let cost =

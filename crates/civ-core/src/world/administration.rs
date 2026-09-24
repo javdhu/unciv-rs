@@ -143,7 +143,11 @@ pub fn gift_unit(world: &mut World, r: &Ruleset, unit: Id<Unit>) -> Option<crate
     Some(to)
 }
 
-pub fn protection(world: &mut World, major: crate::world::CivId, minor: crate::world::CivId, pledge: bool) -> bool {
+/// Whether `major` may pledge to protect `minor` now (`pledge`), or withdraw
+/// its pledge: met, at peace, and outside the waits a change of heart costs
+/// (twenty turns after a withdrawal, ten after a pledge). A pledge also needs
+/// influence of at least zero.
+pub fn may_protect(world: &World, major: crate::world::CivId, minor: crate::world::CivId, pledge: bool) -> bool {
     use crate::{stats::Fixed, world::diplomacy::Flag};
     if !world.civ(major).is_some_and(|c| c.is_major() && c.is_alive())
         || !world.civ(minor).is_some_and(|c| c.is_city_state() && c.is_alive())
@@ -153,20 +157,24 @@ pub fn protection(world: &mut World, major: crate::world::CivId, minor: crate::w
         return false;
     }
     if pledge {
-        if world.diplomacy.is_protector(major, minor)
+        !(world.diplomacy.is_protector(major, minor)
             || world.diplomacy.has_flag(minor, major, Flag::RecentlyWithdrewProtection)
-            || world.diplomacy.influence(minor, major) < Fixed::ZERO
-        {
-            return false;
-        }
+            || world.diplomacy.influence(minor, major) < Fixed::ZERO)
+    } else {
+        world.diplomacy.is_protector(major, minor)
+            && !world.diplomacy.has_flag(minor, major, Flag::RecentlyPledgedProtection)
+    }
+}
+
+pub fn protection(world: &mut World, major: crate::world::CivId, minor: crate::world::CivId, pledge: bool) -> bool {
+    use crate::{stats::Fixed, world::diplomacy::Flag};
+    if !may_protect(world, major, minor, pledge) {
+        return false;
+    }
+    if pledge {
         world.diplomacy.set_protector(major, minor, true);
         world.diplomacy.set_flag(minor, major, Flag::RecentlyPledgedProtection, 10);
     } else {
-        if !world.diplomacy.is_protector(major, minor)
-            || world.diplomacy.has_flag(minor, major, Flag::RecentlyPledgedProtection)
-        {
-            return false;
-        }
         world.diplomacy.set_protector(major, minor, false);
         world.diplomacy.set_flag(minor, major, Flag::RecentlyWithdrewProtection, 20);
         world.diplomacy.add_influence(minor, major, Fixed::whole(-20));

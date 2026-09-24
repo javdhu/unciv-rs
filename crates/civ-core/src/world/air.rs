@@ -372,6 +372,69 @@ pub fn can_intercept(world: &World, r: &Ruleset, id: Id<Unit>, tile: TileId) -> 
         && world.grid.distance(unit.position, tile) <= range as u32
 }
 
+/// Percent chance that the interceptor a strike on `tile` would meet stops
+/// it, choosing only among units `seen` admits (a player previews against the
+/// defenders it can see). `defender` is the struck target, which never
+/// intercepts for itself; `owner` stands in for the defender's owner when the
+/// strike has no single target, as a nuclear one. Zero when nothing seen can
+/// intercept, or the attacker cannot be intercepted.
+pub fn visible_intercept_chance(
+    world: &World,
+    r: &Ruleset,
+    attacker: Id<Unit>,
+    tile: TileId,
+    defender: Option<Target>,
+    owner: Option<CivId>,
+    seen: &dyn Fn(Id<Unit>) -> bool,
+) -> i32 {
+    if world.units.get(attacker).is_none() {
+        return 0;
+    }
+    let mut ctx = context(world, r, attacker).on_tile(tile);
+    if let Some(target) = defender {
+        ctx = ctx.against(target.opponent());
+    }
+    if has(world, r, attacker, UniqueType::CannotBeIntercepted, &ctx, false) {
+        return 0;
+    }
+    interceptor_among(world, r, attacker, tile, defender, false, owner, seen)
+        .map_or(0, |id| intercept_chance(world, r, id))
+}
+
+/// Where this aircraft may rebase now: its owner's cities and carriers within
+/// reach that have room for it.
+pub fn rebase_targets(world: &World, r: &Ruleset, id: Id<Unit>) -> Vec<TileId> {
+    let Some(unit) = world.units.get(id) else { return Vec::new() };
+    let mut tiles: std::collections::BTreeSet<TileId> =
+        world.cities.iter().filter(|(_, c)| c.owner == unit.owner).map(|(_, c)| c.centre).collect();
+    tiles.extend(world.units.iter().filter(|(other, u)| *other != id && u.owner == unit.owner).map(|(_, u)| u.position));
+    tiles.into_iter().filter(|t| can_rebase(world, r, id, *t).is_ok()).collect()
+}
+
+/// Tiles in range, and in sight, this aircraft may sweep now.
+pub fn sweep_targets(world: &World, r: &Ruleset, id: Id<Unit>) -> Vec<TileId> {
+    let Some(unit) = world.units.get(id) else { return Vec::new() };
+    let range = attack_range(world, r, id).max(0) as u32;
+    world.grid.within(unit.position, range).into_iter().filter(|t| can_sweep(world, r, id, *t).is_ok()).collect()
+}
+
+/// Tiles in sight this unit may drop onto now, within its paradrop range.
+pub fn paradrop_targets(world: &World, r: &Ruleset, id: Id<Unit>) -> Vec<TileId> {
+    let Some(unit) = world.units.get(id) else { return Vec::new() };
+    let range = matching(world, r, id, UniqueType::MayParadrop, &context(world, r, id), false)
+        .into_iter()
+        .map(|u| number(u, 1))
+        .max()
+        .unwrap_or(0)
+        .max(0) as u32;
+    world.grid.within(unit.position, range).into_iter().filter(|t| can_paradrop(world, r, id, *t).is_ok()).collect()
+}
+
+/// The unit that meets a sweep over `tile`, as [`sweep`] chooses it.
+pub fn sweep_interceptor(world: &World, r: &Ruleset, attacker: Id<Unit>, tile: TileId) -> Option<Id<Unit>> {
+    interceptor(world, r, attacker, tile, None, true, None)
+}
+
 fn interceptor(
     world: &World,
     r: &Ruleset,
@@ -381,10 +444,26 @@ fn interceptor(
     sweep: bool,
     owner_override: Option<CivId>,
 ) -> Option<Id<Unit>> {
+    interceptor_among(world, r, attacker, tile, defender, sweep, owner_override, &|_| true)
+}
+
+/// The interceptor a mission would meet, choosing only among units `seen`
+/// admits: a player's preview of a strike reads only the defenders it can see.
+#[allow(clippy::too_many_arguments)]
+fn interceptor_among(
+    world: &World,
+    r: &Ruleset,
+    attacker: Id<Unit>,
+    tile: TileId,
+    defender: Option<Target>,
+    sweep: bool,
+    owner_override: Option<CivId>,
+    seen: &dyn Fn(Id<Unit>) -> bool,
+) -> Option<Id<Unit>> {
     let a = world.units.get(attacker)?;
     let owner = owner_override.or_else(|| defender.and_then(|d| d.facts(world)).map(|d| d.0));
     let candidates = world.units.iter().filter(|(id, u)| {
-        u.owner != a.owner
+        seen(*id) && u.owner != a.owner
             && world.diplomacy.at_war(a.owner, u.owner)
             && (sweep || owner == Some(u.owner))
             && defender != Some(Target::Unit(*id))

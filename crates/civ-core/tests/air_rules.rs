@@ -473,3 +473,69 @@ fn inherited_fighter_sight_and_elevation_occlusion_match_the_shared_visibility_r
     assert!(visible.contains(&next));
     assert!(!visible.contains(&behind));
 }
+
+#[test]
+fn a_sweep_that_meets_an_aircraft_reports_the_dogfight_and_one_that_meets_nothing_does_not() {
+    use civ_core::world::turn::TurnEvent;
+    let (r, mut w) = fixture();
+    let fighter = unit(&mut w, &r, 0, "Fighter", 3, 4);
+    let enemy = unit(&mut w, &r, 1, "Triplane", 9, 3);
+    reveal(&mut w, &r);
+    let to = tile(&w, 8, 4);
+    let reports = |events: &[TurnEvent]| {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                TurnEvent::Battle { report: Some(b), .. } => Some(*b),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let events = execute(&mut w, &r, CivId(0), Command::AirSweep { unit: fighter, target: to }).unwrap().events;
+    let [report] = reports(&events)[..] else { panic!("one dogfight: {events:?}") };
+    assert_eq!((report.attacker, report.target), (fighter, Target::Unit(enemy)));
+    assert!(report.damage_to_attacker > 0 && report.damage_to_defender > 0);
+    let second = unit(&mut w, &r, 0, "Fighter", 3, 4);
+    let far = tile(&w, 5, 10);
+    let events = execute(&mut w, &r, CivId(0), Command::AirSweep { unit: second, target: far }).unwrap().events;
+    assert!(reports(&events).is_empty(), "nothing met, nothing fought");
+}
+
+#[test]
+fn target_lists_hold_exactly_the_tiles_each_mission_accepts() {
+    let (r, mut w) = fixture();
+    reveal(&mut w, &r);
+    let fighter = unit(&mut w, &r, 0, "Fighter", 3, 4);
+    let range = air::attack_range(&w, &r, fighter) as u32;
+    let sweeps = air::sweep_targets(&w, &r, fighter);
+    let expected: Vec<_> =
+        w.grid.within(tile(&w, 3, 4), range).into_iter().filter(|t| air::can_sweep(&w, &r, fighter, *t).is_ok()).collect();
+    assert!(!sweeps.is_empty());
+    assert_eq!(sweeps, expected);
+    assert!(air::rebase_targets(&w, &r, fighter).is_empty(), "no other base");
+    let field = tile(&w, 6, 4);
+    w.found_city_in(&r, City::found("Field", CivId(0), field));
+    assert_eq!(air::rebase_targets(&w, &r, fighter), vec![field]);
+    let para = unit(&mut w, &r, 0, "Paratrooper", 3, 4);
+    let drops = air::paradrop_targets(&w, &r, para);
+    assert!(drops.contains(&tile(&w, 7, 4)));
+    assert!(drops.iter().all(|t| air::can_paradrop(&w, &r, para, *t).is_ok()));
+    assert!(drops.iter().all(|t| w.grid.distance(tile(&w, 3, 4), *t) <= 5));
+    assert!(air::paradrop_targets(&w, &r, fighter).is_empty());
+}
+
+#[test]
+fn a_previewed_interception_reads_only_the_defenders_in_sight() {
+    let (r, mut w) = fixture();
+    let bomber = unit(&mut w, &r, 0, "Bomber", 3, 4);
+    let fighter = unit(&mut w, &r, 1, "Fighter", 10, 4);
+    let target = unit(&mut w, &r, 1, "Infantry", 9, 4);
+    let at = tile(&w, 9, 4);
+    let everything = |_| true;
+    let chance =
+        air::visible_intercept_chance(&w, &r, bomber, at, Some(Target::Unit(target)), Some(CivId(1)), &everything);
+    assert_eq!(chance, air::intercept_chance(&w, &r, fighter));
+    assert!(chance > 0);
+    let blind = |id| id != fighter;
+    assert_eq!(air::visible_intercept_chance(&w, &r, bomber, at, Some(Target::Unit(target)), Some(CivId(1)), &blind), 0);
+}
