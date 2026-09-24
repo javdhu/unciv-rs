@@ -1607,16 +1607,27 @@ fn finish_round_inner(
         .map(|id| plan_civ_turn(world, r, id, focus, mods))
         .collect();
     let mut events = Vec::new();
-    for plan in &plans {
-        for command in ai_commands(world, r, plan, mods) {
-            let seen = replay.as_ref().map(|_| human_sight(world));
-            if let Ok(outcome) = crate::world::commands::execute_with(world, r, plan.civ, command, mods) {
-                if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
-                    if !outcome.events.is_empty() {
-                        replay.push(ReplayStep { actor: plan.civ, events: outcome.events.clone(), seen });
-                    }
+    let mut run = |world: &mut World, civ: CivId, command| {
+        let seen = replay.as_ref().map(|_| human_sight(world));
+        if let Ok(outcome) = crate::world::commands::execute_with(world, r, civ, command, mods) {
+            if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
+                if !outcome.events.is_empty() {
+                    replay.push(ReplayStep { actor: civ, events: outcome.events.clone(), seen });
                 }
-                events.extend(outcome.events);
+            }
+            events.extend(outcome.events);
+        }
+    };
+    for plan in &plans {
+        let live = !world.is_legacy_ai(plan.civ);
+        for command in ai_commands(world, r, plan, mods, live) {
+            run(world, plan.civ, command);
+        }
+        // The army decides on the map as it now stands (docs/AI.md, level 1).
+        if live {
+            let mut tactics = crate::world::tactics::Tactics::new(world, r, plan.civ);
+            while let Some(command) = tactics.next(world, r) {
+                run(world, plan.civ, command);
             }
         }
     }
@@ -1636,11 +1647,14 @@ fn finish_round_inner(
     events
 }
 
+/// The plan as commands. With `live_tactics`, orders for the units
+/// [`crate::world::tactics`] commands are left out; it decides them later.
 fn ai_commands(
     world: &World,
     r: &Ruleset,
     plan: &TurnPlan,
     mods: TurnModifiers,
+    live_tactics: bool,
 ) -> Vec<crate::world::commands::Command> {
     use crate::world::commands::{AttackTarget, Command};
     let mut commands = Vec::new();
@@ -1670,6 +1684,9 @@ fn ai_commands(
         }
     }
     for (unit, order) in &plan.orders {
+        if live_tactics && crate::world::tactics::takes(world, r, *unit) {
+            continue;
+        }
         if matches!(order, UnitOrder::Attack(_) | UnitOrder::Assault(_))
             && world.units.get(*unit).is_some_and(|u| u.has_unique(r, crate::UniqueType::MustSetUp) && !u.set_up)
         {

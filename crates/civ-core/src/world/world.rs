@@ -94,6 +94,11 @@ impl World {
         self.speed.and_then(|id| r.speeds.get(id)).or_else(|| r.speeds.values().find(|s| s.modifier == modifier))
     }
 
+    /// Whether this civ plays the old AI (`Civilization::legacy_ai`).
+    pub fn is_legacy_ai(&self, id: CivId) -> bool {
+        self.civ(id).is_some_and(|c| c.legacy_ai)
+    }
+
     pub fn civ(&self, id: CivId) -> Option<&Civilization> {
         self.civs.get(id.0 as usize)
     }
