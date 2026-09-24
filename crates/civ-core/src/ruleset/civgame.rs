@@ -160,7 +160,13 @@ pub fn read_name_group(j: &Json) -> Option<NameGroup> {
 /// Tile-filter words the engine understands beyond the ruleset's own names
 /// (terrains, resources, improvements and buildings). See
 /// `world::conditionals::tile_matches_in` and `tile_matches`.
-pub const TILE_FILTER_WORDS: [&str; 19] = [
+pub const TILE_FILTER_WORDS: [&str; 25] = [
+    "Fresh Water",
+    "non-fresh water",
+    "resource",
+    "Water resource",
+    "Enemy Land",
+    "Enemy",
     "All",
     "all",
     "Land",
@@ -182,12 +188,6 @@ pub const TILE_FILTER_WORDS: [&str; 19] = [
     "City center",
 ];
 
-/// Unciv tile-filter words the shipped rules use that this engine does not
-/// evaluate yet (a unique conditioned on them is never decided). Not typos,
-/// so [`super::Ruleset::unknown_tile_filters`] lets them pass.
-pub const UNEVALUATED_TILE_FILTER_WORDS: [&str; 5] =
-    ["Bonus resource", "Water resource", "Fresh Water", "non-fresh water", "Enemy Land"];
-
 /// A tile-filter word in some unique that names nothing: a misspelled
 /// building in `<within [2] tiles of a [Colosus]>` would otherwise read as
 /// "not decidable" and quietly apply everywhere.
@@ -205,7 +205,9 @@ impl super::Ruleset {
     pub fn unknown_tile_filters(&self) -> Vec<UnknownTileFilter> {
         let known = |term: &str| {
             TILE_FILTER_WORDS.contains(&term)
-                || UNEVALUATED_TILE_FILTER_WORDS.contains(&term)
+                || term
+                    .strip_suffix(" resource")
+                    .is_some_and(|k| self.resources.iter().any(|(_, x)| x.resource_type == k))
                 || self.terrains.id(term).is_some()
                 || self.resources.id(term).is_some()
                 || self.improvements.id(term).is_some()

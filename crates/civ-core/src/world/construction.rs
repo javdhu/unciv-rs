@@ -433,7 +433,8 @@ fn can_construct_mode(
                 };
                 let on = matches(city.centre);
                 let adjacent = world.grid.neighbours(city.centre).any(matches)
-                    || (filter == "Fresh water" && world.grid.is_fresh_water(r, city.centre));
+                    || (matches!(filter.as_str(), "Fresh water" | "Fresh Water")
+                        && world.grid.is_fresh_water(r, city.centre));
                 let holds = match unique.unique_type().unwrap() {
                     UniqueType::MustBeOn => on,
                     UniqueType::MustNotBeOn => !on,
