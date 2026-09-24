@@ -34,6 +34,18 @@ fn rule_tables_list_the_faiths_with_their_traits() {
 }
 
 #[test]
+fn rule_tables_give_each_specialist_its_yields_and_great_person_points() {
+    let t = tables(&content::load().unwrap());
+    let scientist = t.specialists.iter().find(|s| s.name == "Scientist").unwrap();
+    assert_eq!(scientist.yields.science, 3);
+    assert_eq!(scientist.yields.food + scientist.yields.production + scientist.yields.gold, 0);
+    let [points] = scientist.great_person_points.as_slice() else { panic!("one kind of great person") };
+    assert_eq!(points.points, 3);
+    assert_eq!(t.units.iter().find(|u| u.id == points.unit).unwrap().name, "Scholar");
+    assert!(t.specialists.iter().all(|s| !s.great_person_points.is_empty()));
+}
+
+#[test]
 fn effects_read_with_civ_games_names() {
     let t = tables(&content::load().unwrap());
     let texts = t

@@ -17,7 +17,7 @@ pub struct RuleTables {
     pub victories: Vec<Named>,
     pub policies: Vec<Named>,
     pub promotions: Vec<Named>,
-    pub specialists: Vec<Named>,
+    pub specialists: Vec<SpecialistRow>,
     pub beliefs: Vec<BeliefRow>,
     /// Faiths that arise by era (absent for rulesets whose religions are
     /// founded). `key` is how views name a religion: `CityReligionView`,
@@ -75,7 +75,7 @@ pub struct TerrainRow {
 }
 
 /// A stats object's six tile yields.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Yields {
     pub food: i32,
@@ -84,6 +84,40 @@ pub struct Yields {
     pub science: i32,
     pub culture: i32,
     pub faith: i32,
+}
+
+impl Yields {
+    /// Engine stats, each rounded to a whole yield.
+    pub fn of(s: civ_core::stats::Stats) -> Self {
+        Yields {
+            food: s.food.round() as i32,
+            production: s.production.round() as i32,
+            gold: s.gold.round() as i32,
+            science: s.science.round() as i32,
+            culture: s.culture.round() as i32,
+            faith: s.faith.round() as i32,
+        }
+    }
+}
+
+/// A kind of specialist: a citizen working in a building's slot.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecialistRow {
+    pub id: u32,
+    pub name: String,
+    /// What one specialist yields before any rule adds to it.
+    pub yields: Yields,
+    /// Great-person points one specialist earns a turn, by the great person
+    /// they count toward.
+    pub great_person_points: Vec<GreatPersonPoints>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct GreatPersonPoints {
+    /// The great person's unit, by id in `units`.
+    pub unit: u32,
+    pub points: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -310,9 +344,17 @@ pub fn tables(r: &Ruleset) -> RuleTables {
         specialists: r
             .specialists
             .iter()
-            .map(|(id, x)| Named {
+            .map(|(id, x)| SpecialistRow {
                 id: id.index(),
                 name: x.name.clone(),
+                yields: Yields::of(civ_core::world::specialists::base_stats(r, id)),
+                great_person_points: x
+                    .great_person_points
+                    .iter()
+                    .filter_map(|(unit, points)| {
+                        Some(GreatPersonPoints { unit: r.units.id(unit)?.index(), points: *points })
+                    })
+                    .collect(),
             })
             .collect(),
         beliefs: r
