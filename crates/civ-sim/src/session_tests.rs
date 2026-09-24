@@ -1771,3 +1771,78 @@ fn choose_site_reaches_the_engine_and_is_refused_for_a_building_that_stands_nowh
     let t = s.stage_command(0, req).unwrap();
     assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
 }
+
+#[test]
+fn a_player_chooses_where_a_wonder_stands_and_it_is_built_there() {
+    let s = session();
+    let settler = own_unit(&s, 0, true);
+    let mut s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let city = s.world.civs[0].cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    for t in s.world.grid.within(centre, 2) {
+        s.world.claim_tile(city, t);
+    }
+    let temple = s.rules.buildings.id("Temple of Artemis").unwrap();
+    let techs: Vec<_> = s.rules.technologies.ids().collect();
+    s.world.civs[0].techs.extend(techs);
+    s.world.civs[0].gold = 100_000;
+    let city_ref = EntityRef {
+        id: city.index(),
+        gen: city.generation(),
+    };
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+    let choice = options
+        .choices
+        .iter()
+        .find(|c| c.construction == ConstructionRef::Building { id: temple.index() })
+        .expect("the Temple of Artemis is offered");
+    let sites = choice.sites.as_ref().expect("a wonder stands on a tile");
+    assert!(sites.takes_tile && sites.tiles.len() > 1);
+    let best = sites.selected.unwrap();
+    let other = *sites.tiles.iter().find(|t| **t != best).unwrap();
+
+    let s = apply(
+        s,
+        0,
+        "site",
+        Action::ChooseSite {
+            city: city_ref,
+            building: temple.index(),
+            tile: other,
+        },
+    );
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+    let choice = options
+        .choices
+        .iter()
+        .find(|c| c.construction == ConstructionRef::Building { id: temple.index() })
+        .unwrap();
+    assert_eq!(choice.sites.as_ref().unwrap().selected, Some(other), "the choice is remembered");
+    let mut s = apply(
+        s,
+        0,
+        "queue",
+        Action::SetProduction {
+            city: city_ref,
+            queue: vec![ConstructionRef::Building { id: temple.index() }],
+        },
+    );
+    // Its production arrives all at once.
+    let costs = TurnModifiers::for_world(&s.world, &s.rules).costs;
+    civ_core::world::construction::apply_production_in(&mut s.world, &s.rules, city, 1_000_000, costs).unwrap();
+    assert!(s.world.cities.get(city).unwrap().built.contains(&temple));
+    // As the end of a round does, before the next update is drawn.
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    assert_eq!(civ_core::world::placement::standing(&s.world, city, temple), Some(TileId(other)));
+    let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    let placed = view.tiles.iter().find(|t| t.id == other).and_then(|t| t.placed.as_ref());
+    assert!(placed.is_some_and(|p| p.building == temple.index() && p.wonder), "the view shows it: {placed:?}");
+}

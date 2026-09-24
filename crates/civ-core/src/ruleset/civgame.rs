@@ -390,3 +390,46 @@ pub fn read_victory_knobs(j: &Json, into: &mut VictoryKnobs) {
         into.world_trade_per_major_per_era = v.max(0);
     }
 }
+
+impl super::Ruleset {
+    /// References in civ.game's own fields that name nothing: a faith's era,
+    /// homeland or trait, a city rename's era, a slice's era, the trade era.
+    /// Each one would silently switch its rule off.
+    pub fn civgame_problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let era = |name: &str| self.eras.by_name(name).is_some();
+        for f in &self.faiths {
+            if !era(&f.era) {
+                out.push(format!("faith {}: no era {}", f.name, f.era));
+            }
+            for home in f.homeland.iter().filter(|h| self.nations.by_name(h).is_none()) {
+                out.push(format!("faith {}: no nation {home}", f.name));
+            }
+            for b in f.beliefs.iter().filter(|b| self.beliefs.by_name(b).is_none()) {
+                out.push(format!("faith {}: no belief {b}", f.name));
+            }
+        }
+        for (_, n) in self.nations.iter() {
+            for step in n.city_renames.iter().filter(|s| !era(&s.era)) {
+                out.push(format!("nation {}: rename {} to {} names no era {}", n.name, step.from, step.to, step.era));
+            }
+            for step in n
+                .city_renames
+                .iter()
+                .filter(|s| !n.cities.contains(&s.from) && !n.city_renames.iter().any(|t| t.to == s.from))
+            {
+                out.push(format!("nation {}: rename from {}, which is not one of its cities", n.name, step.from));
+            }
+        }
+        for s in &self.slices {
+            for e in s.eras.iter().filter(|e| !era(e)) {
+                out.push(format!("slice {}: no era {e}", s.name));
+            }
+        }
+        if let Some(e) = self.victory_knobs.trade_share_from_era.as_deref().filter(|e| !era(e)) {
+            out.push(format!("tradeShareFromEra: no era {e}"));
+        }
+        out.sort();
+        out
+    }
+}

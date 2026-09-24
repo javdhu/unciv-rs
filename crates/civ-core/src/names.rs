@@ -76,7 +76,8 @@ pub fn unique_prose(u: &crate::Unique) -> Option<String> {
 
 /// Rule text with brackets as prose (see [`unique_prose`]).
 pub fn prose(text: &str) -> String {
-    let mut s = text.replace("constructing [All] ", "constructing ").replace("[All] ", "all ").replace("[all] ", "all ");
+    let mut s =
+        text.replace("constructing [All] ", "constructing ").replace("[All] ", "all ").replace("[all] ", "all ");
     // `non-[Puppeted]` reads "non-Puppeted", innermost first.
     while let Some(start) = s.find("non-[") {
         let open = start + 4;
@@ -100,19 +101,28 @@ mod tests {
             read("[+15]% Production when constructing [All] wonders [in all cities]"),
             "+15% Production when constructing wonders in all cities"
         );
-        assert_eq!(read("[+33]% XP gained from combat <for [Military] units>"), "+33% XP gained from combat for Military units");
+        assert_eq!(
+            read("[+33]% XP gained from combat <for [Military] units>"),
+            "+33% XP gained from combat for Military units"
+        );
         assert_eq!(read("[+1] Movement <for [{Military} {Water}] units>"), "+1 Movement for Military Water units");
         assert_eq!(
             read("Only available <if [Market] is constructed in all [non-[Puppeted]] cities>"),
             "Only available if Market is constructed in all non-Puppeted cities"
         );
-        assert_eq!(read("[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"), "+15% Strength for all units when fighting in Friendly Land tiles");
+        assert_eq!(
+            read("[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"),
+            "+15% Strength for all units when fighting in Friendly Land tiles"
+        );
         assert_eq!(read("Great General provides double combat bonus"), "Marshal provides double combat bonus");
         assert_eq!(
             read("Enemy [Land] units must spend [1] extra movement points when inside your territory <before discovering [Dynamite]> <Suppress warning [*contains a conditional on a unit movement unique*]>"),
             "Enemy Land units must spend 1 extra movement points when inside your territory before discovering Dynamite"
         );
-        assert_eq!(read("Comment [Units ending their turn on [Mountain] tiles take [50] damage]"), "Units ending their turn on Mountain tiles take 50 damage");
+        assert_eq!(
+            read("Comment [Units ending their turn on [Mountain] tiles take [50] damage]"),
+            "Units ending their turn on Mountain tiles take 50 damage"
+        );
         assert_eq!(unique_prose(&Unique::parse("[+1 Gold] <hidden from users>")), None);
         assert_eq!(prose("[-15]% Culture cost of adopting new Policies"), "-15% Culture cost of adopting new Policies");
     }

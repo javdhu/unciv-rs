@@ -92,3 +92,13 @@ mod words {
         assert_eq!(tile_matches(&ctx, w.grid.id_at(1, 1).unwrap(), "Enemy Land"), Verdict::False, "nobody's");
     }
 }
+
+#[test]
+fn civgame_fields_name_things_that_exist() {
+    let r = Ruleset::load_dir("rules/base").unwrap().unwrap();
+    assert_eq!(r.civgame_problems(), Vec::<String>::new());
+    let mut broken = r.clone();
+    broken.faiths[0].homeland.push("Atlantis".into());
+    broken.faiths[0].era = "Age of Tin".into();
+    assert_eq!(broken.civgame_problems(), ["faith Hinduism: no era Age of Tin", "faith Hinduism: no nation Atlantis"]);
+}
