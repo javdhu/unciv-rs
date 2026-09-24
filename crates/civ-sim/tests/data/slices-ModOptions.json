@@ -1,0 +1,9 @@
+// The engine's test copy of the Blitz slices (rules/blitz/ModOptions.json
+// is Content's). Layered after the blitz files.
+{
+	"slices": [
+		{ "name": "Cradles", "eras": ["Age of Bronze", "Age of Iron"], "turns": 60, "startYear": -4000, "endYear": 500 },
+		{ "name": "Crossroads", "eras": ["Age of Paper", "Age of Sail"], "turns": 60, "startYear": 500, "endYear": 1750 },
+		{ "name": "Engines", "eras": ["Age of Steam", "Age of Electricity"], "turns": 60, "startYear": 1750, "endYear": 1945 }
+	]
+}

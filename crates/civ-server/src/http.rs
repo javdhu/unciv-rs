@@ -36,6 +36,7 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/api/rooms/join", post(join_room))
         .route("/api/rooms/{id}", get(room))
         .route("/api/rooms/{id}/start", post(start_room))
+        .route("/api/rooms/{id}/seat", post(choose_seat))
         .route("/api/matches/{id}/ws", get(upgrade))
         .layer(DefaultBodyLimit::max(MAX_MESSAGE))
         .layer(middleware::from_fn_with_state(host.clone(), origin))
@@ -143,6 +144,7 @@ struct RoomRequest {
     city_states: u8,
     nation: Option<String>,
     leader: Option<String>,
+    slice: Option<String>,
     wrap_x: bool,
     max_turns: Option<u32>,
     speed: Option<String>,
@@ -159,6 +161,7 @@ impl Default for RoomRequest {
             city_states: 2,
             nation: None,
             leader: None,
+            slice: None,
             wrap_x: false,
             max_turns: None,
             speed: None,
@@ -192,6 +195,8 @@ struct RoomResponse {
     speed: String,
     ruleset: String,
     victories: Option<Vec<String>>,
+    /// Each occupied seat's chosen nation and leader, if any.
+    seats: Vec<civ_sim::SeatChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     invite: Option<String>,
     match_id: Option<String>,
@@ -226,7 +231,15 @@ fn room_response(room: Room, guest: &str) -> Result<Json<RoomResponse>, HostErro
         .name
         .clone(),
         ruleset: room.settings.ruleset_name().to_string(),
-        victories: room.settings.victories,
+        seats: room
+            .seats
+            .iter()
+            .map(|(seat, _)| {
+                let (nation, leader) = room.settings.choice(usize::from(*seat));
+                civ_sim::SeatChoice { seat: *seat, nation: nation.map(String::from), leader: leader.map(String::from) }
+            })
+            .collect(),
+        victories: room.settings.victories.clone(),
         invite: is_owner.then_some(room.invite),
         match_id: room.match_id,
     }))
@@ -252,6 +265,8 @@ async fn create_room(
         ruleset: request.ruleset,
         victories: request.victories,
         leader: request.leader,
+        slice: request.slice,
+        seats: None,
     };
     room_response(
         host.create_room(&guest, settings, request.turn_seconds)
@@ -278,6 +293,24 @@ async fn room(
 ) -> Result<Json<RoomResponse>, HostError> {
     let guest = authenticate(&host, &headers)?;
     room_response(host.store.room(&id)?, &guest)
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SeatRequest {
+    #[serde(default)]
+    nation: Option<String>,
+    #[serde(default)]
+    leader: Option<String>,
+}
+async fn choose_seat(
+    State(host): State<Arc<Host>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    request: Result<Json<SeatRequest>, JsonRejection>,
+) -> Result<Json<RoomResponse>, HostError> {
+    let guest = authenticate(&host, &headers)?;
+    let Json(request) = request.map_err(|_| HostError::Invalid)?;
+    room_response(host.choose_seat(&guest, &id, request.nation, request.leader).await?, &guest)
 }
 async fn start_room(
     State(host): State<Arc<Host>>,

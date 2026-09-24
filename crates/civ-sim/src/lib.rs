@@ -17,7 +17,7 @@ mod setup;
 mod view;
 
 pub use rules::{tables, RuleTables};
-pub use setup::{new_game, new_game_for, new_game_in, Settings};
+pub use setup::{new_game, new_game_for, new_game_in, SeatChoice, Settings};
 pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnReport};
 
 use civ_core::ruleset::Ruleset;

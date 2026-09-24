@@ -39,6 +39,8 @@ pub struct Ruleset {
     pub faiths: Vec<super::civgame::FaithDef>,
     /// Names for great people and other named units, from `UnitNameGroups.json`.
     pub name_groups: Vec<super::civgame::NameGroup>,
+    /// Blitz slices a game may be set up as, from `ModOptions.json` `slices`.
+    pub slices: Vec<super::civgame::SliceDef>,
     pub difficulties: Registry<Difficulty>,
     pub eras: Registry<Era>,
     pub speeds: Registry<Speed>,
@@ -196,6 +198,9 @@ impl Ruleset {
                     }
                     if let Some(name) = doc.get("defaultDifficulty").and_then(|v| v.as_str()) {
                         r.default_difficulty_name = Some(name.to_string());
+                    }
+                    if let Some(slices) = doc.get("slices").and_then(|v| v.as_array()) {
+                        r.slices = slices.iter().filter_map(super::civgame::read_slice).collect();
                     }
                 }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),

@@ -291,3 +291,28 @@ fn placeholders(template: &str) -> impl Iterator<Item = &str> {
     }
     out.into_iter()
 }
+
+/// A Blitz slice (docs/CONTENT.md, Spine): a game that starts in `eras[0]`,
+/// cannot research past the last of `eras`, and ends after `turns` turns,
+/// when The Chronicle (the highest score) decides if nobody has won. Written
+/// in `ModOptions.json` under `slices`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SliceDef {
+    pub name: String,
+    /// The eras it covers, in order; the first is where it starts.
+    pub eras: Vec<String>,
+    pub turns: u32,
+    /// Calendar years at its first and last turn, for the date shown.
+    pub start_year: Option<i32>,
+    pub end_year: Option<i32>,
+}
+
+pub fn read_slice(j: &Json) -> Option<SliceDef> {
+    Some(SliceDef {
+        name: text(j, "name")?,
+        eras: j.get("eras").map(|v| v.strings()).unwrap_or_default(),
+        turns: j.get("turns").and_then(|v| v.as_i32()).unwrap_or(60).max(1) as u32,
+        start_year: j.get("startYear").and_then(|v| v.as_i32()),
+        end_year: j.get("endYear").and_then(|v| v.as_i32()),
+    })
+}

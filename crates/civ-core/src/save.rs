@@ -97,6 +97,9 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     if !r.faiths.is_empty() {
         write!(&mut input, "\nfaiths {:?}", r.faiths).unwrap();
     }
+    if !r.slices.is_empty() {
+        write!(&mut input, "\nslices {:?}", r.slices).unwrap();
+    }
     if !r.name_groups.is_empty() {
         write!(&mut input, "\nname groups {:?}", r.name_groups).unwrap();
     }

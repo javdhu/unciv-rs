@@ -47,6 +47,9 @@ pub struct World {
     /// a victory in the ruleset names them.
     #[cfg_attr(feature = "serde", serde(default))]
     pub influence: crate::world::influence::Influence,
+    /// The Blitz slice this game plays (`world::slices`), if any.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub slice: Option<crate::world::slices::Slice>,
     /// Faiths that arise by era (civ.game); empty unless the ruleset has them.
     #[cfg_attr(feature = "serde", serde(default))]
     pub faiths: crate::world::faiths::FaithWorld,
@@ -71,6 +74,7 @@ impl World {
             barbarian_camps: Default::default(),
             given_names: Default::default(),
             influence: Default::default(),
+            slice: None,
             faiths: Default::default(),
         }
     }

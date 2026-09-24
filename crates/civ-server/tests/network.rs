@@ -328,3 +328,35 @@ async fn two_real_sockets_are_seat_authorized_fenced_and_share_one_round() {
     // Keeps the host available until socket close is submitted; no external service is involved.
     assert!(Arc::strong_count(&server.host) >= 1);
 }
+
+#[tokio::test]
+async fn every_seat_chooses_its_nation_in_the_lobby() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = Server::start(&dir.path().join("game.sqlite")).await;
+    let client = reqwest::Client::new();
+    let (a, b) = (server.guest(&client).await, server.guest(&client).await);
+    let room: Value = server
+        .post(&client, &a, "/api/rooms", json!({"majors":2,"cityStates":0,"turnSeconds":30,"nation":"Rome"}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let room_id = room["roomId"].as_str().unwrap().to_owned();
+    server.post(&client, &b, "/api/rooms/join", json!({"invite":room["invite"]})).await;
+    let seat = |nation: &str| json!({ "nation": nation });
+    let path = format!("/api/rooms/{room_id}/seat");
+    assert_eq!(server.post(&client, &b, &path, seat("Rome")).await.status(), 409, "Rome is seat 0's");
+    assert_eq!(server.post(&client, &b, &path, seat("Atlantis")).await.status(), 400);
+    let chosen: Value = server.post(&client, &b, &path, seat("Greece")).await.json().await.unwrap();
+    let seats = chosen["seats"].as_array().unwrap();
+    assert_eq!(seats[0]["nation"], "Rome");
+    assert_eq!(seats[1]["nation"], "Greece");
+
+    let started: Value =
+        server.post(&client, &a, &format!("/api/rooms/{room_id}/start"), json!({})).await.json().await.unwrap();
+    assert_eq!(server.post(&client, &b, &path, seat("Egypt")).await.status(), 409, "the lobby is closed");
+    let (_socket, update) = server.socket(&b, started["matchId"].as_str().unwrap()).await;
+    let rules = civ_sim::content::load().unwrap();
+    let mine = update.view.civs.iter().find(|c| c.id == update.view.me).unwrap();
+    assert_eq!(rules.nations.iter().nth(mine.nation as usize).unwrap().1.name, "Greece");
+}

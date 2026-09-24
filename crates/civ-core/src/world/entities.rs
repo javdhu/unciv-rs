@@ -24,6 +24,10 @@ pub struct Civilization {
     /// replaces the nation's own uniques. Chosen at setup.
     #[cfg_attr(feature = "serde", serde(default))]
     pub alt_leader: bool,
+    /// The last era this civ may research into: a Blitz slice's
+    /// (`world::slices`). None is no limit.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tech_era_cap: Option<i32>,
     /// Barbarians are a civilization in the data model and not one in the
     /// game: permanently hostile, never at peace, never diplomatic.
     pub is_barbarian: bool,
@@ -118,6 +122,7 @@ impl Civilization {
             nation,
             is_ai,
             alt_leader: false,
+            tech_era_cap: None,
             is_barbarian: false,
             city_state_type: None,
             city_state: Default::default(),

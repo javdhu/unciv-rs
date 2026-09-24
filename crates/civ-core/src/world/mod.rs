@@ -60,6 +60,7 @@ pub mod research_agreements;
 pub mod resources;
 pub mod ruins;
 pub mod settling;
+pub mod slices;
 pub mod specialists;
 pub mod trade;
 pub mod tribute;

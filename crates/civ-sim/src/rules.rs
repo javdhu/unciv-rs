@@ -25,6 +25,21 @@ pub struct RuleTables {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub faiths: Option<Vec<FaithRow>>,
+    /// Blitz slices a game may be set up as (`Settings.slice`).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slices: Option<Vec<SliceRow>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SliceRow {
+    pub name: String,
+    /// The eras it plays, by name, in order.
+    pub eras: Vec<String>,
+    pub turns: u32,
+    /// Victories that can be won within it, by id in `victories`.
+    pub victories: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -302,6 +317,21 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 effects: b.uniques.iter().map(rule_text).collect(),
             })
             .collect(),
+        slices: (!r.slices.is_empty()).then(|| {
+            r.slices
+                .iter()
+                .map(|s| SliceRow {
+                    name: s.name.clone(),
+                    eras: s.eras.clone(),
+                    turns: s.turns,
+                    victories: civ_core::world::slices::resolve(r, &s.name)
+                        .map(|slice| {
+                            civ_core::world::slices::victories_within(r, &slice).into_iter().map(|v| v.index()).collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        }),
         faiths: r.faith_mode().then(|| {
             r.faiths
                 .iter()

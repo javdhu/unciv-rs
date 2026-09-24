@@ -492,6 +492,9 @@ fn can_construct_mode(
                     return Err(Rejection::Obsolete);
                 }
             }
+            if crate::world::slices::is_gone(world, r, id) {
+                return Err(Rejection::Obsolete);
+            }
             if world.cities.iter().any(|(_, other)| {
                 other.built.contains(&id)
                     && (building.is_wonder == Some(true)
