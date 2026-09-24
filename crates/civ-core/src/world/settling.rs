@@ -286,6 +286,7 @@ pub fn found_city_with(
     if world.civ(civ).is_some_and(|c| c.is_city_state()) {
         crate::world::city_state_actions::initialize(world, r);
     }
+    crate::world::slices::on_city_founded(world, r, id);
     Ok(id)
 }
 

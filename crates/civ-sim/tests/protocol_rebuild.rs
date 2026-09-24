@@ -159,3 +159,51 @@ fn construction_choices_offer_sites_and_the_view_shows_what_stands_where() {
         .iter()
         .any(|x| x.owner == me.0 && x.building == wall.index() && !x.tiles.is_empty()));
 }
+
+/// What the city offers is what the queue accepts: the World Charter waits
+/// for the Internationalism tree (Content's rule), so it is not offered at
+/// the start (a bug seen in the browser).
+#[test]
+fn construction_choices_agree_with_the_queue_check() {
+    let settings = Settings {
+        seed: 2,
+        majors: 2,
+        city_states: 0,
+        ..Settings::default()
+    };
+    let (mut w, r, me) = new_game_in(&settings, &[], content::load().unwrap()).unwrap();
+    for _ in 0..3 {
+        advance(&mut w, &r);
+    }
+    let city = w.civs[usize::from(me.0)].cities[0];
+    let options =
+        civ_sim::queries::city_options(&w, &r, me, city.index(), city.generation()).unwrap();
+    let c = w.cities.get(city).unwrap();
+    for choice in &options.choices {
+        let what = match choice.construction {
+            civ_sim::protocol::ConstructionRef::Building { id } => {
+                civ_core::world::construction::Construction::Building(
+                    r.buildings.ids().nth(id as usize).unwrap(),
+                )
+            }
+            civ_sim::protocol::ConstructionRef::Unit { id } => {
+                civ_core::world::construction::Construction::Unit(
+                    r.units.ids().nth(id as usize).unwrap(),
+                )
+            }
+        };
+        let queue = civ_core::world::construction::can_construct_in(&w, &r, me, c, what);
+        let buy = civ_core::world::construction::can_purchase_in(&w, &r, me, c, what);
+        assert!(
+            queue.is_ok() || buy.is_ok(),
+            "{} is offered but refused: {queue:?}",
+            choice.name
+        );
+    }
+    if let Some(charter) = r.buildings.id("World Charter") {
+        assert!(!options.choices.iter().any(|c| c.construction
+            == civ_sim::protocol::ConstructionRef::Building {
+                id: charter.index()
+            }));
+    }
+}

@@ -210,7 +210,7 @@ pub fn evaluate(m: &Milestone, world: &World, r: &Ruleset, civ: CivId) -> Verdic
         Milestone::DiplomaticVote => yes(world.civ(civ).is_some_and(|c| c.victory.diplomatic_win)),
         Milestone::HighestScore => yes(world.turn >= world.endgame.max_turns && score_leader(world, r) == Some(civ)),
         Milestone::CaptureAllCapitals => yes(owns_all_original_capitals(world, civ)),
-        Milestone::InfluentialOverAll => yes(crate::world::influence::influential_over_all(world, civ)),
+        Milestone::InfluentialOverAll => yes(crate::world::influence::influential_over_all(world, r, civ)),
         Milestone::WorldTradeShare { percent, turns } => {
             yes(crate::world::influence::held_trade_share(world, civ, *percent, *turns))
         }

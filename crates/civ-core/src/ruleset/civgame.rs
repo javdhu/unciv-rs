@@ -65,6 +65,7 @@ pub fn read_nation(j: &Json, n: &mut Nation) {
         .filter_map(|r| Some(CityRename { from: text(r, "from")?, to: text(r, "to")?, era: text(r, "era")? }))
         .collect();
     n.is_barbarian = j.get("isBarbarian").and_then(|v| v.as_bool()).unwrap_or(n.name == LEGACY_BARBARIANS);
+    n.wave = j.get("wave").and_then(|v| v.as_i32());
 }
 
 impl Nation {
@@ -72,6 +73,12 @@ impl Nation {
     /// barbarians, and with someone to lead it (which rules out Spectator).
     pub fn is_major(&self) -> bool {
         self.city_state_type.is_none() && !self.is_barbarian && self.leader_name.is_some()
+    }
+
+    /// Playable under a ruleset's `maxWave`: a nation of a later roster wave
+    /// is left out of setup. Nations without a wave always play.
+    pub fn in_waves(&self, max_wave: Option<i32>) -> bool {
+        max_wave.is_none_or(|max| self.wave.is_none_or(|w| w <= max))
     }
 
     /// Every leader this nation offers, the default first.
@@ -160,7 +167,13 @@ pub fn read_name_group(j: &Json) -> Option<NameGroup> {
 /// Tile-filter words the engine understands beyond the ruleset's own names
 /// (terrains, resources, improvements and buildings). See
 /// `world::conditionals::tile_matches_in` and `tile_matches`.
-pub const TILE_FILTER_WORDS: [&str; 19] = [
+pub const TILE_FILTER_WORDS: [&str; 25] = [
+    "Fresh Water",
+    "non-fresh water",
+    "resource",
+    "Water resource",
+    "Enemy Land",
+    "Enemy",
     "All",
     "all",
     "Land",
@@ -182,12 +195,6 @@ pub const TILE_FILTER_WORDS: [&str; 19] = [
     "City center",
 ];
 
-/// Unciv tile-filter words the shipped rules use that this engine does not
-/// evaluate yet (a unique conditioned on them is never decided). Not typos,
-/// so [`super::Ruleset::unknown_tile_filters`] lets them pass.
-pub const UNEVALUATED_TILE_FILTER_WORDS: [&str; 5] =
-    ["Bonus resource", "Water resource", "Fresh Water", "non-fresh water", "Enemy Land"];
-
 /// A tile-filter word in some unique that names nothing: a misspelled
 /// building in `<within [2] tiles of a [Colosus]>` would otherwise read as
 /// "not decidable" and quietly apply everywhere.
@@ -205,7 +212,9 @@ impl super::Ruleset {
     pub fn unknown_tile_filters(&self) -> Vec<UnknownTileFilter> {
         let known = |term: &str| {
             TILE_FILTER_WORDS.contains(&term)
-                || UNEVALUATED_TILE_FILTER_WORDS.contains(&term)
+                || term
+                    .strip_suffix(" resource")
+                    .is_some_and(|k| self.resources.iter().any(|(_, x)| x.resource_type == k))
                 || self.terrains.id(term).is_some()
                 || self.resources.id(term).is_some()
                 || self.improvements.id(term).is_some()
@@ -288,4 +297,87 @@ fn placeholders(template: &str) -> impl Iterator<Item = &str> {
         }
     }
     out.into_iter()
+}
+
+/// A Blitz slice (docs/CONTENT.md, Spine): a game that starts in `eras[0]`,
+/// cannot research past the last of `eras`, and ends after `turns` turns,
+/// when The Chronicle (the highest score) decides if nobody has won. Written
+/// in `ModOptions.json` under `slices`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SliceDef {
+    pub name: String,
+    /// The eras it covers, in order; the first is where it starts.
+    pub eras: Vec<String>,
+    pub turns: u32,
+    /// Calendar years at its first and last turn, for the date shown.
+    pub start_year: Option<i32>,
+    pub end_year: Option<i32>,
+}
+
+pub fn read_slice(j: &Json) -> Option<SliceDef> {
+    Some(SliceDef {
+        name: text(j, "name")?,
+        eras: j.get("eras").map(|v| v.strings()).unwrap_or_default(),
+        turns: j.get("turns").and_then(|v| v.as_i32()).unwrap_or(60).max(1) as u32,
+        start_year: j.get("startYear").and_then(|v| v.as_i32()),
+        end_year: j.get("endYear").and_then(|v| v.as_i32()),
+    })
+}
+
+/// Tuning for the influence and trade victories (`world::influence`), from
+/// `ModOptions.json`. Every field has an engine default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VictoryKnobs {
+    /// `influencePercent`: percent of new culture that becomes influence.
+    pub influence_percent: i64,
+    /// `influenceBonusPercent`: added for each of open borders, a running
+    /// deal and a shared state faith.
+    pub influence_bonus_percent: i64,
+    /// `influenceFloor`: influence below this never counts as influential.
+    pub influence_floor: i64,
+    /// `tradeShareFromEra`: a civ's share of world trade counts only once it
+    /// has reached this era (the first reserve currencies came with sail).
+    pub trade_share_from_era: Option<String>,
+    /// `worldTradePerMajor` and `worldTradePerMajorPerEra`: world trade
+    /// counts once it reaches this much gold per living major civ, plus the
+    /// second figure for each era the leading civ has reached.
+    pub world_trade_per_major: i64,
+    pub world_trade_per_major_per_era: i64,
+}
+
+impl Default for VictoryKnobs {
+    fn default() -> Self {
+        VictoryKnobs {
+            // Tuned in AI self-play (12 games, 240 turns, all victories on);
+            // see civ-sim's balance example.
+            influence_percent: 100,
+            influence_bonus_percent: 25,
+            influence_floor: 1500,
+            trade_share_from_era: None,
+            world_trade_per_major: 15,
+            world_trade_per_major_per_era: 3,
+        }
+    }
+}
+
+pub fn read_victory_knobs(j: &Json, into: &mut VictoryKnobs) {
+    let int = |key: &str| j.get(key).and_then(|v| v.as_i64());
+    if let Some(v) = int("influencePercent") {
+        into.influence_percent = v.max(0);
+    }
+    if let Some(v) = int("influenceBonusPercent") {
+        into.influence_bonus_percent = v.max(0);
+    }
+    if let Some(v) = int("influenceFloor") {
+        into.influence_floor = v.max(0);
+    }
+    if let Some(v) = text(j, "tradeShareFromEra") {
+        into.trade_share_from_era = Some(v);
+    }
+    if let Some(v) = int("worldTradePerMajor") {
+        into.world_trade_per_major = v.max(0);
+    }
+    if let Some(v) = int("worldTradePerMajorPerEra") {
+        into.world_trade_per_major_per_era = v.max(0);
+    }
 }

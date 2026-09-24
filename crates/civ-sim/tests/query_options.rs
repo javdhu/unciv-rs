@@ -166,6 +166,11 @@ fn multi_city_quote_matches_the_actual_command_debit() {
 fn hidden_wonders_units_resources_and_foreign_economy_do_not_change_options() {
     let (mut w, r, unit, city, enemy_city) = fixture();
     w.civ_mut(ME).unwrap().techs.extend(r.technologies.ids());
+    // Wonders stand on a tile of their city, so give it some.
+    let home = w.cities.get(city).unwrap().centre;
+    for t in w.grid.within(home, 1) {
+        w.claim_tile(city, t);
+    }
     let expected_city = queries::city_options(&w, &r, ME, city.index(), city.generation());
     let expected_unit = queries::unit_options(&w, &r, ME, unit.index(), unit.generation());
     let expected_civ = queries::civ_options(&w, &r, ME);

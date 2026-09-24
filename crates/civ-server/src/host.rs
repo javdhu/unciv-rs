@@ -259,6 +259,12 @@ impl Host {
         {
             return Err(HostError::Invalid);
         }
+        if let Some(slice) = &settings.slice {
+            let rules = civ_sim::content::shared_ruleset(settings.ruleset_name()).map_err(|_| HostError::Invalid)?;
+            if !rules.slices.iter().any(|s| s.name == *slice) {
+                return Err(HostError::Invalid);
+            }
+        }
         let _lobby = self.lobby.lock().await;
         let room = Room {
             id: opaque_id(),
@@ -285,6 +291,49 @@ impl Host {
         let seat = u8::try_from(room.seats.len()).map_err(|_| HostError::Capacity)?;
         self.store.join(&id, seat, guest)?;
         room.seats.push((seat, guest.into()));
+        Ok(room)
+    }
+    /// A seated guest chooses their nation and leader before the match starts.
+    pub(crate) async fn choose_seat(
+        &self,
+        guest: &str,
+        room_id: &str,
+        nation: Option<String>,
+        leader: Option<String>,
+    ) -> Result<Room, HostError> {
+        let _lobby = self.lobby.lock().await;
+        let mut room = self.store.room(room_id)?;
+        let seat = room.seats.iter().find_map(|(s, g)| (g == guest).then_some(*s)).ok_or(HostError::Forbidden)?;
+        if room.match_id.is_some() {
+            return Err(HostError::Conflict);
+        }
+        let rules = civ_sim::content::shared_ruleset(room.settings.ruleset_name()).map_err(|_| HostError::Internal)?;
+        if nation.as_ref().is_some_and(|n| n.len() > 100) || leader.as_ref().is_some_and(|n| n.len() > 100) {
+            return Err(HostError::Invalid);
+        }
+        if let Some(name) = &nation {
+            let n = rules
+                .nations
+                .by_name(name)
+                .filter(|n| n.is_major() && n.in_waves(rules.max_wave))
+                .ok_or(HostError::Invalid)?;
+            if leader.as_ref().is_some_and(|l| !n.leaders().any(|x| x == l)) {
+                return Err(HostError::Invalid);
+            }
+            let taken = (0..usize::from(room.settings.majors))
+                .filter(|s| *s != usize::from(seat))
+                .any(|s| room.settings.choice(s).0 == Some(name.as_str()));
+            if taken {
+                return Err(HostError::Conflict);
+            }
+        } else if leader.is_some() {
+            return Err(HostError::Invalid);
+        }
+        let seats = room.settings.seats.get_or_insert_with(Vec::new);
+        seats.retain(|c| c.seat != seat);
+        seats.push(civ_sim::SeatChoice { seat, nation, leader });
+        seats.sort_by_key(|c| c.seat);
+        self.store.update_settings(&room.id, &room.settings)?;
         Ok(room)
     }
     pub(crate) async fn start(&self, guest: &str, room_id: &str) -> Result<Room, HostError> {

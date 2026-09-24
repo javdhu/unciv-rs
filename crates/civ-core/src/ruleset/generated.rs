@@ -300,6 +300,10 @@ pub struct Nation {
     ///
     /// Derived at load: absent from the json, so `from_json` never sets it.
     pub is_barbarian: bool,
+    /// civ.game: the roster wave (1 at launch, 2 later).
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub wave: Option<i32>,
 }
 
 /// From `TileImprovements.json` — 69 objects across both shipped rulesets.
@@ -548,6 +552,16 @@ pub struct Speed {
     pub total_turns: i32,
     /// Parsed calendar intervals: years per turn and inclusive end turn.
     pub year_intervals: Vec<(Fixed, i32)>,
+    /// civ.game `growthModifier`: food a city needs to grow, where it should
+    /// differ from `modifier`.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub growth_modifier: Option<Fixed>,
+    /// civ.game `greatPersonModifier`: points a Luminary costs, where it
+    /// should differ from `modifier`.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub great_person_modifier: Option<Fixed>,
 }
 
 /// From `Specialists.json` — 8 objects across both shipped rulesets.
@@ -929,6 +943,7 @@ impl Nation {
             alt_leader: Default::default(),   // set by ruleset/load.rs
             city_renames: Default::default(), // set by ruleset/load.rs
             is_barbarian: Default::default(), // set by ruleset/load.rs
+            wave: Default::default(),         // set by ruleset/load.rs
         })
     }
 }
@@ -1162,6 +1177,8 @@ impl Speed {
             turns: Default::default(),
             total_turns: Default::default(), // set by ruleset/load.rs
             year_intervals: Default::default(),
+            growth_modifier: Default::default(),       // set by ruleset/load.rs
+            great_person_modifier: Default::default(), // set by ruleset/load.rs
         })
     }
 }

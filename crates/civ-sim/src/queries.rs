@@ -626,6 +626,19 @@ pub fn city_options(
         {
             continue;
         }
+        // The queue's own check: policies, eras, uniques, terrain and tiles
+        // are all ours to know, so a construction they rule out is not
+        // offered (World Charter before Internationalism). Only whether a
+        // world wonder stands somewhere unseen stays for the queue to answer,
+        // and a purchase-only item is offered while it can be bought.
+        let unseen = |e: &Rejection| global_wonder && matches!(e, Rejection::WonderAlreadyBuilt);
+        let full = construction::can_construct_in(world, r, civ, city, what);
+        if full.as_ref().is_err_and(|e| !unseen(e) && !matches!(e, Rejection::NotProducible))
+            || (matches!(full, Err(Rejection::NotProducible))
+                && construction::can_purchase_in(world, r, civ, city, what).is_err_and(|e| !unseen(&e)))
+        {
+            continue;
+        }
         let has_conditional_price = own.iter().any(conditional_price)
             || owner.uniques.all().any(conditional_price)
             || city.uniques.all().any(conditional_price);

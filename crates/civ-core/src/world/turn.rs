@@ -482,7 +482,7 @@ impl TurnModifiers<'_> {
         let Some(s) = speed.and_then(|id| r.speeds.get(id)) else { return m };
         // BarbarianEncampment.kt:64 scales the spawn countdown by barbarianModifier.
         m.barbarian.speed = s.barbarian_modifier;
-        m.growth.speed = s.modifier;
+        m.growth.speed = s.growth_modifier.unwrap_or(s.modifier);
         m.costs.speed = s.production_cost_modifier;
         m.costs.game_length = s.total_turns;
         m.costs.religious_pressure = s.religious_pressure_adjacent_city;
@@ -1364,7 +1364,13 @@ fn apply_plan_inner(
     }
     events.extend(religious_events(plan.civ, crate::world::religious_units::end_turn(world, r, plan.civ)));
 
-    for kind in crate::world::great_people::process_turn(world, r, plan.civ, m.speed) {
+    // Luminaries may be priced apart from growth (`greatPersonModifier`).
+    let luminary_speed = world
+        .speed
+        .and_then(|id| r.speeds.get(id))
+        .and_then(|s| s.great_person_modifier)
+        .unwrap_or(m.speed);
+    for kind in crate::world::great_people::process_turn(world, r, plan.civ, luminary_speed) {
         events.push(TurnEvent::GreatPersonBorn { civ: plan.civ, kind });
     }
 

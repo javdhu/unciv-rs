@@ -47,7 +47,7 @@ impl Offers {
     /// Each AI's one question to each human this turn (`ai_offers`). Runs
     /// after the round closes and expired offers are gone.
     pub fn propose_from_ais(&mut self, world: &World, r: &Ruleset, humans: &[u8]) {
-        let mods = TurnModifiers::default();
+        let mods = TurnModifiers::for_world(world, r);
         let ais: Vec<u8> = world
             .civs
             .iter()

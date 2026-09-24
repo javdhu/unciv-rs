@@ -131,6 +131,8 @@ pub enum ResearchRejection {
     AlreadyKnown,
     /// A prerequisite has not been researched.
     MissingPrerequisite(String),
+    /// Past the last era of the game's Blitz slice.
+    BeyondSlice,
     Unknown,
 }
 
@@ -139,6 +141,7 @@ impl std::fmt::Display for ResearchRejection {
         match self {
             ResearchRejection::AlreadyKnown => write!(f, "already researched"),
             ResearchRejection::MissingPrerequisite(tech) => write!(f, "needs {tech} first"),
+            ResearchRejection::BeyondSlice => write!(f, "beyond the last era of this game"),
             ResearchRejection::Unknown => write!(f, "not in this ruleset"),
         }
     }
@@ -152,6 +155,11 @@ pub fn can_research(r: &Ruleset, civ: &Civilization, tech: Id<Technology>) -> Re
         && !t.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::ResearchableMultipleTimes))
     {
         return Err(ResearchRejection::AlreadyKnown);
+    }
+    if let Some(cap) = civ.tech_era_cap {
+        if t.era(r).and_then(|e| r.eras.get(e)).is_some_and(|e| e.era_number > cap) {
+            return Err(ResearchRejection::BeyondSlice);
+        }
     }
     for prereq in &t.prerequisites {
         let known = r.technologies.id(prereq).is_some_and(|p| civ.has_tech(p));

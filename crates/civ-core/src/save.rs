@@ -97,6 +97,15 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     if !r.faiths.is_empty() {
         write!(&mut input, "\nfaiths {:?}", r.faiths).unwrap();
     }
+    if r.victory_knobs != crate::ruleset::civgame::VictoryKnobs::default() {
+        write!(&mut input, "\nvictory knobs {:?}", r.victory_knobs).unwrap();
+    }
+    if let Some(wave) = r.max_wave {
+        write!(&mut input, "\nmax wave {wave}").unwrap();
+    }
+    if !r.slices.is_empty() {
+        write!(&mut input, "\nslices {:?}", r.slices).unwrap();
+    }
     if !r.name_groups.is_empty() {
         write!(&mut input, "\nname groups {:?}", r.name_groups).unwrap();
     }

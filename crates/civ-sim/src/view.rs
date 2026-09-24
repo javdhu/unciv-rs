@@ -37,6 +37,10 @@ pub struct PlayerView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trade: Option<TradeView>,
+    /// The Blitz slice this game plays, if any.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<SliceView>,
     /// Wall wonders' runs along their borders, where this player knows the tiles.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -369,6 +373,16 @@ pub struct PlacedView {
     pub wonder: bool,
     /// Ships pass through this land tile (Suez, Panama).
     pub canal: bool,
+}
+
+/// A Blitz slice: the eras it plays (era numbers) and when it ends
+/// (`EndgameView.maxTurns`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SliceView {
+    pub name: String,
+    pub first_era: i32,
+    pub last_era: i32,
 }
 
 /// A wall wonder's run along its city's land border (the Great Wall).
@@ -805,6 +819,11 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
     }
     civs.sort_by_key(|c| c.id);
     PlayerView {
+        slice: w.slice.as_ref().map(|s| SliceView {
+            name: s.name.clone(),
+            first_era: s.first_era,
+            last_era: s.last_era,
+        }),
         walls: wall_views(w, r, me),
         trade: trade_view(w, r, me),
         economy: EconomyView {
@@ -816,7 +835,13 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
         },
         turn: w.turn,
         // the calendar reads the same speed modifier the turns use
-        year: civ_core::world::great_people::calendar_year(r, TurnModifiers::for_world(w, r).costs.speed, w.turn),
+        year: w
+            .slice
+            .as_ref()
+            .and_then(|s| civ_core::world::slices::year(r, s, w.turn))
+            .unwrap_or_else(|| {
+                civ_core::world::great_people::calendar_year_in(w, r, w.turn)
+            }),
         width: w.grid.width(),
         height: w.grid.height(),
         wrap_x: w.grid.wraps_x(),
@@ -852,7 +877,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     attitude: attitude(w, c.id, me),
                     score: rounded_score(w, r, c.id),
                     influence: (c.is_major() && civ_core::world::influence::tracks_influence(r))
-                        .then(|| influence_view(w, me, c.id)),
+                        .then(|| influence_view(w, r, me, c.id)),
                 }
             })
             .collect(),
@@ -1334,18 +1359,15 @@ pub fn replay_for(
 }
 
 /// Progress toward influence, both ways, in tenths of a percent.
-fn influence_view(w: &World, me: CivId, them: CivId) -> InfluenceView {
+fn influence_view(w: &World, r: &Ruleset, me: CivId, them: CivId) -> InfluenceView {
     use civ_core::world::influence as inf;
-    let progress = |from: CivId, over: CivId| -> u32 {
-        let need = inf::lifetime_culture(w, over).max(inf::INFLUENCE_FLOOR - 1) + 1;
-        (inf::influence_over(w, from, over).max(0) * 1000 / need).min(u32::MAX as i64) as u32
-    };
+    let progress = |from, over| inf::influence_progress(w, r, from, over).clamp(0, i64::from(u32::MAX)) as u32;
     InfluenceView {
         ours: progress(me, them),
         theirs: progress(them, me),
-        influential: inf::is_influential(w, me, them),
-        influenced: inf::is_influential(w, them, me),
-        rate: inf::influence_rate(w, me, them).max(0) as u32,
+        influential: inf::is_influential(w, r, me, them),
+        influenced: inf::is_influential(w, r, them, me),
+        rate: inf::influence_rate(w, r, me, them).max(0) as u32,
     }
 }
 

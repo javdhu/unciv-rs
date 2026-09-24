@@ -433,7 +433,8 @@ fn can_construct_mode(
                 };
                 let on = matches(city.centre);
                 let adjacent = world.grid.neighbours(city.centre).any(matches)
-                    || (filter == "Fresh water" && world.grid.is_fresh_water(r, city.centre));
+                    || (matches!(filter.as_str(), "Fresh water" | "Fresh Water")
+                        && world.grid.is_fresh_water(r, city.centre));
                 let holds = match unique.unique_type().unwrap() {
                     UniqueType::MustBeOn => on,
                     UniqueType::MustNotBeOn => !on,
@@ -490,6 +491,9 @@ fn can_construct_mode(
                 if is_obsolete(r, owner, what, &ctx) {
                     return Err(Rejection::Obsolete);
                 }
+            }
+            if crate::world::slices::is_gone(world, r, id) {
+                return Err(Rejection::Obsolete);
             }
             if world.cities.iter().any(|(_, other)| {
                 other.built.contains(&id)
@@ -807,7 +811,7 @@ pub fn apply_production_in(
     m: CostModifiers,
 ) -> Option<Vec<ConstructionEvent>> {
     let science = crate::world::research::ScienceModifiers {
-        speed: r.speeds.iter().find(|(_, s)| s.modifier == m.speed).map_or(m.speed, |(_, s)| s.science_cost_modifier),
+        speed: world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier),
         ..Default::default()
     };
     apply_production_with_science(world, r, city, production, m, science)
