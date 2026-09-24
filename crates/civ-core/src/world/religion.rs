@@ -82,7 +82,7 @@ pub fn prophet_cost(earned: i32, speed: Fixed) -> i32 {
 pub fn prophet_cost_in(world: &World, r: &Ruleset, civ: CivId, speed: Fixed) -> i32 {
     let Some(c) = world.civ(civ) else { return PROPHET_BASE };
     let n = c.faith.prophets_earned.max(0);
-    let faith_speed = r.speeds.iter().find(|(_, s)| s.modifier == speed).map_or(speed, |(_, s)| s.faith_cost_modifier);
+    let faith_speed = world.speed_rules(r, speed).map_or(speed, |s| s.faith_cost_modifier);
     let mut cost = Fixed::whole(PROPHET_BASE + PROPHET_STEP * n * (n + 1) / 2) * faith_speed;
     let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ);
     for u in c

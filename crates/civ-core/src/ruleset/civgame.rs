@@ -65,6 +65,7 @@ pub fn read_nation(j: &Json, n: &mut Nation) {
         .filter_map(|r| Some(CityRename { from: text(r, "from")?, to: text(r, "to")?, era: text(r, "era")? }))
         .collect();
     n.is_barbarian = j.get("isBarbarian").and_then(|v| v.as_bool()).unwrap_or(n.name == LEGACY_BARBARIANS);
+    n.wave = j.get("wave").and_then(|v| v.as_i32());
 }
 
 impl Nation {
@@ -72,6 +73,12 @@ impl Nation {
     /// barbarians, and with someone to lead it (which rules out Spectator).
     pub fn is_major(&self) -> bool {
         self.city_state_type.is_none() && !self.is_barbarian && self.leader_name.is_some()
+    }
+
+    /// Playable under a ruleset's `maxWave`: a nation of a later roster wave
+    /// is left out of setup. Nations without a wave always play.
+    pub fn in_waves(&self, max_wave: Option<i32>) -> bool {
+        max_wave.is_none_or(|max| self.wave.is_none_or(|w| w <= max))
     }
 
     /// Every leader this nation offers, the default first.

@@ -83,6 +83,17 @@ impl World {
         self.difficulty.and_then(|id| r.difficulties.get(id)).or_else(|| r.default_difficulty())
     }
 
+    /// The game's speed: the one it was set up with, or else (a world built
+    /// by hand) the speed whose modifier is `modifier`. Speeds are told apart
+    /// by id, not by modifier: Blitz and Standard may share one.
+    pub fn speed_rules<'r>(
+        &self,
+        r: &'r crate::ruleset::Ruleset,
+        modifier: crate::stats::Fixed,
+    ) -> Option<&'r crate::ruleset::Speed> {
+        self.speed.and_then(|id| r.speeds.get(id)).or_else(|| r.speeds.values().find(|s| s.modifier == modifier))
+    }
+
     pub fn civ(&self, id: CivId) -> Option<&Civilization> {
         self.civs.get(id.0 as usize)
     }

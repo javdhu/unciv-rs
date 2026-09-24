@@ -193,7 +193,7 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
     let majors: Vec<_> = rules
         .nations
         .iter()
-        .filter(|(_, n)| n.is_major())
+        .filter(|(_, n)| n.is_major() && n.in_waves(rules.max_wave))
         .map(|(id, _)| id)
         .collect();
     let mut pool = seeded_order(&majors, s.seed);

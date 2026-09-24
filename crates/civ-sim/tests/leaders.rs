@@ -150,3 +150,57 @@ fn every_human_seat_chooses_its_own_nation_and_leader() {
         "two seats cannot take one nation"
     );
 }
+
+#[test]
+fn a_launch_build_deals_only_the_first_waves_nations() {
+    let with_waves = |max: Option<i32>| {
+        let mut sources: Vec<_> = content::SOURCES
+            .iter()
+            .map(|(f, t)| (f.to_string(), t.to_string()))
+            .collect();
+        let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json").replace(
+            r#""region": "Europe","#,
+            r#""region": "Europe", "wave": 2,"#,
+        );
+        sources.push(("Nations.json".into(), nations));
+        if let Some(max) = max {
+            sources.push((
+                "ModOptions.json".into(),
+                format!(r#"{{ "maxWave": {max} }}"#),
+            ));
+        }
+        Ruleset::from_sources(&sources).unwrap()
+    };
+    let r = with_waves(Some(1));
+    assert_eq!(r.max_wave, Some(1));
+    assert_eq!(r.nations.by_name("Rome").unwrap().wave, Some(2));
+    assert_eq!(tables(&r).max_wave, Some(1));
+    let rome = r.nations.id("Rome").unwrap();
+    for seed in 1..30 {
+        let settings = Settings {
+            seed,
+            majors: 8,
+            ..Settings::default()
+        };
+        let (w, _, _) = new_game_in(&settings, &[], with_waves(Some(1))).unwrap();
+        assert!(
+            w.civs.iter().all(|c| c.nation != rome),
+            "a wave 2 nation is never dealt"
+        );
+    }
+    assert!(
+        new_game_in(&rome_settings(), &[0], with_waves(Some(1))).is_err(),
+        "nor chosen"
+    );
+    assert!(
+        new_game_in(&rome_settings(), &[0], with_waves(None)).is_ok(),
+        "every wave plays by default"
+    );
+}
+
+fn rome_settings() -> Settings {
+    Settings {
+        nation: Some("Rome".into()),
+        ..Settings::default()
+    }
+}

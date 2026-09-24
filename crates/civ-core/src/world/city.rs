@@ -200,7 +200,10 @@ impl Default for GrowthModifiers {
 impl GrowthModifiers {
     /// Reads the speed's own modifier, falling back to unmodified.
     pub fn for_speed(r: &Ruleset, speed: Id<Speed>) -> GrowthModifiers {
-        GrowthModifiers { speed: r.speeds.get(speed).map_or(Fixed::ONE, |s| s.modifier), civ: Fixed::ONE }
+        GrowthModifiers {
+            speed: r.speeds.get(speed).map_or(Fixed::ONE, |s| s.growth_modifier.unwrap_or(s.modifier)),
+            civ: Fixed::ONE,
+        }
     }
 }
 

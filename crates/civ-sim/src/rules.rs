@@ -25,6 +25,10 @@ pub struct RuleTables {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub faiths: Option<Vec<FaithRow>>,
+    /// The last roster wave setup deals; absent deals every nation.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_wave: Option<i32>,
     /// Blitz slices a game may be set up as (`Settings.slice`).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -189,6 +193,11 @@ pub struct NationRow {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
+    /// The roster wave (1 at launch); setup offers only nations within
+    /// `RuleTables.maxWave`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wave: Option<i32>,
     /// Who may lead a major nation, the default first; choose one with
     /// `Settings.leader`.
     #[ts(optional)]
@@ -317,6 +326,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 effects: b.uniques.iter().map(rule_text).collect(),
             })
             .collect(),
+        max_wave: r.max_wave,
         slices: (!r.slices.is_empty()).then(|| {
             r.slices
                 .iter()
@@ -393,6 +403,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 city_state: n.city_state_type.is_some(),
                 cities: n.cities.clone(),
                 barbarian: n.is_barbarian.then_some(true),
+                wave: n.wave,
                 region: n.region.clone(),
                 leaders: n.is_major().then(|| {
                     std::iter::once(LeaderRow {

@@ -811,7 +811,7 @@ pub fn apply_production_in(
     m: CostModifiers,
 ) -> Option<Vec<ConstructionEvent>> {
     let science = crate::world::research::ScienceModifiers {
-        speed: r.speeds.iter().find(|(_, s)| s.modifier == m.speed).map_or(m.speed, |(_, s)| s.science_cost_modifier),
+        speed: world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier),
         ..Default::default()
     };
     apply_production_with_science(world, r, city, production, m, science)

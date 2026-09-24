@@ -176,25 +176,34 @@ fn construction_choices_agree_with_the_queue_check() {
         advance(&mut w, &r);
     }
     let city = w.civs[usize::from(me.0)].cities[0];
-    let options = civ_sim::queries::city_options(&w, &r, me, city.index(), city.generation()).unwrap();
+    let options =
+        civ_sim::queries::city_options(&w, &r, me, city.index(), city.generation()).unwrap();
     let c = w.cities.get(city).unwrap();
     for choice in &options.choices {
         let what = match choice.construction {
             civ_sim::protocol::ConstructionRef::Building { id } => {
-                civ_core::world::construction::Construction::Building(r.buildings.ids().nth(id as usize).unwrap())
+                civ_core::world::construction::Construction::Building(
+                    r.buildings.ids().nth(id as usize).unwrap(),
+                )
             }
             civ_sim::protocol::ConstructionRef::Unit { id } => {
-                civ_core::world::construction::Construction::Unit(r.units.ids().nth(id as usize).unwrap())
+                civ_core::world::construction::Construction::Unit(
+                    r.units.ids().nth(id as usize).unwrap(),
+                )
             }
         };
         let queue = civ_core::world::construction::can_construct_in(&w, &r, me, c, what);
         let buy = civ_core::world::construction::can_purchase_in(&w, &r, me, c, what);
-        assert!(queue.is_ok() || buy.is_ok(), "{} is offered but refused: {queue:?}", choice.name);
+        assert!(
+            queue.is_ok() || buy.is_ok(),
+            "{} is offered but refused: {queue:?}",
+            choice.name
+        );
     }
     if let Some(charter) = r.buildings.id("World Charter") {
-        assert!(!options
-            .choices
-            .iter()
-            .any(|c| c.construction == civ_sim::protocol::ConstructionRef::Building { id: charter.index() }));
+        assert!(!options.choices.iter().any(|c| c.construction
+            == civ_sim::protocol::ConstructionRef::Building {
+                id: charter.index()
+            }));
     }
 }

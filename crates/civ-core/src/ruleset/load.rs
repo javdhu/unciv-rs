@@ -39,6 +39,9 @@ pub struct Ruleset {
     pub faiths: Vec<super::civgame::FaithDef>,
     /// Names for great people and other named units, from `UnitNameGroups.json`.
     pub name_groups: Vec<super::civgame::NameGroup>,
+    /// The last roster wave setup deals (`ModOptions.json` `maxWave`); None
+    /// deals every nation.
+    pub max_wave: Option<i32>,
     /// Blitz slices a game may be set up as, from `ModOptions.json` `slices`.
     pub slices: Vec<super::civgame::SliceDef>,
     pub difficulties: Registry<Difficulty>,
@@ -177,6 +180,10 @@ impl Ruleset {
                             .last()
                             .and_then(|t| t.get("untilTurn"))
                             .and_then(|t| t.as_i32());
+                        if let Some(s) = r.speeds.id(name).and_then(|id| r.speeds.get_mut(id)) {
+                            s.growth_modifier = item.get("growthModifier").and_then(|v| v.as_fixed());
+                            s.great_person_modifier = item.get("greatPersonModifier").and_then(|v| v.as_fixed());
+                        }
                         if let (Some(id), Some(last)) = (r.speeds.id(name), last) {
                             if let Some(s) = r.speeds.get_mut(id) {
                                 s.total_turns = last;
@@ -198,6 +205,9 @@ impl Ruleset {
                     }
                     if let Some(name) = doc.get("defaultDifficulty").and_then(|v| v.as_str()) {
                         r.default_difficulty_name = Some(name.to_string());
+                    }
+                    if let Some(wave) = doc.get("maxWave").and_then(|v| v.as_i32()) {
+                        r.max_wave = Some(wave);
                     }
                     if let Some(slices) = doc.get("slices").and_then(|v| v.as_array()) {
                         r.slices = slices.iter().filter_map(super::civgame::read_slice).collect();

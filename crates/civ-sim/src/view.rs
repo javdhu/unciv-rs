@@ -840,7 +840,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             .as_ref()
             .and_then(|s| civ_core::world::slices::year(r, s, w.turn))
             .unwrap_or_else(|| {
-                civ_core::world::great_people::calendar_year(r, TurnModifiers::for_world(w, r).costs.speed, w.turn)
+                civ_core::world::great_people::calendar_year_in(w, r, w.turn)
             }),
         width: w.grid.width(),
         height: w.grid.height(),

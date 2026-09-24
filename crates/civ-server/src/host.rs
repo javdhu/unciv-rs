@@ -312,7 +312,11 @@ impl Host {
             return Err(HostError::Invalid);
         }
         if let Some(name) = &nation {
-            let n = rules.nations.by_name(name).filter(|n| n.is_major()).ok_or(HostError::Invalid)?;
+            let n = rules
+                .nations
+                .by_name(name)
+                .filter(|n| n.is_major() && n.in_waves(rules.max_wave))
+                .ok_or(HostError::Invalid)?;
             if leader.as_ref().is_some_and(|l| !n.leaders().any(|x| x == l)) {
                 return Err(HostError::Invalid);
             }

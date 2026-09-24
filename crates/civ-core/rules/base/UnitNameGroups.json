@@ -102,9 +102,5 @@
 			"Steppe": ["Muhammad al-Bukhari", "Al-Tirmidhi", "Al-Farabi", "Ahmad Yasawi"],
 			"Americas": ["Bartolomé de las Casas", "Antônio Vieira", "Frederick Douglass", "Martin Luther King Jr."]
 		}
-	},
-	{
-		"name": "Khan",
-		"unitNames": ["Batu", "Berke", "Guyuk", "Hulegu", "Kublai", "Mongke", "Mongke Temur", "Ogedei", "Temur Khagan"]
 	}
 ]
