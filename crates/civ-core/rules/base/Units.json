@@ -439,6 +439,36 @@
 		"attackSound": "horse"
 	},
 	{
+		"name": "Vijayanagara War Elephant",
+		"replaces": "Knight",
+		"uniqueTo": "Vijayanagara",
+		"unitType": "Mounted",
+		"movement": 3,
+		"strength": 24,
+		"cost": 42,
+		"requiredTech": "Stirrups",
+		"obsoleteTech": "Military Science",
+		"upgradesTo": "Cavalry",
+		"requiredResource": "Horses",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit", "[+50]% Strength <vs [Mounted] units>"],
+		"attackSound": "horse"
+	},
+	{
+		"name": "Songhai Cavalry",
+		"replaces": "Knight",
+		"uniqueTo": "Songhai",
+		"unitType": "Mounted",
+		"movement": 4,
+		"strength": 22,
+		"cost": 42,
+		"requiredTech": "Stirrups",
+		"obsoleteTech": "Military Science",
+		"upgradesTo": "Cavalry",
+		"requiredResource": "Horses",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit"],
+		"attackSound": "horse"
+	},
+	{
 		"name": "Monaspa",
 		"replaces": "Knight",
 		"uniqueTo": "Georgia",
@@ -752,6 +782,22 @@
 		"attackSound": "horse"
 	},
 	{
+		"name": "Mughal War Elephant",
+		"replaces": "Lancer",
+		"uniqueTo": "Mughal",
+		"unitType": "Mounted",
+		"movement": 3,
+		"strength": 28,
+		"cost": 65,
+		"requiredTech": "Metallurgy",
+		"requiredResource": "Horses",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "Never appears as a Barbarian unit", "[+50]% Strength <vs [Mounted] units>"],
+		"promotions": ["Formation I"],
+		"upgradesTo": "Anti-Tank Gun",
+		"obsoleteTech": "Combined Arms",
+		"attackSound": "horse"
+	},
+	{
 		"name": "Winged Hussar",
 		"replaces": "Lancer",
 		"uniqueTo": "Poland–Lithuania",
@@ -956,6 +1002,20 @@
 		"upgradesTo": "Mechanized Infantry",
 		"obsoleteTech": "Mobile Tactics",
 		"attackSound": "shot"
+	},
+	{
+		"name": "Pracinha",
+		"replaces": "Infantry",
+		"uniqueTo": "Brazil",
+		"unitType": "Gunpowder",
+		"movement": 2,
+		"strength": 70,
+		"cost": 131,
+		"requiredTech": "Plastics",
+		"upgradesTo": "Mechanized Infantry",
+		"obsoleteTech": "Mobile Tactics",
+		"attackSound": "shot",
+		"uniques": ["[+25]% Strength <when fighting in [Hill] tiles>"]
 	},
 	{
 		"name": "Carrier",

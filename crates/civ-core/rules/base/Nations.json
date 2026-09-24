@@ -13,6 +13,8 @@
 		"adjective": ["Roman"],
 		"region": "Europe",
 		"voice": "Italian",
+		"wave": 1,
+		"whatWeKnow": "Attested: emperor 161–180; wrote the Meditations in Greek; many portraits and coins survive. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [70, 0, 118],
 		"innerColor": [239, 198, 0],
@@ -22,7 +24,8 @@
 			"leaderName": "Galla Placidia",
 			"uniqueName": "Patron of Ravenna",
 			"uniques": ["[+2 Culture] from every [Temple]", "[+25]% Production when constructing [Temple] buildings [in all cities]"],
-			"voice": "Italian"
+			"voice": "Italian",
+			"whatWeKnow": "Attested: daughter of Theodosius I, regent for Valentinian III 425–437, builder in Ravenna. Reconstructed: her likeness, from coins. Invented: voice and words."
 		},
 		"cities": ["Roma", "Mediolanum", "Neapolis", "Ravenna", "Aquileia", "Capua", "Tarentum", "Brundisium", "Florentia", "Genua", "Verona", "Bononia", "Patavium", "Pisae", "Syracusae", "Panormus", "Augusta Taurinorum", "Ostia", "Arretium", "Placentia"],
 		"cityRenames": [
@@ -48,6 +51,8 @@
 		"adjective": ["English"],
 		"region": "Europe",
 		"voice": "English",
+		"wave": 1,
+		"whatWeKnow": "Attested: king 871–899; burhs, law code and translations, from the Anglo-Saxon Chronicle and Asser. Invented: the burnt cakes are later folklore; likeness, voice and words.",
 		"startBias": ["Coast"],
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [166, 16, 36],
@@ -58,7 +63,8 @@
 			"leaderName": "Æthelflæd",
 			"uniqueName": "Lady of the Mercians",
 			"uniques": ["[+15]% Strength <for [All] units> <vs cities> <when attacking>", "[+50]% Production when constructing [Walls] buildings [in all cities]"],
-			"voice": "English"
+			"voice": "English",
+			"whatWeKnow": "Attested: Lady of the Mercians 911–918; built burhs and took Derby and Leicester, in the Mercian Register. Invented: likeness, voice and words."
 		},
 		"cities": ["Wintanceaster", "Lundenburh", "Eoforwic", "Cantwaraburh", "Exanceaster", "Oxenaford", "Hamtun", "Gleawecestre", "Tamaweorthig", "Legaceaster", "Grantebrycge", "Snotingaham", "Lindcylene", "Sceaftesburh", "Bedanford", "Wæringwic", "Readingum", "Hereford"],
 		"cityRenames": [
@@ -87,6 +93,8 @@
 		"adjective": ["American"],
 		"region": "Americas",
 		"voice": "English",
+		"wave": 1,
+		"whatWeKnow": "Attested: president 1861–1865; photographs, speeches and letters; contemporaries describe a high voice. Invented: his words in the game.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [31, 51, 120],
 		"innerColor": [255, 255, 255],
@@ -96,7 +104,8 @@
 			"leaderName": "Dwight D. Eisenhower",
 			"uniqueName": "Interstate Highways",
 			"uniques": ["[-50]% maintenance on road & railroads", "Can build [Road] improvements at a [+100]% rate"],
-			"voice": "English"
+			"voice": "English",
+			"whatWeKnow": "Attested: Allied supreme commander, president 1953–1961, signed the Federal-Aid Highway Act (1956); filmed and recorded. Invented: his words in the game."
 		},
 		"cities": ["Washington", "New York", "Philadelphia", "Boston", "Baltimore", "Charleston", "Richmond", "Chicago", "St. Louis", "New Orleans", "Cincinnati", "Pittsburgh", "Springfield", "San Francisco", "Detroit", "Cleveland", "Savannah", "Albany", "Louisville", "Milwaukee"]
 	},
@@ -106,6 +115,8 @@
 		"adjective": ["Persian"],
 		"region": "WestAsia",
 		"voice": "Persian",
+		"wave": 1,
+		"whatWeKnow": "Attested: shah 531–579, called Anushirvan; tax and army reforms, in Byzantine and Arabic sources. Reconstructed: his likeness, from coins. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [176, 7, 3],
 		"innerColor": [245, 231, 110],
@@ -115,7 +126,8 @@
 			"leaderName": "Purandokht",
 			"uniqueName": "Embassy to Heraclius",
 			"uniques": ["City-State Influence recovers at twice the normal rate", "[-25]% City-State Influence degradation"],
-			"voice": "Persian"
+			"voice": "Persian",
+			"whatWeKnow": "Attested: queen 629/630–631; coins in her name and an embassy to Heraclius. Reconstructed: the rest of her reign, from later histories. Invented: voice and words."
 		},
 		"cities": ["Ctesiphon", "Istakhr", "Gundeshapur", "Bishapur", "Ardashir-Khwarrah", "Nev-Shapur", "Spahan", "Hamadan", "Ray", "Merv", "Susa", "Hormozd-Ardashir", "Tus", "Shiz"],
 		"cityRenames": [
@@ -132,6 +144,8 @@
 		"adjective": ["Ottoman"],
 		"region": "WestAsia",
 		"voice": "Turkish",
+		"wave": 1,
+		"whatWeKnow": "Attested: founder of the Ottoman beylik, died c. 1324; a Byzantine source records Bapheus (1302). Reconstructed: most of his life, from chronicles a century later. Invented: Osman's Dream is legend; likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [18, 82, 30],
 		"innerColor": [247, 248, 199],
@@ -141,7 +155,8 @@
 			"leaderName": "Kösem Sultan",
 			"uniqueName": "Valide Han",
 			"uniques": ["[+1 Gold] from each Trade Route", "[-10]% Unhappiness from [Population] [in all cities]"],
-			"voice": "Turkish"
+			"voice": "Turkish",
+			"whatWeKnow": "Attested: valide sultan and regent for Murad IV and Mehmed IV; the Valide Han and her charities. Invented: likeness, voice and words."
 		},
 		"cities": ["Söğüt", "Bursa", "Bilecik", "Yenişehir", "İnegöl", "İznik", "İzmit", "Edirne", "Kostantiniyye", "Ankara", "Konya", "Kütahya", "Amasya", "Trabzon", "Kayseri", "Sivas", "Manisa", "Eskişehir", "Antalya", "Gelibolu"],
 		"cityRenames": [
@@ -154,6 +169,8 @@
 		"adjective": ["Egyptian"],
 		"region": "Africa",
 		"voice": "Coptic",
+		"wave": 1,
+		"whatWeKnow": "Attested: pharaoh c. 1479–1425 BCE; his Annals at Karnak record his campaigns; his mummy survives. Invented: voice and words; Coptic stands in for his language.",
 		"startBias": ["Desert"],
 		"preferredVictoryType": "Conquest",
 		"outerColor": [255, 251, 3],
@@ -164,7 +181,8 @@
 			"leaderName": "Hatshepsut",
 			"uniqueName": "Expedition to Punt",
 			"uniques": ["[+2 Gold] from each Trade Route", "[+1] Happiness from each type of luxury resource"],
-			"voice": "Coptic"
+			"voice": "Coptic",
+			"whatWeKnow": "Attested: pharaoh c. 1479–1458 BCE; the Punt reliefs at Deir el-Bahari. Reconstructed: much of her reign, since her images were defaced after her death. Invented: voice and words."
 		},
 		"cities": ["Waset", "Men-nefer", "Iunu", "Abdju", "Swenett", "Khemenu", "Djanet", "Per-Bastet", "Sau", "Nekhen", "Behdet", "Iunet", "Qebtu", "Ta-senet", "Hut-waret", "Djedu", "Per-Wadjet", "Nubt"],
 		"cityRenames": [
@@ -184,6 +202,8 @@
 		"adjective": ["Malian"],
 		"region": "Africa",
 		"voice": "Maninka",
+		"wave": 1,
+		"whatWeKnow": "Attested: founder of Mali in the 13th century, named by Ibn Khaldun. Reconstructed: his life, from the oral Sundiata epic. Disputed: where his capital Niani stood. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [214, 145, 19],
 		"innerColor": [62, 1, 0],
@@ -193,7 +213,8 @@
 			"leaderName": "Mansa Musa",
 			"uniqueName": "Hajj of 1324",
 			"uniques": ["[+2 Gold] from [Gold Ore] tiles [in all cities]", "[Gold] cost of purchasing items in cities [-15]%"],
-			"voice": "Maninka"
+			"voice": "Maninka",
+			"whatWeKnow": "Attested: mansa c. 1312–1337; al-Umari and others record his pilgrimage through Cairo in 1324. Invented: likeness, voice and words."
 		},
 		"cities": ["Niani", "Kangaba", "Timbuktu", "Djenné", "Walata", "Kirina", "Dia", "Tadmekka", "Takedda", "Mema", "Kukiya", "Kumbi Saleh", "Bure"]
 	},
@@ -203,6 +224,8 @@
 		"adjective": ["Ndongo"],
 		"region": "Africa",
 		"voice": "Kimbundu",
+		"wave": 1,
+		"whatWeKnow": "Attested: queen of Ndongo and Matamba, died 1663; her letters and Portuguese and Capuchin accounts survive. Reconstructed: her portraits. Invented: voice and words.",
 		"preferredVictoryType": "Perpetual Peace",
 		"outerColor": [120, 24, 16],
 		"innerColor": [240, 200, 120],
@@ -212,9 +235,10 @@
 			"leaderName": "Ngola Kiluanje kia Samba",
 			"uniqueName": "Independence from Kongo",
 			"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
-			"voice": "Kimbundu"
+			"voice": "Kimbundu",
+			"whatWeKnow": "Attested: an early ngola of Ndongo in 16th-century Portuguese records. Reconstructed: his reign and dates, which are uncertain; several Ndongo places are regions, not towns. Invented: likeness, voice and words."
 		},
-		"cities": ["Kabasa", "Kindonga", "Matamba", "Pungo Andongo", "Massangano", "Cambambe", "Muxima", "Ambaca", "Kasanje", "Libolo", "Haku", "Kisama", "Ilamba", "Songo", "Ndembu"]
+		"cities": ["Kabasa", "Kindonga", "Matamba", "Pungo Andongo", "Massangano", "Cambambe", "Muxima", "Ambaca", "Libolo", "Haku", "Kisama", "Ilamba", "Songo", "Ndembu"]
 	},
 	{
 		"name": "Maurya",
@@ -222,6 +246,8 @@
 		"adjective": ["Mauryan"],
 		"region": "SouthAsia",
 		"voice": "Magahi",
+		"wave": 1,
+		"whatWeKnow": "Attested: emperor c. 268–232 BCE; his rock and pillar edicts survive. Reconstructed: his life story, partly from later Buddhist texts. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Perpetual Peace",
 		"outerColor": [0, 150, 136],
 		"innerColor": [255, 213, 79],
@@ -231,7 +257,8 @@
 			"leaderName": "Chandragupta",
 			"uniqueName": "Uniter of the North",
 			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+15]% Production when constructing [Military] units [in all cities]"],
-			"voice": "Magahi"
+			"voice": "Magahi",
+			"whatWeKnow": "Attested: founder of the Maurya empire c. 321–297 BCE, the Sandrokottos of Greek writers. Reconstructed: his rise and Chanakya's part, from later texts. Invented: likeness, voice and words."
 		},
 		"cities": ["Pataliputra", "Ujjayini", "Vidisha", "Kaushambi", "Sravasti", "Tosali", "Suvarnagiri", "Rajagriha", "Vaishali", "Mathura", "Ahicchatra", "Kapilavastu", "Pushkalavati", "Surparaka", "Girinagara", "Bharukaccha"],
 		"cityRenames": [
@@ -249,6 +276,8 @@
 		"adjective": ["Chola"],
 		"region": "SouthAsia",
 		"voice": "Tamil",
+		"wave": 1,
+		"whatWeKnow": "Attested: king 985–1014; the Brihadeeswarar temple and its inscriptions. Reconstructed: his likeness, from a temple fresco. Invented: voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [211, 47, 47],
 		"innerColor": [255, 193, 7],
@@ -258,7 +287,8 @@
 			"leaderName": "Rajendra I",
 			"uniqueName": "Expedition to Kadaram",
 			"uniques": ["[+1] Movement <for [{Military} {Water}] units>", "[+15]% Strength <for [{Military} {Water}] units>"],
-			"voice": "Tamil"
+			"voice": "Tamil",
+			"whatWeKnow": "Attested: king 1014–1044; his inscriptions record the Ganges campaign and the raid on Srivijaya (1025). Invented: likeness, voice and words."
 		},
 		"cities": ["Thanjavur", "Gangaikonda Cholapuram", "Uraiyur", "Kanchipuram", "Kaveripattinam", "Nagapattinam", "Madurai", "Chidambaram", "Kumbakonam", "Tiruchirappalli", "Palaiyarai", "Mamallapuram", "Tiruvarur", "Srirangam"]
 	},
@@ -268,6 +298,8 @@
 		"adjective": ["Tang"],
 		"region": "EastAsia",
 		"voice": "Mandarin",
+		"wave": 1,
+		"whatWeKnow": "Attested: emperor 626–649, fully recorded in the Tang histories. Reconstructed: his portrait, from later paintings. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [1, 102, 67],
 		"innerColor": [233, 230, 30],
@@ -277,7 +309,8 @@
 			"leaderName": "Wu Zetian",
 			"uniqueName": "Palace Examination",
 			"uniques": ["[+2 Science] from every specialist [in all cities]", "[+15]% Great Person generation [in all cities]"],
-			"voice": "Mandarin"
+			"voice": "Mandarin",
+			"whatWeKnow": "Attested: the only woman to rule China as emperor, 690–705. Reconstructed: much of her reputation, shaped by hostile later historians. Invented: likeness, voice and words."
 		},
 		"cities": ["Chang'an", "Luoyang", "Yangzhou", "Guangzhou", "Chengdu", "Bianzhou", "Suzhou", "Hangzhou", "Taiyuan", "Youzhou", "Jiangling", "Fuzhou", "Xiangyang", "Yuezhou", "Jinling", "Hongzhou"],
 		"cityRenames": [
@@ -295,6 +328,8 @@
 		"adjective": ["Japanese"],
 		"region": "EastAsia",
 		"voice": "Japanese",
+		"wave": 1,
+		"whatWeKnow": "Attested: empress 593–628, in the Nihon Shoki and Kojiki, both written a century later. Reconstructed: details of her reign. Invented: likeness, voice and words.",
 		"startBias": ["Coast"],
 		"preferredVictoryType": "AGI",
 		"outerColor": [255, 255, 255],
@@ -305,7 +340,8 @@
 			"leaderName": "Prince Shōtoku",
 			"uniqueName": "Seventeen Articles",
 			"uniques": ["[-10]% Unhappiness from [Population] [in all cities]", "[-10]% Culture cost of adopting new Policies"],
-			"voice": "Japanese"
+			"voice": "Japanese",
+			"whatWeKnow": "Attested: regent for Suiko. Disputed: how much of the Seventeen-Article Constitution and his other deeds are his, since the Nihon Shoki was written a century later. Invented: likeness, voice and words."
 		},
 		"cities": ["Asuka", "Naniwa", "Fujiwara-kyō", "Heijō-kyō", "Heian-kyō", "Ōtsu", "Dazaifu", "Izumo", "Ise", "Hakata", "Kamakura", "Edo", "Nagasaki", "Hiroshima", "Sendai", "Kanazawa", "Kagoshima"],
 		"cityRenames": [
@@ -322,6 +358,8 @@
 		"adjective": ["Mongol"],
 		"region": "Steppe",
 		"voice": "Mongolian",
+		"wave": 1,
+		"whatWeKnow": "Attested: khan 1206–1227, in the Secret History and Persian and Chinese sources. Reconstructed: his looks; no portrait from life survives. Invented: voice and words.",
 		"startBias": ["Plains"],
 		"preferredVictoryType": "Conquest",
 		"outerColor": [81, 0, 8],
@@ -332,7 +370,8 @@
 			"leaderName": "Mandukhai",
 			"uniqueName": "Reunification",
 			"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>", "[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"],
-			"voice": "Mongolian"
+			"voice": "Mongolian",
+			"whatWeKnow": "Attested: queen who reunited the eastern Mongols in the late 15th century, in Mongol chronicles. Reconstructed: dates and details. Invented: likeness, voice and words."
 		},
 		"cities": ["Avarga", "Karakorum", "Khanbaliq", "Shangdu", "Örgöö", "Almalik", "Beshbalik", "Kherlen Bars", "Khovd", "Uliastai", "Tsetserleg"],
 		"cityRenames": [
@@ -346,6 +385,8 @@
 		"adjective": ["Majapahit"],
 		"region": "SoutheastAsia",
 		"voice": "Javanese",
+		"wave": 1,
+		"whatWeKnow": "Attested: king 1350–1389; the Nagarakretagama (1365) describes his court and tours. Invented: likeness, voice and words.",
 		"startBias": ["Coast"],
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [153, 27, 30],
@@ -356,7 +397,8 @@
 			"leaderName": "Tribhuwana",
 			"uniqueName": "Conquest of Bali",
 			"uniques": ["[+1] Movement <for [Embarked] units>", "[-25]% Culture cost of natural border growth [in all cities]"],
-			"voice": "Javanese"
+			"voice": "Javanese",
+			"whatWeKnow": "Attested: queen 1328–1350, in the Nagarakretagama and Pararaton. Reconstructed: her likeness, perhaps from a temple statue. Invented: voice and words."
 		},
 		"cities": ["Wilwatikta", "Tuban", "Gresik", "Surabaya", "Daha", "Singhasari", "Canggu", "Pasuruan", "Blambangan", "Jenggala", "Sumenep", "Gelgel", "Samprangan"]
 	},
@@ -366,6 +408,8 @@
 		"adjective": ["Aztec"],
 		"region": "Americas",
 		"voice": "Nahuatl",
+		"wave": 1,
+		"whatWeKnow": "Attested: tlatoani of Texcoco 1431–1472; the dike across Lake Texcoco. Disputed: which poems are really his. Invented: likeness, voice and words.",
 		"startBias": ["Lakes"],
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [161, 57, 34],
@@ -376,7 +420,8 @@
 			"leaderName": "Itzcoatl",
 			"uniqueName": "Alliance of 1428",
 			"uniques": ["Militaristic City-States grant units [2] times as fast when you are at war with a common nation", "[+15]% Strength <for [All] units> <vs cities> <when attacking>"],
-			"voice": "Nahuatl"
+			"voice": "Nahuatl",
+			"whatWeKnow": "Attested: tlatoani of Tenochtitlan 1427–1440, who formed the Triple Alliance in 1428. Invented: likeness, voice and words."
 		},
 		"cities": ["Tenochtitlan", "Texcoco", "Tlacopan", "Tlatelolco", "Azcapotzalco", "Xochimilco", "Coyohuacan", "Culhuacan", "Iztapalapan", "Chalco", "Cuauhtitlan", "Otompan", "Tepeyacac", "Cuauhnahuac", "Tollocan"]
 	},
@@ -386,6 +431,8 @@
 		"adjective": ["Inca"],
 		"region": "Americas",
 		"voice": "Quechua",
+		"wave": 1,
+		"whatWeKnow": "Attested: Sapa Inca c. 1471–1493 who carried the empire north and south, in Spanish-era chronicles. Reconstructed: dates and campaigns. Invented: likeness, voice and words.",
 		"startBias": ["Mountain"],
 		"preferredVictoryType": "Conquest",
 		"outerColor": [255, 184, 33],
@@ -396,7 +443,8 @@
 			"leaderName": "Pachacuti",
 			"uniqueName": "Andenes",
 			"uniques": ["No Maintenance costs for improvements in [Hill] tiles", "[+1 Food] from [Hill] tiles [in all cities]"],
-			"voice": "Quechua"
+			"voice": "Quechua",
+			"whatWeKnow": "Attested: the Sapa Inca who made Cusco an empire from c. 1438, in Spanish-era chronicles. Reconstructed: dates. Invented: likeness, voice and words."
 		},
 		"cities": ["Qusqu", "Tumipampa", "Kitu", "Kashamarka", "Hatun Xawxa", "Willka Waman", "Pisaq", "Ullantaytampu", "Wanuku Pampa", "Pumpu", "Hatun Qulla", "Pachakamaq", "Inkawasi", "Samaypata", "Chukiyapu", "Willkapampa"]
 	},
@@ -406,6 +454,8 @@
 		"adjective": ["French"],
 		"region": "Europe",
 		"voice": "French",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 1589–1610; the Edict of Nantes (1598); many portraits. Reconstructed: the 'chicken in every pot', first recorded decades later. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [140, 21, 21],
 		"innerColor": [133, 242, 242],
@@ -415,7 +465,8 @@
 			"leaderName": "Blanche of Castile",
 			"uniqueName": "Regent of France",
 			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"],
-			"voice": "French"
+			"voice": "French",
+			"whatWeKnow": "Attested: regent of France 1226–1234 and 1248–1252, mother of Louis IX. Invented: likeness, voice and words."
 		},
 		"cities": ["Paris", "Lyon", "Rouen", "Orléans", "Bordeaux", "Toulouse", "Marseille", "Nantes", "Reims", "Tours", "Amiens", "Dijon", "Rennes", "Grenoble", "Montpellier", "Limoges", "Pau", "La Rochelle"]
 	},
@@ -425,6 +476,8 @@
 		"adjective": ["Athenian"],
 		"region": "Europe",
 		"voice": "Greek",
+		"wave": 2,
+		"whatWeKnow": "Attested: archon in 594 BCE; fragments of his poems survive. Reconstructed: his laws, known from later writers. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [140, 41, 21],
 		"innerColor": [133, 224, 242],
@@ -434,7 +487,8 @@
 			"leaderName": "Pericles",
 			"uniqueName": "Delian League",
 			"uniques": ["[+2 Culture] from every [Wonder]", "Resting point for Influence with City-States is increased by [20]"],
-			"voice": "Greek"
+			"voice": "Greek",
+			"whatWeKnow": "Attested: general and statesman, died 429 BCE, in Thucydides. Reconstructed: his face, from Roman copies of a portrait bust; the Funeral Oration is Thucydides' version. Invented: voice and words."
 		},
 		"cities": ["Athenai", "Peiraieus", "Eleusis", "Marathon", "Sounion", "Acharnai", "Laurion", "Brauron", "Rhamnous", "Salamis", "Amphipolis", "Thourioi", "Myrina", "Aigina"],
 		"cityRenames": [
@@ -447,6 +501,8 @@
 		"adjective": ["Castilian"],
 		"region": "Europe",
 		"voice": "Spanish",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 1252–1284; the Siete Partidas, the Alfonsine Tables and the Cantigas de Santa Maria. Invented: likeness, voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [140, 62, 21],
 		"innerColor": [133, 205, 242],
@@ -456,7 +512,8 @@
 			"leaderName": "Isabella I",
 			"uniqueName": "Capitulations of Santa Fe",
 			"uniques": ["[+1] Movement <for [Water] units>", "[+1] Sight <for [Water] units>"],
-			"voice": "Spanish"
+			"voice": "Spanish",
+			"whatWeKnow": "Attested: queen 1474–1504; backed Columbus in 1492; the Inquisition and the expulsion of the Jews (1492) also came under her rule. Invented: voice and words."
 		},
 		"cities": ["Toledo", "Burgos", "Valladolid", "Sevilla", "Córdoba", "León", "Salamanca", "Segovia", "Ávila", "Madrid", "Murcia", "Cádiz", "Jaén", "Granada", "Santiago de Compostela", "Oviedo", "Cuenca", "Soria"]
 	},
@@ -466,6 +523,8 @@
 		"adjective": ["Russian"],
 		"region": "Europe",
 		"voice": "Russian",
+		"wave": 2,
+		"whatWeKnow": "Attested: emperor 1855–1881; freed the serfs in 1861; photographed. Invented: voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [140, 82, 21],
 		"innerColor": [133, 186, 242],
@@ -475,7 +534,8 @@
 			"leaderName": "Catherine II",
 			"uniqueName": "Hermitage and Bolshoi",
 			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+2 Culture] from every [Opera House]"],
-			"voice": "Russian"
+			"voice": "Russian",
+			"whatWeKnow": "Attested: empress 1762–1796; her letters and many portraits survive. Invented: voice and words."
 		},
 		"cities": ["Sankt-Peterburg", "Moskva", "Novgorod", "Kazan", "Nizhny Novgorod", "Smolensk", "Tver", "Yaroslavl", "Tula", "Arkhangelsk", "Astrakhan", "Tobolsk", "Irkutsk", "Yekaterinburg", "Vladivostok", "Omsk", "Samara", "Perm"],
 		"cityRenames": [
@@ -490,6 +550,8 @@
 		"adjective": ["German"],
 		"region": "Europe",
 		"voice": "German",
+		"wave": 2,
+		"whatWeKnow": "Attested: king from 936, emperor from 962; Widukind of Corvey records the Lechfeld (955). Invented: likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [140, 103, 21],
 		"innerColor": [133, 167, 242],
@@ -499,7 +561,8 @@
 			"leaderName": "Theophanu",
 			"uniqueName": "Empress Regent",
 			"uniques": ["Resting point for Influence with City-States is increased by [20]", "[+1 Culture] [in all cities]"],
-			"voice": "German"
+			"voice": "German",
+			"whatWeKnow": "Attested: Byzantine-born empress, regent for Otto III 983–991; her marriage charter survives. Invented: likeness, voice and words."
 		},
 		"cities": ["Magdeburg", "Aachen", "Quedlinburg", "Mainz", "Köln", "Trier", "Regensburg", "Augsburg", "Frankfurt", "Worms", "Speyer", "Bamberg", "Fulda", "Merseburg", "Hildesheim"]
 	},
@@ -509,6 +572,8 @@
 		"adjective": ["Danish"],
 		"region": "Europe",
 		"voice": "Danish",
+		"wave": 2,
+		"whatWeKnow": "Attested: ruler of Denmark, Norway and Sweden; the Kalmar Union of 1397. Reconstructed: her likeness, from her tomb effigy. Invented: voice and words.",
 		"preferredVictoryType": "Perpetual Peace",
 		"outerColor": [140, 123, 21],
 		"innerColor": [133, 149, 242],
@@ -518,7 +583,8 @@
 			"leaderName": "Harald Bluetooth",
 			"uniqueName": "Jelling Stones",
 			"uniques": ["[+1 Culture, +1 Faith] from every [Monument]"],
-			"voice": "Danish"
+			"voice": "Danish",
+			"whatWeKnow": "Attested: king of Denmark, died c. 986; the Jelling stone names him. Reconstructed: the Trelleborg forts' link to him, from tree-ring dates. Invented: likeness, voice and words."
 		},
 		"cities": ["København", "Roskilde", "Kalmar", "Bergen", "Oslo", "Stockholm", "Uppsala", "Lund", "Ribe", "Aarhus", "Odense", "Nidaros", "Visby", "Åbo", "Helsingør", "Viborg"],
 		"cityRenames": [
@@ -534,6 +600,8 @@
 		"adjective": ["Polish"],
 		"region": "Europe",
 		"voice": "Polish",
+		"wave": 2,
+		"whatWeKnow": "Attested: grand duke of Lithuania and king of Poland 1386–1434; Grunwald (1410). Invented: likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [137, 140, 21],
 		"innerColor": [136, 133, 242],
@@ -543,7 +611,8 @@
 			"leaderName": "Jadwiga",
 			"uniqueName": "Kraków Academy",
 			"uniques": ["[+2 Science] from every [University]", "[+25]% Production when constructing [University] buildings [in all cities]"],
-			"voice": "Polish"
+			"voice": "Polish",
+			"whatWeKnow": "Attested: crowned king of Poland in 1384; her bequest refounded the Kraków Academy. Invented: likeness, voice and words."
 		},
 		"cities": ["Kraków", "Wilno", "Warszawa", "Poznań", "Gniezno", "Toruń", "Gdańsk", "Lublin", "Płock", "Kalisz", "Sandomierz", "Kowno", "Troki", "Grodno"]
 	},
@@ -553,6 +622,8 @@
 		"adjective": ["Byzantine"],
 		"region": "Europe",
 		"voice": "Greek",
+		"wave": 2,
+		"whatWeKnow": "Attested: emperor 306–337; founded Constantinople (330) and struck the solidus. Invented: voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [116, 140, 21],
 		"innerColor": [155, 133, 242],
@@ -562,7 +633,8 @@
 			"leaderName": "Alexios I Komnenos",
 			"uniqueName": "Komnenian Restoration",
 			"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
-			"voice": "Greek"
+			"voice": "Greek",
+			"whatWeKnow": "Attested: emperor 1081–1118; his daughter Anna Komnene's Alexiad describes his reign. Invented: likeness, voice and words."
 		},
 		"cities": ["Konstantinoupolis", "Nikaia", "Nikomedeia", "Thessalonike", "Trapezous", "Smyrna", "Ephesos", "Antiocheia", "Adrianoupolis", "Ankyra", "Ikonion", "Chalkedon", "Philadelpheia", "Attaleia", "Mystras", "Dyrrachion", "Sinope"]
 	},
@@ -572,6 +644,8 @@
 		"adjective": ["Babylonian"],
 		"region": "WestAsia",
 		"voice": "Neo-Aramaic",
+		"wave": 2,
+		"whatWeKnow": "Attested: king c. 1792–1750 BCE; his law code stele and letters survive. Reconstructed: his likeness, from the stele's relief. Invented: voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [96, 140, 21],
 		"innerColor": [174, 133, 242],
@@ -581,7 +655,8 @@
 			"leaderName": "Nabonidus",
 			"uniqueName": "Royal Antiquarian",
 			"uniques": ["Free [Scholar] appears <upon discovering [Writing] technology>", "[Scholar] is earned [50]% faster"],
-			"voice": "Neo-Aramaic"
+			"voice": "Neo-Aramaic",
+			"whatWeKnow": "Attested: last king of Babylon, 556–539 BCE; his inscriptions describe digging up old temple foundations. Invented: voice and words."
 		},
 		"cities": ["Babili", "Sippar", "Kish", "Nippur", "Borsippa", "Isin", "Larsa", "Uruk", "Eshnunna", "Mari", "Kutha", "Dilbat", "Marad", "Opis", "Eridu"]
 	},
@@ -591,6 +666,8 @@
 		"adjective": ["Carthaginian"],
 		"region": "WestAsia",
 		"voice": "Hebrew",
+		"wave": 2,
+		"whatWeKnow": "Attested: general, and suffete in 196 BCE, in Polybius and Livy. Reconstructed: his likeness; no certain portrait survives. Invented: voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [76, 140, 21],
 		"innerColor": [192, 133, 242],
@@ -600,7 +677,8 @@
 			"leaderName": "Mago I",
 			"uniqueName": "Phoenician Heritage",
 			"uniques": ["Gain a free [Harbor] [in all coastal cities]", "[+1 Gold] from each Trade Route"],
-			"voice": "Hebrew"
+			"voice": "Hebrew",
+			"whatWeKnow": "Attested: named by Justin as a 6th-century BCE Carthaginian leader and founder of the Magonids. Reconstructed: nearly everything else. Invented: likeness, voice and words."
 		},
 		"cities": ["Qart-hadasht", "Utica", "Hadrumetum", "Leptis", "Hippo Diarrhytus", "Motya", "Ziz", "Lilybaeum", "Gadir", "Malaka", "Sulci", "Tharros", "Karalis", "Ebusus", "Kerkouane", "Thapsus"]
 	},
@@ -610,6 +688,8 @@
 		"adjective": ["Abbasid"],
 		"region": "WestAsia",
 		"voice": "Arabic",
+		"wave": 2,
+		"whatWeKnow": "Attested: caliph 813–833; patron of translation and astronomy in Baghdad. Invented: likeness, voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [55, 140, 21],
 		"innerColor": [211, 133, 242],
@@ -619,7 +699,8 @@
 			"leaderName": "Harun al-Rashid",
 			"uniqueName": "Paper Mills of Baghdad",
 			"uniques": ["[+1 Gold] from each Trade Route", "Free [Scholar] appears <upon discovering [Paper] technology>"],
-			"voice": "Arabic"
+			"voice": "Arabic",
+			"whatWeKnow": "Attested: caliph 786–809; embassies with Charlemagne. Invented: the Thousand and One Nights tales about him; likeness, voice and words."
 		},
 		"cities": ["Baghdad", "Kufa", "Basra", "Samarra", "Raqqa", "Mosul", "Wasit", "Damascus", "Aleppo", "Fustat", "Qayrawan", "Tarsus", "Hims", "Amida"]
 	},
@@ -629,6 +710,8 @@
 		"adjective": ["Georgian"],
 		"region": "WestAsia",
 		"voice": "Georgian",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 1089–1125; Didgori (1121) and the Gelati monastery, from his royal biographer. Reconstructed: his likeness, from a Gelati fresco. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [35, 140, 21],
 		"innerColor": [230, 133, 242],
@@ -638,7 +721,8 @@
 			"leaderName": "Tamar",
 			"uniqueName": "Golden Age of Tamar",
 			"uniques": ["[+50]% Golden Age length", "[+15]% [Culture] [in all cities]"],
-			"voice": "Georgian"
+			"voice": "Georgian",
+			"whatWeKnow": "Attested: queen 1184–1213, in contemporary Georgian chronicles; a fresco at Vardzia shows her. Invented: voice and words."
 		},
 		"cities": ["Tbilisi", "Kutaisi", "Mtskheta", "Gori", "Telavi", "Akhaltsikhe", "Rustavi", "Dmanisi", "Ujarma", "Bolnisi", "Zugdidi", "Poti"]
 	},
@@ -648,6 +732,8 @@
 		"adjective": ["Aksumite"],
 		"region": "Africa",
 		"voice": "Tigrinya",
+		"wave": 2,
+		"whatWeKnow": "Attested: king in the 4th century; his inscriptions and coins, first with pagan symbols, then the cross. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [21, 140, 28],
 		"innerColor": [242, 133, 236],
@@ -657,7 +743,8 @@
 			"leaderName": "Kaleb",
 			"uniqueName": "Expedition to Himyar",
 			"uniques": ["[+1] Movement <for [Embarked] units>", "[+15]% Strength <for [Military] units> <when fighting in [Foreign Land] tiles>"],
-			"voice": "Tigrinya"
+			"voice": "Tigrinya",
+			"whatWeKnow": "Attested: king in the early 6th century; his expedition to Himyar, in Byzantine and Syriac sources. Invented: likeness, voice and words."
 		},
 		"cities": ["Aksum", "Adulis", "Yeha", "Matara", "Qohaito", "Roha", "Gondar", "Debre Berhan", "Ankober", "Mekele", "Adwa", "Massawa", "Asmara"],
 		"cityRenames": [
@@ -670,6 +757,8 @@
 		"adjective": ["Kushite"],
 		"region": "Africa",
 		"voice": "Nobiin",
+		"wave": 2,
+		"whatWeKnow": "Attested: king c. 744–714 BCE; his Victory Stela tells of his conquest of Egypt. Invented: likeness, voice and words; Nobiin stands in for his language.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [21, 140, 48],
 		"innerColor": [242, 133, 217],
@@ -679,7 +768,8 @@
 			"leaderName": "Amanirenas",
 			"uniqueName": "Treaty of Samos",
 			"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>", "Resting point for Influence with City-States is increased by [20]"],
-			"voice": "Nobiin"
+			"voice": "Nobiin",
+			"whatWeKnow": "Attested: the one-eyed queen Strabo says fought Rome c. 25–21 BCE. Reconstructed: that she is the Amanirenas of Meroitic inscriptions. Invented: voice and words."
 		},
 		"cities": ["Napata", "Meroë", "Kerma", "Kawa", "Nuri", "el-Kurru", "Sanam", "Naqa", "Musawwarat es-Sufra", "Wad ban Naqa", "Faras", "Qasr Ibrim"]
 	},
@@ -689,6 +779,8 @@
 		"adjective": ["Mutapa"],
 		"region": "Africa",
 		"voice": "Shona",
+		"wave": 2,
+		"whatWeKnow": "Reconstructed: founder of Mutapa c. 1430, from oral traditions recorded by the Portuguese and later; several Mutapa towns are known only as Portuguese trading fairs. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [21, 140, 69],
 		"innerColor": [242, 133, 199],
@@ -698,7 +790,8 @@
 			"leaderName": "Matope",
 			"uniqueName": "Road to the Coast",
 			"uniques": ["[+1 Gold] from each Trade Route", "[-25]% Gold cost of acquiring tiles [in all cities]"],
-			"voice": "Shona"
+			"voice": "Shona",
+			"whatWeKnow": "Reconstructed: Mutota's son, who carried Mutapa to the coast c. 1450–1480, from oral tradition. Invented: likeness, voice and words."
 		},
 		"cities": ["Mount Fura", "Massapa", "Luanze", "Dambarare", "Bocuto", "Ongoe"]
 	},
@@ -708,6 +801,8 @@
 		"adjective": ["Songhai"],
 		"region": "Africa",
 		"voice": "Songhay",
+		"wave": 2,
+		"whatWeKnow": "Attested: askia 1493–1528, in the Timbuktu chronicles; his tomb in Gao stands. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [21, 140, 89],
 		"innerColor": [242, 133, 180],
@@ -717,7 +812,8 @@
 			"leaderName": "Sonni Ali",
 			"uniqueName": "Niger Fleet",
 			"uniques": ["[+1] Movement <for [Embarked] units>", "[+100]% Strength <when defending> <for [Embarked] units>"],
-			"voice": "Songhay"
+			"voice": "Songhay",
+			"whatWeKnow": "Attested: ruler c. 1464–1492 who took Timbuktu and Djenné. Reconstructed: his character, from chroniclers hostile to him. Invented: likeness, voice and words."
 		},
 		"cities": ["Gao", "Tendirma", "Kabara", "Bamba", "Hombori", "Ansongo", "Say", "Agadez", "Tillabéri", "Ayorou", "Menaka", "Taghaza"]
 	},
@@ -727,6 +823,8 @@
 		"adjective": ["Kilwan"],
 		"region": "Africa",
 		"voice": "Swahili",
+		"wave": 2,
+		"whatWeKnow": "Attested: sultan in the early 14th century; Ibn Battuta visited in 1331; coins bear his name. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [21, 140, 110],
 		"innerColor": [242, 133, 161],
@@ -740,6 +838,8 @@
 		"adjective": ["Numidian"],
 		"region": "Africa",
 		"voice": "Tamazight",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 202–148 BCE, in Polybius and Livy; his coins survive. Invented: voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [21, 140, 130],
 		"innerColor": [242, 133, 143],
@@ -749,7 +849,8 @@
 			"leaderName": "Jugurtha",
 			"uniqueName": "Jugurthine War",
 			"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
-			"voice": "Tamazight"
+			"voice": "Tamazight",
+			"whatWeKnow": "Attested: king 118–105 BCE, in Sallust's Jugurthine War. Invented: likeness, voice and words."
 		},
 		"cities": ["Cirta", "Siga", "Hippo Regius", "Thugga", "Zama", "Capsa", "Vaga", "Sicca Veneria", "Theveste", "Calama", "Madauros", "Bulla Regia"]
 	},
@@ -759,6 +860,8 @@
 		"adjective": ["Vijayanagara"],
 		"region": "SouthAsia",
 		"voice": "Telugu",
+		"wave": 2,
+		"whatWeKnow": "Attested: emperor 1509–1529; inscriptions, his Telugu poem Amuktamalyada and Portuguese visitors. Reconstructed: his likeness, from a bronze at Tirumala. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [21, 130, 140],
 		"innerColor": [242, 143, 133],
@@ -768,7 +871,8 @@
 			"leaderName": "Harihara I",
 			"uniqueName": "City of Victory",
 			"uniques": ["[+50]% Production when constructing [Walls] buildings [in all cities]", "[+1 Production] from [Hill] tiles [in all cities]"],
-			"voice": "Telugu"
+			"voice": "Telugu",
+			"whatWeKnow": "Attested: co-founder of Vijayanagara with his brother Bukka in 1336. Reconstructed: the founding story, from later accounts. Invented: likeness, voice and words."
 		},
 		"cities": ["Vijayanagara", "Penukonda", "Chandragiri", "Anegundi", "Udayagiri", "Tirupati", "Srirangapatna", "Chitradurga", "Gooty", "Adoni", "Raichur", "Barkur", "Mangaluru", "Vellore"],
 		"cityRenames": [
@@ -781,6 +885,8 @@
 		"adjective": ["Mughal"],
 		"region": "SouthAsia",
 		"voice": "Hindustani",
+		"wave": 2,
+		"whatWeKnow": "Attested: emperor 1556–1605; the Akbarnama and many court paintings. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [21, 110, 140],
 		"innerColor": [242, 161, 133],
@@ -790,7 +896,8 @@
 			"leaderName": "Nur Jahan",
 			"uniqueName": "Coins of Nur Jahan",
 			"uniques": ["[+10]% [Gold] [in all cities]", "[+1 Culture] from every [Garden]"],
-			"voice": "Hindustani"
+			"voice": "Hindustani",
+			"whatWeKnow": "Attested: empress and power behind Jahangir; coins were struck in her name. Invented: voice and words."
 		},
 		"cities": ["Agra", "Fatehpur Sikri", "Lahore", "Delhi", "Kabul", "Ajmer", "Burhanpur", "Ahmedabad", "Jahangirnagar", "Srinagar", "Multan", "Aurangabad", "Jaunpur", "Surat", "Allahabad"]
 	},
@@ -800,6 +907,8 @@
 		"adjective": ["Korean"],
 		"region": "EastAsia",
 		"voice": "Korean",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 1776–1800; the Kyujanggak library and Hwaseong fortress, in the Annals of the Joseon Dynasty. Invented: likeness, voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [21, 89, 140],
 		"innerColor": [242, 180, 133],
@@ -809,7 +918,8 @@
 			"leaderName": "Sejong",
 			"uniqueName": "Hunminjeongeum",
 			"uniques": ["[+10]% [Science] [in all cities]", "[+10]% [Culture] [in all cities]"],
-			"voice": "Korean"
+			"voice": "Korean",
+			"whatWeKnow": "Attested: king 1418–1450; promulgated Hangul in 1446. Reconstructed: his likeness; no portrait from life survives. Invented: voice and words."
 		},
 		"cities": ["Hanseong", "Gaeseong", "Pyeongyang", "Hamheung", "Jeonju", "Gyeongju", "Daegu", "Busan", "Suwon", "Uiju", "Gongju", "Chungju", "Wonju", "Naju", "Jinju", "Andong"],
 		"cityRenames": [
@@ -822,6 +932,8 @@
 		"adjective": ["Khitan"],
 		"region": "EastAsia",
 		"voice": "Daur",
+		"wave": 2,
+		"whatWeKnow": "Attested: founder of the Liao dynasty, emperor 916–926, in the History of Liao. Invented: likeness, voice and words; Daur stands in for Khitan.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [21, 69, 140],
 		"innerColor": [242, 199, 133],
@@ -831,7 +943,8 @@
 			"leaderName": "Empress Dowager Chengtian",
 			"uniqueName": "Treaty of Chanyuan",
 			"uniques": ["[+2 Gold] from each Trade Route", "Resting point for Influence with City-States is increased by [20]"],
-			"voice": "Daur"
+			"voice": "Daur",
+			"whatWeKnow": "Attested: regent 982–1009; the Treaty of Chanyuan (1005). Invented: likeness, voice and words."
 		},
 		"cities": ["Shangjing", "Zhongjing", "Dongjing", "Yanjing", "Xijing", "Zuzhou", "Huaizhou", "Qingzhou"]
 	},
@@ -841,6 +954,8 @@
 		"adjective": ["Khmer"],
 		"region": "SoutheastAsia",
 		"voice": "Khmer",
+		"wave": 2,
+		"whatWeKnow": "Attested: king from 1113 who built Angkor Wat; its reliefs show him. Invented: voice and words.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [21, 48, 140],
 		"innerColor": [242, 217, 133],
@@ -850,7 +965,8 @@
 			"leaderName": "Jayavarman VII",
 			"uniqueName": "The 102 Hospitals",
 			"uniques": ["[+10]% growth [in all cities]", "[+1 Happiness] [in all cities]"],
-			"voice": "Khmer"
+			"voice": "Khmer",
+			"whatWeKnow": "Attested: king from 1181; his inscriptions list 102 hospitals. Reconstructed: his face, from portrait statues. Invented: voice and words."
 		},
 		"cities": ["Yashodharapura", "Hariharalaya", "Koh Ker", "Mahendraparvata", "Phimai", "Lavo", "Isanapura", "Banteay Chhmar", "Preah Khan Kompong Svay", "Champasak", "Phnom Penh", "Oudong"]
 	},
@@ -860,6 +976,8 @@
 		"adjective": ["Siamese"],
 		"region": "SoutheastAsia",
 		"voice": "Thai",
+		"wave": 2,
+		"whatWeKnow": "Attested: king 1590–1605 who freed Ayutthaya from Toungoo rule. Disputed: the details of the elephant duel of 1593. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [21, 28, 140],
 		"innerColor": [242, 236, 133],
@@ -869,7 +987,8 @@
 			"leaderName": "Narai",
 			"uniqueName": "Embassies to Versailles",
 			"uniques": ["Science gained from research agreements [+50]%", "[+1 Gold] from each Trade Route"],
-			"voice": "Thai"
+			"voice": "Thai",
+			"whatWeKnow": "Attested: king 1656–1688; his embassy to Louis XIV (1686). Invented: likeness, voice and words."
 		},
 		"cities": ["Ayutthaya", "Phitsanulok", "Sukhothai", "Nakhon Si Thammarat", "Chanthaburi", "Kamphaeng Phet", "Suphanburi", "Nakhon Ratchasima", "Phetchaburi", "Ratchaburi", "Bang Kok"],
 		"cityRenames": [
@@ -882,6 +1001,8 @@
 		"adjective": ["Vietnamese"],
 		"region": "SoutheastAsia",
 		"voice": "Vietnamese",
+		"wave": 2,
+		"whatWeKnow": "Attested: led the Lam Sơn uprising against the Ming (1418–1427) and founded the Lê dynasty. Invented: the returned sword is legend; likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [35, 21, 140],
 		"innerColor": [230, 242, 133],
@@ -891,7 +1012,8 @@
 			"leaderName": "Trưng Trắc",
 			"uniqueName": "Rising of the Trưng Sisters",
 			"uniques": ["[+15]% Production when constructing [Military] units [in all cities]", "[+1 Happiness] [in all cities]"],
-			"voice": "Vietnamese"
+			"voice": "Vietnamese",
+			"whatWeKnow": "Attested: led a rising against Han rule in 40 CE, in Chinese histories. Reconstructed: most details, from later Vietnamese tradition. Invented: likeness, voice and words."
 		},
 		"cities": ["Thăng Long", "Hoa Lư", "Lam Kinh", "Tây Đô", "Thanh Hóa", "Vạn Kiếp", "Phố Hiến", "Nghệ An", "Phú Xuân", "Cao Bằng", "Lạng Sơn", "Hải Dương"],
 		"cityRenames": [
@@ -904,6 +1026,8 @@
 		"adjective": ["Srivijayan"],
 		"region": "SoutheastAsia",
 		"voice": "Malay",
+		"wave": 2,
+		"whatWeKnow": "Attested: the ruler of the Kedukan Bukit inscription (682). Reconstructed: the rest, from inscriptions and Chinese pilgrims. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [55, 21, 140],
 		"innerColor": [211, 242, 133],
@@ -913,7 +1037,8 @@
 			"leaderName": "Balaputradewa",
 			"uniqueName": "The Nalanda Grant",
 			"uniques": ["[+1 Faith] from every [Temple]", "[+15]% Great Person generation [in all cities]"],
-			"voice": "Malay"
+			"voice": "Malay",
+			"whatWeKnow": "Attested: king of Suvarnadvipa who endowed a monastery at Nalanda, in the Nalanda copper plate. Invented: likeness, voice and words."
 		},
 		"cities": ["Palembang", "Jambi", "Kadaram", "Muara Takus", "Chaiya", "Tambralinga", "Kota Kapur", "Muaro Jambi", "Lamuri", "Barus", "Tulang Bawang"]
 	},
@@ -923,6 +1048,8 @@
 		"adjective": ["Cham"],
 		"region": "SoutheastAsia",
 		"voice": "Cham",
+		"wave": 2,
+		"whatWeKnow": "Attested: king in the late 14th century who sacked Thăng Long, in Vietnamese and Chinese sources. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [76, 21, 140],
 		"innerColor": [192, 242, 133],
@@ -932,28 +1059,32 @@
 			"leaderName": "Po Romé",
 			"uniqueName": "Lord of Panduranga",
 			"uniques": ["[+1 Food] from every [Farm]", "[+1 Happiness] [in all cities]"],
-			"voice": "Cham"
+			"voice": "Cham",
+			"whatWeKnow": "Attested: king of Panduranga in the 17th century, remembered in Cham tradition. Reconstructed: dates and works. Invented: likeness, voice and words."
 		},
 		"cities": ["Vijaya", "Indrapura", "Simhapura", "Kauthara", "Panduranga", "Thị Nại", "Amaravati"]
 	},
 	{
 		"name": "Scythia",
-		"leaderName": "Tomyris",
+		"leaderName": "Ateas",
 		"adjective": ["Scythian"],
 		"region": "Steppe",
 		"voice": "Ossetian",
+		"wave": 2,
+		"whatWeKnow": "Attested: Scythian king who fell fighting Philip II of Macedon in 339 BCE. Disputed: where Herodotus' Gelonus stood (perhaps the Bilsk hillfort). Invented: likeness, voice and words; Ossetian stands in for Scythian.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [96, 21, 140],
 		"innerColor": [174, 242, 133],
-		"uniqueName": "Queen of the Massagetae",
-		"uniques": ["[+15]% Strength <for [Mounted] units>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+		"uniqueName": "King of the Scythians",
+		"uniques": ["[+1] Movement <for [Mounted] units>", "[-25]% Culture cost of natural border growth [in all cities]"],
 		"altLeader": {
-			"leaderName": "Ateas",
-			"uniqueName": "King of the Scythians",
-			"uniques": ["[+1] Movement <for [Mounted] units>", "[-25]% Culture cost of natural border growth [in all cities]"],
-			"voice": "Ossetian"
+			"leaderName": "Tomyris",
+			"uniqueName": "Queen of the Massagetae",
+			"uniques": ["[+15]% Strength <for [Mounted] units>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+			"voice": "Ossetian",
+			"whatWeKnow": "Attested in Herodotus: queen of the Massagetae, a Saka people he compares to the Scythians, who defeated Cyrus. Disputed: how Cyrus died. Invented: likeness, voice and words."
 		},
-		"cities": ["Gelonus", "Kamianka", "Elizavetovskoe", "Pazyryk", "Arzhan", "Issyk"]
+		"cities": ["Kamianka", "Bilsk", "Neapolis Scythica", "Elizavetovskoe", "Nemyriv", "Motronyn", "Gelonus"]
 	},
 	{
 		"name": "Timurids",
@@ -961,6 +1092,8 @@
 		"adjective": ["Timurid"],
 		"region": "Steppe",
 		"voice": "Uzbek",
+		"wave": 2,
+		"whatWeKnow": "Attested: ruler of Samarkand, died 1449; his observatory and star catalogue; his skeleton was studied in 1941. Invented: voice and words.",
 		"preferredVictoryType": "AGI",
 		"outerColor": [116, 21, 140],
 		"innerColor": [155, 242, 133],
@@ -970,7 +1103,8 @@
 			"leaderName": "Shah Rukh",
 			"uniqueName": "Herat Renaissance",
 			"uniques": ["[+15]% [Culture] [in all cities]", "[+1 Gold] from each Trade Route"],
-			"voice": "Uzbek"
+			"voice": "Uzbek",
+			"whatWeKnow": "Attested: Timurid ruler 1405–1447, patron of Herat. Invented: likeness, voice and words."
 		},
 		"cities": ["Samarqand", "Herat", "Shahrisabz", "Termez", "Mashhad", "Tashkent", "Andijan", "Khujand", "Urgench", "Qarshi", "Kandahar"]
 	},
@@ -980,6 +1114,8 @@
 		"adjective": ["Maya"],
 		"region": "Americas",
 		"voice": "Ch'ol",
+		"wave": 2,
+		"whatWeKnow": "Attested: ruler of Palenque 583–604, in the city's inscriptions. Invented: likeness, voice and words; Ch'ol stands in for Classic Maya.",
 		"preferredVictoryType": "Lingua Franca",
 		"outerColor": [137, 21, 140],
 		"innerColor": [136, 242, 133],
@@ -989,7 +1125,8 @@
 			"leaderName": "Pakal",
 			"uniqueName": "Temple of the Inscriptions",
 			"uniques": ["[+15]% Production when constructing [All] wonders [in all cities]", "[+1 Culture] from every [Monument]"],
-			"voice": "Ch'ol"
+			"voice": "Ch'ol",
+			"whatWeKnow": "Attested: ruler 615–683; his tomb in the Temple of the Inscriptions. Reconstructed: his face, from his jade mask and stucco portraits. Invented: voice and words."
 		},
 		"cities": ["Lakamha'", "Pakbul", "Tortuguero", "Moral-Reforma", "Chinikiha", "Xupa", "Miraflores", "Comalcalco"]
 	},
@@ -999,6 +1136,8 @@
 		"adjective": ["Brazilian"],
 		"region": "Americas",
 		"voice": "Portuguese",
+		"wave": 2,
+		"whatWeKnow": "Attested: regent who signed the Golden Law (1888) abolishing slavery; photographed. Invented: voice and words.",
 		"preferredVictoryType": "Perpetual Peace",
 		"outerColor": [140, 21, 123],
 		"innerColor": [133, 242, 149],
@@ -1008,7 +1147,8 @@
 			"leaderName": "Pedro II",
 			"uniqueName": "Scholar Emperor",
 			"uniques": ["[+2 Science] from every [University]", "[+1 Culture] from every [Museum]"],
-			"voice": "Portuguese"
+			"voice": "Portuguese",
+			"whatWeKnow": "Attested: emperor 1831–1889; photographed and widely recorded. Invented: voice and words."
 		},
 		"cities": ["Rio de Janeiro", "Salvador", "Recife", "São Paulo", "Vila Rica", "Belém", "São Luís", "Porto Alegre", "Fortaleza", "Barra", "Curitiba", "Petrópolis", "Niterói", "Campinas", "Belo Horizonte", "Brasília"],
 		"cityRenames": [
@@ -1022,6 +1162,8 @@
 		"adjective": ["Haitian"],
 		"region": "Americas",
 		"voice": "Haitian Creole",
+		"wave": 2,
+		"whatWeKnow": "Attested: leader of the Haitian Revolution and governor under the 1801 constitution; his letters survive. Reconstructed: his likeness; most portraits are posthumous. Invented: voice and words.",
 		"preferredVictoryType": "Perpetual Peace",
 		"outerColor": [140, 21, 103],
 		"innerColor": [133, 242, 167],
@@ -1031,7 +1173,8 @@
 			"leaderName": "Henri Christophe",
 			"uniqueName": "Citadelle and Sans-Souci",
 			"uniques": ["[+50]% Production when constructing [Walls] buildings [in all cities]", "[+15]% Production when constructing [All] wonders [in capital]"],
-			"voice": "Haitian Creole"
+			"voice": "Haitian Creole",
+			"whatWeKnow": "Attested: king of northern Haiti 1811–1820; built the Citadelle and Sans-Souci. Invented: voice and words."
 		},
 		"cities": ["Port-au-Prince", "Cap-Français", "Gonaïves", "Les Cayes", "Jacmel", "Saint-Marc", "Jérémie", "Port-de-Paix", "Milot", "Hinche", "Léogâne", "Petit-Goâve", "Fort-Dauphin"],
 		"cityRenames": [
@@ -1045,6 +1188,8 @@
 		"adjective": ["Purépecha"],
 		"region": "Americas",
 		"voice": "Purépecha",
+		"wave": 2,
+		"whatWeKnow": "Attested: cazonci in the late 15th century, in the Relación de Michoacán. Disputed: whether he or his successor beat the Mexica in 1479. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [140, 21, 82],
 		"innerColor": [133, 242, 186],
@@ -1054,7 +1199,8 @@
 			"leaderName": "Tariácuri",
 			"uniqueName": "Lord of Pátzcuaro",
 			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+1 Food] from [Lakes] tiles [in all cities]"],
-			"voice": "Purépecha"
+			"voice": "Purépecha",
+			"whatWeKnow": "Reconstructed: founder of the Purépecha state, from the Relación de Michoacán (c. 1540). Invented: likeness, voice and words."
 		},
 		"cities": ["Tzintzuntzan", "Pátzcuaro", "Ihuatzio", "Zacapu", "Uruapan", "Tiripetío", "Taximaroa", "Zinapécuaro", "Acámbaro", "Jacona", "Tacámbaro", "Charo"]
 	},
@@ -1064,6 +1210,8 @@
 		"adjective": ["Mixtec"],
 		"region": "Americas",
 		"voice": "Mixtec",
+		"wave": 2,
+		"whatWeKnow": "Attested: 11th-century lord of Tilantongo and Tututepec in Mixtec codices such as the Nuttall and Bodley. Reconstructed: dates. Invented: voice and words.",
 		"preferredVictoryType": "Conquest",
 		"outerColor": [140, 21, 62],
 		"innerColor": [133, 242, 205],
@@ -1073,7 +1221,8 @@
 			"leaderName": "Lady Six Monkey",
 			"uniqueName": "Lady of Jaltepec",
 			"uniques": ["[+15]% Great Person generation [in all cities]", "[+1 Culture] [in all cities]"],
-			"voice": "Mixtec"
+			"voice": "Mixtec",
+			"whatWeKnow": "Attested: 11th-century ruler of Jaltepec, in the Codex Selden. Invented: voice and words."
 		},
 		"cities": ["Tilantongo", "Tututepec", "Teozacoalco", "Coixtlahuaca", "Yanhuitlán", "Teposcolula", "Achiutla", "Jaltepec", "Tlaxiaco", "Apoala", "Nochixtlán", "Juxtlahuaca"]
 	},
@@ -1083,6 +1232,8 @@
 		"adjective": ["Chimú"],
 		"region": "Americas",
 		"voice": "Quechua",
+		"wave": 2,
+		"whatWeKnow": "Attested: last ruler of Chimor, taken to Cusco after the Inca conquest c. 1470, in Spanish-era accounts. Invented: likeness, voice and words.",
 		"preferredVictoryType": "Reserve Currency",
 		"outerColor": [140, 21, 41],
 		"innerColor": [133, 242, 224],
