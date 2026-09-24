@@ -14,8 +14,8 @@ The full game spans all of history at full length and ends in the present day; a
 
 | # | Era | Rough dates | Opens with |
 |---|---|---|---|
-| 1 | Age of Bronze | 4000–1200 BC | Bronze Working |
-| 2 | Age of Iron | 1200 BC–AD 500 | Iron Working |
+| 1 | Age of Bronze | 4000–1200 BCE | Bronze Working |
+| 2 | Age of Iron | 1200 BCE–500 CE | Iron Working |
 | 3 | Age of Paper | 500–1450 | Paper |
 | 4 | Age of Sail | 1450–1750 | Navigation |
 | 5 | Age of Steam | 1750–1900 | Steam Power |
@@ -156,6 +156,12 @@ Only obvious Civ coinages change; the rest stay (City-State, Golden Age, policy 
 | Settler … Deity | Pupil, Student, Graduate, Tutor, Lecturer, Professor, Dean, Chancellor |
 | civilization (in copy) | nation |
 
+## History on the surface
+
+- **City names change with the era.** A city is founded under its period name and renames when its owner reaches the right era: Edo → Tokyo, Byzantion → Constantinople → Istanbul, Thăng Long → Hà Nội. History moves without switching nations. Needs era-keyed city name lists and a rename event in the engine.
+- **"What we know" on every leader and wonder card**: one line splitting what is attested, reconstructed and invented, taken from the leader research notes (PLATFORM.md §7).
+- **Years read BCE / CE**, the neutral scholarly form (`hud/calendar.ts` currently prints BC/AD).
+
 ## Engine work this implies
 
 | Work | Size |
@@ -168,10 +174,11 @@ Only obvious Civ coinages change; the rest stay (City-State, Golden Age, policy 
 | Perpetual Peace charter vote | small, reuses the vote |
 | Turing Project | small, reuses the spaceship project |
 | Leader abilities split from nation uniques (two leaders) | medium |
+| City renames by era | small |
 
 ## Open
 
 - The new ruleset **replaces** `crates/civ-core/rules/gods-and-kings` (decided 2026-09-23). Build order still to agree.
 - 30 turns per era and the three Blitz slices were proposed and not vetoed; confirm before balancing.
 - Policy card lists, faith traits, unique units and buildings, and regional great-people pools are content still to write.
-- Parked: `web/src/content/labels.ts` and its HUD wiring (uncommitted) implement the Names table at display time; keep, fold into the ruleset, or revert.
+- The Names table goes straight into the new ruleset; the display-name layer was dropped.
