@@ -100,6 +100,9 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     if r.victory_knobs != crate::ruleset::civgame::VictoryKnobs::default() {
         write!(&mut input, "\nvictory knobs {:?}", r.victory_knobs).unwrap();
     }
+    if r.chronicle_among_living_majors {
+        write!(&mut input, "\nchronicle among living majors").unwrap();
+    }
     if let Some(wave) = r.max_wave {
         write!(&mut input, "\nmax wave {wave}").unwrap();
     }

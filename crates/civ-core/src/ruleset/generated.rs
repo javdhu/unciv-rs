@@ -136,6 +136,11 @@ pub struct Building {
     pub required_resource: Option<String>,
     /// 2/224 objects carry this.
     pub civilopedia_text: Vec<Todo>,
+    /// civ.game `whatWeKnow`: one line on what is attested, reconstructed
+    /// and invented about it.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub what_we_know: Option<String>,
 }
 
 /// From `Units.json` — 227 objects across both shipped rulesets.
@@ -304,6 +309,10 @@ pub struct Nation {
     ///
     /// Derived at load: absent from the json, so `from_json` never sets it.
     pub wave: Option<i32>,
+    /// civ.game `whatWeKnow`, of the default leader.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub what_we_know: Option<String>,
 }
 
 /// From `TileImprovements.json` — 69 objects across both shipped rulesets.
@@ -831,6 +840,7 @@ impl Building {
             food: j.get("food").and_then(|v| v.as_i32()),
             required_resource: j.get("requiredResource").and_then(|v| v.as_str().map(String::from)),
             civilopedia_text: Default::default(),
+            what_we_know: Default::default(), // set by ruleset/load.rs
         })
     }
 }
@@ -944,6 +954,7 @@ impl Nation {
             city_renames: Default::default(), // set by ruleset/load.rs
             is_barbarian: Default::default(), // set by ruleset/load.rs
             wave: Default::default(),         // set by ruleset/load.rs
+            what_we_know: Default::default(), // set by ruleset/load.rs
         })
     }
 }

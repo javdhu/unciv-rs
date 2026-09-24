@@ -23,6 +23,8 @@ pub struct AltLeader {
     pub unique_name: Option<String>,
     pub uniques: Vec<Unique>,
     pub voice: Option<String>,
+    /// What is attested, reconstructed and invented about this leader.
+    pub what_we_know: Option<String>,
 }
 
 /// One step of a city's history: `from` becomes `to` once its owner reaches
@@ -45,6 +47,11 @@ fn uniques(j: &Json) -> Vec<Unique> {
 /// The name the fixtures give their barbarians, which carry no flag.
 pub const LEGACY_BARBARIANS: &str = "Barbarians";
 
+/// Read civ.game's building fields from the object `b` was parsed from.
+pub fn read_building(j: &Json, b: &mut super::generated::Building) {
+    b.what_we_know = text(j, "whatWeKnow");
+}
+
 /// Read civ.game's nation fields from the object `n` was parsed from.
 pub fn read_nation(j: &Json, n: &mut Nation) {
     n.region = text(j, "region");
@@ -55,6 +62,7 @@ pub fn read_nation(j: &Json, n: &mut Nation) {
             unique_name: text(a, "uniqueName"),
             uniques: uniques(a),
             voice: text(a, "voice"),
+            what_we_know: text(a, "whatWeKnow"),
         })
     });
     n.city_renames = j
@@ -66,6 +74,7 @@ pub fn read_nation(j: &Json, n: &mut Nation) {
         .collect();
     n.is_barbarian = j.get("isBarbarian").and_then(|v| v.as_bool()).unwrap_or(n.name == LEGACY_BARBARIANS);
     n.wave = j.get("wave").and_then(|v| v.as_i32());
+    n.what_we_know = text(j, "whatWeKnow");
 }
 
 impl Nation {

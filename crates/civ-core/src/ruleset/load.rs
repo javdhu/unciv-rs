@@ -39,6 +39,10 @@ pub struct Ruleset {
     pub faiths: Vec<super::civgame::FaithDef>,
     /// Names for great people and other named units, from `UnitNameGroups.json`.
     pub name_groups: Vec<super::civgame::NameGroup>,
+    /// `ModOptions.json` `chronicleAmongLivingMajors`: The Chronicle (the
+    /// highest score) is chosen among living major nations only. Unciv, and
+    /// so the fixtures, counts every civ, defeated ones included.
+    pub chronicle_among_living_majors: bool,
     /// Tuning for the influence and trade victories (`ModOptions.json`).
     pub victory_knobs: super::civgame::VictoryKnobs,
     /// The last roster wave setup deals (`ModOptions.json` `maxWave`); None
@@ -132,7 +136,12 @@ impl Ruleset {
             let doc = Json::parse(text).map_err(|error| LoadError::Json { file: file.clone(), error })?;
             let stem = file.rsplit('/').next().unwrap_or(file);
             match stem {
-                "Buildings.json" => flat(&mut r.buildings, &doc, Building::from_json),
+                "Buildings.json" => flat(&mut r.buildings, &doc, |j| {
+                    Building::from_json(j).map(|mut b| {
+                        super::civgame::read_building(j, &mut b);
+                        b
+                    })
+                }),
                 "Units.json" => flat(&mut r.units, &doc, BaseUnit::from_json),
                 "UnitTypes.json" => flat(&mut r.unit_types, &doc, UnitType::from_json),
                 "Terrains.json" => flat(&mut r.terrains, &doc, Terrain::from_json),
@@ -209,6 +218,9 @@ impl Ruleset {
                         r.default_difficulty_name = Some(name.to_string());
                     }
                     super::civgame::read_victory_knobs(&doc, &mut r.victory_knobs);
+                    if let Some(flag) = doc.get("chronicleAmongLivingMajors").and_then(|v| v.as_bool()) {
+                        r.chronicle_among_living_majors = flag;
+                    }
                     if let Some(wave) = doc.get("maxWave").and_then(|v| v.as_i32()) {
                         r.max_wave = Some(wave);
                     }

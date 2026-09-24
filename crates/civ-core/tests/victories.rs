@@ -173,3 +173,22 @@ fn trade_counts_only_from_the_era_the_rules_name() {
     w.cities.get_mut(ostia).unwrap().population = 200;
     assert_eq!(influence::trade_shares(&w, &r)[&A], 1000);
 }
+
+#[test]
+fn the_chronicle_can_be_chosen_among_living_major_nations_only() {
+    let mut r = rules();
+    let mut w = world(&r);
+    // A defeated nation that still leads on technologies.
+    let all: Vec<_> = r.technologies.ids().collect();
+    w.civ_mut(B).unwrap().techs.extend(all);
+    w.civ_mut(B).unwrap().defeated = true;
+    w.endgame.max_turns = 1;
+    w.turn = 1;
+    assert_eq!(victory::score_leader(&w, &r), Some(B), "Unciv counts every civ, as the fixtures do");
+    r.chronicle_among_living_majors = true;
+    let leader = victory::score_leader(&w, &r).unwrap();
+    assert!(w.civ(leader).unwrap().is_major() && w.civ(leader).unwrap().is_alive());
+    let flag = Ruleset::from_sources(&[("ModOptions.json".into(), r#"{ "chronicleAmongLivingMajors": true }"#.into())])
+        .unwrap();
+    assert!(flag.chronicle_among_living_majors);
+}
