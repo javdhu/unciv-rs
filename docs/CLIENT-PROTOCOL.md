@@ -276,6 +276,46 @@ are absent for foreign cities, including visible ones. A finished view retains `
 winning civilization, victory-condition ID and original winning turn; reconnect does not depend on
 receiving the one-time victory event. Victory names are included in the static rules table.
 
+### City management, captures and refusals
+
+These fields and actions are additive; the protocol version stays 4.
+
+- `CityView.queueRefs?: ConstructionRef[]` is the queue as typed references, front first, beside the older
+  `queue` of names (own cities only; absent for foreign ones).
+- The own-city part (`CityStateView`) also carries `capital` (it holds the palace), its origin (`founder`,
+  `previousOwner: number | null`, `originalCapital`), `mayRaze` with `razeRefusal?: 'originalCapital' | 'holyCity'`,
+  and its citizen management: `focus: CityFocus` and `lockedTiles: number[]` (pinned tiles, in pinning order,
+  always among `worked`).
+- `CityFocus` is `'balanced' | 'food' | 'production' | 'gold' | 'science' | 'culture' | 'faith' | 'goldGrowth' |
+  'productionGrowth'` (Unciv's foci: one yield counts three times; a growth focus counts its yield twice and food
+  one and a half times). `{ type: "setCityFocus", city, focus }` sets it and places every citizen afresh at once:
+  pins first, then tiles and specialists by the focus. `{ type: "lockTile", city, tile, locked }` pins a workable
+  tile (at most one pin per citizen) or unpins it, and places the citizens afresh around the pins at once. A city
+  with a focus other than `balanced` or with any pin is managed: every turn its unpinned citizens are placed again
+  by the focus (specialists already placed stay), as Unciv's `reassignPopulation` does, so a direct
+  `assignCitizens` pick there lasts until the turn ends. An `assignCitizens` that leaves a pinned tile out unpins it.
+  A balanced city without pins keeps the player's own picks and places only idle citizens, as before. Both actions
+  are refused for a puppet, a pin is refused on a tile another of the player's cities works or stands on, and an
+  unpin on a tile that is not pinned. A
+  pin that can no longer be worked (the tile was lost, or the city shrank below its pins) lapses. A new owner
+  starts with neither. In solo play both can be undone like any citizen change.
+- `PlayerView.pendingCaptures?: PendingCaptureView[]` lists cities this seat took this turn and has not decided
+  about: `{ city: EntityRef, choices: CaptureChoice[] }`, `CaptureChoice = 'liberate' | 'annex' | 'keep' | 'raze'`
+  in Unciv's order. The answers are `liberateCity`, `annex`, `{ type: "keepPuppet", city }` and `raze`; any of
+  them settles the capture. Unanswered, the city stays the puppet it already is when the round closes. The field
+  is absent when nothing waits; only the conqueror's view carries it, and AI conquerors decide at once.
+- `SiteChoice.best?: number` is the engine's own pick for a placed building, whatever the player chose.
+- `TilePurchaseChoice.affordable: boolean`. `purchasable_tiles` now lists every tile `buyTile` would accept but for
+  the gold, priced as `buyTile` charges it (with the game speed's gold modifier).
+- `SpecialistSlot.yields` is what one specialist of that kind yields in this city (its own yields plus what the
+  empire's rules add to every specialist, before the city's percentage bonuses). `RuleTables.specialists` rows are
+  `SpecialistRow { id, name, yields, greatPersonPoints: { unit, points }[] }`, a superset of the old `Named`.
+- `ConstructionChoice.refusal?` says why `setProduction` would refuse the item now (`puppet`, `resistance`,
+  `purchaseOnly`), and `PriceQuote.refusal?` why `purchase` would (`puppet`, `resistance`, `occupied` when a unit of
+  that kind already stands in the city, `cannotAfford`). Both are absent when nothing the player knows stands in
+  the way; the action remains the authority, and a price that depends on unseen information carries no reason.
+  Unit options still list only legal actions, so they carry no reasons.
+
 The original `Game`/`worker.ts`/`transport.ts` path now serves only the art review page. Human controls use
 `openSolo`/`openRemote` in `session-transports.ts`.
 `openRemote` returns one `RemoteSession` across replacement sockets. Transient failures retry up to
