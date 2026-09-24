@@ -6,35 +6,35 @@ use std::sync::OnceLock;
 pub const ENGINE_VERSION: &str = "civ-core/0.1-session-4";
 
 pub const SOURCES: &[(&str, &str)] = &[
-    ("Beliefs.json", include_str!("../../civ-core/rules/gods-and-kings/Beliefs.json")),
-    ("Buildings.json", include_str!("../../civ-core/rules/gods-and-kings/Buildings.json")),
-    ("CityStateTypes.json", include_str!("../../civ-core/rules/gods-and-kings/CityStateTypes.json")),
-    ("Difficulties.json", include_str!("../../civ-core/rules/gods-and-kings/Difficulties.json")),
-    ("Eras.json", include_str!("../../civ-core/rules/gods-and-kings/Eras.json")),
-    ("Events.json", include_str!("../../civ-core/rules/gods-and-kings/Events.json")),
-    ("GlobalUniques.json", include_str!("../../civ-core/rules/gods-and-kings/GlobalUniques.json")),
-    ("ModOptions.json", include_str!("../../civ-core/rules/gods-and-kings/ModOptions.json")),
-    ("Nations.json", include_str!("../../civ-core/rules/gods-and-kings/Nations.json")),
-    ("Personalities.json", include_str!("../../civ-core/rules/gods-and-kings/Personalities.json")),
-    ("Policies.json", include_str!("../../civ-core/rules/gods-and-kings/Policies.json")),
-    ("Quests.json", include_str!("../../civ-core/rules/gods-and-kings/Quests.json")),
-    ("Religions.json", include_str!("../../civ-core/rules/gods-and-kings/Religions.json")),
-    ("Ruins.json", include_str!("../../civ-core/rules/gods-and-kings/Ruins.json")),
-    ("Specialists.json", include_str!("../../civ-core/rules/gods-and-kings/Specialists.json")),
-    ("Speeds.json", include_str!("../../civ-core/rules/gods-and-kings/Speeds.json")),
-    ("Techs.json", include_str!("../../civ-core/rules/gods-and-kings/Techs.json")),
-    ("Terrains.json", include_str!("../../civ-core/rules/gods-and-kings/Terrains.json")),
-    ("TileImprovements.json", include_str!("../../civ-core/rules/gods-and-kings/TileImprovements.json")),
-    ("TileResources.json", include_str!("../../civ-core/rules/gods-and-kings/TileResources.json")),
-    ("UnitNameGroups.json", include_str!("../../civ-core/rules/gods-and-kings/UnitNameGroups.json")),
-    ("UnitPromotions.json", include_str!("../../civ-core/rules/gods-and-kings/UnitPromotions.json")),
-    ("UnitTypes.json", include_str!("../../civ-core/rules/gods-and-kings/UnitTypes.json")),
-    ("Units.json", include_str!("../../civ-core/rules/gods-and-kings/Units.json")),
-    ("VictoryTypes.json", include_str!("../../civ-core/rules/gods-and-kings/VictoryTypes.json")),
+    ("Beliefs.json", include_str!("../../civ-core/rules/base/Beliefs.json")),
+    ("Buildings.json", include_str!("../../civ-core/rules/base/Buildings.json")),
+    ("CityStateTypes.json", include_str!("../../civ-core/rules/base/CityStateTypes.json")),
+    ("Difficulties.json", include_str!("../../civ-core/rules/base/Difficulties.json")),
+    ("Eras.json", include_str!("../../civ-core/rules/base/Eras.json")),
+    ("Events.json", include_str!("../../civ-core/rules/base/Events.json")),
+    ("GlobalUniques.json", include_str!("../../civ-core/rules/base/GlobalUniques.json")),
+    ("ModOptions.json", include_str!("../../civ-core/rules/base/ModOptions.json")),
+    ("Nations.json", include_str!("../../civ-core/rules/base/Nations.json")),
+    ("Personalities.json", include_str!("../../civ-core/rules/base/Personalities.json")),
+    ("Policies.json", include_str!("../../civ-core/rules/base/Policies.json")),
+    ("Quests.json", include_str!("../../civ-core/rules/base/Quests.json")),
+    ("Religions.json", include_str!("../../civ-core/rules/base/Religions.json")),
+    ("Ruins.json", include_str!("../../civ-core/rules/base/Ruins.json")),
+    ("Specialists.json", include_str!("../../civ-core/rules/base/Specialists.json")),
+    ("Speeds.json", include_str!("../../civ-core/rules/base/Speeds.json")),
+    ("Techs.json", include_str!("../../civ-core/rules/base/Techs.json")),
+    ("Terrains.json", include_str!("../../civ-core/rules/base/Terrains.json")),
+    ("TileImprovements.json", include_str!("../../civ-core/rules/base/TileImprovements.json")),
+    ("TileResources.json", include_str!("../../civ-core/rules/base/TileResources.json")),
+    ("UnitNameGroups.json", include_str!("../../civ-core/rules/base/UnitNameGroups.json")),
+    ("UnitPromotions.json", include_str!("../../civ-core/rules/base/UnitPromotions.json")),
+    ("UnitTypes.json", include_str!("../../civ-core/rules/base/UnitTypes.json")),
+    ("Units.json", include_str!("../../civ-core/rules/base/Units.json")),
+    ("VictoryTypes.json", include_str!("../../civ-core/rules/base/VictoryTypes.json")),
 ];
 
 /// The full game. Every other ruleset is a mod layered over it.
-pub const DEFAULT_RULESET: &str = "gods-and-kings";
+pub const DEFAULT_RULESET: &str = "base";
 /// The one-evening game (docs/BLITZ.md).
 pub const BLITZ: &str = "blitz";
 pub const RULESETS: &[&str] = &[DEFAULT_RULESET, BLITZ];

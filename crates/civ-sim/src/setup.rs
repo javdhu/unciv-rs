@@ -29,7 +29,7 @@ pub struct Settings {
     /// for the Blitz ruleset).
     #[ts(optional)]
     pub speed: Option<String>,
-    /// `gods-and-kings` (the default) or `blitz`.
+    /// `base` (the default) or `blitz`.
     #[ts(optional)]
     pub ruleset: Option<String>,
     /// Absent enables every bundled victory. Names are validated against the ruleset.

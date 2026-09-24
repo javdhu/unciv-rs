@@ -12,7 +12,7 @@
 //! ```
 //!
 //! Options (defaults in brackets):
-//!   --ruleset NAME     gods-and-kings | blitz [gods-and-kings]
+//!   --ruleset NAME     base | blitz [base]
 //!   --speed NAME       game speed [the ruleset's: Standard, or Blitz]
 //!   --map SIZE         tiny | small | medium | large | huge, or WxH [small]
 //!   --civs N           major civilizations [4]
