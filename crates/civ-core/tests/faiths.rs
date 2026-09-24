@@ -264,3 +264,29 @@ fn faiths_survive_a_save() {
     let text = civ_core::save::encode(&w, &r).unwrap();
     assert_eq!(civ_core::save::decode(&text, &r).unwrap(), w);
 }
+
+#[test]
+fn a_state_faith_presses_gently_in_its_adopters_cities() {
+    let r = rules();
+    let (mut w, [_, rome, memphis]) = world(&r);
+    give_shrines(&mut w, &r, memphis);
+    for _ in 0..8 {
+        turn(&mut w, &r);
+    }
+    let judaism = faiths::key(1);
+    execute(&mut w, &r, EGYPT, Command::AdoptStateFaith { religion: judaism }).unwrap();
+    // Rome is Egypt's neighbour but not Egypt's: only Egypt's own cities get the state push.
+    let before = |w: &World, c| w.cities.get(c).unwrap().faith.pressure_of(Some(judaism));
+    let (rome_before, memphis_before) = (before(&w, rome), before(&w, memphis));
+    religion::spread(&mut w, &r, 10);
+    let memphis_gain = before(&w, memphis) - memphis_before;
+    let rome_gain = before(&w, rome) - rome_before;
+    assert!(memphis_gain > 5 * 10, "holy city push plus the state's: {memphis_gain}");
+    assert!(rome_gain < memphis_gain);
+    assert_eq!(
+        religion::STATE_FAITH_PRESSURE * 10,
+        10,
+        "a fifth of a holy city's {}",
+        religion::HOLY_CITY_MULTIPLIER * 10
+    );
+}

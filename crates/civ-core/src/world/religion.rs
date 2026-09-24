@@ -232,6 +232,10 @@ pub type Creed = Option<CivId>;
 /// A holy city pushes five times as hard as an ordinary one.
 pub const HOLY_CITY_MULTIPLIER: i32 = 5;
 
+/// Pressure a state faith adds in each of its adopter's cities, as a multiple
+/// of one city's push: a fifth of what a holy city applies.
+pub const STATE_FAITH_PRESSURE: i32 = 1;
+
 /// How far a religion reaches, in tiles, before uniques adjust it.
 pub const BASE_SPREAD_RANGE: u32 = 10;
 
@@ -555,6 +559,11 @@ pub fn spread_with_speed(world: &mut World, r: &Ruleset, pressure_per_city: i32,
 
     for &id in &ids {
         let Some(city) = world.cities.get(id) else { continue };
+        // A state promotes its faith at home (Ashoka, Constantine), more gently
+        // than a holy city pushes: one city's worth of pressure in each of its own.
+        if let Some(state) = world.civ(city.owner).and_then(|c| c.faith.state) {
+            pushes.push((id, Some(state), STATE_FAITH_PRESSURE * pressure_per_city));
+        }
         if !city.faith.holy_city_blocked {
             if let Some(holy) = city.faith.holy_city_of {
                 pushes.push((id, Some(holy), HOLY_CITY_MULTIPLIER * pressure_per_city));
