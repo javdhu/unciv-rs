@@ -360,3 +360,58 @@ async fn every_seat_chooses_its_nation_in_the_lobby() {
     let mine = update.view.civs.iter().find(|c| c.id == update.view.me).unwrap();
     assert_eq!(rules.nations.iter().nth(mine.nation as usize).unwrap().1.name, "Persia");
 }
+
+async fn fetch(server: &Server, client: &reqwest::Client, cookie: &str, path: &str) -> Value {
+    let response = client.get(format!("{}{path}", server.base)).header("Cookie", cookie).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    response.json().await.unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guests_name_themselves_find_their_rooms_and_leave() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = Server::start(&dir.path().join("game.sqlite")).await;
+    let client = reqwest::Client::new();
+    let a = server.guest(&client).await;
+    let b = server.guest(&client).await;
+    let named: Value =
+        server.post(&client, &a, "/api/guest/name", json!({"name":"  Ada  "})).await.json().await.unwrap();
+    assert_eq!(named["name"], "Ada");
+    assert_eq!(server.post(&client, &a, "/api/guest/name", json!({"name":" "})).await.status(), 400);
+    let again: Value = server.post(&client, &a, "/api/guest", json!({})).await.json().await.unwrap();
+    assert_eq!(again["name"], "Ada", "a returning guest keeps its name");
+    let room: Value = server
+        .post(&client, &a, "/api/rooms", json!({"majors":3,"cityStates":0,"turnSeconds":30}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let room_id = room["roomId"].as_str().unwrap().to_string();
+    let joined: Value =
+        server.post(&client, &b, "/api/rooms/join", json!({"invite":room["invite"]})).await.json().await.unwrap();
+    let members = joined["members"].as_array().unwrap();
+    assert_eq!(members.len(), 2);
+    assert_eq!((&members[0]["name"], &members[0]["isOwner"]), (&json!("Ada"), &json!(true)));
+    assert!(members[1]["name"].is_null() && members[1].get("ready").is_none(), "no live state before the start");
+    let mine = fetch(&server, &client, &b, "/api/rooms").await;
+    assert_eq!(mine["rooms"][0]["roomId"], room_id.as_str());
+    assert_eq!(mine["rooms"][0]["ownSeat"], 1);
+    let started: Value =
+        server.post(&client, &a, &format!("/api/rooms/{room_id}/start"), json!({})).await.json().await.unwrap();
+    let match_id = started["matchId"].as_str().unwrap().to_string();
+    let (_socket, update) = server.socket(&a, &match_id).await;
+    let seats = update.seats.unwrap();
+    assert_eq!(seats[0].name.as_deref(), Some("Ada"));
+    assert_eq!(seats[0].connected, Some(true));
+    let view = fetch(&server, &client, &b, &format!("/api/rooms/{room_id}")).await;
+    assert_eq!(view["members"][0]["connected"], true);
+    assert_eq!(view["members"][1]["ready"], false);
+    let mine = fetch(&server, &client, &a, "/api/rooms").await;
+    assert_eq!(mine["rooms"][0]["matchId"], match_id.as_str());
+    assert!(mine["rooms"][0]["turn"].is_u64());
+    assert_eq!(server.post(&client, &b, &format!("/api/rooms/{room_id}/leave"), json!({})).await.status(), 200);
+    let mine = fetch(&server, &client, &b, "/api/rooms").await;
+    assert_eq!(mine["rooms"], json!([]), "a room it left is not offered again");
+    let view = fetch(&server, &client, &a, &format!("/api/rooms/{room_id}")).await;
+    assert_eq!(view["members"][1]["left"], true);
+}

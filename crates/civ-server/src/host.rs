@@ -96,6 +96,9 @@ pub(crate) struct SeatMetadata {
     grace_until: Option<u64>,
     // The latest scheduled controller; Session applies it only at a round boundary.
     desired_human: bool,
+    // The guest gave up the seat for good: a bot plays it and it cannot reconnect.
+    #[serde(default)]
+    left: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,9 +117,16 @@ struct Match {
     session: Session,
     metadata: Metadata,
     channels: BTreeMap<u8, Channels>,
+    /// Each seat's display name, read from its guest.
+    names: BTreeMap<u8, String>,
 }
 impl Match {
-    fn new(session: Session, metadata: Metadata) -> Self {
+    fn new(session: Session, metadata: Metadata, store: &Store) -> Self {
+        let names = metadata
+            .seats
+            .iter()
+            .filter_map(|(&seat, m)| store.name(&m.guest).ok().flatten().map(|name| (seat, name)))
+            .collect();
         let channels = metadata
             .seats
             .iter()
@@ -136,6 +146,7 @@ impl Match {
             session,
             metadata,
             channels,
+            names,
         }
     }
     fn authorize(&self, seat: u8, generation: u64) -> Result<(), HostError> {
@@ -156,7 +167,27 @@ impl Match {
     }
     fn decorate(&self, mut update: GameUpdate) -> GameUpdate {
         update.deadline_ms = self.metadata.deadline_ms.map(|at| at.to_string());
+        for status in update.seats.iter_mut().flatten() {
+            let meta = self.metadata.seats.get(&status.seat);
+            status.name = self.names.get(&status.seat).cloned();
+            status.connected = meta.map(|m| m.connected);
+            status.left = meta.is_some_and(|m| m.left).then_some(true);
+        }
         update
+    }
+    /// Stage a connection change for `seat` when the session does not hold it yet.
+    fn presence(&self, next: Session, seat: u8, connected: bool) -> Result<(Session, Vec<(u8, GameUpdate)>), HostError> {
+        let known = next.seat_status().iter().find(|s| s.seat == seat).and_then(|s| s.connected);
+        if known == Some(connected) {
+            return Ok((next, Vec::new()));
+        }
+        match next.stage_presence(seat, connected) {
+            Ok(transition) => Ok((transition.next, transition.updates)),
+            // Presence is only shown to the room: a full input log must not
+            // stop a guest from connecting.
+            Err(SessionError::Capacity) => Ok((next, Vec::new())),
+            Err(e) => Err(e.into()),
+        }
     }
     fn deadline_for(&self, next: &Session, meta: &mut Metadata, now: u64) {
         if next.finished() {
@@ -228,14 +259,20 @@ impl Host {
                     return Err(HostError::Internal);
                 }
             }
-            for seat in metadata.seats.values_mut() {
-                if seat.connected {
-                    seat.connected = false;
-                    seat.grace_until = Some(now.saturating_add(config.disconnect_grace_ms));
+            let mut session = session;
+            for (&seat, meta) in metadata.seats.iter_mut() {
+                if meta.connected {
+                    meta.connected = false;
+                    meta.grace_until = Some(now.saturating_add(config.disconnect_grace_ms));
+                }
+                // Connections do not survive the process; tell the room once it is back.
+                if session.seat_status().iter().any(|s| s.seat == seat && s.connected == Some(true)) {
+                    session = session.stage_presence(seat, false)?.next;
                 }
             }
             store.persist(&id, &session, &metadata, None)?;
-            matches.insert(id, Arc::new(Mutex::new(Match::new(session, metadata))));
+            let game = Match::new(session, metadata, &store);
+            matches.insert(id, Arc::new(Mutex::new(game)));
         }
         Ok(Arc::new(Self {
             config,
@@ -288,10 +325,91 @@ impl Host {
         if room.match_id.is_some() || room.seats.len() >= usize::from(room.settings.majors) {
             return Err(HostError::Conflict);
         }
-        let seat = u8::try_from(room.seats.len()).map_err(|_| HostError::Capacity)?;
+        // The lowest seat nobody holds: a guest who left freed theirs.
+        let seat = (0..room.settings.majors)
+            .find(|s| room.seats.iter().all(|(taken, _)| taken != s))
+            .ok_or(HostError::Conflict)?;
         self.store.join(&id, seat, guest)?;
         room.seats.push((seat, guest.into()));
+        room.seats.sort_by_key(|(s, _)| *s);
         Ok(room)
+    }
+    /// Leave a room. Before the match a member gives up its seat (and its
+    /// nation choice), and the owner closes the room. After it, the seat
+    /// passes to a bot for good at the next round boundary: the guest's
+    /// connection is closed and it cannot reconnect.
+    pub(crate) async fn leave(&self, guest: &str, room_id: &str) -> Result<(), HostError> {
+        let _lobby = self.lobby.lock().await;
+        let room = self.store.room(room_id)?;
+        let seat = room.seats.iter().find_map(|(s, g)| (g == guest).then_some(*s)).ok_or(HostError::Forbidden)?;
+        let Some(match_id) = room.match_id.clone() else {
+            return if room.owner == guest { self.store.close(&room.id) } else { self.store.leave(&room, seat) };
+        };
+        let game = self.game(&match_id).await?;
+        let mut game = game.lock().await;
+        let mut meta = game.metadata.clone();
+        let m = meta.seats.get_mut(&seat).ok_or(HostError::Internal)?;
+        if m.left {
+            return Ok(());
+        }
+        m.left = true;
+        m.connected = false;
+        m.grace_until = None;
+        m.generation = m.generation.checked_add(1).ok_or(HostError::Capacity)?;
+        let generation = m.generation;
+        let mut next = game.session.clone();
+        let mut updates = Vec::new();
+        if m.desired_human && !next.finished() {
+            let transition = next.stage_controller(seat, false)?;
+            next = transition.next;
+            updates.extend(transition.updates);
+        }
+        m.desired_human = false;
+        let (next, more) = game.presence(next, seat, false)?;
+        updates.extend(more);
+        self.store.persist(&match_id, &next, &meta, None)?;
+        game.session = next;
+        game.metadata = meta;
+        if let Some(channels) = game.channels.get(&seat) {
+            // Fences a live socket for this seat.
+            channels.generation.send_replace(generation);
+        }
+        game.publish(updates);
+        Ok(())
+    }
+    /// A guest's display name, shown to the members of its rooms.
+    pub(crate) async fn rename(&self, guest: &str, name: &str) -> Result<(), HostError> {
+        self.store.set_name(guest, name)?;
+        let games: Vec<_> = self.matches.read().await.values().cloned().collect();
+        for game in games {
+            let mut game = game.lock().await;
+            let seats: Vec<u8> =
+                game.metadata.seats.iter().filter(|(_, m)| m.guest == guest).map(|(&seat, _)| seat).collect();
+            for seat in seats {
+                game.names.insert(seat, name.to_string());
+            }
+        }
+        Ok(())
+    }
+    /// A started match's turn, whether it finished, and whether `seat` left it.
+    pub(crate) async fn match_summary(&self, match_id: &str, seat: u8) -> Result<Option<(u32, bool, bool)>, HostError> {
+        let Ok(game) = self.game(match_id).await else { return Ok(None) };
+        let game = game.lock().await;
+        let left = game.metadata.seats.get(&seat).is_some_and(|m| m.left);
+        Ok(Some((game.session.turn(), game.session.finished(), left)))
+    }
+    /// Every seat's live state in a started match, for its room's members.
+    pub(crate) async fn seat_states(&self, match_id: &str) -> Result<Vec<civ_sim::protocol::SeatStatusView>, HostError> {
+        let game = self.game(match_id).await?;
+        let game = game.lock().await;
+        let mut states = game.session.seat_status();
+        for status in &mut states {
+            let meta = game.metadata.seats.get(&status.seat);
+            status.connected = meta.map(|m| m.connected);
+            status.left = meta.is_some_and(|m| m.left).then_some(true);
+            status.name = game.names.get(&status.seat).cloned();
+        }
+        Ok(states)
     }
     /// A seated guest chooses their nation and leader before the match starts.
     pub(crate) async fn choose_seat(
@@ -369,16 +487,15 @@ impl Host {
                             connected: false,
                             grace_until: Some(now.saturating_add(self.config.disconnect_grace_ms)),
                             desired_human: true,
+                            left: false,
                         },
                     )
                 })
                 .collect(),
         };
         self.store.start(&room.id, &id, &session, &metadata)?;
-        self.matches.write().await.insert(
-            id.clone(),
-            Arc::new(Mutex::new(Match::new(session, metadata))),
-        );
+        let game = Match::new(session, metadata, &self.store);
+        self.matches.write().await.insert(id.clone(), Arc::new(Mutex::new(game)));
         room.match_id = Some(id);
         Ok(room)
     }
@@ -393,7 +510,7 @@ impl Host {
     pub(crate) async fn check_seat(&self, id: &str, guest: &str) -> Result<(), HostError> {
         let game = self.game(id).await?;
         let game = game.lock().await;
-        if game.metadata.seats.values().any(|m| m.guest == guest) {
+        if game.metadata.seats.values().any(|m| m.guest == guest && !m.left) {
             Ok(())
         } else {
             Err(HostError::Forbidden)
@@ -410,7 +527,7 @@ impl Host {
             .metadata
             .seats
             .iter()
-            .find_map(|(&seat, m)| (m.guest == guest).then_some(seat))
+            .find_map(|(&seat, m)| (m.guest == guest && !m.left).then_some(seat))
             .ok_or(HostError::Forbidden)?;
         self.process_due(id, &mut game, now_ms())?;
         let mut meta = game.metadata.clone();
@@ -425,9 +542,12 @@ impl Host {
         };
         m.desired_human = true;
         let generation = m.generation;
+        // The rest of the room learns this seat is back.
+        let (next, updates) = game.presence(next, seat, true)?;
         self.store.persist(id, &next, &meta, None)?;
         game.session = next;
         game.metadata = meta;
+        game.publish(updates.into_iter().filter(|(s, _)| *s != seat).collect());
         let channels = game.channels.get(&seat).ok_or(HostError::Internal)?;
         channels.generation.send_replace(generation);
         Ok(ConnectionLease {
@@ -454,8 +574,11 @@ impl Host {
         let m = meta.seats.get_mut(&seat).ok_or(HostError::Internal)?;
         m.connected = false;
         m.grace_until = Some(now_ms().saturating_add(self.config.disconnect_grace_ms));
-        self.store.persist(id, &game.session, &meta, None)?;
+        let (next, updates) = game.presence(game.session.clone(), seat, false)?;
+        self.store.persist(id, &next, &meta, None)?;
+        game.session = next;
         game.metadata = meta;
+        game.publish(updates);
         Ok(())
     }
     pub(crate) async fn command(
@@ -559,6 +682,9 @@ impl Host {
             let m = meta.seats.get_mut(&seat).ok_or(HostError::Internal)?;
             m.connected = false;
             m.grace_until = Some(now.saturating_add(self.config.disconnect_grace_ms));
+            let (staged, more) = game.presence(next, seat, false)?;
+            next = staged;
+            updates.extend(more);
             changed = true;
         }
         for (&seat, m) in &mut meta.seats {
@@ -858,5 +984,115 @@ mod tests {
         assert!(update.controlled);
         assert_eq!(update.pending_control, Some(false));
         game.session.verify_replay().unwrap();
+    }
+
+    #[tokio::test]
+    async fn every_member_sees_who_is_connected_ready_and_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.sqlite");
+        let (host, id, a, b) = game(&path).await;
+        host.rename(&a, "Ada").await.unwrap();
+        let mut two = host.connect(&id, &b).await.unwrap();
+        let seats = two.update.seats.clone().unwrap();
+        assert_eq!((seats[0].connected, seats[1].connected), (Some(false), Some(true)));
+        assert_eq!((seats[0].name.as_deref(), seats[1].name.as_deref()), (Some("Ada"), None));
+        let one = host.connect(&id, &a).await.unwrap();
+        let heard = latest(&mut two.updates);
+        assert_eq!(heard.seats.as_ref().unwrap()[0].connected, Some(true), "the other seat is told");
+        host.command(&id, 0, one.generation, finish(&one.update, "done")).await.unwrap();
+        let heard = latest(&mut two.updates);
+        assert!(heard.seats.as_ref().unwrap()[0].ready);
+        host.disconnect(&id, 0, one.generation).await.unwrap();
+        let heard = latest(&mut two.updates);
+        assert_eq!(heard.seats.as_ref().unwrap()[0].connected, Some(false));
+        let states = host.seat_states(&id).await.unwrap();
+        assert_eq!(states[0].name.as_deref(), Some("Ada"));
+        assert!(states[0].ready && states[0].connected == Some(false));
+        drop(host);
+        let restarted = Host::open(&path, Config::default()).unwrap();
+        let game = restarted.game(&id).await.unwrap();
+        let game = game.lock().await;
+        assert_eq!(game.names.get(&0).map(String::as_str), Some("Ada"), "names come back with the store");
+        assert!(game.session.seat_status().iter().all(|s| s.connected == Some(false)), "nobody is connected after a restart");
+        game.session.verify_replay().unwrap();
+    }
+
+    #[tokio::test]
+    async fn guests_leave_lobbies_and_matches_and_find_their_rooms_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path().join("state.sqlite"), Config::default()).unwrap();
+        let (a, b, c) = ("owner".to_string(), "friend".to_string(), "late".to_string());
+        for (guest, hash) in [(&a, "hash-a"), (&b, "hash-b"), (&c, "hash-c")] {
+            host.store.create_guest(guest, hash).unwrap();
+        }
+        let settings = Settings { seed: 7, majors: 3, city_states: 0, ..Settings::default() };
+        // Before the start: a member gives up its seat, and the next guest takes the lowest free one.
+        let room = host.create_room(&a, settings.clone(), 30).await.unwrap();
+        host.join(&b, &room.invite).await.unwrap();
+        host.choose_seat(&b, &room.id, Some(host_nation(&room)), None).await.unwrap();
+        host.leave(&b, &room.id).await.unwrap();
+        let left = host.store.room(&room.id).unwrap();
+        assert_eq!(left.seats, vec![(0, a.clone())]);
+        assert!(left.settings.seats.unwrap_or_default().iter().all(|c| c.seat != 1), "its nation is free again");
+        let joined = host.join(&c, &room.invite).await.unwrap();
+        assert!(joined.seats.contains(&(1, c.clone())));
+        assert!(matches!(host.leave(&b, &room.id).await, Err(HostError::Forbidden)));
+        // The owner closes a room that never started.
+        let closed = host.create_room(&a, settings.clone(), 30).await.unwrap();
+        host.leave(&a, &closed.id).await.unwrap();
+        assert!(matches!(host.store.room(&closed.id), Err(HostError::NotFound)));
+        assert_eq!(host.store.rooms_of(&a).unwrap().iter().map(|r| r.0.clone()).collect::<Vec<_>>(), vec![room.id.clone()]);
+        // After the start: the seat goes to a bot for good.
+        let started = host.start(&a, &room.id).await.unwrap();
+        let id = started.match_id.unwrap();
+        let lease = host.connect(&id, &c).await.unwrap();
+        host.leave(&c, &room.id).await.unwrap();
+        assert!(*lease.fence.borrow() != lease.generation, "its connection is closed");
+        assert!(matches!(host.connect(&id, &c).await, Err(HostError::Forbidden)));
+        assert!(matches!(host.check_seat(&id, &c).await, Err(HostError::Forbidden)));
+        assert!(host.match_summary(&id, 1).await.unwrap().unwrap().2, "the room shows it left");
+        let game = host.game(&id).await.unwrap();
+        let update = game.lock().await.session.current_update(1).unwrap();
+        assert_eq!(update.pending_control, Some(false), "a bot takes over at the boundary");
+        let owner = host.connect(&id, &a).await.unwrap();
+        assert_eq!(owner.update.seats.unwrap()[1].left, Some(true));
+        game.lock().await.session.verify_replay().unwrap();
+    }
+
+    /// The newest update queued for a seat; panics when nothing was sent.
+    fn latest(updates: &mut broadcast::Receiver<GameUpdate>) -> GameUpdate {
+        let mut last = updates.try_recv().expect("an update was sent");
+        while let Ok(next) = updates.try_recv() {
+            last = next;
+        }
+        last
+    }
+
+    fn host_nation(room: &Room) -> String {
+        let rules = civ_sim::content::shared_ruleset(room.settings.ruleset_name()).unwrap();
+        rules.nations.iter().find(|(_, n)| n.is_major() && n.in_waves(rules.max_wave)).unwrap().1.name.clone()
+    }
+
+    #[test]
+    fn a_version_one_database_gains_display_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.sqlite");
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute_batch(
+            "CREATE TABLE guests(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL);
+             INSERT INTO guests VALUES ('old','hash-old');
+             PRAGMA user_version=1;",
+        )
+        .unwrap();
+        drop(db);
+        let host = Host::open(&path, Config::default()).unwrap();
+        assert_eq!(host.store.name("old").unwrap(), None);
+        host.store.set_name("old", "Grace").unwrap();
+        assert_eq!(host.store.name("old").unwrap().as_deref(), Some("Grace"));
+        host.store.create_guest("new", "hash-new").unwrap();
+        drop(host);
+        let version: u32 =
+            rusqlite::Connection::open(&path).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(version, 2);
     }
 }
