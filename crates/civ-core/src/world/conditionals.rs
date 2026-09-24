@@ -245,6 +245,8 @@ fn tile_matches_term(
         "Land" => return yes(terrains.iter().any(|t| t.r#type == "Land")),
         "Water" => return yes(terrains.iter().any(|t| t.r#type == "Water")),
         "Natural Wonder" => return yes(world.0.natural_wonder[tile.0 as usize].is_some()),
+        // civ.game: a land tile between two separate bodies of water.
+        "Isthmus" => return yes(world.0.is_isthmus(r, tile)),
         "unimproved" => return yes(world.0.unpillaged_improvement(tile).is_none()),
         // Features are everything after the base terrain.
         "Featureless" => return yes(world.0.features[tile.0 as usize].is_empty()),
@@ -264,6 +266,10 @@ fn tile_matches_term(
 
     if let Some(id) = r.resources.id(filter) {
         return yes(world.0.resource[tile.0 as usize] == Some(id));
+    }
+    // civ.game: a building's name is the tile it stands on (world::placement).
+    if let Some(id) = r.buildings.id(filter) {
+        return yes(world.0.placed_at(tile).is_some_and(|p| p.building == id));
     }
     if let Some(id) = r.improvements.id(filter) {
         return yes(world.0.unpillaged_improvement(tile) == Some(id));

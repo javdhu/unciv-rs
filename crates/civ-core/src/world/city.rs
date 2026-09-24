@@ -59,6 +59,10 @@ pub struct City {
     pub built: std::collections::BTreeSet<crate::arena::Id<crate::ruleset::Building>>,
     /// Buildings granted without an ongoing maintenance charge.
     pub free_buildings: std::collections::BTreeSet<crate::arena::Id<crate::ruleset::Building>>,
+    /// The tile the player chose for a wonder or placed building still to be
+    /// built (`world::placement`). Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default, with = "crate::serialization::map_as_entries"))]
+    pub sites: std::collections::BTreeMap<crate::arena::Id<crate::ruleset::Building>, TileId>,
     /// Damage taken. A city is never destroyed — it floors at 1 and is then
     /// captured, which is why `health` is separate from existing at all.
     pub health: i32,
@@ -125,6 +129,7 @@ impl City {
             production_conversion: None,
             built: std::collections::BTreeSet::new(),
             free_buildings: Default::default(),
+            sites: Default::default(),
             uniques: Default::default(),
             // A new city is atheist, and atheism is a positive quantity here
             // rather than the absence of one.
@@ -222,11 +227,12 @@ pub fn food_consumed(city: &City) -> i32 {
 
 /// The tiles a city could work: within [`WORK_RADIUS`] and owned by its civ.
 ///
-/// The centre is excluded — it is worked for free and never assigned.
+/// The centre is excluded — it is worked for free and never assigned — and
+/// so is a tile a wonder stands on (`world::placement`).
 pub fn workable_tiles(grid: &TileGrid, city: &City) -> Vec<TileId> {
     grid.within(city.centre, WORK_RADIUS)
         .into_iter()
-        .filter(|t| *t != city.centre && grid.owner[t.0 as usize] == Some(city.owner))
+        .filter(|t| *t != city.centre && grid.owner[t.0 as usize] == Some(city.owner) && !grid.is_taken(*t))
         .collect()
 }
 

@@ -447,6 +447,15 @@ fn can_construct_mode(
             _ => {}
         }
     }
+    // A building that stands on a tile needs a tile to stand on.
+    if let (Construction::Building(base), Some(city_id)) = (what, id) {
+        if crate::world::placement::is_placed(r, base)
+            && !city.built.contains(&base)
+            && crate::world::placement::valid_sites(world, r, city_id, base).is_empty()
+        {
+            return Err(Rejection::TerrainRequirement);
+        }
+    }
     if let Construction::Building(base) = what {
         let building = &r.buildings[base];
         let required = crate::world::resources::building_requirements(world, r, city, base);

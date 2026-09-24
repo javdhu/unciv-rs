@@ -1755,6 +1755,9 @@ fn finish_automatic(
         events.extend(crate::world::barbarians::tick(world, r, barbarians, settings));
     }
 
+    // Wonders and terrain-bound buildings stand where they should.
+    crate::world::placement::settle(world, r);
+
     // Cities take the names their owners' eras give them.
     for renamed in crate::world::city_names::apply_era_renames(world, r) {
         let crate::world::city_names::Renamed { city, from, to } = renamed;

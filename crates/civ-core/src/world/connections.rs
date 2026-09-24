@@ -412,7 +412,13 @@ pub fn trade_route_stats(
     // A unique that only applies on some condition has to be asked. One that
     // cannot be decided is not applied — an undecidable bonus paid out anyway
     // is a silent wrong number.
-    let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ).in_city(city_id);
+    // The city's tile too, so a route's bonus may depend on where the city
+    // lies (`<within [4] tiles of a [Grand Canal]>`).
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(civ)
+        .in_city(city_id)
+        .on_tile(city.centre);
     let holds = |u: &crate::unique::Unique| {
         crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True
     };

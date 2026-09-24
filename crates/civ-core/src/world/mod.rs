@@ -48,6 +48,7 @@ pub mod movement;
 pub mod natural_wonders;
 pub mod nuclear;
 pub mod opinion;
+pub mod placement;
 pub mod policies;
 pub mod promises;
 pub mod purchase;
