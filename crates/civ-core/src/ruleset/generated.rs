@@ -280,6 +280,26 @@ pub struct Nation {
     pub personality: Option<String>,
     /// 34/145 objects carry this.
     pub spy_names: Vec<String>,
+    /// civ.game: one of `civgame::REGIONS`.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub region: Option<String>,
+    /// civ.game: the leader's nearest living language.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub voice: Option<String>,
+    /// civ.game: the second leader, chosen at setup.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub alt_leader: Option<super::civgame::AltLeader>,
+    /// civ.game: city renames keyed by the owner's era.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub city_renames: Vec<super::civgame::CityRename>,
+    /// civ.game: `isBarbarian`, or the fixtures' name `Barbarians`.
+    ///
+    /// Derived at load: absent from the json, so `from_json` never sets it.
+    pub is_barbarian: bool,
 }
 
 /// From `TileImprovements.json` — 69 objects across both shipped rulesets.
@@ -904,6 +924,11 @@ impl Nation {
             favored_religion: j.get("favoredReligion").and_then(|v| v.as_str().map(String::from)),
             personality: j.get("personality").and_then(|v| v.as_str().map(String::from)),
             spy_names: j.get("spyNames").map(|v| v.strings()).unwrap_or_default(),
+            region: Default::default(),       // set by ruleset/load.rs
+            voice: Default::default(),        // set by ruleset/load.rs
+            alt_leader: Default::default(),   // set by ruleset/load.rs
+            city_renames: Default::default(), // set by ruleset/load.rs
+            is_barbarian: Default::default(), // set by ruleset/load.rs
         })
     }
 }

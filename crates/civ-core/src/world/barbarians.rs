@@ -150,7 +150,7 @@ pub fn on_enter(
         .filter(|u| applies(u, &ctx).holds())
         .filter_map(|u| u.params.first()?.parse::<i64>().ok())
         .fold(Fixed::ONE, |acc, n| acc * Fixed::from_fraction(100 + n, 100));
-    let difficulty = if world.civ(civ)?.is_ai { r.difficulties.by_name("Prince") } else { mods.difficulty };
+    let difficulty = if world.civ(civ)?.is_ai { r.default_difficulty() } else { mods.difficulty };
     let reward = difficulty.map_or(25, |d| d.clear_barbarian_camp_reward) + extra.iter().sum::<i32>();
     let gold = (Fixed::whole(reward) * mods.costs.gold_cost * multiplier).floor().max(0) as i32;
     let quests = crate::world::quests::on_camp_cleared(world, r, civ, tile);
@@ -173,7 +173,7 @@ pub fn on_enter(
 /// What a camp can field.
 ///
 /// The ruleset supplies purpose-built barbarian units — Brute and Galley, both
-/// `uniqueTo: "Barbarians"` and neither requiring a technology. Preferring
+/// unique to the barbarian nation and neither requiring a technology. Preferring
 /// those is why barbarians stay a nuisance rather than fielding whatever the
 /// era allows. Anything tech-free falls back behind them.
 pub fn spawnable_unit(r: &Ruleset) -> Option<Id<crate::ruleset::BaseUnit>> {
@@ -186,7 +186,7 @@ pub fn spawnable_unit(r: &Ruleset) -> Option<Id<crate::ruleset::BaseUnit>> {
 
     r.units
         .iter()
-        .filter(|(_, u)| land_military(u) && u.unique_to.as_deref() == Some("Barbarians"))
+        .filter(|(_, u)| land_military(u) && u.unique_to.as_deref().is_some_and(|n| r.is_barbarian_name(n)))
         .min_by_key(|(id, u)| (u.cost.unwrap_or(i32::MAX), id.index()))
         .or_else(|| {
             r.units
@@ -236,7 +236,7 @@ fn spawn_choice(
                 && r.unit_types
                     .by_name(&u.unit_type)
                     .is_some_and(|t| t.movement_type == if water { "Water" } else { "Land" })
-                && u.unique_to.as_deref().is_none_or(|n| n == "Barbarians")
+                && u.unique_to.as_deref().is_none_or(|n| r.is_barbarian_name(n))
                 && u.required_tech
                     .as_deref()
                     .is_none_or(|name| r.technologies.id(name).is_some_and(|id| owner.techs.contains(&id)))

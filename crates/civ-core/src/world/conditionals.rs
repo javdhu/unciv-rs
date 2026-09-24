@@ -920,6 +920,7 @@ fn for_each_conditional(r: &Ruleset, f: &mut impl FnMut(&Unique)) {
         .chain(r.policies.values().map(|p| &p.uniques))
         .chain(r.technologies.values().map(|t| &t.uniques))
         .chain(r.nations.values().map(|n| &n.uniques))
+        .chain(r.nations.values().filter_map(|n| n.alt_leader.as_ref()).map(|a| &a.uniques))
         .chain(r.beliefs.values().map(|b| &b.uniques));
     // City-state bonuses are stored as raw strings rather than parsed uniques,
     // because they are granted to a *different* civ than the one that holds

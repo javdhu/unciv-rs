@@ -285,9 +285,7 @@ pub fn rebuild_uniques(world: &mut World, r: &Ruleset, civ_id: CivId) {
     let Some(civ) = world.civ(civ_id) else { return };
 
     let mut uniques = Vec::new();
-    if let Some(nation) = r.nations.get(civ.nation) {
-        uniques.extend(nation.uniques.iter().cloned());
-    }
+    uniques.extend(civ.leader_uniques(r).iter().cloned());
     for policy in &civ.adopted_policies {
         if let Some(p) = r.policies.get(*policy) {
             for unique in &p.uniques {

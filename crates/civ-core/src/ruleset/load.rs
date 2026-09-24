@@ -49,6 +49,9 @@ pub struct Ruleset {
     /// production penalties are conditional uniques here, not code — so a
     /// ruleset that does not load this file has an empire that cannot suffer.
     pub global_uniques: Vec<crate::Unique>,
+    /// `defaultDifficulty` from `ModOptions.json` (civ.game). Absent, the
+    /// middle difficulty is the default: see [`Ruleset::default_difficulty`].
+    pub default_difficulty_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,7 +126,12 @@ impl Ruleset {
                 "TileResources.json" => flat(&mut r.resources, &doc, TileResource::from_json),
                 "TileImprovements.json" => flat(&mut r.improvements, &doc, TileImprovement::from_json),
                 "UnitPromotions.json" => flat(&mut r.promotions, &doc, Promotion::from_json),
-                "Nations.json" => flat(&mut r.nations, &doc, Nation::from_json),
+                "Nations.json" => flat(&mut r.nations, &doc, |j| {
+                    Nation::from_json(j).map(|mut n| {
+                        super::civgame::read_nation(j, &mut n);
+                        n
+                    })
+                }),
                 "Beliefs.json" => flat(&mut r.beliefs, &doc, Belief::from_json),
                 "Religions.json" => {
                     r.religions = doc
@@ -171,6 +179,9 @@ impl Ruleset {
                 "ModOptions.json" => {
                     for (key, names) in &mut removals {
                         names.extend(doc.get(key).map(|v| v.strings()).unwrap_or_default());
+                    }
+                    if let Some(name) = doc.get("defaultDifficulty").and_then(|v| v.as_str()) {
+                        r.default_difficulty_name = Some(name.to_string());
                     }
                 }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
@@ -405,5 +416,38 @@ impl Ruleset {
     }
     pub fn unit(&self, name: &str) -> Option<Id<BaseUnit>> {
         self.units.id(name)
+    }
+
+    /// The era a new game starts in: the first in Eras.json, whatever it is
+    /// called (`Ancient era` in the fixtures, `Age of Bronze` in `base`).
+    pub fn first_era(&self) -> Option<&Era> {
+        self.eras.iter().map(|(_, e)| e).min_by_key(|e| e.era_number)
+    }
+
+    /// The nation that plays the barbarians (`isBarbarian`), whatever it is
+    /// called.
+    pub fn barbarian_nation(&self) -> Option<Id<Nation>> {
+        self.nations.iter().find(|(_, n)| n.is_barbarian).map(|(id, _)| id)
+    }
+
+    /// Whether `unique_to` names the barbarian nation.
+    pub fn is_barbarian_name(&self, unique_to: &str) -> bool {
+        self.nations.by_name(unique_to).is_some_and(|n| n.is_barbarian)
+    }
+
+    /// The difficulty a game uses when none is chosen, and the one AI civs
+    /// are paid by: `ModOptions.json`'s `defaultDifficulty`, or else the
+    /// middle entry of Difficulties.json (Prince among the fixtures' eight).
+    pub fn default_difficulty(&self) -> Option<&Difficulty> {
+        let named = self.default_difficulty_name.as_deref().and_then(|name| self.difficulties.by_name(name));
+        named.or_else(|| {
+            let n = self.difficulties.len();
+            self.difficulties.iter().nth(n.saturating_sub(1) / 2).map(|(_, d)| d)
+        })
+    }
+
+    pub fn default_difficulty_id(&self) -> Option<Id<Difficulty>> {
+        let name = &self.default_difficulty()?.name;
+        self.difficulties.id(name)
     }
 }

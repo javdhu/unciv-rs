@@ -146,6 +146,32 @@ pub struct NationRow {
     pub city_state: bool,
     /// Suggested names for new cities, in the nation's order.
     pub cities: Vec<String>,
+    /// The raiders' nation (`isBarbarian`): never playable, always hostile.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barbarian: Option<bool>,
+    /// One of Europe, WestAsia, Africa, SouthAsia, EastAsia, SoutheastAsia,
+    /// Steppe, Americas.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Who may lead a major nation, the default first; choose one with
+    /// `Settings.leader`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaders: Option<Vec<LeaderRow>>,
+}
+
+/// A leader and the ability they bring (the nation's unique units and
+/// buildings stay with the nation).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaderRow {
+    pub name: String,
+    pub ability: Option<String>,
+    pub effects: Vec<String>,
+    /// The leader's nearest living language.
+    pub voice: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -298,6 +324,23 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 inner_color: n.inner_color.clone(),
                 city_state: n.city_state_type.is_some(),
                 cities: n.cities.clone(),
+                barbarian: n.is_barbarian.then_some(true),
+                region: n.region.clone(),
+                leaders: n.is_major().then(|| {
+                    std::iter::once(LeaderRow {
+                        name: n.leader_name.clone().unwrap_or_default(),
+                        ability: n.unique_name.clone(),
+                        effects: n.uniques.iter().map(rule_text).collect(),
+                        voice: n.voice.clone(),
+                    })
+                    .chain(n.alt_leader.as_ref().map(|a| LeaderRow {
+                        name: a.leader_name.clone(),
+                        ability: a.unique_name.clone(),
+                        effects: a.uniques.iter().map(rule_text).collect(),
+                        voice: a.voice.clone().or_else(|| n.voice.clone()),
+                    }))
+                    .collect()
+                }),
             })
             .collect(),
         resources: r

@@ -36,6 +36,11 @@ pub struct Settings {
     pub victories: Option<Vec<String>>,
     /// The local player's nation by name; the first major in seeded order when absent.
     pub nation: Option<String>,
+    /// The local player's leader by name: the nation's own leader or its
+    /// `altLeader`. Absent leads with the default. AI civs draw one by seed.
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leader: Option<String>,
 }
 
 impl Default for Settings {
@@ -52,6 +57,7 @@ impl Default for Settings {
             ruleset: None,
             victories: None,
             nation: None,
+            leader: None,
         }
     }
 }
@@ -78,8 +84,6 @@ impl Settings {
     }
 }
 
-const NOT_PLAYABLE: [&str; 2] = ["Barbarians", "Spectator"];
-
 /// A small deterministic shuffle, so a seed always deals the same nations.
 fn seeded_order<T: Copy>(items: &[T], seed: u64) -> Vec<T> {
     let mut v = items.to_vec();
@@ -91,6 +95,42 @@ fn seeded_order<T: Copy>(items: &[T], seed: u64) -> Vec<T> {
         v.swap(i, (s % (i as u64 + 1)) as usize);
     }
     v
+}
+
+/// Whether the civ in seat `seat` is led by its nation's second leader.
+///
+/// The local player (seat 0) leads with `Settings::leader`; everyone else
+/// draws by seed, so a seed always deals the same leaders.
+fn choose_alt_leader(
+    rules: &Ruleset,
+    nation: Id<civ_core::ruleset::Nation>,
+    seat: usize,
+    s: &Settings,
+) -> Result<bool, String> {
+    let n = &rules.nations[nation];
+    let Some(alt) = &n.alt_leader else {
+        return match (&s.leader, seat) {
+            (Some(name), 0) if n.leader_name.as_deref() != Some(name.as_str()) => {
+                Err("unknown leader for this nation".into())
+            }
+            _ => Ok(false),
+        };
+    };
+    if seat == 0 {
+        if let Some(name) = &s.leader {
+            return if *name == alt.leader_name {
+                Ok(true)
+            } else if n.leader_name.as_deref() == Some(name.as_str()) {
+                Ok(false)
+            } else {
+                Err("unknown leader for this nation".into())
+            };
+        }
+        if s.nation.is_some() {
+            return Ok(false);
+        }
+    }
+    Ok(seeded_order(&[false, true], s.seed ^ (seat as u64 + 1).wrapping_mul(0x2545_F491_4F6C_DD1D))[0])
 }
 
 pub fn new_game(s: &Settings) -> Result<(World, Ruleset, CivId), String> {
@@ -114,7 +154,7 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
     let majors: Vec<_> = rules
         .nations
         .iter()
-        .filter(|(_, n)| n.city_state_type.is_none() && !NOT_PLAYABLE.contains(&n.name.as_str()))
+        .filter(|(_, n)| n.is_major())
         .map(|(id, _)| id)
         .collect();
     let mut majors = seeded_order(&majors, s.seed);
@@ -186,6 +226,9 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
         let id = CivId(i as u8);
         // Session creation assigns human controllers. This helper also supports trusted AI simulations.
         let mut civ = Civilization::new(id, nation, true);
+        if i < n_majors {
+            civ.alt_leader = choose_alt_leader(&rules, nation, i, s)?;
+        }
         if i >= n_majors {
             let kind = rules.nations[nation].city_state_type.as_deref();
             civ.city_state_type = Some(
@@ -212,33 +255,25 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
         .iter()
         .find(|(id, _)| is_settler(&rules, *id))
         .map(|(id, _)| id);
-    // The first era in Eras.json is where every game starts.
-    let era = rules
-        .eras
-        .iter()
-        .map(|(_, e)| e)
-        .min_by_key(|e| e.era_number)
-        .ok_or("missing starting era")?;
+    let era = rules.first_era().ok_or("missing starting era")?;
     let (worker, warrior) = (unit("Worker"), unit(&era.starting_military_unit));
 
     let count = civs.len();
     let barbarian = CivId(count as u8);
     let barbarian_nation = rules
-        .nations
-        .id("Barbarians")
+        .barbarian_nation()
         .ok_or("ruleset has no barbarians")?;
     let mut barbarians = Civilization::new(barbarian, barbarian_nation, true);
     barbarians.is_barbarian = true;
     civs.push(barbarians);
     let mut world = World::new(map.grid, civs);
-    world.difficulty = rules.difficulties.id("Tutor");
+    world.difficulty = rules.default_difficulty_id();
     world.speed = Some(s.speed_in(&rules)?);
     world.endgame.max_turns = s.turn_limit(&rules)?;
     world.endgame.enabled_victories = enabled_victories;
     world.diplomacy.mark_hostile(barbarian);
     for i in 0..count {
         let civ = CivId(i as u8);
-        let nation = world.civ(civ).expect("created civ").nation;
         let starting: Vec<_> = rules
             .technologies
             .iter()
@@ -249,8 +284,10 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
             })
             .map(|(id, _)| id)
             .chain(
-                rules.nations[nation]
-                    .uniques
+                world
+                    .civ(civ)
+                    .expect("created civ")
+                    .leader_uniques(&rules)
                     .iter()
                     .filter(|u| u.unique_type() == Some(civ_core::UniqueType::StartsWithTech))
                     .filter_map(|u| {
@@ -347,6 +384,9 @@ pub fn validate_settings(s: &Settings) -> Result<(), String> {
     }
     if s.nation.as_ref().is_some_and(|n| n.len() > 100) {
         return Err("nation name is too long".into());
+    }
+    if s.leader.as_ref().is_some_and(|n| n.len() > 100) {
+        return Err("leader name is too long".into());
     }
     Ok(())
 }

@@ -1,0 +1,28 @@
+// Overlay on the gods-and-kings fixture: civ.game's nation fields
+// (docs/REBUILD.md data contract), for the engine's own tests.
+[
+	{
+		"name": "Rome",
+		"leaderName": "Marcus Aurelius",
+		"adjective": ["Roman"],
+		"outerColor": [239, 198, 0],
+		"innerColor": [65, 0, 111],
+		"uniqueName": "The Glory of Rome",
+		"uniques": ["[+25]% Production towards any buildings that already exist in the Capital"],
+		"region": "Europe",
+		"voice": "Italian",
+		"altLeader": {
+			"leaderName": "Galla Placidia",
+			"uniqueName": "Regency",
+			"uniques": ["Starts with [Pottery]"],
+			"voice": "Italian"
+		},
+		"cities": ["Roma", "Neapolis", "Mediolanum", "Byzantion", "Ravenna"],
+		"cityRenames": [
+			{ "from": "Neapolis", "to": "Napoli", "era": "Medieval era" },
+			{ "from": "Mediolanum", "to": "Milano", "era": "Medieval era" },
+			{ "from": "Constantinople", "to": "Istanbul", "era": "Renaissance era" },
+			{ "from": "Byzantion", "to": "Constantinople", "era": "Classical era" }
+		]
+	}
+]

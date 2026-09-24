@@ -20,6 +20,10 @@ pub struct Civilization {
     pub id: CivId,
     pub nation: Id<Nation>,
     pub is_ai: bool,
+    /// Led by the nation's second leader (`altLeader`), whose ability
+    /// replaces the nation's own uniques. Chosen at setup.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub alt_leader: bool,
     /// Barbarians are a civilization in the data model and not one in the
     /// game: permanently hostile, never at peace, never diplomatic.
     pub is_barbarian: bool,
@@ -113,6 +117,7 @@ impl Civilization {
             id,
             nation,
             is_ai,
+            alt_leader: false,
             is_barbarian: false,
             city_state_type: None,
             city_state: Default::default(),
@@ -179,6 +184,12 @@ impl Civilization {
 
     pub fn has_tech(&self, t: Id<Technology>) -> bool {
         self.techs.contains(&t)
+    }
+
+    /// The ability of whoever leads this civ: the nation's uniques, or its
+    /// second leader's.
+    pub fn leader_uniques<'r>(&self, r: &'r crate::ruleset::Ruleset) -> &'r [crate::Unique] {
+        r.nations.get(self.nation).map_or(&[], |n| n.leader_uniques(self.alt_leader))
     }
 }
 
