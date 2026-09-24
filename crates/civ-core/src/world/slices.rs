@@ -8,7 +8,7 @@
 //! (`civ-sim` `Settings.slice`); without one nothing here applies.
 
 use crate::arena::Id;
-use crate::ruleset::{Building, Ruleset, Victory};
+use crate::ruleset::{Building, Ruleset, Technology, Victory};
 use crate::world::victory::Milestone;
 use crate::world::world::World;
 
@@ -44,10 +44,33 @@ fn building_era(r: &Ruleset, building: &Building) -> i32 {
     building.required_tech.as_deref().and_then(|t| tech_era(r, t)).unwrap_or(0)
 }
 
+/// The techs that open a slice's first era, which its start grants besides
+/// the earlier eras' techs: those in the era's first tech column (civ.game
+/// puts only the namesake tech there, and discovering it is what moves a
+/// nation into the era). A slice starting in the ruleset's first era needs none.
+pub fn opening_techs(r: &Ruleset, slice: &Slice) -> Vec<Id<Technology>> {
+    let first = r.eras.values().map(|e| e.era_number).min();
+    if first.is_none_or(|f| slice.first_era <= f) {
+        return Vec::new();
+    }
+    let Some(era) = r.eras.values().find(|e| e.era_number == slice.first_era) else { return Vec::new() };
+    let Some(column) = r
+        .tech_columns
+        .iter()
+        .filter(|(_, c)| c.era == era.name)
+        .min_by_key(|(_, c)| c.column_number)
+        .map(|(id, _)| id)
+    else {
+        return Vec::new();
+    };
+    r.technologies.iter().filter(|(_, t)| t.column == Some(column)).map(|(id, _)| id).collect()
+}
+
 /// The earliest era by which a victory's requirements can all be met:
-/// its buildings, its spaceship parts and whatever opens the diplomatic
-/// vote. Victories that need nothing era-bound (conquest, influence, trade,
-/// score) answer 0.
+/// its buildings, its spaceship parts, whatever opens the diplomatic vote,
+/// and for a trade-share victory the era trade starts to count from
+/// (`tradeShareFromEra`). Victories that need nothing era-bound (conquest,
+/// influence, score) answer 0.
 pub fn victory_era(r: &Ruleset, victory: &Victory) -> i32 {
     let mut era = 0;
     for text in &victory.milestones {
@@ -67,6 +90,12 @@ pub fn victory_era(r: &Ruleset, victory: &Victory) -> i32 {
                 .filter(|b| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::OneTimeTriggerVoting)))
                 .map(|b| building_era(r, b))
                 .min(),
+            Milestone::WorldTradeShare { .. } => r
+                .victory_knobs
+                .trade_share_from_era
+                .as_deref()
+                .and_then(|e| r.eras.by_name(e))
+                .map(|e| e.era_number),
             _ => None,
         };
         era = era.max(needed.unwrap_or(0));
