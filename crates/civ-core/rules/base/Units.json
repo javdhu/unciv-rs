@@ -100,6 +100,10 @@
 		"upgradesTo": "Composite Bowman",
 		"attackSound": "arrow"
 	},
+	{"name": "Mbundu Archer", "replaces": "Archer", "uniqueTo": "Ndongo", "unitType": "Archery", "movement": 2, "strength": 5, "rangedStrength": 8, "cost": 14, "requiredTech": "Archery", "obsoleteTech": "Construction", "upgradesTo": "Composite Bowman", "attackSound": "arrow"},
+	{"name": "Nubian Archer", "replaces": "Archer", "uniqueTo": "Kush", "unitType": "Archery", "movement": 2, "strength": 5, "rangedStrength": 9, "cost": 14, "requiredTech": "Archery", "obsoleteTech": "Construction", "upgradesTo": "Composite Bowman", "attackSound": "arrow"},
+	{"name": "Atlatlist", "unitType": "Archery", "movement": 2, "strength": 5, "rangedStrength": 7, "cost": 13, "requiredTech": "Agriculture", "obsoleteTech": "Construction", "replaces": "Archer", "uniqueTo": "Maya of Palenque", "upgradesTo": "Composite Bowman", "attackSound": "arrow"},
+	{"name": "Bowman", "unitType": "Archery", "movement": 2, "strength": 7, "rangedStrength": 9, "cost": 14, "requiredTech": "Archery", "obsoleteTech": "Construction", "replaces": "Archer", "uniqueTo": "Babylon", "upgradesTo": "Composite Bowman", "attackSound": "arrow"},
 	{
 		"name": "Skirmisher",
 		"unitType": "Archery",
@@ -136,6 +140,35 @@
 		"attackSound": "nonmetalhit"
 	},
 	{
+		"name": "Quinquereme",
+		"unitType": "Melee Water",
+		"uniqueTo": "Carthage",
+		"replaces": "Trireme",
+		"movement": 4,
+		"strength": 13,
+		"cost": 16,
+		"requiredTech": "Sailing",
+		"uniques": ["Cannot enter ocean tiles"],
+		"upgradesTo": "Caravel",
+		"obsoleteTech": "Navigation",
+		"attackSound": "nonmetalhit"
+	},
+	{
+		"name": "Dromon",
+		"unitType": "Ranged Water",
+		"uniqueTo": "Byzantium",
+		"replaces": "Trireme",
+		"movement": 4,
+		"strength": 8,
+		"rangedStrength": 10,
+		"cost": 20,
+		"requiredTech": "Sailing",
+		"uniques": ["Cannot enter ocean tiles", "[+50]% Strength <vs [Water] units>"],
+		"upgradesTo": "Dhow",
+		"obsoleteTech": "Navigation",
+		"attackSound": "arrow"
+	},
+	{
 		"name": "Galley",
 		"unitType": "Melee Water",
 		"uniqueTo": "Raiders",
@@ -160,6 +193,22 @@
 		"upgradesTo": "Knight",
 		"obsoleteTech": "Stirrups",
 		"uniques": ["No defensive terrain bonus", "Rough terrain penalty", "Never appears as a Barbarian unit"],
+		"attackSound": "arrow"
+	},
+	{
+		"name": "Horse Archer",
+		"unitType": "Archery",
+		"uniqueTo": "Scythia",
+		"replaces": "Chariot Archer",
+		"movement": 4,
+		"strength": 7,
+		"rangedStrength": 10,
+		"cost": 20,
+		"requiredTech": "The Wheel",
+		"upgradesTo": "Knight",
+		"obsoleteTech": "Stirrups",
+		"uniques": ["No defensive terrain bonus"],
+		"promotions": ["Accuracy I"],
 		"attackSound": "arrow"
 	},
 	{
@@ -205,6 +254,20 @@
 		"attackSound": "metalhit"
 	},
 	{
+		"name": "Hoplite",
+		"unitType": "Sword",
+		"replaces": "Spearman",
+		"uniqueTo": "Athens",
+		"movement": 2,
+		"strength": 13,
+		"cost": 20,
+		"requiredTech": "Bronze Working",
+		"obsoleteTech": "Civil Service",
+		"upgradesTo": "Pikeman",
+		"uniques": ["[+50]% Strength <vs [Mounted] units>"],
+		"attackSound": "metalhit"
+	},
+	{
 		"name": "Marauder",
 		"unitType": "Sword",
 		"replaces": "Spearman",
@@ -230,6 +293,22 @@
 		"upgradesTo": "Knight",
 		"obsoleteTech": "Stirrups",
 		"uniques": ["Can move after attacking","No defensive terrain bonus","[-33]% Strength <vs cities> <when attacking>" ],
+		"hurryCostModifier": 20,
+		"attackSound": "horse"
+	},
+	{
+		"name": "Numidian Cavalry",
+		"replaces": "Horseman",
+		"uniqueTo": "Numidia",
+		"unitType": "Mounted",
+		"movement": 5,
+		"strength": 12,
+		"cost": 26,
+		"requiredTech": "Horseback Riding",
+		"requiredResource": "Horses",
+		"upgradesTo": "Knight",
+		"obsoleteTech": "Stirrups",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>"],
 		"hurryCostModifier": 20,
 		"attackSound": "horse"
 	},
@@ -319,6 +398,20 @@
 		"attackSound": "metalhit"
 	},
 	{
+		"name": "Landsknecht",
+		"unitType": "Sword",
+		"replaces": "Pikeman",
+		"uniqueTo": "Holy Roman Empire",
+		"movement": 2,
+		"strength": 16,
+		"cost": 16,
+		"requiredTech": "Civil Service",
+		"uniques": ["[+50]% Strength <vs [Mounted] units>", "Can move immediately once bought"],
+		"upgradesTo": "Lancer",
+		"obsoleteTech": "Metallurgy",
+		"attackSound": "metalhit"
+	},
+	{
 		"name": "Dhow",
 		"unitType": "Ranged Water",
 		"movement": 3,
@@ -344,6 +437,51 @@
 		"requiredResource": "Horses",
 		"uniques": ["Can move after attacking","No defensive terrain bonus","[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit"],
 		"attackSound": "horse"
+	},
+	{
+		"name": "Monaspa",
+		"replaces": "Knight",
+		"uniqueTo": "Georgia",
+		"unitType": "Mounted",
+		"movement": 4,
+		"strength": 22,
+		"cost": 42,
+		"requiredTech": "Stirrups",
+		"obsoleteTech": "Military Science",
+		"upgradesTo": "Cavalry",
+		"requiredResource": "Horses",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit"],
+		"attackSound": "horse"
+	},
+	{
+		"name": "Naresuan's Elephant",
+		"unitType": "Mounted",
+		"replaces": "Knight",
+		"uniqueTo": "Ayutthaya",
+		"movement": 3,
+		"strength": 25,
+		"cost": 42,
+		"requiredTech": "Stirrups",
+		"obsoleteTech": "Military Science",
+		"upgradesTo": "Cavalry",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[+50]% Strength <vs [Mounted] units>", "[-33]% Strength <vs cities> <when attacking>"],
+		"attackSound": "elephant"
+	},
+	{
+		"name": "Camel Archer",
+		"unitType": "Archery",
+		"replaces": "Knight",
+		"uniqueTo": "Abbasid Caliphate",
+		"movement": 4,
+		"strength": 17,
+		"rangedStrength": 21,
+		"cost": 42,
+		"requiredTech": "Stirrups",
+		"requiredResource": "Horses",
+		"upgradesTo": "Cavalry",
+		"obsoleteTech": "Military Science",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus"],
+		"attackSound": "arrow"
 	},
 	{
 		"name": "Mandekalu Cavalry",
@@ -436,6 +574,21 @@
 		"attackSound": "throw"
 	},
 	{
+		"name": "Ballista Elephant",
+		"replaces": "Trebuchet",
+		"uniqueTo": "Khmer",
+		"unitType": "Siege",
+		"movement": 2,
+		"strength": 14,
+		"rangedStrength": 14,
+		"cost": 42,
+		"requiredTech": "Algebra",
+		"obsoleteTech": "Gunpowder",
+		"upgradesTo": "Bombard",
+		"uniques": ["[+200]% Strength <vs cities> <when attacking>", "No defensive terrain bonus", "[-1] Sight", "Never appears as a Barbarian unit"],
+		"attackSound": "throw"
+	},
+	{
 		"name": "Bombard",
 		"unitType": "Siege",
 		"movement": 2,
@@ -491,6 +644,21 @@
 		"attackSound": "cannon"
 	},
 	{
+		"name": "Turtle Ship",
+		"unitType": "Melee Water",
+		"replaces": "Caravel",
+		"uniqueTo": "Joseon",
+		"movement": 4,
+		"strength": 36,
+		"cost": 42,
+		"requiredTech": "Navigation",
+		"upgradesTo": "Ironclad",
+		"obsoleteTech": "Combustion",
+		"uniques": ["Cannot enter ocean tiles"],
+		"hurryCostModifier": 30,
+		"attackSound": "cannon"
+	},
+	{
 		"name": "Red Seal Ship",
 		"unitType": "Melee Water",
 		"replaces": "Caravel",
@@ -514,6 +682,20 @@
 		"requiredTech": "Firearms",
 		"upgradesTo": "Rifleman",
 		"obsoleteTech": "Rifling",
+		"attackSound": "shot"
+	},
+	{
+		"name": "Tercio",
+		"unitType": "Gunpowder",
+		"replaces": "Musketeer",
+		"uniqueTo": "Castile",
+		"movement": 2,
+		"strength": 26,
+		"cost": 56,
+		"requiredTech": "Firearms",
+		"upgradesTo": "Rifleman",
+		"obsoleteTech": "Rifling",
+		"uniques": ["[+50]% Strength <vs [Mounted] units>"],
 		"attackSound": "shot"
 	},
 	{
@@ -570,6 +752,22 @@
 		"attackSound": "horse"
 	},
 	{
+		"name": "Winged Hussar",
+		"replaces": "Lancer",
+		"uniqueTo": "Poland–Lithuania",
+		"unitType": "Mounted",
+		"movement": 4,
+		"strength": 28,
+		"cost": 65,
+		"requiredTech": "Metallurgy",
+		"requiredResource": "Horses",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit", "[+25]% Strength <when attacking>"],
+		"promotions": ["Formation I"],
+		"upgradesTo": "Anti-Tank Gun",
+		"obsoleteTech": "Combined Arms",
+		"attackSound": "horse"
+	},
+	{
 		"name": "Cannon",
 		"unitType": "Siege",
 		"movement": 2,
@@ -609,6 +807,20 @@
 		"attackSound": "shot"
 	},
 	{
+		"name": "Norwegian Ski Infantry",
+		"unitType": "Gunpowder",
+		"replaces": "Rifleman",
+		"uniqueTo": "Kalmar Union",
+		"movement": 2,
+		"strength": 34,
+		"cost": 79,
+		"requiredTech": "Rifling",
+		"obsoleteTech": "Replaceable Parts",
+		"upgradesTo": "Trench Infantry",
+		"promotions": ["[Norwegian Ski Infantry] ability"],
+		"attackSound": "shot"
+	},
+	{
 		"name": "Cavalry",
 		"unitType": "Mounted",
 		"movement": 4,
@@ -619,6 +831,22 @@
 		"requiredResource": "Horses",
 		"upgradesTo": "Landship",
 		"uniques": ["Can move after attacking","No defensive terrain bonus","[-33]% Strength <vs cities> <when attacking>", "Never appears as a Barbarian unit"],
+		"attackSound": "cavalry"
+	},
+	{
+		"name": "Cossack",
+		"unitType": "Mounted",
+		"replaces": "Cavalry",
+		"uniqueTo": "Russia",
+		"movement": 4,
+		"strength": 34,
+		"cost": 79,
+		"requiredTech": "Military Science",
+		"obsoleteTech": "Combustion",
+		"requiredResource": "Horses",
+		"upgradesTo": "Landship",
+		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>"],
+		"promotions": ["[Cossack] ability"],
 		"attackSound": "cavalry"
 	},
 	{
@@ -672,6 +900,20 @@
 		"requiredTech": "Replaceable Parts",
 		"upgradesTo": "Infantry",
 		"obsoleteTech": "Plastics",
+		"attackSound": "shot"
+	},
+	{
+		"name": "Foreign Legion",
+		"unitType": "Gunpowder",
+		"replaces": "Trench Infantry",
+		"uniqueTo": "France",
+		"movement": 2,
+		"strength": 50,
+		"cost": 112,
+		"requiredTech": "Replaceable Parts",
+		"upgradesTo": "Infantry",
+		"obsoleteTech": "Plastics",
+		"uniques": ["[+20]% Strength <when fighting in [Foreign Land] tiles>"],
 		"attackSound": "shot"
 	},
 	{

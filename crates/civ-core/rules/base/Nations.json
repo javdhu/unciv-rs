@@ -5,7 +5,7 @@
 		"outerColor": [255,255,255]
 	},
 
-	// The sixteen launch nations (docs/ROSTER.md, wave 1). A nation's own uniques are its default leader's ability;
+	// The launch nations (docs/ROSTER.md, wave 1), then wave 2. A nation's own uniques are its default leader's ability;
 	// altLeader.uniques replace them when the second leader is chosen. cityRenames apply when the owner enters the era.
 	{
 		"name": "Rome",
@@ -117,7 +117,7 @@
 			"uniques": ["City-State Influence recovers at twice the normal rate", "[-25]% City-State Influence degradation"],
 			"voice": "Persian"
 		},
-		"cities": ["Ctesiphon", "Istakhr", "Gundeshapur", "Bishapur", "Ardashir-Khwarrah", "Nev-Shapur", "Spahan", "Hamadan", "Ray", "Merv", "Herat", "Susa", "Hormozd-Ardashir", "Tus", "Shiz"],
+		"cities": ["Ctesiphon", "Istakhr", "Gundeshapur", "Bishapur", "Ardashir-Khwarrah", "Nev-Shapur", "Spahan", "Hamadan", "Ray", "Merv", "Susa", "Hormozd-Ardashir", "Tus", "Shiz"],
 		"cityRenames": [
 			{"from": "Ctesiphon", "to": "Al-Mada'in", "era": "Age of Paper"},
 			{"from": "Ardashir-Khwarrah", "to": "Firuzabad", "era": "Age of Paper"},
@@ -195,7 +195,7 @@
 			"uniques": ["[+2 Gold] from [Gold Ore] tiles [in all cities]", "[Gold] cost of purchasing items in cities [-15]%"],
 			"voice": "Maninka"
 		},
-		"cities": ["Niani", "Kangaba", "Timbuktu", "Djenné", "Gao", "Walata", "Kirina", "Dia", "Tadmekka", "Takedda", "Mema", "Kukiya", "Kumbi Saleh", "Bure"]
+		"cities": ["Niani", "Kangaba", "Timbuktu", "Djenné", "Walata", "Kirina", "Dia", "Tadmekka", "Takedda", "Mema", "Kukiya", "Kumbi Saleh", "Bure"]
 	},
 	{
 		"name": "Ndongo",
@@ -209,12 +209,12 @@
 		"uniqueName": "Queen of Ndongo and Matamba",
 		"uniques": ["City-State Influence recovers at twice the normal rate", "[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"],
 		"altLeader": {
-			"leaderName": "Ngola Kiluanje",
+			"leaderName": "Ngola Kiluanje kia Samba",
 			"uniqueName": "Independence from Kongo",
 			"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
 			"voice": "Kimbundu"
 		},
-		"cities": ["Kabasa", "Kindonga", "Matamba", "Pungo Andongo", "Massangano", "Cambambe", "Muxima", "Ambaca"]
+		"cities": ["Kabasa", "Kindonga", "Matamba", "Pungo Andongo", "Massangano", "Cambambe", "Muxima", "Ambaca", "Kasanje", "Libolo", "Haku", "Kisama", "Ilamba", "Songo", "Ndembu"]
 	},
 	{
 		"name": "Maurya",
@@ -399,6 +399,696 @@
 			"voice": "Quechua"
 		},
 		"cities": ["Qusqu", "Tumipampa", "Kitu", "Kashamarka", "Hatun Xawxa", "Willka Waman", "Pisaq", "Ullantaytampu", "Wanuku Pampa", "Pumpu", "Hatun Qulla", "Pachakamaq", "Inkawasi", "Samaypata", "Chukiyapu", "Willkapampa"]
+	},
+	{
+		"name": "France",
+		"leaderName": "Henri IV",
+		"adjective": ["French"],
+		"region": "Europe",
+		"voice": "French",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [140, 21, 21],
+		"innerColor": [133, 242, 242],
+		"uniqueName": "Edict of Nantes",
+		"uniques": ["[+1 Happiness] [in all cities]", "[-25]% maintenance on road & railroads"],
+		"altLeader": {
+			"leaderName": "Blanche of Castile",
+			"uniqueName": "Regent of France",
+			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"],
+			"voice": "French"
+		},
+		"cities": ["Paris", "Lyon", "Rouen", "Orléans", "Bordeaux", "Toulouse", "Marseille", "Nantes", "Reims", "Tours", "Amiens", "Dijon", "Rennes", "Grenoble", "Montpellier", "Limoges", "Pau", "La Rochelle"]
+	},
+	{
+		"name": "Athens",
+		"leaderName": "Solon",
+		"adjective": ["Athenian"],
+		"region": "Europe",
+		"voice": "Greek",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [140, 41, 21],
+		"innerColor": [133, 224, 242],
+		"uniqueName": "Seisachtheia",
+		"uniques": ["[-15]% Unhappiness from [Population] [in all cities]", "[-10]% Culture cost of adopting new Policies"],
+		"altLeader": {
+			"leaderName": "Pericles",
+			"uniqueName": "Delian League",
+			"uniques": ["[+2 Culture] from every [Wonder]", "Resting point for Influence with City-States is increased by [20]"],
+			"voice": "Greek"
+		},
+		"cities": ["Athenai", "Peiraieus", "Eleusis", "Marathon", "Sounion", "Acharnai", "Laurion", "Brauron", "Rhamnous", "Salamis", "Amphipolis", "Thourioi", "Myrina", "Aigina"],
+		"cityRenames": [
+			{"from": "Athenai", "to": "Athina", "era": "Age of Steam"}
+		]
+	},
+	{
+		"name": "Castile",
+		"leaderName": "Alfonso X",
+		"adjective": ["Castilian"],
+		"region": "Europe",
+		"voice": "Spanish",
+		"preferredVictoryType": "AGI",
+		"outerColor": [140, 62, 21],
+		"innerColor": [133, 205, 242],
+		"uniqueName": "Alfonsine Tables",
+		"uniques": ["[+2 Science] from every [Observatory]", "[+1 Culture] from every [Library]"],
+		"altLeader": {
+			"leaderName": "Isabella I",
+			"uniqueName": "Capitulations of Santa Fe",
+			"uniques": ["[+1] Movement <for [Water] units>", "[+1] Sight <for [Water] units>"],
+			"voice": "Spanish"
+		},
+		"cities": ["Toledo", "Burgos", "Valladolid", "Sevilla", "Córdoba", "León", "Salamanca", "Segovia", "Ávila", "Madrid", "Murcia", "Cádiz", "Jaén", "Granada", "Santiago de Compostela", "Oviedo", "Cuenca", "Soria"]
+	},
+	{
+		"name": "Russia",
+		"leaderName": "Alexander II",
+		"adjective": ["Russian"],
+		"region": "Europe",
+		"voice": "Russian",
+		"preferredVictoryType": "AGI",
+		"outerColor": [140, 82, 21],
+		"innerColor": [133, 186, 242],
+		"uniqueName": "Emancipation Reform",
+		"uniques": ["[+10]% [Production] [in all cities]", "[-10]% Unhappiness from [Population] [in all cities]"],
+		"altLeader": {
+			"leaderName": "Catherine II",
+			"uniqueName": "Hermitage and Bolshoi",
+			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+2 Culture] from every [Opera House]"],
+			"voice": "Russian"
+		},
+		"cities": ["Sankt-Peterburg", "Moskva", "Novgorod", "Kazan", "Nizhny Novgorod", "Smolensk", "Tver", "Yaroslavl", "Tula", "Arkhangelsk", "Astrakhan", "Tobolsk", "Irkutsk", "Yekaterinburg", "Vladivostok", "Omsk", "Samara", "Perm"],
+		"cityRenames": [
+			{"from": "Sankt-Peterburg", "to": "Petrograd", "era": "Age of Electricity"},
+			{"from": "Petrograd", "to": "Leningrad", "era": "Age of Electricity"},
+			{"from": "Leningrad", "to": "Sankt-Peterburg", "era": "Age of Information"}
+		]
+	},
+	{
+		"name": "Holy Roman Empire",
+		"leaderName": "Otto I",
+		"adjective": ["German"],
+		"region": "Europe",
+		"voice": "German",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [140, 103, 21],
+		"innerColor": [133, 167, 242],
+		"uniqueName": "Lechfeld",
+		"uniques": ["[+15]% Strength <for [Mounted] units>", "[+1 Production] from every [Temple]"],
+		"altLeader": {
+			"leaderName": "Theophanu",
+			"uniqueName": "Empress Regent",
+			"uniques": ["Resting point for Influence with City-States is increased by [20]", "[+1 Culture] [in all cities]"],
+			"voice": "German"
+		},
+		"cities": ["Magdeburg", "Aachen", "Quedlinburg", "Mainz", "Köln", "Trier", "Regensburg", "Augsburg", "Frankfurt", "Worms", "Speyer", "Bamberg", "Fulda", "Merseburg", "Hildesheim"]
+	},
+	{
+		"name": "Kalmar Union",
+		"leaderName": "Margrete I",
+		"adjective": ["Danish"],
+		"region": "Europe",
+		"voice": "Danish",
+		"preferredVictoryType": "Perpetual Peace",
+		"outerColor": [140, 123, 21],
+		"innerColor": [133, 149, 242],
+		"uniqueName": "Union of Kalmar",
+		"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "City-State Influence recovers at twice the normal rate"],
+		"altLeader": {
+			"leaderName": "Harald Bluetooth",
+			"uniqueName": "Jelling Stones",
+			"uniques": ["[+1 Culture, +1 Faith] from every [Monument]"],
+			"voice": "Danish"
+		},
+		"cities": ["København", "Roskilde", "Kalmar", "Bergen", "Oslo", "Stockholm", "Uppsala", "Lund", "Ribe", "Aarhus", "Odense", "Nidaros", "Visby", "Åbo", "Helsingør", "Viborg"],
+		"cityRenames": [
+			{"from": "Oslo", "to": "Christiania", "era": "Age of Sail"},
+			{"from": "Nidaros", "to": "Trondhjem", "era": "Age of Sail"},
+			{"from": "Christiania", "to": "Oslo", "era": "Age of Electricity"},
+			{"from": "Trondhjem", "to": "Trondheim", "era": "Age of Electricity"}
+		]
+	},
+	{
+		"name": "Poland–Lithuania",
+		"leaderName": "Władysław II Jagiełło",
+		"adjective": ["Polish"],
+		"region": "Europe",
+		"voice": "Polish",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [137, 140, 21],
+		"innerColor": [136, 133, 242],
+		"uniqueName": "Grunwald",
+		"uniques": ["[+15]% Strength <for [Mounted] units>", "Each city founded increases culture cost of policies [33]% less than normal"],
+		"altLeader": {
+			"leaderName": "Jadwiga",
+			"uniqueName": "Kraków Academy",
+			"uniques": ["[+2 Science] from every [University]", "[+25]% Production when constructing [University] buildings [in all cities]"],
+			"voice": "Polish"
+		},
+		"cities": ["Kraków", "Wilno", "Warszawa", "Poznań", "Gniezno", "Toruń", "Gdańsk", "Lublin", "Płock", "Kalisz", "Sandomierz", "Kowno", "Troki", "Grodno"]
+	},
+	{
+		"name": "Byzantium",
+		"leaderName": "Constantine the Great",
+		"adjective": ["Byzantine"],
+		"region": "Europe",
+		"voice": "Greek",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [116, 140, 21],
+		"innerColor": [155, 133, 242],
+		"uniqueName": "Solidus",
+		"uniques": ["[+10]% [Gold] [in all cities]", "[+1 Gold] from each Trade Route"],
+		"altLeader": {
+			"leaderName": "Alexios I Komnenos",
+			"uniqueName": "Komnenian Restoration",
+			"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+			"voice": "Greek"
+		},
+		"cities": ["Konstantinoupolis", "Nikaia", "Nikomedeia", "Thessalonike", "Trapezous", "Smyrna", "Ephesos", "Antiocheia", "Adrianoupolis", "Ankyra", "Ikonion", "Chalkedon", "Philadelpheia", "Attaleia", "Mystras", "Dyrrachion", "Sinope"]
+	},
+	{
+		"name": "Babylon",
+		"leaderName": "Hammurabi",
+		"adjective": ["Babylonian"],
+		"region": "WestAsia",
+		"voice": "Neo-Aramaic",
+		"preferredVictoryType": "AGI",
+		"outerColor": [96, 140, 21],
+		"innerColor": [174, 133, 242],
+		"uniqueName": "Canals of Hammurabi",
+		"uniques": ["[+1 Food] from [River] tiles [in all cities]", "[-10]% Culture cost of adopting new Policies"],
+		"altLeader": {
+			"leaderName": "Nabonidus",
+			"uniqueName": "Royal Antiquarian",
+			"uniques": ["Free [Scholar] appears <upon discovering [Writing] technology>", "[Scholar] is earned [50]% faster"],
+			"voice": "Neo-Aramaic"
+		},
+		"cities": ["Babili", "Sippar", "Kish", "Nippur", "Borsippa", "Isin", "Larsa", "Uruk", "Eshnunna", "Mari", "Kutha", "Dilbat", "Marad", "Opis", "Eridu"]
+	},
+	{
+		"name": "Carthage",
+		"leaderName": "Hannibal",
+		"adjective": ["Carthaginian"],
+		"region": "WestAsia",
+		"voice": "Hebrew",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [76, 140, 21],
+		"innerColor": [192, 133, 242],
+		"uniqueName": "Crossing of the Alps",
+		"uniques": ["Land units may cross [Mountain] tiles after the first [Marshal] is earned", "Comment [Units ending their turn on [Mountain] tiles take [50] damage]", "[+15]% Strength <for [Military] units> <when fighting in [Foreign Land] tiles>"],
+		"altLeader": {
+			"leaderName": "Mago I",
+			"uniqueName": "Phoenician Heritage",
+			"uniques": ["Gain a free [Harbor] [in all coastal cities]", "[+1 Gold] from each Trade Route"],
+			"voice": "Hebrew"
+		},
+		"cities": ["Qart-hadasht", "Utica", "Hadrumetum", "Leptis", "Hippo Diarrhytus", "Motya", "Ziz", "Lilybaeum", "Gadir", "Malaka", "Sulci", "Tharros", "Karalis", "Ebusus", "Kerkouane", "Thapsus"]
+	},
+	{
+		"name": "Abbasid Caliphate",
+		"leaderName": "al-Ma'mun",
+		"adjective": ["Abbasid"],
+		"region": "WestAsia",
+		"voice": "Arabic",
+		"preferredVictoryType": "AGI",
+		"outerColor": [55, 140, 21],
+		"innerColor": [211, 133, 242],
+		"uniqueName": "Measure of the Earth",
+		"uniques": ["[+25]% [Science] [in capital]", "Science gained from research agreements [+50]%"],
+		"altLeader": {
+			"leaderName": "Harun al-Rashid",
+			"uniqueName": "Paper Mills of Baghdad",
+			"uniques": ["[+1 Gold] from each Trade Route", "Free [Scholar] appears <upon discovering [Paper] technology>"],
+			"voice": "Arabic"
+		},
+		"cities": ["Baghdad", "Kufa", "Basra", "Samarra", "Raqqa", "Mosul", "Wasit", "Damascus", "Aleppo", "Fustat", "Qayrawan", "Tarsus", "Hims", "Amida"]
+	},
+	{
+		"name": "Georgia",
+		"leaderName": "David IV",
+		"adjective": ["Georgian"],
+		"region": "WestAsia",
+		"voice": "Georgian",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [35, 140, 21],
+		"innerColor": [230, 133, 242],
+		"uniqueName": "Didgori",
+		"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+1 Science] from every [Temple]"],
+		"altLeader": {
+			"leaderName": "Tamar",
+			"uniqueName": "Golden Age of Tamar",
+			"uniques": ["[+50]% Golden Age length", "[+15]% [Culture] [in all cities]"],
+			"voice": "Georgian"
+		},
+		"cities": ["Tbilisi", "Kutaisi", "Mtskheta", "Gori", "Telavi", "Akhaltsikhe", "Rustavi", "Dmanisi", "Ujarma", "Bolnisi", "Zugdidi", "Poti"]
+	},
+	{
+		"name": "Aksum",
+		"leaderName": "Ezana",
+		"adjective": ["Aksumite"],
+		"region": "Africa",
+		"voice": "Tigrinya",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [21, 140, 28],
+		"innerColor": [242, 133, 236],
+		"uniqueName": "Coins of Aksum",
+		"uniques": ["[+1 Gold] from each Trade Route", "[+1 Faith] from every [Monument]"],
+		"altLeader": {
+			"leaderName": "Kaleb",
+			"uniqueName": "Expedition to Himyar",
+			"uniques": ["[+1] Movement <for [Embarked] units>", "[+15]% Strength <for [Military] units> <when fighting in [Foreign Land] tiles>"],
+			"voice": "Tigrinya"
+		},
+		"cities": ["Aksum", "Adulis", "Yeha", "Matara", "Qohaito", "Roha", "Gondar", "Debre Berhan", "Ankober", "Mekele", "Adwa", "Massawa", "Asmara"],
+		"cityRenames": [
+			{"from": "Roha", "to": "Lalibela", "era": "Age of Paper"}
+		]
+	},
+	{
+		"name": "Kush",
+		"leaderName": "Piye",
+		"adjective": ["Kushite"],
+		"region": "Africa",
+		"voice": "Nobiin",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [21, 140, 48],
+		"innerColor": [242, 133, 217],
+		"uniqueName": "Victory Stela",
+		"uniques": ["[+1 Faith] from every [Temple]", "[+15]% Strength <for [All] units> <vs cities> <when attacking>"],
+		"altLeader": {
+			"leaderName": "Amanirenas",
+			"uniqueName": "Treaty of Samos",
+			"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>", "Resting point for Influence with City-States is increased by [20]"],
+			"voice": "Nobiin"
+		},
+		"cities": ["Napata", "Meroë", "Kerma", "Kawa", "Nuri", "el-Kurru", "Sanam", "Naqa", "Musawwarat es-Sufra", "Wad ban Naqa", "Faras", "Qasr Ibrim"]
+	},
+	{
+		"name": "Mutapa",
+		"leaderName": "Nyatsimba Mutota",
+		"adjective": ["Mutapa"],
+		"region": "Africa",
+		"voice": "Shona",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [21, 140, 69],
+		"innerColor": [242, 133, 199],
+		"uniqueName": "Mwene Mutapa",
+		"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+2 Gold] from [Gold Ore] tiles [in all cities]"],
+		"altLeader": {
+			"leaderName": "Matope",
+			"uniqueName": "Road to the Coast",
+			"uniques": ["[+1 Gold] from each Trade Route", "[-25]% Gold cost of acquiring tiles [in all cities]"],
+			"voice": "Shona"
+		},
+		"cities": ["Mount Fura", "Massapa", "Luanze", "Dambarare", "Bocuto", "Ongoe"]
+	},
+	{
+		"name": "Songhai",
+		"leaderName": "Askia Muhammad I",
+		"adjective": ["Songhai"],
+		"region": "Africa",
+		"voice": "Songhay",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [21, 140, 89],
+		"innerColor": [242, 133, 180],
+		"uniqueName": "Askia Reforms",
+		"uniques": ["[+1 Culture] from every [Library]", "[+1 Gold] from each Trade Route"],
+		"altLeader": {
+			"leaderName": "Sonni Ali",
+			"uniqueName": "Niger Fleet",
+			"uniques": ["[+1] Movement <for [Embarked] units>", "[+100]% Strength <when defending> <for [Embarked] units>"],
+			"voice": "Songhay"
+		},
+		"cities": ["Gao", "Tendirma", "Kabara", "Bamba", "Hombori", "Ansongo", "Say", "Agadez", "Tillabéri", "Ayorou", "Menaka", "Taghaza"]
+	},
+	{
+		"name": "Kilwa",
+		"leaderName": "al-Hasan ibn Sulaiman",
+		"adjective": ["Kilwan"],
+		"region": "Africa",
+		"voice": "Swahili",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [21, 140, 110],
+		"innerColor": [242, 133, 161],
+		"uniqueName": "Father of Gifts",
+		"uniques": ["Gifts of Gold to City-States generate [25]% more Influence", "[+2 Gold] from each Trade Route"],
+		"cities": ["Kilwa Kisiwani", "Songo Mnara", "Sanje ya Kati", "Kua", "Sofala", "Lindi", "Mikindani", "Kilwa Kivinje", "Kisimani Mafia", "Angoche", "Mozambique Island"]
+	},
+	{
+		"name": "Numidia",
+		"leaderName": "Masinissa",
+		"adjective": ["Numidian"],
+		"region": "Africa",
+		"voice": "Tamazight",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [21, 140, 130],
+		"innerColor": [242, 133, 143],
+		"uniqueName": "Granary of Numidia",
+		"uniques": ["[+1 Food] from every [Farm]", "[+15]% Strength <for [Mounted] units>"],
+		"altLeader": {
+			"leaderName": "Jugurtha",
+			"uniqueName": "Jugurthine War",
+			"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+			"voice": "Tamazight"
+		},
+		"cities": ["Cirta", "Siga", "Hippo Regius", "Thugga", "Zama", "Capsa", "Vaga", "Sicca Veneria", "Theveste", "Calama", "Madauros", "Bulla Regia"]
+	},
+	{
+		"name": "Vijayanagara",
+		"leaderName": "Krishnadevaraya",
+		"adjective": ["Vijayanagara"],
+		"region": "SouthAsia",
+		"voice": "Telugu",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [21, 130, 140],
+		"innerColor": [242, 143, 133],
+		"uniqueName": "Ashtadiggajas",
+		"uniques": ["[+1 Culture] from every [Amphitheater]", "[+15]% Great Person generation [in all cities]"],
+		"altLeader": {
+			"leaderName": "Harihara I",
+			"uniqueName": "City of Victory",
+			"uniques": ["[+50]% Production when constructing [Walls] buildings [in all cities]", "[+1 Production] from [Hill] tiles [in all cities]"],
+			"voice": "Telugu"
+		},
+		"cities": ["Vijayanagara", "Penukonda", "Chandragiri", "Anegundi", "Udayagiri", "Tirupati", "Srirangapatna", "Chitradurga", "Gooty", "Adoni", "Raichur", "Barkur", "Mangaluru", "Vellore"],
+		"cityRenames": [
+			{"from": "Vijayanagara", "to": "Hampi", "era": "Age of Sail"}
+		]
+	},
+	{
+		"name": "Mughal",
+		"leaderName": "Akbar",
+		"adjective": ["Mughal"],
+		"region": "SouthAsia",
+		"voice": "Hindustani",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [21, 110, 140],
+		"innerColor": [242, 161, 133],
+		"uniqueName": "Sulh-i Kul",
+		"uniques": ["[-15]% Unhappiness from [Population] [in all cities]", "[+1 Culture] [in all cities]"],
+		"altLeader": {
+			"leaderName": "Nur Jahan",
+			"uniqueName": "Coins of Nur Jahan",
+			"uniques": ["[+10]% [Gold] [in all cities]", "[+1 Culture] from every [Garden]"],
+			"voice": "Hindustani"
+		},
+		"cities": ["Agra", "Fatehpur Sikri", "Lahore", "Delhi", "Kabul", "Ajmer", "Burhanpur", "Ahmedabad", "Jahangirnagar", "Srinagar", "Multan", "Aurangabad", "Jaunpur", "Surat", "Allahabad"]
+	},
+	{
+		"name": "Joseon",
+		"leaderName": "Jeongjo",
+		"adjective": ["Korean"],
+		"region": "EastAsia",
+		"voice": "Korean",
+		"preferredVictoryType": "AGI",
+		"outerColor": [21, 89, 140],
+		"innerColor": [242, 180, 133],
+		"uniqueName": "Kyujanggak",
+		"uniques": ["[+1 Science] from every [Library]", "[+50]% Production when constructing [Walls] buildings [in all cities]"],
+		"altLeader": {
+			"leaderName": "Sejong",
+			"uniqueName": "Hunminjeongeum",
+			"uniques": ["[+10]% [Science] [in all cities]", "[+10]% [Culture] [in all cities]"],
+			"voice": "Korean"
+		},
+		"cities": ["Hanseong", "Gaeseong", "Pyeongyang", "Hamheung", "Jeonju", "Gyeongju", "Daegu", "Busan", "Suwon", "Uiju", "Gongju", "Chungju", "Wonju", "Naju", "Jinju", "Andong"],
+		"cityRenames": [
+			{"from": "Hanseong", "to": "Seoul", "era": "Age of the Atom"}
+		]
+	},
+	{
+		"name": "Liao",
+		"leaderName": "Abaoji",
+		"adjective": ["Khitan"],
+		"region": "EastAsia",
+		"voice": "Daur",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [21, 69, 140],
+		"innerColor": [242, 199, 133],
+		"uniqueName": "Dual Administration",
+		"uniques": ["[-15]% Unhappiness from [Population] [in all cities]", "[+15]% Strength <for [Mounted] units>"],
+		"altLeader": {
+			"leaderName": "Empress Dowager Chengtian",
+			"uniqueName": "Treaty of Chanyuan",
+			"uniques": ["[+2 Gold] from each Trade Route", "Resting point for Influence with City-States is increased by [20]"],
+			"voice": "Daur"
+		},
+		"cities": ["Shangjing", "Zhongjing", "Dongjing", "Yanjing", "Xijing", "Zuzhou", "Huaizhou", "Qingzhou"]
+	},
+	{
+		"name": "Khmer",
+		"leaderName": "Suryavarman II",
+		"adjective": ["Khmer"],
+		"region": "SoutheastAsia",
+		"voice": "Khmer",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [21, 48, 140],
+		"innerColor": [242, 217, 133],
+		"uniqueName": "Builder of Angkor",
+		"uniques": ["[+15]% Production when constructing [All] wonders [in all cities]", "[+1 Faith] from every [Temple]"],
+		"altLeader": {
+			"leaderName": "Jayavarman VII",
+			"uniqueName": "The 102 Hospitals",
+			"uniques": ["[+10]% growth [in all cities]", "[+1 Happiness] [in all cities]"],
+			"voice": "Khmer"
+		},
+		"cities": ["Yashodharapura", "Hariharalaya", "Koh Ker", "Mahendraparvata", "Phimai", "Lavo", "Isanapura", "Banteay Chhmar", "Preah Khan Kompong Svay", "Champasak", "Phnom Penh", "Oudong"]
+	},
+	{
+		"name": "Ayutthaya",
+		"leaderName": "Naresuan",
+		"adjective": ["Siamese"],
+		"region": "SoutheastAsia",
+		"voice": "Thai",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [21, 28, 140],
+		"innerColor": [242, 236, 133],
+		"uniqueName": "Nong Sarai",
+		"uniques": ["[+15]% Strength <for [Mounted] units>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+		"altLeader": {
+			"leaderName": "Narai",
+			"uniqueName": "Embassies to Versailles",
+			"uniques": ["Science gained from research agreements [+50]%", "[+1 Gold] from each Trade Route"],
+			"voice": "Thai"
+		},
+		"cities": ["Ayutthaya", "Phitsanulok", "Sukhothai", "Nakhon Si Thammarat", "Chanthaburi", "Kamphaeng Phet", "Suphanburi", "Nakhon Ratchasima", "Phetchaburi", "Ratchaburi", "Bang Kok"],
+		"cityRenames": [
+			{"from": "Bang Kok", "to": "Krung Thep", "era": "Age of Steam"}
+		]
+	},
+	{
+		"name": "Đại Việt",
+		"leaderName": "Lê Lợi",
+		"adjective": ["Vietnamese"],
+		"region": "SoutheastAsia",
+		"voice": "Vietnamese",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [35, 21, 140],
+		"innerColor": [230, 242, 133],
+		"uniqueName": "Lam Sơn Uprising",
+		"uniques": ["[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+		"altLeader": {
+			"leaderName": "Trưng Trắc",
+			"uniqueName": "Rising of the Trưng Sisters",
+			"uniques": ["[+15]% Production when constructing [Military] units [in all cities]", "[+1 Happiness] [in all cities]"],
+			"voice": "Vietnamese"
+		},
+		"cities": ["Thăng Long", "Hoa Lư", "Lam Kinh", "Tây Đô", "Thanh Hóa", "Vạn Kiếp", "Phố Hiến", "Nghệ An", "Phú Xuân", "Cao Bằng", "Lạng Sơn", "Hải Dương"],
+		"cityRenames": [
+			{"from": "Thăng Long", "to": "Hà Nội", "era": "Age of Steam"}
+		]
+	},
+	{
+		"name": "Srivijaya",
+		"leaderName": "Jayanasa",
+		"adjective": ["Srivijayan"],
+		"region": "SoutheastAsia",
+		"voice": "Malay",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [55, 21, 140],
+		"innerColor": [211, 242, 133],
+		"uniqueName": "Kedukan Bukit",
+		"uniques": ["[+1] Movement <for [Water] units>", "[+1 Gold] from each Trade Route"],
+		"altLeader": {
+			"leaderName": "Balaputradewa",
+			"uniqueName": "The Nalanda Grant",
+			"uniques": ["[+1 Faith] from every [Temple]", "[+15]% Great Person generation [in all cities]"],
+			"voice": "Malay"
+		},
+		"cities": ["Palembang", "Jambi", "Kadaram", "Muara Takus", "Chaiya", "Tambralinga", "Kota Kapur", "Muaro Jambi", "Lamuri", "Barus", "Tulang Bawang"]
+	},
+	{
+		"name": "Champa",
+		"leaderName": "Chế Bồng Nga",
+		"adjective": ["Cham"],
+		"region": "SoutheastAsia",
+		"voice": "Cham",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [76, 21, 140],
+		"innerColor": [192, 242, 133],
+		"uniqueName": "Red King",
+		"uniques": ["[+15]% Strength <for [Military] units> <when fighting in [Foreign Land] tiles>", "[+1] Movement <for [Embarked] units>"],
+		"altLeader": {
+			"leaderName": "Po Romé",
+			"uniqueName": "Lord of Panduranga",
+			"uniques": ["[+1 Food] from every [Farm]", "[+1 Happiness] [in all cities]"],
+			"voice": "Cham"
+		},
+		"cities": ["Vijaya", "Indrapura", "Simhapura", "Kauthara", "Panduranga", "Thị Nại", "Amaravati"]
+	},
+	{
+		"name": "Scythia",
+		"leaderName": "Tomyris",
+		"adjective": ["Scythian"],
+		"region": "Steppe",
+		"voice": "Ossetian",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [96, 21, 140],
+		"innerColor": [174, 242, 133],
+		"uniqueName": "Queen of the Massagetae",
+		"uniques": ["[+15]% Strength <for [Mounted] units>", "[+20]% Strength <when fighting units from a Civilization with more Cities than you>"],
+		"altLeader": {
+			"leaderName": "Ateas",
+			"uniqueName": "King of the Scythians",
+			"uniques": ["[+1] Movement <for [Mounted] units>", "[-25]% Culture cost of natural border growth [in all cities]"],
+			"voice": "Ossetian"
+		},
+		"cities": ["Gelonus", "Kamianka", "Elizavetovskoe", "Pazyryk", "Arzhan", "Issyk"]
+	},
+	{
+		"name": "Timurids",
+		"leaderName": "Ulugh Beg",
+		"adjective": ["Timurid"],
+		"region": "Steppe",
+		"voice": "Uzbek",
+		"preferredVictoryType": "AGI",
+		"outerColor": [116, 21, 140],
+		"innerColor": [155, 242, 133],
+		"uniqueName": "Zij-i Sultani",
+		"uniques": ["[+2 Science] from every [Observatory]", "[+25]% [Science] [in capital]"],
+		"altLeader": {
+			"leaderName": "Shah Rukh",
+			"uniqueName": "Herat Renaissance",
+			"uniques": ["[+15]% [Culture] [in all cities]", "[+1 Gold] from each Trade Route"],
+			"voice": "Uzbek"
+		},
+		"cities": ["Samarqand", "Herat", "Shahrisabz", "Termez", "Mashhad", "Tashkent", "Andijan", "Khujand", "Urgench", "Qarshi", "Kandahar"]
+	},
+	{
+		"name": "Maya of Palenque",
+		"leaderName": "Yohl Ik'nal",
+		"adjective": ["Maya"],
+		"region": "Americas",
+		"voice": "Ch'ol",
+		"preferredVictoryType": "Lingua Franca",
+		"outerColor": [137, 21, 140],
+		"innerColor": [136, 242, 133],
+		"uniqueName": "Queen of Lakamha'",
+		"uniques": ["[+1 Culture] [in all cities]", "[-10]% Unhappiness from [Population] [in all cities]"],
+		"altLeader": {
+			"leaderName": "Pakal",
+			"uniqueName": "Temple of the Inscriptions",
+			"uniques": ["[+15]% Production when constructing [All] wonders [in all cities]", "[+1 Culture] from every [Monument]"],
+			"voice": "Ch'ol"
+		},
+		"cities": ["Lakamha'", "Pakbul", "Tortuguero", "Moral-Reforma", "Chinikiha", "Xupa", "Miraflores", "Comalcalco"]
+	},
+	{
+		"name": "Brazil",
+		"leaderName": "Princess Isabel",
+		"adjective": ["Brazilian"],
+		"region": "Americas",
+		"voice": "Portuguese",
+		"preferredVictoryType": "Perpetual Peace",
+		"outerColor": [140, 21, 123],
+		"innerColor": [133, 242, 149],
+		"uniqueName": "Golden Law",
+		"uniques": ["[+1 Happiness] [in all cities]", "[+10]% growth [in all cities]"],
+		"altLeader": {
+			"leaderName": "Pedro II",
+			"uniqueName": "Scholar Emperor",
+			"uniques": ["[+2 Science] from every [University]", "[+1 Culture] from every [Museum]"],
+			"voice": "Portuguese"
+		},
+		"cities": ["Rio de Janeiro", "Salvador", "Recife", "São Paulo", "Vila Rica", "Belém", "São Luís", "Porto Alegre", "Fortaleza", "Barra", "Curitiba", "Petrópolis", "Niterói", "Campinas", "Belo Horizonte", "Brasília"],
+		"cityRenames": [
+			{"from": "Vila Rica", "to": "Ouro Preto", "era": "Age of Steam"},
+			{"from": "Barra", "to": "Manaus", "era": "Age of Steam"}
+		]
+	},
+	{
+		"name": "Haiti",
+		"leaderName": "Toussaint Louverture",
+		"adjective": ["Haitian"],
+		"region": "Americas",
+		"voice": "Haitian Creole",
+		"preferredVictoryType": "Perpetual Peace",
+		"outerColor": [140, 21, 103],
+		"innerColor": [133, 242, 167],
+		"uniqueName": "Constitution of 1801",
+		"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>", "[+15]% Strength <for [All] units> <when fighting in [Friendly Land] tiles>"],
+		"altLeader": {
+			"leaderName": "Henri Christophe",
+			"uniqueName": "Citadelle and Sans-Souci",
+			"uniques": ["[+50]% Production when constructing [Walls] buildings [in all cities]", "[+15]% Production when constructing [All] wonders [in capital]"],
+			"voice": "Haitian Creole"
+		},
+		"cities": ["Port-au-Prince", "Cap-Français", "Gonaïves", "Les Cayes", "Jacmel", "Saint-Marc", "Jérémie", "Port-de-Paix", "Milot", "Hinche", "Léogâne", "Petit-Goâve", "Fort-Dauphin"],
+		"cityRenames": [
+			{"from": "Cap-Français", "to": "Cap-Haïtien", "era": "Age of Steam"},
+			{"from": "Fort-Dauphin", "to": "Fort-Liberté", "era": "Age of Steam"}
+		]
+	},
+	{
+		"name": "Purépecha",
+		"leaderName": "Tzitzipandácuare",
+		"adjective": ["Purépecha"],
+		"region": "Americas",
+		"voice": "Purépecha",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [140, 21, 82],
+		"innerColor": [133, 242, 186],
+		"uniqueName": "Victory over Axayacatl",
+		"uniques": ["[+20]% Strength <when fighting units from a Civilization with more Cities than you>", "[+1 Production] from every [Mine]"],
+		"altLeader": {
+			"leaderName": "Tariácuri",
+			"uniqueName": "Lord of Pátzcuaro",
+			"uniques": ["[-25]% Culture cost of natural border growth [in all cities]", "[+1 Food] from [Lakes] tiles [in all cities]"],
+			"voice": "Purépecha"
+		},
+		"cities": ["Tzintzuntzan", "Pátzcuaro", "Ihuatzio", "Zacapu", "Uruapan", "Tiripetío", "Taximaroa", "Zinapécuaro", "Acámbaro", "Jacona", "Tacámbaro", "Charo"]
+	},
+	{
+		"name": "Mixtec",
+		"leaderName": "Eight Deer Jaguar Claw",
+		"adjective": ["Mixtec"],
+		"region": "Americas",
+		"voice": "Mixtec",
+		"preferredVictoryType": "Conquest",
+		"outerColor": [140, 21, 62],
+		"innerColor": [133, 242, 205],
+		"uniqueName": "Lord of Tututepec",
+		"uniques": ["[+15]% Strength <for [Military] units> <when fighting in [Foreign Land] tiles>", "[-25]% Culture cost of natural border growth [in all cities]"],
+		"altLeader": {
+			"leaderName": "Lady Six Monkey",
+			"uniqueName": "Lady of Jaltepec",
+			"uniques": ["[+15]% Great Person generation [in all cities]", "[+1 Culture] [in all cities]"],
+			"voice": "Mixtec"
+		},
+		"cities": ["Tilantongo", "Tututepec", "Teozacoalco", "Coixtlahuaca", "Yanhuitlán", "Teposcolula", "Achiutla", "Jaltepec", "Tlaxiaco", "Apoala", "Nochixtlán", "Juxtlahuaca"]
+	},
+	{
+		"name": "Chimú",
+		"leaderName": "Minchançaman",
+		"adjective": ["Chimú"],
+		"region": "Americas",
+		"voice": "Quechua",
+		"preferredVictoryType": "Reserve Currency",
+		"outerColor": [140, 21, 41],
+		"innerColor": [133, 242, 224],
+		"uniqueName": "Canals of Chimor",
+		"uniques": ["[+1 Food] from [Desert] tiles [in all cities]", "[+1 Gold] from each Trade Route"],
+		"cities": ["Chan Chan", "Pacatnamú", "Farfán", "Manchán", "Túcume", "Batán Grande", "Apurlec", "Chiquitoy", "Paramonga"]
 	},
 
 	// The twenty-four city-states (docs/CONTENT.md, City-states), three per region.
