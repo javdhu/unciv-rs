@@ -494,6 +494,12 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
                 return Err(invalid("duplicate worked tile"));
             }
         }
+        // Every pin is a worked tile, once.
+        if city.locked_tiles.iter().collect::<BTreeSet<_>>().len() != city.locked_tiles.len()
+            || city.locked_tiles.iter().any(|t| !worked.contains(t))
+        {
+            return Err(invalid("pinned tile is not worked"));
+        }
         for id in &city.built {
             rule(&r.buildings, *id, "building")?;
         }
@@ -762,6 +768,44 @@ mod tests {
         assert_eq!(restored, world);
         assert_eq!(serde_json::to_string(&world).unwrap(), serde_json::to_string(&restored).unwrap());
         assert_eq!(world.civ(CivId(0)).unwrap().uniques, restored.civ(CivId(0)).unwrap().uniques);
+    }
+
+    #[test]
+    fn city_management_round_trips_and_older_saves_load_without_it() {
+        let (r, mut world, _) = populated();
+        let id = world.civ(CivId(0)).unwrap().cities[0];
+        let city = world.cities.get_mut(id).unwrap();
+        let tile = city.tiles.iter().copied().find(|t| *t != city.centre).unwrap();
+        city.worked = vec![tile];
+        city.locked_tiles = vec![tile];
+        city.focus = crate::world::assignment::CityFocus::Single(crate::stats::Stat::Production);
+        city.capture_pending = true;
+        let text = encode(&world, &r).unwrap();
+        assert_eq!(decode(&text, &r).unwrap(), world);
+
+        // Saves from before city management carry none of it.
+        fn strip(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("locked_tiles") {
+                        for key in ["focus", "locked_tiles", "capture_pending"] {
+                            map.remove(key);
+                        }
+                    }
+                    map.values_mut().for_each(strip);
+                }
+                serde_json::Value::Array(items) => items.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        let older = decode(&mutate(&text, strip), &r).unwrap();
+        let c = older.cities.get(id).unwrap();
+        assert_eq!(c.focus, crate::world::assignment::CityFocus::None);
+        assert!(c.locked_tiles.is_empty() && !c.capture_pending);
+
+        // A pin is always a worked tile.
+        world.cities.get_mut(id).unwrap().worked.clear();
+        assert!(encode(&world, &r).is_err());
     }
 
     #[test]

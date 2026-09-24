@@ -152,6 +152,7 @@ impl World {
             if other != city {
                 value.tiles.retain(|t| *t != tile);
                 value.worked.retain(|t| *t != tile);
+                value.locked_tiles.retain(|t| *t != tile);
             }
         }
         let Some(c) = self.cities.get_mut(city) else { return };

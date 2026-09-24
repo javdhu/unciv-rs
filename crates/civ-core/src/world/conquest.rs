@@ -219,6 +219,10 @@ pub fn transfer_city(world: &mut World, r: &Ruleset, city: Id<City>, to: CivId) 
         c.turn_acquired = world.turn;
         c.razing = false;
         c.wltkd = 0;
+        // The old owner's management goes with the old owner.
+        c.focus = Default::default();
+        c.locked_tiles.clear();
+        c.capture_pending = false;
     }
     if let Some(id) = next {
         let c = world.cities.get_mut(id)?;
@@ -374,7 +378,45 @@ pub fn annex(world: &mut World, city_id: Id<City>) {
     if let Some(c) = world.cities.get_mut(city_id) {
         c.puppet = false;
         c.avoid_growth = false;
+        c.capture_pending = false;
     }
+}
+
+/// Answer a capture by keeping the puppet (`CityConquestPopup`'s "Puppet").
+/// Only a capture still waiting for its answer can be answered.
+pub fn keep_puppet(world: &mut World, city_id: Id<City>) -> Option<()> {
+    let c = world.cities.get_mut(city_id).filter(|c| c.capture_pending && c.puppet)?;
+    c.capture_pending = false;
+    Some(())
+}
+
+/// The answers a capture still waiting for one allows, in the order Unciv's
+/// popup offers them; empty when nothing waits.
+pub fn capture_choices(world: &World, city_id: Id<City>) -> Vec<CaptureChoice> {
+    let Some(c) = world.cities.get(city_id).filter(|c| c.capture_pending && c.puppet) else { return Vec::new() };
+    let mut choices = Vec::new();
+    if can_liberate(world, city_id) {
+        choices.push(CaptureChoice::Liberate);
+    }
+    choices.push(CaptureChoice::Annex);
+    choices.push(CaptureChoice::Keep);
+    if !c.razing && can_raze(world, city_id).is_ok() {
+        choices.push(CaptureChoice::Raze);
+    }
+    choices
+}
+
+/// What may become of a city just taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureChoice {
+    /// Return it to its founder ([`liberate`]).
+    Liberate,
+    /// Govern it ([`annex`]).
+    Annex,
+    /// Leave it to its governor ([`keep_puppet`]).
+    Keep,
+    /// Burn it ([`raze`]).
+    Raze,
 }
 
 /// Why a city cannot be razed.

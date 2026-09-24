@@ -108,6 +108,20 @@ pub struct City {
     /// is founded, since the land does not move. Only a coastal city builds
     /// ships.
     pub coastal: bool,
+    /// What the owner's governor works this city's citizens for
+    /// (`City.cityAIFocus`); see [`crate::world::assignment`]. Absent from
+    /// older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub focus: crate::world::assignment::CityFocus,
+    /// Tiles the owner pinned (`City.lockedTiles`): always worked, always
+    /// among `worked`, in the order they were pinned. Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub locked_tiles: Vec<TileId>,
+    /// Taken this turn by a human who has not yet said whether it stays a
+    /// puppet, is annexed, razed or liberated. The choice lapses, keeping the
+    /// puppet, when the round closes. Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub capture_pending: bool,
 }
 
 impl City {
@@ -148,7 +162,17 @@ impl City {
             demand_countdown: 0,
             wltkd: 0,
             coastal: false,
+            focus: Default::default(),
+            locked_tiles: Vec::new(),
+            capture_pending: false,
         }
+    }
+
+    /// Whether the governor places every citizen afresh each turn: the owner
+    /// chose a focus or pinned a tile. Otherwise the owner's own picks stay
+    /// where they are and only idle citizens are placed.
+    pub fn is_managed(&self) -> bool {
+        self.focus != crate::world::assignment::CityFocus::None || !self.locked_tiles.is_empty()
     }
 
     /// Citizens not assigned to a tile or a specialist slot.

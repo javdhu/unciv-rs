@@ -625,10 +625,26 @@ fn plan_civ(
         let mut hypothetical = city.clone();
         let bonus = crate::world::specialists::bonus_per_specialist(world, r, city_id);
         // A puppet's governor works its citizens for gold (`CityTurnManager.startTurn`).
-        let focus = if city.puppet { CityFocus::Single(crate::stats::Stat::Gold) } else { focus };
-        crate::world::assignment::release_extra_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
-        // Every governor places idle citizens; a human player's own picks stay where they are.
-        crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+        let focus = if city.puppet {
+            CityFocus::Single(crate::stats::Stat::Gold)
+        } else if city.focus != CityFocus::None {
+            city.focus
+        } else {
+            focus
+        };
+        if city.is_managed() && !city.puppet {
+            // A focus or a pin: every citizen is placed afresh, around the
+            // tiles the civ's other cities work or were just given.
+            let taken = crate::world::assignment::taken_by_sisters(world, city_id, |id, other| {
+                let planned = plan.assignments.iter().find(|(planned, _)| *planned == id);
+                planned.map_or_else(|| other.worked.clone(), |(_, worked)| worked.clone())
+            });
+            crate::world::assignment::reassign_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c, &taken);
+        } else {
+            crate::world::assignment::release_extra_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+            // Every governor places idle citizens; a human player's own picks stay where they are.
+            crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+        }
         let golden = crate::world::golden_age::is_golden(world, civ);
         let base_output =
             crate::world::city::city_yield_with_happiness(world, r, &hypothetical, golden, Some(plan.happiness));
@@ -1193,6 +1209,8 @@ fn apply_plan_inner(
         }
         if let Some(city) = world.cities.get_mut(*city_id) {
             city.worked = worked.clone();
+            // A pin the city can no longer work lapses with the tile.
+            city.locked_tiles.retain(|t| worked.contains(t));
         }
     }
     for (city_id, specialists) in &plan.specialists {
@@ -1937,6 +1955,8 @@ fn finish_automatic(
     for (_, city) in world.cities.iter_mut() {
         city.attacks_left = 1;
         city.sold_building_this_turn = false;
+        // An unanswered capture stays the puppet it already is.
+        city.capture_pending = false;
     }
     update_visibility_in(world, r);
     crate::world::fog::capture_observations(world, r);
