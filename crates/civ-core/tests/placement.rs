@@ -85,7 +85,9 @@ fn claim(w: &mut World, city: Id<City>, centre: TileId) {
 }
 
 fn build(w: &mut World, r: &Ruleset, city: Id<City>, building: Id<Building>) {
-    w.cities.get_mut(city).unwrap().built.insert(building);
+    let c = w.cities.get_mut(city).unwrap();
+    c.built.insert(building);
+    civ_core::world::city::rebuild_city_uniques(r, c);
     placement::settle(w, r);
 }
 
@@ -305,4 +307,69 @@ fn placements_and_chosen_sites_survive_a_save() {
     w.cities.get_mut(city).unwrap().sites.insert(wall, site);
     let text = civ_core::save::encode(&w, &r).unwrap();
     assert_eq!(civ_core::save::decode(&text, &r).unwrap(), w);
+}
+
+/// Harbor, Aqueduct and Observatory as `rules/base` places them, each with a
+/// small effect on its own tile.
+fn with_terrain_bound(r: &mut Ruleset) {
+    for (name, uniques) in [
+        ("Harbor", &["Stands on a [Coast] tile", "[+1 Production] from [Harbor] tiles [in this city]"][..]),
+        (
+            "Aqueduct",
+            &[
+                "Stands on a [River] tile",
+                "Stands on a [Mountain] tile",
+                "[+1 Food] from [Aqueduct] tiles [in this city]",
+            ][..],
+        ),
+        (
+            "Observatory",
+            &["Stands next to a [Mountain] tile", "[+1 Science] from [Observatory] tiles [in this city]"][..],
+        ),
+    ] {
+        let id = r.buildings.id(name).unwrap();
+        r.buildings.get_mut(id).unwrap().uniques = uniques.iter().map(|u| Unique::parse(u)).collect();
+    }
+}
+
+#[test]
+fn terrain_bound_buildings_stand_on_the_nearest_fitting_tile_and_keep_it_workable() {
+    let mut r = rules();
+    with_terrain_bound(&mut r);
+    let (mut w, city, _) = strait(&r);
+    let harbor = r.building("Harbor").unwrap();
+    let centre = w.cities.get(city).unwrap().centre;
+    let site = placement::best_site(&w, &r, city, harbor).expect("a coast tile");
+    assert_eq!(w.grid.distance(centre, site), 1, "the nearest");
+    assert!(w.grid.is_water(&r, site), "a building may stand on water");
+
+    w.cities.get_mut(city).unwrap().worked = vec![site];
+    let production =
+        |w: &World| civ_core::world::city::city_yield_in(w, &r, w.cities.get(city).unwrap(), false).production;
+    let before = production(&w);
+    build(&mut w, &r, city, harbor);
+    let placed = w.grid.placed_at(site).unwrap();
+    assert!(placed.building == harbor && !placed.takes_tile && !placed.canal);
+    assert_eq!(w.cities.get(city).unwrap().worked, [site], "its tile is still worked");
+    assert!(civ_core::world::city::workable_tiles(&w.grid, w.cities.get(city).unwrap()).contains(&site));
+    assert_eq!(production(&w), before + civ_core::stats::Fixed::ONE, "+1 Production on the Harbor's tile");
+}
+
+#[test]
+fn an_aqueduct_stands_on_a_river_or_a_mountain_and_an_observatory_by_a_mountain() {
+    let mut r = rules();
+    with_terrain_bound(&mut r);
+    let (mut w, city) = world(&r);
+    let (aqueduct, observatory) = (r.building("Aqueduct").unwrap(), r.building("Observatory").unwrap());
+    assert!(placement::best_site(&w, &r, city, aqueduct).is_none());
+    assert!(placement::valid_sites(&w, &r, city, observatory).is_empty());
+
+    let mountain = terrain(&mut w, &r, 8, 4, "Mountain");
+    assert_eq!(placement::valid_sites(&w, &r, city, aqueduct), [mountain]);
+    build(&mut w, &r, city, aqueduct);
+    assert_eq!(placement::standing(&w, city, aqueduct), Some(mountain));
+    // The Observatory takes a tile beside the mountain, not the Aqueduct's own.
+    build(&mut w, &r, city, observatory);
+    let site = placement::standing(&w, city, observatory).unwrap();
+    assert!(w.grid.neighbours(site).any(|n| n == mountain) && site != mountain);
 }

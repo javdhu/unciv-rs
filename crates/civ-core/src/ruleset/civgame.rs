@@ -156,3 +156,136 @@ pub fn read_name_group(j: &Json) -> Option<NameGroup> {
             .collect(),
     })
 }
+
+/// Tile-filter words the engine understands beyond the ruleset's own names
+/// (terrains, resources, improvements and buildings). See
+/// `world::conditionals::tile_matches_in` and `tile_matches`.
+pub const TILE_FILTER_WORDS: [&str; 19] = [
+    "All",
+    "all",
+    "Land",
+    "Water",
+    "Coastal",
+    "River",
+    "Fresh water",
+    "Natural Wonder",
+    "Isthmus",
+    "unimproved",
+    "Featureless",
+    "Rough terrain",
+    "Open terrain",
+    "your",
+    "Friendly Land",
+    "Foreign Land",
+    "Friendly",
+    "Foreign",
+    "City center",
+];
+
+/// Unciv tile-filter words the shipped rules use that this engine does not
+/// evaluate yet (a unique conditioned on them is never decided). Not typos,
+/// so [`super::Ruleset::unknown_tile_filters`] lets them pass.
+pub const UNEVALUATED_TILE_FILTER_WORDS: [&str; 5] =
+    ["Bonus resource", "Water resource", "Fresh Water", "non-fresh water", "Enemy Land"];
+
+/// A tile-filter word in some unique that names nothing: a misspelled
+/// building in `<within [2] tiles of a [Colosus]>` would otherwise read as
+/// "not decidable" and quietly apply everywhere.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnknownTileFilter {
+    /// Where it was written: `Building Colossus`, `Policy Tradition`...
+    pub source: String,
+    pub term: String,
+}
+
+impl super::Ruleset {
+    /// Every tile-filter term, in every unique and conditional of the rules,
+    /// that is neither one of the ruleset's names nor a word the engine
+    /// knows ([`TILE_FILTER_WORDS`]).
+    pub fn unknown_tile_filters(&self) -> Vec<UnknownTileFilter> {
+        let known = |term: &str| {
+            TILE_FILTER_WORDS.contains(&term)
+                || UNEVALUATED_TILE_FILTER_WORDS.contains(&term)
+                || self.terrains.id(term).is_some()
+                || self.resources.id(term).is_some()
+                || self.improvements.id(term).is_some()
+                || self.buildings.id(term).is_some()
+        };
+        let mut out = Vec::new();
+        let mut check = |source: String, u: &Unique| {
+            let mut stack = vec![u];
+            while let Some(u) = stack.pop() {
+                stack.extend(u.conditionals.iter());
+                let Some(kind) = u.unique_type() else { continue };
+                let slots: Vec<bool> = placeholders(kind.template()).map(|p| p == "tileFilter").collect();
+                for (param, _) in u.params.iter().zip(slots).filter(|(_, is_tile)| *is_tile) {
+                    let terms = std::cell::RefCell::new(Vec::new());
+                    crate::world::filters::multi_filter(param, &|term| {
+                        terms.borrow_mut().push(term.to_string());
+                        crate::world::conditionals::Verdict::True
+                    });
+                    for term in terms.into_inner() {
+                        if !known(&term) {
+                            out.push(UnknownTileFilter { source: source.clone(), term });
+                        }
+                    }
+                }
+            }
+        };
+        macro_rules! scan {
+            ($kind:literal, $registry:expr) => {
+                for (_, x) in $registry.iter() {
+                    for u in &x.uniques {
+                        check(format!("{} {}", $kind, x.name), u);
+                    }
+                }
+            };
+        }
+        scan!("Building", self.buildings);
+        scan!("Unit", self.units);
+        scan!("Policy", self.policies);
+        scan!("Technology", self.technologies);
+        scan!("Nation", self.nations);
+        scan!("Belief", self.beliefs);
+        scan!("Terrain", self.terrains);
+        scan!("Improvement", self.improvements);
+        scan!("Resource", self.resources);
+        scan!("Promotion", self.promotions);
+        for (_, n) in self.nations.iter() {
+            for u in n.alt_leader.iter().flat_map(|a| &a.uniques) {
+                check(format!("Leader {}", n.name), u);
+            }
+        }
+        for u in &self.global_uniques {
+            check("Global".into(), u);
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+/// The names of a template's top-level `[placeholders]`, in order.
+fn placeholders(template: &str) -> impl Iterator<Item = &str> {
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut out = Vec::new();
+    for (i, c) in template.char_indices() {
+        match c {
+            '[' => {
+                if depth == 0 {
+                    start = i + 1;
+                }
+                depth += 1;
+            }
+            ']' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(&template[start..i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    out.into_iter()
+}

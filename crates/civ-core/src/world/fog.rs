@@ -156,6 +156,10 @@ pub struct TileObservation {
     pub river_edges: u8,
     pub owner: Option<CivId>,
     pub observed_turn: u32,
+    /// The wonder or building seen standing here (`world::placement`).
+    /// Absent from older saves.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub placed: Option<crate::world::grid::Placed>,
 }
 
 impl TileObservation {
@@ -481,7 +485,13 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
             }
             let i = tile.0 as usize;
             let prior = world.visibility.recalls(viewer, tile);
+            let placed = if visible {
+                world.grid.placed.get(&tile).copied()
+            } else {
+                world.visibility.tile_observations.get(&(viewer, tile)).and_then(|o| o.placed)
+            };
             let seen = TileObservation {
+                placed,
                 terrain: world.grid.terrain[i],
                 features: world.grid.features[i].clone(),
                 natural_wonder: world.grid.natural_wonder[i],
@@ -609,6 +619,9 @@ pub(crate) fn movement_knowledge(world: &World, r: &Ruleset, viewer: CivId, id: 
         grid.road_pillaged[i] = seen.road_pillaged;
         grid.river_edges[i] = seen.river_edges;
         grid.owner[i] = seen.owner;
+        if let Some(placed) = seen.placed {
+            grid.placed.insert(tile, placed);
+        }
     }
     let last = world.visibility.known_civs(viewer).map(|c| c.id.0).max().unwrap_or(viewer.0).max(viewer.0);
     let mut civs: Vec<_> = (0..=last).map(|id| Civilization::new(CivId(id), own.nation, false)).collect();

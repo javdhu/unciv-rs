@@ -1738,3 +1738,36 @@ fn a_human_adopts_a_state_faith_by_action() {
     let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
     assert_eq!(view.civs.iter().find(|c| c.id == 0).unwrap().state_faith, Some(hinduism.0));
 }
+
+#[test]
+fn choose_site_reaches_the_engine_and_is_refused_for_a_building_that_stands_nowhere() {
+    let s = session();
+    let settler = own_unit(&s, 0, true);
+    let s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let city = s.world.civs[0].cities[0];
+    let monument = s.rules.buildings.id("Monument").unwrap();
+    let tile = s.world.cities.get(city).unwrap().tiles[0];
+    let req = request(
+        &s,
+        0,
+        "site",
+        Action::ChooseSite {
+            city: EntityRef {
+                id: city.index(),
+                gen: city.generation(),
+            },
+            building: monument.index(),
+            tile: tile.0,
+        },
+    );
+    let t = s.stage_command(0, req).unwrap();
+    assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
+}
