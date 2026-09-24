@@ -23,8 +23,8 @@
     },
     {
         "name": "Reserve Currency",
-        "victoryScreenHeader": "Carry half of world trade in your coin for 10 turns to win!",
-        "milestones": ["Carry [50]% of world trade for [10] turns"],
+        "victoryScreenHeader": "Carry three fifths of world trade in your coin for 15 turns to win!",
+        "milestones": ["Carry [60]% of world trade for [15] turns"],
         "victoryString": "Your coin is the one the world trusts. Like the Athenian owl, the Spanish dollar and sterling before it, it carries the trade of every nation, and every treasury keeps it in reserve.",
         "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
     },

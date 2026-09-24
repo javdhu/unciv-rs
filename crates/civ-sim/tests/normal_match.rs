@@ -324,9 +324,9 @@ fn the_turn_limit_follows_speed_unless_set_explicitly() {
         (world, rules, me)
     };
     let (quick, rules, me) = limit(Some("Quick"), None);
-    assert_eq!(quick.endgame.max_turns, 330, "Speeds.json: Quick ends at turn 330");
+    assert_eq!(quick.endgame.max_turns, 160, "Speeds.json: Quick ends at turn 160");
     let (standard, _, _) = limit(None, None);
-    assert_eq!(standard.endgame.max_turns, 500, "absent speed is Standard");
+    assert_eq!(standard.endgame.max_turns, 240, "absent speed is Standard");
     assert_eq!(standard.speed, rules.speeds.id("Standard"));
     let (explicit, _, _) = limit(Some("Quick"), Some(42));
     assert_eq!(explicit.endgame.max_turns, 42, "an explicit maxTurns overrides the speed");
@@ -356,7 +356,10 @@ fn standard_speed_changes_nothing_from_the_defaults() {
     let default = TurnModifiers::default();
     assert_eq!(standard.barbarian, default.barbarian);
     assert_eq!(standard.growth, default.growth);
-    assert_eq!(standard.costs, default.costs);
+    // Standard is now 240 turns; CostModifiers::default() still assumes Unciv's 500 (an Engine ask).
+    let costs = civ_core::world::construction::CostModifiers { game_length: default.costs.game_length, ..standard.costs };
+    assert_eq!(standard.costs.game_length, 240);
+    assert_eq!(costs, default.costs);
     assert_eq!(standard.science, default.science);
     assert_eq!(standard.policies, default.policies);
 }
@@ -366,9 +369,9 @@ fn blitz_layers_over_the_full_game() {
     use civ_sim::content;
     let full = content::load().unwrap();
     let blitz = content::load_ruleset(content::BLITZ).unwrap();
-    // Its own speed, eighty turns long; the full game's speeds are still there.
+    // Its own speed, sixty turns long (the Cradles slice); the full game's speeds are still there.
     let speed = blitz.speeds.by_name("Blitz").unwrap();
-    assert_eq!(speed.total_turns, 80);
+    assert_eq!(speed.total_turns, 60);
     assert!(blitz.speeds.by_name("Standard").is_some() && full.speeds.by_name("Blitz").is_none());
     // No diplomatic victory, and no United Nations to build towards one.
     assert!(blitz.victories.by_name("Perpetual Peace").is_none() && full.victories.by_name("Perpetual Peace").is_some());
@@ -388,7 +391,7 @@ fn a_blitz_game_starts_small_and_fast() {
         ..Settings::default()
     };
     let (world, rules, me) = civ_sim::new_game_for(&settings, &[0]).unwrap();
-    assert_eq!(world.endgame.max_turns, 80);
+    assert_eq!(world.endgame.max_turns, 60);
     assert_eq!(world.speed, rules.speeds.id("Blitz"));
     let names = |civ: CivId| {
         let mut v: Vec<_> = world
@@ -410,7 +413,7 @@ fn a_blitz_game_starts_small_and_fast() {
     // The full game's start is untouched.
     let (full, full_rules, _) = civ_sim::new_game_for(&Settings::default(), &[0]).unwrap();
     assert_eq!(full.civ(CivId(0)).unwrap().units.len(), 2);
-    assert_eq!(full.endgame.max_turns, 500);
+    assert_eq!(full.endgame.max_turns, 240);
     assert!(full_rules.victories.by_name("Perpetual Peace").is_some());
 }
 
