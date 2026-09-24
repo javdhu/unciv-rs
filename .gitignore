@@ -13,3 +13,5 @@ assets/pack/
 content/leaders/**/*.png
 content/leaders/**/*.jpg
 content/leaders/**/*.mp4
+# agent worktrees (parallel lanes)
+.claude/worktrees/
