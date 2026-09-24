@@ -877,7 +877,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     attitude: attitude(w, c.id, me),
                     score: rounded_score(w, r, c.id),
                     influence: (c.is_major() && civ_core::world::influence::tracks_influence(r))
-                        .then(|| influence_view(w, me, c.id)),
+                        .then(|| influence_view(w, r, me, c.id)),
                 }
             })
             .collect(),
@@ -1359,18 +1359,15 @@ pub fn replay_for(
 }
 
 /// Progress toward influence, both ways, in tenths of a percent.
-fn influence_view(w: &World, me: CivId, them: CivId) -> InfluenceView {
+fn influence_view(w: &World, r: &Ruleset, me: CivId, them: CivId) -> InfluenceView {
     use civ_core::world::influence as inf;
-    let progress = |from: CivId, over: CivId| -> u32 {
-        let need = inf::lifetime_culture(w, over).max(inf::INFLUENCE_FLOOR - 1) + 1;
-        (inf::influence_over(w, from, over).max(0) * 1000 / need).min(u32::MAX as i64) as u32
-    };
+    let progress = |from, over| inf::influence_progress(w, r, from, over).clamp(0, i64::from(u32::MAX)) as u32;
     InfluenceView {
         ours: progress(me, them),
         theirs: progress(them, me),
-        influential: inf::is_influential(w, me, them),
-        influenced: inf::is_influential(w, them, me),
-        rate: inf::influence_rate(w, me, them).max(0) as u32,
+        influential: inf::is_influential(w, r, me, them),
+        influenced: inf::is_influential(w, r, them, me),
+        rate: inf::influence_rate(w, r, me, them).max(0) as u32,
     }
 }
 

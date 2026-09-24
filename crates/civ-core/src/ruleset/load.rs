@@ -39,6 +39,8 @@ pub struct Ruleset {
     pub faiths: Vec<super::civgame::FaithDef>,
     /// Names for great people and other named units, from `UnitNameGroups.json`.
     pub name_groups: Vec<super::civgame::NameGroup>,
+    /// Tuning for the influence and trade victories (`ModOptions.json`).
+    pub victory_knobs: super::civgame::VictoryKnobs,
     /// The last roster wave setup deals (`ModOptions.json` `maxWave`); None
     /// deals every nation.
     pub max_wave: Option<i32>,
@@ -206,6 +208,7 @@ impl Ruleset {
                     if let Some(name) = doc.get("defaultDifficulty").and_then(|v| v.as_str()) {
                         r.default_difficulty_name = Some(name.to_string());
                     }
+                    super::civgame::read_victory_knobs(&doc, &mut r.victory_knobs);
                     if let Some(wave) = doc.get("maxWave").and_then(|v| v.as_i32()) {
                         r.max_wave = Some(wave);
                     }

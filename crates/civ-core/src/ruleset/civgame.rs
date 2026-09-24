@@ -323,3 +323,61 @@ pub fn read_slice(j: &Json) -> Option<SliceDef> {
         end_year: j.get("endYear").and_then(|v| v.as_i32()),
     })
 }
+
+/// Tuning for the influence and trade victories (`world::influence`), from
+/// `ModOptions.json`. Every field has an engine default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VictoryKnobs {
+    /// `influencePercent`: percent of new culture that becomes influence.
+    pub influence_percent: i64,
+    /// `influenceBonusPercent`: added for each of open borders, a running
+    /// deal and a shared state faith.
+    pub influence_bonus_percent: i64,
+    /// `influenceFloor`: influence below this never counts as influential.
+    pub influence_floor: i64,
+    /// `tradeShareFromEra`: a civ's share of world trade counts only once it
+    /// has reached this era (the first reserve currencies came with sail).
+    pub trade_share_from_era: Option<String>,
+    /// `worldTradePerMajor` and `worldTradePerMajorPerEra`: world trade
+    /// counts once it reaches this much gold per living major civ, plus the
+    /// second figure for each era the leading civ has reached.
+    pub world_trade_per_major: i64,
+    pub world_trade_per_major_per_era: i64,
+}
+
+impl Default for VictoryKnobs {
+    fn default() -> Self {
+        VictoryKnobs {
+            // Tuned in AI self-play (12 games, 240 turns, all victories on);
+            // see civ-sim's balance example.
+            influence_percent: 100,
+            influence_bonus_percent: 25,
+            influence_floor: 1500,
+            trade_share_from_era: None,
+            world_trade_per_major: 15,
+            world_trade_per_major_per_era: 3,
+        }
+    }
+}
+
+pub fn read_victory_knobs(j: &Json, into: &mut VictoryKnobs) {
+    let int = |key: &str| j.get(key).and_then(|v| v.as_i64());
+    if let Some(v) = int("influencePercent") {
+        into.influence_percent = v.max(0);
+    }
+    if let Some(v) = int("influenceBonusPercent") {
+        into.influence_bonus_percent = v.max(0);
+    }
+    if let Some(v) = int("influenceFloor") {
+        into.influence_floor = v.max(0);
+    }
+    if let Some(v) = text(j, "tradeShareFromEra") {
+        into.trade_share_from_era = Some(v);
+    }
+    if let Some(v) = int("worldTradePerMajor") {
+        into.world_trade_per_major = v.max(0);
+    }
+    if let Some(v) = int("worldTradePerMajorPerEra") {
+        into.world_trade_per_major_per_era = v.max(0);
+    }
+}

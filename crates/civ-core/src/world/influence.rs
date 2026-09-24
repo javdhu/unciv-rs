@@ -1,14 +1,15 @@
 //! Cultural influence (Lingua Franca) and shares of world trade (Reserve
 //! Currency): docs/CONTENT.md, Victories.
 //!
-//! **Influence.** Each turn a quarter of a major civ's new culture reaches
-//! every rival it has met and is at peace with, as influence over that rival;
-//! more through open borders, a running trade deal and a shared state faith.
+//! **Influence.** Each turn a share of a major civ's new culture reaches
+//! every rival it has met, as influence over that rival: half as much at
+//! war, more through open borders, a running trade deal and a shared state
+//! faith (the rates are `VictoryKnobs`, data in ModOptions.json).
 //! A civ is influential over a rival once its accumulated influence there
 //! exceeds all the culture that rival has ever made (and [`INFLUENCE_FLOOR`],
 //! so a rival that has barely begun is not won over by a village's songs).
-//! Out-producing a rival's culture fourfold does it; open borders, trade and
-//! a shared faith bring that down to about half as much again.
+//! At the default rate, making more culture than a rival (since meeting it)
+//! does it; open borders, trade and a shared faith bring that down to 0.57.
 //!
 //! **Trade.** A civ's share of world trade is its trade-route income (its
 //! cities' connections to its capital) over every major civ's. The last
@@ -27,21 +28,8 @@ use std::collections::BTreeMap;
 /// Turns of trade share kept per civ: the longest run a milestone can ask for.
 pub const TRADE_HISTORY: usize = 100;
 
-/// World trade counts only once it is worth this much gold per turn for each
-/// living major civ: before that, one road between two villages would carry
-/// "half the world's trade" and win the game in the Age of Bronze.
-pub const MIN_WORLD_TRADE_PER_MAJOR: i64 = 15;
-
-/// Percent of new culture that becomes influence over each rival.
-pub const BASE_INFLUENCE: i64 = 25;
-
-/// Influence bonus, in percent of culture, for each of: open borders into the
-/// rival, a running trade deal with it, and a state faith it shares.
-pub const INFLUENCE_BONUS: i64 = 15;
-
-/// Influence below this never counts as influential, however little culture
-/// the rival has made.
-pub const INFLUENCE_FLOOR: i64 = 1000;
+// The rates and thresholds are data: `ruleset::civgame::VictoryKnobs`, read
+// from ModOptions.json, with engine defaults.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -80,22 +68,29 @@ fn majors(world: &World) -> Vec<CivId> {
 }
 
 /// Percent of `from`'s culture that reaches `over` as influence this turn:
-/// nothing at war or before meeting, else [`BASE_INFLUENCE`] plus the bonuses.
-pub fn influence_rate(world: &World, from: CivId, over: CivId) -> i64 {
+/// nothing before meeting, half the base rate at war, else the base rate plus
+/// the bonuses (`VictoryKnobs`).
+pub fn influence_rate(world: &World, r: &Ruleset, from: CivId, over: CivId) -> i64 {
     let d = &world.diplomacy;
-    if from == over || !d.have_met(from, over) || d.at_war(from, over) {
+    if from == over || !d.have_met(from, over) {
         return 0;
     }
-    let mut rate = BASE_INFLUENCE;
+    let knobs = &r.victory_knobs;
+    // War does not stop a culture reaching its enemy, but halves it and
+    // closes every channel that carries more.
+    if d.at_war(from, over) {
+        return knobs.influence_percent / 2;
+    }
+    let mut rate = knobs.influence_percent;
     if d.may_enter_borders_of(from, over) {
-        rate += INFLUENCE_BONUS;
+        rate += knobs.influence_bonus_percent;
     }
     if d.deals.iter().any(|deal| (deal.a == from && deal.b == over) || (deal.a == over && deal.b == from)) {
-        rate += INFLUENCE_BONUS;
+        rate += knobs.influence_bonus_percent;
     }
     let state = |c: CivId| world.civ(c).and_then(|c| c.faith.state);
     if state(from).is_some() && state(from) == state(over) {
-        rate += INFLUENCE_BONUS;
+        rate += knobs.influence_bonus_percent;
     }
     rate
 }
@@ -105,15 +100,22 @@ pub fn influence_over(world: &World, from: CivId, over: CivId) -> i64 {
 }
 
 /// `from`'s influence over `over` has passed all the culture `over` ever made.
-pub fn is_influential(world: &World, from: CivId, over: CivId) -> bool {
+pub fn is_influential(world: &World, r: &Ruleset, from: CivId, over: CivId) -> bool {
     let influence = influence_over(world, from, over);
-    from != over && influence >= INFLUENCE_FLOOR && influence > lifetime_culture(world, over)
+    from != over && influence >= r.victory_knobs.influence_floor && influence > lifetime_culture(world, over)
+}
+
+/// How far `from` is toward being influential over `over`, in tenths of a
+/// percent (1000 and above is there).
+pub fn influence_progress(world: &World, r: &Ruleset, from: CivId, over: CivId) -> i64 {
+    let need = lifetime_culture(world, over).max(r.victory_knobs.influence_floor - 1) + 1;
+    influence_over(world, from, over).max(0) * 1000 / need.max(1)
 }
 
 /// Influential over every other living major civ (and there is at least one).
-pub fn influential_over_all(world: &World, civ: CivId) -> bool {
+pub fn influential_over_all(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let rivals: Vec<_> = majors(world).into_iter().filter(|c| *c != civ).collect();
-    !rivals.is_empty() && rivals.iter().all(|r| is_influential(world, civ, *r))
+    !rivals.is_empty() && rivals.iter().all(|x| is_influential(world, r, civ, *x))
 }
 
 /// A civ's trade-route income this turn, in hundredths of gold (a small
@@ -128,14 +130,27 @@ pub fn trade_volume(world: &World, r: &Ruleset, civ: CivId) -> i64 {
 }
 
 /// Every major civ's share of world trade right now, in tenths of a percent.
-/// All zero while world trade is below [`MIN_WORLD_TRADE_PER_MAJOR`].
+/// All zero while world trade is below its minimum (`worldTradePerMajor`,
+/// plus `worldTradePerMajorPerEra` for each era the leading civ has
+/// reached), and zero for a civ before `tradeShareFromEra`.
 pub fn trade_shares(world: &World, r: &Ruleset) -> BTreeMap<CivId, u16> {
-    let volumes: Vec<_> = majors(world).into_iter().map(|c| (c, trade_volume(world, r, c))).collect();
+    let knobs = &r.victory_knobs;
+    let civs = majors(world);
+    let era = |c: CivId| crate::world::policies::era_number(world, r, c);
+    let leading = civs.iter().map(|c| era(*c)).max().unwrap_or(0);
+    let from_era = knobs.trade_share_from_era.as_deref().and_then(|e| r.eras.by_name(e)).map(|e| e.era_number);
+    let volumes: Vec<_> = civs.into_iter().map(|c| (c, trade_volume(world, r, c))).collect();
     let total: i64 = volumes.iter().map(|(_, v)| v).sum();
-    let established = total >= MIN_WORLD_TRADE_PER_MAJOR * 100 * volumes.len() as i64;
+    let minimum = (knobs.world_trade_per_major + knobs.world_trade_per_major_per_era * i64::from(leading.max(0)))
+        * 100
+        * volumes.len() as i64;
+    let established = total > 0 && total >= minimum;
     volumes
         .into_iter()
-        .map(|(c, v)| (c, if established && total > 0 { (v * 1000 / total).clamp(0, 1000) as u16 } else { 0 }))
+        .map(|(c, v)| {
+            let counts = established && from_era.is_none_or(|e| era(c) >= e);
+            (c, if counts { (v * 1000 / total).clamp(0, 1000) as u16 } else { 0 })
+        })
         .collect()
 }
 
@@ -165,7 +180,7 @@ pub fn tick(world: &mut World, r: &Ruleset) {
             .iter()
             .flat_map(|(from, culture)| civs.iter().map(move |over| ((*from, *over), *culture)))
             .filter_map(|((from, over), culture)| {
-                let rate = influence_rate(world, from, over);
+                let rate = influence_rate(world, r, from, over);
                 (rate > 0 && culture > 0).then_some(((from, over), culture * rate / 100))
             })
             .collect();
