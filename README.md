@@ -32,7 +32,7 @@ Terrain and resources have their own recipes; units, improvements, natural wonde
 placeholders until their phases land. `npm --prefix web run art -- sheet` renders a contact sheet of the
 art entries, and `/art-review.html` is a deterministic map study. `npm --prefix web run studio -- look <id>` draws
 one entry through the game's own renderer in under a second, and `... studio -- check` finds hovering pieces,
-inside-out faces and z-fighting ([docs/STUDIO.md](docs/STUDIO.md)).
+inside-out faces and z-fighting; `probe`, `lineup` and `board` do the rest ([docs/STUDIO.md](docs/STUDIO.md)).
 Human commands, persistent player knowledge, save/replay,
 solo storage and private multiplayer rooms now exist below it; the UI has not yet been connected to
 that interface. The engine targets the bundled Gods & Kings rules and normal matches. Unciv editor/mod-only behavior and public-platform features are outside this engine work.
