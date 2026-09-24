@@ -307,6 +307,12 @@ impl Ruleset {
     /// `Terrain.kt:212`). These fields are invisible to schema inference —
     /// nothing in the json mentions them — so they are established here.
     fn derive(&mut self) {
+        // A slice's victory knobs: the ruleset's, with its own keys over them.
+        let knobs = self.victory_knobs.clone();
+        for slice in &mut self.slices {
+            slice.settle_knobs(&knobs);
+        }
+
         // An era's number is its position in Eras.json.
         let era_ids: Vec<_> = self.eras.ids().collect();
         for (i, id) in era_ids.into_iter().enumerate() {

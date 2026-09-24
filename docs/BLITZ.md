@@ -1,10 +1,10 @@
 # Blitz
 
-Blitz is civ.game's one-evening mode. It plays a **slice of eras at the full game's pace** (CONTENT.md,
+Blitz is civ.game's one-evening mode. It plays a **slice of eras**, two eras of about 30 turns each (CONTENT.md,
 Spine), not the whole tree compressed. There are three slices of 60 turns each, chosen at setup
 (`Settings.slice`): **Cradles** (Bronze and Iron), **Crossroads** (Paper and Sail) and **Engines** (Steam and
-Electricity). A slice starts in its first era with every tech of the eras before it, cannot research past
-its last era, and ends at turn 60, when The Chronicle decides if nobody has won. It is a ruleset layered over
+Electricity). A slice starts in its first era with every tech of the eras before it and that era's namesake
+tech, cannot research past its last era, and ends at turn 60, when The Chronicle decides if nobody has won. It is a ruleset layered over
 the full game, not a fork of it.
 
 ## How it is built
@@ -30,32 +30,45 @@ settlers of three population, two workers, five musketeers and nine buildings in
 
 | Rule | Blitz | Full game (Standard) | Why |
 |---|---|---|---|
-| Speed | `Blitz` | `Standard` | Standard's costs and knobs, so an era takes the same 30 turns. |
+| Speed | `Blitz` | `Standard` | Standard's costs and knobs; each slice's `scienceCostPercent` (below) then fits its two eras into 60 turns. |
 | Turn limit | 60 | 240 | Two eras of 30 turns. |
 | Deals, peace treaties | 15 and 5 turns | 30 and 10 | Scaled to the slice's length. |
 | Map | small (the default 32×20), 4 nations, 2 city-states | same defaults | The brief asks for small, 4 nations and 2 to 4 city-states. |
 | Diplomatic victory | off (Perpetual Peace and the World Charter removed) | on | The charter needs the Internationalism tree of the Age of the Atom. |
-| Victories | those that can be won within the slice's eras, then The Chronicle | all six | The engine filters them per slice. |
+| Victories | those that can be won within the slice's eras, then The Chronicle | all six | The engine filters them per slice, counting data gates too: Reserve Currency needs `tradeShareFromEra` (the Age of Sail), so Cradles leaves it out. |
 
-Measured with the balance example (8 seeds each, every game reached turn 60 and ended by The Chronicle):
+Each slice entry may also set its own pace and victory reach. `scienceCostPercent` scales tech costs while
+the slice plays (later eras' techs cost far more, so later slices need a bigger cut to fit two eras in 60
+turns). Any of ModOptions' victory knob keys (`influencePercent`, `influenceFloor`, `worldTradePerMajor`,
+`worldTradePerMajorPerEra`, `tradeShareFromEra`) on a slice entry replaces the ruleset's value in that slice
+only. As built:
 
-| Slice | First nation enters | Second era reached by turn 60 |
-|---|---|---|
-| Cradles | Iron at turn 28 | all games |
-| Crossroads | Paper at 11, Sail at 56 | half the games |
-| Engines | Steam at 19, Electricity at 55 | one game in eight |
+| Slice | `scienceCostPercent` | `influencePercent` | `influenceFloor` | `worldTradePerMajor` / `PerEra` |
+|---|---|---|---|---|
+| Cradles | 100 | 230 | 800 | 15 / 3 (ruleset's) |
+| Crossroads | 31 | 300 | 1500 (ruleset's) | 4 / 0 |
+| Engines | 19 | 180 | 1500 (ruleset's) | 4 / 0 |
 
-Crossroads and Engines start in the era *before* their first, because a nation enters an era by
-discovering its namesake tech and the start grants only the earlier eras' techs. Once the start also grants
-the first era's namesake tech (an engine ask), both slices should reach their second era around turn 30.
+Measured with the balance example (8 seeds, 1 to 8; 16 seeds in brackets), 4 nations, 60 turns:
+
+| Slice | Second era first reached | Lingua Franca | Reserve Currency | The Chronicle | Earliest win |
+|---|---|---|---|---|---|
+| Cradles | Iron at turn 28 (29) | 4 of 8 (9 of 16) | not offered | 4 (7) | turn 53 (51) |
+| Crossroads | Sail at 30 (29) | 2 (7) | 1 (1) | 5 (8) | turn 51 (51) |
+| Engines | Electricity at 30 (28) | 4 (9) | 0 (0) | 4 (7) | turn 52 (52) |
+
+Before these knobs (after the start began granting the namesake tech): Sail was first reached at turn 56 in half
+the Crossroads games, Electricity at 53 in one Engines game in eight, and The Chronicle won every game of every
+slice. Reserve Currency stays rare: the best trader often holds 60% of world trade (up to 79% in Crossroads and
+100% in Engines) but seldom for the 15 turns `VictoryTypes.json` asks, which a slice cannot change.
 
 ## Tuning
 
 Numbers come from the balance runner:
 
 ```sh
-cargo run --release -p civ-sim --example balance -- --ruleset blitz --seeds 1..=200 --threads 4
+cargo run --release -p civ-sim --example balance -- --ruleset blitz --slice Crossroads --seeds 1..=8 --threads 4
 ```
 
 `--overlay DIR` layers trial files over the bundled rules, so a change can be tried before it is
-committed. The full game's pace lives in its content costs (CONTENT.md, As built); Blitz inherits it.
+committed. The full game's pace lives in its content costs (CONTENT.md, As built); Blitz inherits it and scales tech costs per slice.

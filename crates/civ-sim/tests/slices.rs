@@ -191,3 +191,48 @@ fn a_victory_gated_past_the_slice_is_not_offered() {
     let rc = r.victories.by_name("Reserve Currency").unwrap();
     assert_eq!(civ_core::world::slices::victory_era(&r, rc), r.eras.by_name("Age of Sail").unwrap().era_number);
 }
+
+#[test]
+fn a_slice_sets_its_own_pace_and_victory_knobs() {
+    use civ_core::world::{slices, TurnModifiers};
+    let r = rules();
+    let full = TurnModifiers::for_speed(&r, r.speeds.id("Blitz")).science.speed;
+    for (slice, percent) in [("Cradles", 100), ("Crossroads", 31), ("Engines", 19)] {
+        let (w, r, _) = new_game_in(&settings(slice), &[], rules()).unwrap();
+        assert_eq!(r.slices.iter().find(|s| s.name == slice).unwrap().science_cost_percent, percent);
+        let speed = TurnModifiers::for_world(&w, &r).science.speed;
+        assert_eq!(speed, slices::science_cost(&w, &r, full), "{slice}");
+        if percent == 100 {
+            assert_eq!(speed, full, "{slice} keeps the full game's tech costs");
+        } else {
+            assert!(speed < full, "{slice} researches faster than the full game");
+        }
+    }
+    // knob keys on a slice entry replace ModOptions' own while it plays, and only then
+    let (w, r, _) = new_game_in(&settings("Cradles"), &[], rules()).unwrap();
+    let knobs = slices::victory_knobs(&w, &r);
+    assert_eq!(knobs.influence_floor, 800);
+    assert_eq!(knobs.trade_share_from_era, r.victory_knobs.trade_share_from_era, "unset keys keep the ruleset's");
+    assert_ne!(r.victory_knobs.influence_floor, 800);
+    let (w, r, _) = new_game_in(&Settings { slice: None, ..settings("Cradles") }, &[], rules()).unwrap();
+    assert_eq!(slices::victory_knobs(&w, &r), &r.victory_knobs);
+}
+
+#[test]
+fn a_slice_that_counts_trade_from_its_start_offers_reserve_currency() {
+    let mut sources: Vec<(String, String)> = content::SOURCES
+        .iter()
+        .chain(content::BLITZ_SOURCES)
+        .map(|(f, t)| (f.to_string(), t.to_string()))
+        .collect();
+    sources.push((
+        "ModOptions.json".into(),
+        r#"{"slices": [{"name": "Cradles", "eras": ["Age of Bronze", "Age of Iron"], "tradeShareFromEra": "Age of Bronze"},
+                       {"name": "Bad", "eras": ["Age of Bronze"], "tradeShareFromEra": "Age of Gold"}]}"#
+            .into(),
+    ));
+    let r = Ruleset::from_sources(&sources).unwrap();
+    let (w, r, _) = new_game_in(&settings("Cradles"), &[], r).unwrap();
+    assert!(victories(&w, &r).iter().any(|n| n == "Reserve Currency"), "{:?}", victories(&w, &r));
+    assert!(r.civgame_problems().iter().any(|p| p.contains("slice Bad: tradeShareFromEra")), "{:?}", r.civgame_problems());
+}

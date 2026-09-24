@@ -8,7 +8,9 @@
 //! (`civ-sim` `Settings.slice`); without one nothing here applies.
 
 use crate::arena::Id;
+use crate::ruleset::civgame::{SliceDef, VictoryKnobs};
 use crate::ruleset::{Building, Ruleset, Technology, Victory};
+use crate::stats::Fixed;
 use crate::world::victory::Milestone;
 use crate::world::world::World;
 
@@ -34,6 +36,27 @@ pub fn resolve(r: &Ruleset, name: &str) -> Result<Slice, String> {
         return Err(format!("slice {name} has no eras"));
     };
     Ok(Slice { name: name.to_string(), first_era: *first, last_era: *last })
+}
+
+/// The definition of the slice a world is playing, if any.
+pub fn definition<'r>(world: &World, r: &'r Ruleset) -> Option<&'r SliceDef> {
+    let slice = world.slice.as_ref()?;
+    r.slices.iter().find(|d| d.name == slice.name)
+}
+
+/// The influence and trade knobs in force: a slice's own while one plays,
+/// else the ruleset's.
+pub fn victory_knobs<'r>(world: &World, r: &'r Ruleset) -> &'r VictoryKnobs {
+    definition(world, r).map_or(&r.victory_knobs, |d| &d.victory_knobs)
+}
+
+/// The science cost modifier in force: the speed's, scaled by the slice's
+/// `scienceCostPercent` while one plays.
+pub fn science_cost(world: &World, r: &Ruleset, speed: Fixed) -> Fixed {
+    match definition(world, r) {
+        Some(d) if d.science_cost_percent != 100 => speed * Fixed::from_fraction(d.science_cost_percent, 100),
+        _ => speed,
+    }
 }
 
 fn tech_era(r: &Ruleset, tech: &str) -> Option<i32> {
@@ -72,6 +95,10 @@ pub fn opening_techs(r: &Ruleset, slice: &Slice) -> Vec<Id<Technology>> {
 /// (`tradeShareFromEra`). Victories that need nothing era-bound (conquest,
 /// influence, score) answer 0.
 pub fn victory_era(r: &Ruleset, victory: &Victory) -> i32 {
+    victory_era_with(r, &r.victory_knobs, victory)
+}
+
+fn victory_era_with(r: &Ruleset, knobs: &VictoryKnobs, victory: &Victory) -> i32 {
     let mut era = 0;
     for text in &victory.milestones {
         let needed = match crate::world::victory::parse_milestone(text) {
@@ -90,8 +117,7 @@ pub fn victory_era(r: &Ruleset, victory: &Victory) -> i32 {
                 .filter(|b| b.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::OneTimeTriggerVoting)))
                 .map(|b| building_era(r, b))
                 .min(),
-            Milestone::WorldTradeShare { .. } => r
-                .victory_knobs
+            Milestone::WorldTradeShare { .. } => knobs
                 .trade_share_from_era
                 .as_deref()
                 .and_then(|e| r.eras.by_name(e))
@@ -103,9 +129,10 @@ pub fn victory_era(r: &Ruleset, victory: &Victory) -> i32 {
     era
 }
 
-/// The victories a slice can be won by.
+/// The victories a slice can be won by, under its own knobs.
 pub fn victories_within(r: &Ruleset, slice: &Slice) -> Vec<Id<Victory>> {
-    r.victories.iter().filter(|(_, v)| victory_era(r, v) <= slice.last_era).map(|(id, _)| id).collect()
+    let knobs = r.slices.iter().find(|d| d.name == slice.name).map_or(&r.victory_knobs, |d| &d.victory_knobs);
+    r.victories.iter().filter(|(_, v)| victory_era_with(r, knobs, v) <= slice.last_era).map(|(id, _)| id).collect()
 }
 
 /// A wonder the slice's starting era lists as already gone

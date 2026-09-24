@@ -499,7 +499,9 @@ impl TurnModifiers<'_> {
 
     /// The modifiers of the world's own speed.
     pub fn for_world(world: &World, r: &Ruleset) -> Self {
-        Self::for_speed(r, world.speed)
+        let mut m = Self::for_speed(r, world.speed);
+        m.science.speed = crate::world::slices::science_cost(world, r, m.science.speed);
+        m
     }
 }
 

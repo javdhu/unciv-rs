@@ -312,7 +312,12 @@ fn placeholders(template: &str) -> impl Iterator<Item = &str> {
 /// cannot research past the last of `eras`, and ends after `turns` turns,
 /// when The Chronicle (the highest score) decides if nobody has won. Written
 /// in `ModOptions.json` under `slices`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// A slice may set its own pace and victory reach: `scienceCostPercent`
+/// scales tech costs in that slice, and any victory knob key
+/// (`influencePercent`, `influenceFloor`, `worldTradePerMajor`, ... see
+/// [`VictoryKnobs`]) replaces the ruleset's value while the slice plays.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SliceDef {
     pub name: String,
     /// The eras it covers, in order; the first is where it starts.
@@ -321,6 +326,25 @@ pub struct SliceDef {
     /// Calendar years at its first and last turn, for the date shown.
     pub start_year: Option<i32>,
     pub end_year: Option<i32>,
+    /// `scienceCostPercent`: tech costs in this slice, as a percent of the
+    /// full game's (100 unless set).
+    pub science_cost_percent: i64,
+    /// The victory knobs in force in this slice: the ruleset's, with the
+    /// slice entry's own knob keys laid over them. Filled once loading is done.
+    pub victory_knobs: VictoryKnobs,
+    /// The slice entry as written, for laying its knob keys over the
+    /// ruleset's once every file has loaded.
+    pub(crate) entry: Option<Json>,
+}
+
+impl SliceDef {
+    /// Lay the entry's knob keys over the ruleset's `knobs`.
+    pub(crate) fn settle_knobs(&mut self, knobs: &VictoryKnobs) {
+        self.victory_knobs = knobs.clone();
+        if let Some(entry) = &self.entry {
+            read_victory_knobs(entry, &mut self.victory_knobs);
+        }
+    }
 }
 
 pub fn read_slice(j: &Json) -> Option<SliceDef> {
@@ -330,6 +354,9 @@ pub fn read_slice(j: &Json) -> Option<SliceDef> {
         turns: j.get("turns").and_then(|v| v.as_i32()).unwrap_or(60).max(1) as u32,
         start_year: j.get("startYear").and_then(|v| v.as_i32()),
         end_year: j.get("endYear").and_then(|v| v.as_i32()),
+        science_cost_percent: j.get("scienceCostPercent").and_then(|v| v.as_i64()).unwrap_or(100).max(1),
+        victory_knobs: VictoryKnobs::default(),
+        entry: Some(j.clone()),
     })
 }
 
@@ -424,6 +451,9 @@ impl super::Ruleset {
         for s in &self.slices {
             for e in s.eras.iter().filter(|e| !era(e)) {
                 out.push(format!("slice {}: no era {e}", s.name));
+            }
+            if let Some(e) = s.victory_knobs.trade_share_from_era.as_deref().filter(|e| !era(e)) {
+                out.push(format!("slice {}: tradeShareFromEra: no era {e}", s.name));
             }
         }
         if let Some(e) = self.victory_knobs.trade_share_from_era.as_deref().filter(|e| !era(e)) {

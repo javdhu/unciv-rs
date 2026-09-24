@@ -6,10 +6,16 @@
     "buildingsToRemove": [
         "World Charter"
     ],
-    // Blitz plays one slice of eras at the full game's pace (docs/CONTENT.md, Spine; docs/BLITZ.md).
+    // Blitz plays one slice of eras (docs/CONTENT.md, Spine; docs/BLITZ.md): two eras of about 30 turns each.
+    // scienceCostPercent scales tech costs in the slice so its second era opens near turn 30; the victory knob
+    // keys (influencePercent, influenceFloor, worldTradePerMajor, worldTradePerMajorPerEra) replace ModOptions'
+    // own while the slice plays, so Lingua Franca and Reserve Currency can be won inside 60 turns.
     "slices": [
-        {"name": "Cradles", "eras": ["Age of Bronze", "Age of Iron"], "turns": 60},
-        {"name": "Crossroads", "eras": ["Age of Paper", "Age of Sail"], "turns": 60, "startYear": 500, "endYear": 1750},
-        {"name": "Engines", "eras": ["Age of Steam", "Age of Electricity"], "turns": 60, "startYear": 1750, "endYear": 1945}
+        {"name": "Cradles", "eras": ["Age of Bronze", "Age of Iron"], "turns": 60,
+            "influencePercent": 230, "influenceFloor": 800},
+        {"name": "Crossroads", "eras": ["Age of Paper", "Age of Sail"], "turns": 60, "startYear": 500, "endYear": 1750,
+            "scienceCostPercent": 31, "influencePercent": 300, "worldTradePerMajor": 4, "worldTradePerMajorPerEra": 0},
+        {"name": "Engines", "eras": ["Age of Steam", "Age of Electricity"], "turns": 60, "startYear": 1750, "endYear": 1945,
+            "scienceCostPercent": 19, "influencePercent": 180, "worldTradePerMajor": 4, "worldTradePerMajorPerEra": 0}
     ]
 }
