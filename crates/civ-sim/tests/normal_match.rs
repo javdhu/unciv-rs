@@ -228,8 +228,8 @@ fn city_state_view_shares_only_our_quests_and_relationship() {
         expires_on: 25,
         baseline: 0,
     };
-    let artist = r.units.id("Great Artist").unwrap();
-    let scientist = r.units.id("Great Scientist").unwrap();
+    let artist = r.units.id("Virtuoso").unwrap();
+    let scientist = r.units.id("Scholar").unwrap();
     w.civ_mut(cs).unwrap().quests.active.extend([
         make(me, Target::Unit(artist)),
         make(CivId(1), Target::Unit(scientist)),
@@ -371,8 +371,8 @@ fn blitz_layers_over_the_full_game() {
     assert_eq!(speed.total_turns, 80);
     assert!(blitz.speeds.by_name("Standard").is_some() && full.speeds.by_name("Blitz").is_none());
     // No diplomatic victory, and no United Nations to build towards one.
-    assert!(blitz.victories.by_name("Diplomatic").is_none() && full.victories.by_name("Diplomatic").is_some());
-    assert!(blitz.building("United Nations").is_none() && full.building("United Nations").is_some());
+    assert!(blitz.victories.by_name("Perpetual Peace").is_none() && full.victories.by_name("Perpetual Peace").is_some());
+    assert!(blitz.building("World Charter").is_none() && full.building("World Charter").is_some());
     assert!(blitz.dangling_refs().len() <= full.dangling_refs().len(), "{:?}", blitz.dangling_refs());
     // Everything not overridden is the full game's.
     assert_eq!(blitz.technologies.len(), full.technologies.len());
@@ -411,7 +411,7 @@ fn a_blitz_game_starts_small_and_fast() {
     let (full, full_rules, _) = civ_sim::new_game_for(&Settings::default(), &[0]).unwrap();
     assert_eq!(full.civ(CivId(0)).unwrap().units.len(), 2);
     assert_eq!(full.endgame.max_turns, 500);
-    assert!(full_rules.victories.by_name("Diplomatic").is_some());
+    assert!(full_rules.victories.by_name("Perpetual Peace").is_some());
 }
 
 #[test]

@@ -12,7 +12,7 @@
 //! ```
 //!
 //! Options (defaults in brackets):
-//!   --ruleset NAME     gods-and-kings | blitz [gods-and-kings]
+//!   --ruleset NAME     base | blitz [base]
 //!   --speed NAME       game speed [the ruleset's: Standard, or Blitz]
 //!   --map SIZE         tiny | small | medium | large | huge, or WxH [small]
 //!   --civs N           major civilizations [4]
@@ -302,7 +302,7 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     Ok(GameRecord {
         seed,
         turns: world.turn,
-        ended_by_capture: victory.as_deref() == Some("Domination") && world.victory_turn.is_some_and(|t| t < limit),
+        ended_by_capture: victory.as_deref() == Some("Conquest") && world.victory_turn.is_some_and(|t| t < limit),
         victory,
         victory_turn: world.victory_turn,
         winner: world.winner.map(|(c, _)| nation(&world, r, c)),

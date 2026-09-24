@@ -34,9 +34,9 @@
           "Patronage": CityStateCompetitiveness + CSFriendly,
           "Piety": Faith + CS Friendly,
           "Rationalism": Science + Spaceship,
-          "Freedom": Hapiness + Growth,
-          "Autocracy": Boldness + Military training,
-          "Order": Defensive + Production
+          "Democracy": Hapiness + Growth,
+          "Militarism": Boldness + Military training,
+          "Socialism": Defensive + Production
       },
       "civilopediaText": [
           {"text": "Alexander the Great, born in Macedon, was one of the most skilled generals, even more by his young age, and in only 17 years he conquered all the Greek known world."}
@@ -67,9 +67,9 @@
       "Patronage": 5,
       "Piety": 6,
       "Rationalism": 5,
-      "Freedom": 5,
-      "Autocracy": 4,
-      "Order": 7
+      "Democracy": 5,
+      "Militarism": 4,
+      "Socialism": 7
     }
   },
   {
@@ -97,9 +97,9 @@
       "Patronage": 3,
       "Piety": 6,
       "Rationalism": 7,
-      "Freedom": 5,
-      "Autocracy": 8,
-      "Order": 5
+      "Democracy": 5,
+      "Militarism": 8,
+      "Socialism": 5
     },
     "civilopediaText": [
       {
@@ -132,9 +132,9 @@
       "Patronage": 3,
       "Piety": 5,
       "Rationalism": 8,
-      "Freedom": 5,
-      "Autocracy": 7,
-      "Order": 3
+      "Democracy": 5,
+      "Militarism": 7,
+      "Socialism": 3
     }
   },
   {
@@ -162,9 +162,9 @@
       "Patronage": 4,
       "Piety": 8,
       "Rationalism": 5,
-      "Freedom": 4,
-      "Autocracy": 7,
-      "Order": 4
+      "Democracy": 4,
+      "Militarism": 7,
+      "Socialism": 4
     },
     "civilopediaText": [
       {
@@ -197,9 +197,9 @@
       "Patronage": 3,
       "Piety": 5,
       "Rationalism": 3,
-      "Freedom": 5,
-      "Autocracy": 8,
-      "Order": 4
+      "Democracy": 5,
+      "Militarism": 8,
+      "Socialism": 4
     },
     "civilopediaText": [
       {
@@ -232,9 +232,9 @@
       "Patronage": 7,
       "Piety": 4,
       "Rationalism": 6,
-      "Freedom": 6,
-      "Autocracy": 5,
-      "Order": 8
+      "Democracy": 6,
+      "Militarism": 5,
+      "Socialism": 8
     },
     "civilopediaText": [
       {
@@ -267,9 +267,9 @@
       "Patronage": 7,
       "Piety": 4,
       "Rationalism": 8,
-      "Freedom": 5,
-      "Autocracy": 5,
-      "Order": 7
+      "Democracy": 5,
+      "Militarism": 5,
+      "Socialism": 7
     },
     "civilopediaText": [
       {
@@ -302,9 +302,9 @@
       "Patronage": 5,
       "Piety": 8,
       "Rationalism": 7,
-      "Freedom": 8,
-      "Autocracy": 6,
-      "Order": 6
+      "Democracy": 8,
+      "Militarism": 6,
+      "Socialism": 6
     },
     "civilopediaText": [
       {
@@ -337,9 +337,9 @@
       "Patronage": 6,
       "Piety": 7,
       "Rationalism": 4,
-      "Freedom": 6,
-      "Autocracy": 7,
-      "Order": 5
+      "Democracy": 6,
+      "Militarism": 7,
+      "Socialism": 5
     }
   },
   {
@@ -367,9 +367,9 @@
       "Patronage": 7,
       "Piety": 8,
       "Rationalism": 10,
-      "Freedom": 2,
-      "Autocracy": 3,
-      "Order": 6
+      "Democracy": 2,
+      "Militarism": 3,
+      "Socialism": 6
     }
   },
   {
@@ -397,9 +397,9 @@
       "Patronage": 4,
       "Piety": 7,
       "Rationalism": 6,
-      "Freedom": 8,
-      "Autocracy": 3,
-      "Order": 7
+      "Democracy": 8,
+      "Militarism": 3,
+      "Socialism": 7
     }
   },
   {
@@ -427,9 +427,9 @@
       "Patronage": 5,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 5,
-      "Autocracy": 6,
-      "Order": 5
+      "Democracy": 5,
+      "Militarism": 6,
+      "Socialism": 5
     }
   },
   {
@@ -457,9 +457,9 @@
       "Patronage": 8,
       "Piety": 5,
       "Rationalism": 6,
-      "Freedom": 5,
-      "Autocracy": 4,
-      "Order": 6
+      "Democracy": 5,
+      "Militarism": 4,
+      "Socialism": 6
     }
   },
   {
@@ -487,9 +487,9 @@
       "Patronage": 8,
       "Piety": 7,
       "Rationalism": 5,
-      "Freedom": 5,
-      "Autocracy": 3,
-      "Order": 5
+      "Democracy": 5,
+      "Militarism": 3,
+      "Socialism": 5
     }
   },
   {
@@ -517,9 +517,9 @@
       "Patronage": 5,
       "Piety": 7,
       "Rationalism": 4,
-      "Freedom": 6,
-      "Autocracy": 6,
-      "Order": 6
+      "Democracy": 6,
+      "Militarism": 6,
+      "Socialism": 6
     }
   },
   {
@@ -547,9 +547,9 @@
       "Patronage": 4,
       "Piety": 9,
       "Rationalism": 7,
-      "Freedom": 10,
-      "Autocracy": 1,
-      "Order": 5
+      "Democracy": 10,
+      "Militarism": 1,
+      "Socialism": 5
     }
   },
   {
@@ -577,9 +577,9 @@
       "Patronage": 2,
       "Piety": 3,
       "Rationalism": 4,
-      "Freedom": 5,
-      "Autocracy": 8,
-      "Order": 3
+      "Democracy": 5,
+      "Militarism": 8,
+      "Socialism": 3
     }
   },
   {
@@ -607,9 +607,9 @@
       "Patronage": 6,
       "Piety": 4,
       "Rationalism": 7,
-      "Freedom": 5,
-      "Autocracy": 6,
-      "Order": 6
+      "Democracy": 5,
+      "Militarism": 6,
+      "Socialism": 6
     }
   },
   {
@@ -637,9 +637,9 @@
       "Patronage": 4,
       "Piety": 7,
       "Rationalism": 4,
-      "Freedom": 8,
-      "Autocracy": 4,
-      "Order": 8
+      "Democracy": 8,
+      "Militarism": 4,
+      "Socialism": 8
     }
   },
   {
@@ -667,9 +667,9 @@
       "Patronage": 5,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 5,
-      "Autocracy": 7,
-      "Order": 4
+      "Democracy": 5,
+      "Militarism": 7,
+      "Socialism": 4
     }
   },
   {
@@ -697,9 +697,9 @@
       "Patronage": 4,
       "Piety": 9,
       "Rationalism": 8,
-      "Freedom": 7,
-      "Autocracy": 3,
-      "Order": 6
+      "Democracy": 7,
+      "Militarism": 3,
+      "Socialism": 6
     }
   },
   {
@@ -727,9 +727,9 @@
       "Patronage": 4,
       "Piety": 8,
       "Rationalism": 5,
-      "Freedom": 6,
-      "Autocracy": 2,
-      "Order": 7
+      "Democracy": 6,
+      "Militarism": 2,
+      "Socialism": 7
     }
   },
   {
@@ -757,9 +757,9 @@
       "Patronage": 3,
       "Piety": 8,
       "Rationalism": 3,
-      "Freedom": 5,
-      "Autocracy": 5,
-      "Order": 4
+      "Democracy": 5,
+      "Militarism": 5,
+      "Socialism": 4
     }
   },
   {
@@ -787,9 +787,9 @@
       "Patronage": 6,
       "Piety": 5,
       "Rationalism": 4,
-      "Freedom": 7,
-      "Autocracy": 5,
-      "Order": 7
+      "Democracy": 7,
+      "Militarism": 5,
+      "Socialism": 7
     }
   },
   {
@@ -817,9 +817,9 @@
       "Patronage": 7,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 6,
-      "Autocracy": 4,
-      "Order": 5
+      "Democracy": 6,
+      "Militarism": 4,
+      "Socialism": 5
     }
   },
   {
@@ -847,9 +847,9 @@
       "Patronage": 4,
       "Piety": 8,
       "Rationalism": 5,
-      "Freedom": 6,
-      "Autocracy": 9,
-      "Order": 3
+      "Democracy": 6,
+      "Militarism": 9,
+      "Socialism": 3
     }
   },
   {
@@ -877,9 +877,9 @@
       "Patronage": 7,
       "Piety": 3,
       "Rationalism": 7,
-      "Freedom": 4,
-      "Autocracy": 9,
-      "Order": 3
+      "Democracy": 4,
+      "Militarism": 9,
+      "Socialism": 3
     }
   },
   {
@@ -907,9 +907,9 @@
       "Patronage": 5,
       "Piety": 5,
       "Rationalism": 8,
-      "Freedom": 5,
-      "Autocracy": 5,
-      "Order": 6
+      "Democracy": 5,
+      "Militarism": 5,
+      "Socialism": 6
     }
   },
   {
@@ -937,9 +937,9 @@
       "Patronage": 6,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 5,
-      "Autocracy": 9,
-      "Order": 5
+      "Democracy": 5,
+      "Militarism": 9,
+      "Socialism": 5
     }
   },
   {
@@ -967,9 +967,9 @@
       "Patronage": 4,
       "Piety": 8,
       "Rationalism": 8,
-      "Freedom": 6,
-      "Autocracy": 3,
-      "Order": 7
+      "Democracy": 6,
+      "Militarism": 3,
+      "Socialism": 7
     }
   },
   {
@@ -997,9 +997,9 @@
       "Patronage": 3,
       "Piety": 6,
       "Rationalism": 5,
-      "Freedom": 4,
-      "Autocracy": 4,
-      "Order": 5
+      "Democracy": 4,
+      "Militarism": 4,
+      "Socialism": 5
     }
   },
   {
@@ -1027,9 +1027,9 @@
       "Patronage": 5,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 9,
-      "Autocracy": 3,
-      "Order": 6
+      "Democracy": 9,
+      "Militarism": 3,
+      "Socialism": 6
     }
   },
   {
@@ -1057,9 +1057,9 @@
       "Patronage": 5,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 6,
-      "Autocracy": 5,
-      "Order": 8
+      "Democracy": 6,
+      "Militarism": 5,
+      "Socialism": 8
     }
   },
   {
@@ -1087,9 +1087,9 @@
       "Patronage": 5,
       "Piety": 8,
       "Rationalism": 6,
-      "Freedom": 6,
-      "Autocracy": 4,
-      "Order": 7
+      "Democracy": 6,
+      "Militarism": 4,
+      "Socialism": 7
     }
   },
   {
@@ -1117,9 +1117,9 @@
       "Patronage": 5,
       "Piety": 7,
       "Rationalism": 6,
-      "Freedom": 6,
-      "Autocracy": 5,
-      "Order": 8
+      "Democracy": 6,
+      "Militarism": 5,
+      "Socialism": 8
     }
   },
   {
@@ -1147,9 +1147,9 @@
       "Patronage": 4,
       "Piety": 6,
       "Rationalism": 9,
-      "Freedom": 5,
-      "Autocracy": 4,
-      "Order": 7
+      "Democracy": 5,
+      "Militarism": 4,
+      "Socialism": 7
     }
   },
   {
@@ -1177,9 +1177,9 @@
       "Patronage": 5,
       "Piety": 2,
       "Rationalism": 2,
-      "Freedom": 6,
-      "Autocracy": 9,
-      "Order": 5
+      "Democracy": 6,
+      "Militarism": 9,
+      "Socialism": 5
     }
   },
   {
@@ -1207,9 +1207,9 @@
       "Patronage": 6,
       "Piety": 6,
       "Rationalism": 7,
-      "Freedom": 4,
-      "Autocracy": 8,
-      "Order": 4
+      "Democracy": 4,
+      "Militarism": 8,
+      "Socialism": 4
     }
   },
   {
@@ -1237,9 +1237,9 @@
       "Patronage": 6,
       "Piety": 7,
       "Rationalism": 6,
-      "Freedom": 6,
-      "Autocracy": 4,
-      "Order": 8
+      "Democracy": 6,
+      "Militarism": 4,
+      "Socialism": 8
     }
   },
   {
@@ -1267,9 +1267,9 @@
       "Patronage": 6,
       "Piety": 5,
       "Rationalism": 7,
-      "Freedom": 6,
-      "Autocracy": 7,
-      "Order": 8
+      "Democracy": 6,
+      "Militarism": 7,
+      "Socialism": 8
     }
   },
   {
@@ -1297,9 +1297,9 @@
       "Patronage": 7,
       "Piety": 5,
       "Rationalism": 5,
-      "Freedom": 7,
-      "Autocracy": 4,
-      "Order": 5
+      "Democracy": 7,
+      "Militarism": 4,
+      "Socialism": 5
     }
   },
   {
@@ -1327,9 +1327,9 @@
       "Patronage": 7,
       "Piety": 6,
       "Rationalism": 9,
-      "Freedom": 7,
-      "Autocracy": 7,
-      "Order": 7
+      "Democracy": 7,
+      "Militarism": 7,
+      "Socialism": 7
     }
   }
 ]

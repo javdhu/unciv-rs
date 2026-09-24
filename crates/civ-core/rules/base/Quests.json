@@ -12,7 +12,7 @@
   },
   {
     "name": "Clear Barbarian Camp",
-    "description": "We feel threatened by a Barbarian Camp near our city. Please take care of it.",
+    "description": "We feel threatened by a raider camp near our city. Please take care of it.",
     "type": "Global",
     "influence": 50,
     "minimumCivs": 1,
@@ -26,7 +26,7 @@
   },
   {
     "name": "Connect Resource",
-    "description": "In order to make our civilizations stronger, connect [tileResource] to your trade network.",
+    "description": "To make both our nations stronger, connect [tileResource] to your trade network.",
       "weightForCityStateType": {
           "Maritime": 2,
           "Mercantile": 3
@@ -34,14 +34,14 @@
   },
   {
     "name": "Construct Wonder",
-    "description": "We recommend you to start building [wonder] to show the whole world your civilization strength.",
+    "description": "We recommend you start building [wonder] to show the whole world the strength of your nation.",
       "weightForCityStateType": {
           "Cultured": 3
       }
   },
   {
     "name": "Acquire Great Person",
-    "description": "Great People can change the course of a Civilization! You will be rewarded for acquiring a new [greatPerson].",
+    "description": "Luminaries can change the course of a nation! You will be rewarded for acquiring a new [greatPerson].",
       "weightForCityStateType": {
           "Cultured": 3
       }
@@ -102,7 +102,7 @@
   },
   {
     "name": "Contest Culture",
-    "description": "The civilization with the largest Culture growth will gain a reward.",
+    "description": "The nation with the largest Culture growth will gain a reward.",
     "type": "Global",
     "duration": 30,
     "minimumCivs": 3,
@@ -116,7 +116,7 @@
   },
   {
     "name": "Contest Faith",
-    "description": "The civilization with the largest Faith growth will gain a reward.",
+    "description": "The nation with the largest Faith growth will gain a reward.",
     "type": "Global",
     "duration": 30,
     "minimumCivs": 3,
@@ -130,7 +130,7 @@
   },
   {
     "name": "Contest Technologies",
-    "description": "The civilization with the largest number of new Technologies researched will gain a reward.",
+    "description": "The nation with the largest number of new Technologies researched will gain a reward.",
     "type": "Global",
     "duration": 30,
     "minimumCivs": 3,
