@@ -927,7 +927,7 @@ fn defensive_pact_requires_saved_bilateral_consent_and_hides_other_technology() 
         .civ_mut(CivId(0))
         .unwrap()
         .techs
-        .insert(s.rules.technologies.id("Chivalry").unwrap());
+        .insert(s.rules.technologies.id("Stirrups").unwrap());
     for civ in [CivId(0), CivId(1)] {
         civ_core::world::policies::rebuild_uniques(&mut s.world, &s.rules, civ);
     }
@@ -988,7 +988,7 @@ fn defensive_pact_requires_saved_bilateral_consent_and_hides_other_technology() 
         .civ_mut(CivId(1))
         .unwrap()
         .techs
-        .insert(s.rules.technologies.id("Chivalry").unwrap());
+        .insert(s.rules.technologies.id("Stirrups").unwrap());
     civ_core::world::policies::rebuild_uniques(&mut s.world, &s.rules, CivId(1));
     let accepted = s
         .stage_command(

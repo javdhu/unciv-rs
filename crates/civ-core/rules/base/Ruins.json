@@ -11,17 +11,17 @@
     {
         "name": "squatters willing to work for you",
         "notification": "A [Worker] has joined us!",
-        "uniques": ["Free [Worker] found in the ruins", "Unavailable <on [Prince] difficulty or higher>"],
-        "excludedDifficulties": ["Prince", "King", "Emperor", "Immortal", "Deity"]
+        "uniques": ["Free [Worker] found in the ruins", "Unavailable <on [Tutor] difficulty or higher>"],
+        "excludedDifficulties": ["Tutor", "Lecturer", "Professor", "Dean", "Chancellor"]
     },
     {
         "name": "squatters wishing to settle under your rule",
         "notification": "A [Settler] has joined us!",
         "uniques": [
-            "Free [Settler] found in the ruins", "Unavailable <on [Prince] difficulty or higher>",
+            "Free [Settler] found in the ruins", "Unavailable <on [Tutor] difficulty or higher>",
             "Play [wagon] sound"
         ],
-        "excludedDifficulties": ["Warlord","Prince","King","Emperor","Immortal","Deity"]
+        "excludedDifficulties": ["Graduate","Tutor","Lecturer","Professor","Dean","Chancellor"]
     },
     {
         "name": "your exploring unit receives training",
@@ -53,7 +53,7 @@
     {
         "name": "discover a lost technology",
         "notification": "We have discovered the lost technology of [techName] in the ruins!",
-        "uniques": ["[1] free random researchable Tech(s) from the [Ancient era]"],
+        "uniques": ["[1] free random researchable Tech(s) from the [Age of Bronze]"],
 		"color": "#7f7fff"
     },
     {
@@ -62,9 +62,9 @@
         "uniques": ["[This Unit] upgrades for free including special upgrades"]
     },
     {
-        "name": "reveal nearby Barbarian camps",
-        "notification": "You find evidence of Barbarian activity. Nearby Barbarian camps are revealed!",
-        "uniques": ["Reveal up to [All] [Barbarian encampment] within a [10] tile radius"]
+        "name": "reveal nearby raider camps",
+        "notification": "You find evidence of raider activity. Nearby raider camps are revealed!",
+        "uniques": ["Reveal up to [All] [Raider camp] within a [10] tile radius"]
     },
     {
         "name": "find a crudely-drawn map",

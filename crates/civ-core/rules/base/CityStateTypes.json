@@ -2,14 +2,14 @@
     {
         "name": "Cultured",
         "friendBonusUniques": [
-            "[+3 Culture] <before the [Medieval era]>",
-            "[+6 Culture] <starting from the [Medieval era]> <before the [Industrial era]>",
-            "[+13 Culture] <starting from the [Industrial era]>"
+            "[+3 Culture] <before the [Age of Paper]>",
+            "[+6 Culture] <starting from the [Age of Paper]> <before the [Age of Steam]>",
+            "[+13 Culture] <starting from the [Age of Steam]>"
         ],
         "allyBonusUniques": [
-            "[+6 Culture] <before the [Medieval era]>",
-            "[+12 Culture] <starting from the [Medieval era]> <before the [Industrial era]>",
-            "[+26 Culture] <starting from the [Industrial era]>"
+            "[+6 Culture] <before the [Age of Paper]>",
+            "[+12 Culture] <starting from the [Age of Paper]> <before the [Age of Steam]>",
+            "[+26 Culture] <starting from the [Age of Steam]>"
         ],
         "color": [139, 96, 255]
     },
@@ -23,12 +23,12 @@
     {
         "name": "Mercantile",
         "friendBonusUniques": [
-            "[+2 Happiness] <before the [Medieval era]>",
-            "[+3 Happiness] <starting from the [Medieval era]>"
+            "[+2 Happiness] <before the [Age of Paper]>",
+            "[+3 Happiness] <starting from the [Age of Paper]>"
         ],
         "allyBonusUniques": [
-            "[+2 Happiness] <before the [Medieval era]>",
-            "[+3 Happiness] <starting from the [Medieval era]>",
+            "[+2 Happiness] <before the [Age of Paper]>",
+            "[+3 Happiness] <starting from the [Age of Paper]>",
             "Provides a unique luxury"
         ],
         "color": [255, 216, 0]
@@ -42,14 +42,14 @@
     {
         "name": "Religious",
         "friendBonusUniques":  [
-            "[+3 Faith] <before the [Medieval era]>",
-            "[+6 Faith] <starting from the [Medieval era]> <before the [Industrial era]>",
-            "[+13 Faith] <starting from the [Industrial era]>"
+            "[+3 Faith] <before the [Age of Paper]>",
+            "[+6 Faith] <starting from the [Age of Paper]> <before the [Age of Steam]>",
+            "[+13 Faith] <starting from the [Age of Steam]>"
         ],
         "allyBonusUniques":  [
-            "[+6 Faith] <before the [Medieval era]>",
-            "[+12 Faith] <starting from the [Medieval era]> <before the [Industrial era]>",
-            "[+26 Faith] <starting from the [Industrial era]>"
+            "[+6 Faith] <before the [Age of Paper]>",
+            "[+12 Faith] <starting from the [Age of Paper]> <before the [Age of Steam]>",
+            "[+26 Faith] <starting from the [Age of Steam]>"
         ],
         "color": [255, 255, 255]
     }

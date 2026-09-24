@@ -130,3 +130,78 @@ fn compute_hash() -> String {
     }
     format!("{:x}", digest.finalize())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use civ_core::ruleset::Technology;
+    use std::collections::BTreeSet;
+
+    const ERAS: [&str; 8] = [
+        "Age of Bronze",
+        "Age of Iron",
+        "Age of Paper",
+        "Age of Sail",
+        "Age of Steam",
+        "Age of Electricity",
+        "Age of the Atom",
+        "Age of Information",
+    ];
+    /// The tech each era after the first opens with (docs/CONTENT.md, Spine).
+    const OPENERS: [(&str, &str); 7] = [
+        ("Age of Iron", "Iron Working"),
+        ("Age of Paper", "Paper"),
+        ("Age of Sail", "Navigation"),
+        ("Age of Steam", "Steam Power"),
+        ("Age of Electricity", "Electricity"),
+        ("Age of the Atom", "Nuclear Fission"),
+        ("Age of Information", "The Internet"),
+    ];
+
+    #[test]
+    fn every_ruleset_resolves_its_references() {
+        for name in RULESETS {
+            let r = load_ruleset(name).unwrap();
+            assert!(r.dangling_refs().is_empty(), "{name}: {:?}", r.dangling_refs());
+        }
+    }
+
+    #[test]
+    fn discovering_the_namesake_tech_is_the_only_way_into_an_era() {
+        let r = load().unwrap();
+        let eras: Vec<_> = r.eras.iter().map(|(_, e)| e.name.as_str()).collect();
+        assert_eq!(eras, ERAS);
+        let era_of = |t: &Technology| {
+            t.column.and_then(|c| r.tech_columns.get(c)).map(|c| c.era.clone()).unwrap_or_default()
+        };
+        for (era, opener) in OPENERS {
+            let tech = r.technologies.by_name(opener).unwrap_or_else(|| panic!("no {opener}"));
+            assert_eq!(era_of(tech), era, "{opener}");
+            for (_, t) in r.technologies.iter().filter(|(_, t)| era_of(t) == era && t.name != opener) {
+                let mut needs = BTreeSet::new();
+                let mut open = t.prerequisites.clone();
+                while let Some(p) = open.pop() {
+                    if needs.insert(p.clone()) {
+                        open.extend(r.technologies.by_name(&p).unwrap().prerequisites.iter().cloned());
+                    }
+                }
+                assert!(needs.contains(opener), "{} is in the {era} without requiring {opener}", t.name);
+            }
+        }
+    }
+
+    #[test]
+    fn victories_name_things_that_exist() {
+        let r = load().unwrap();
+        for (_, v) in r.victories.iter() {
+            for part in &v.required_spaceship_parts {
+                assert!(r.units.id(part).is_some(), "{}: no unit {part}", v.name);
+            }
+            for m in &v.milestones {
+                if let Some(b) = m.strip_prefix("Build [").and_then(|m| m.strip_suffix(']')) {
+                    assert!(r.buildings.id(b).is_some(), "{}: no building {b}", v.name);
+                }
+            }
+        }
+    }
+}

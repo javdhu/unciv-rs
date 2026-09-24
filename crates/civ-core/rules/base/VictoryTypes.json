@@ -1,42 +1,45 @@
 [
     {
-        "name": "Scientific",
-        "victoryScreenHeader": "Complete all the spaceship parts to win!",
-        "milestones": [
-            "Build [Apollo Program]", "Add all [spaceship parts] in capital"
-        ],
-        "requiredSpaceshipParts": [
-            "SS Engine", "SS Stasis Chamber", "SS Cockpit", "SS Booster", "SS Booster", "SS Booster"
-        ],
-        "victoryString": "You have achieved victory through mastery of Science! You have conquered the mysteries of nature and led your people on a voyage to a brave new world! Your triumph will be remembered as long as the stars burn in the night sky!",
-        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+        "name": "AGI",
+        "victoryScreenHeader": "Complete the Turing Project and assemble its four parts in your capital to win!",
+        "milestones": ["Build [The Turing Project]", "Add all [spaceship parts] in capital"],
+        "requiredSpaceshipParts": ["Compute", "Data", "Models", "Alignment"],
+        "victoryString": "Your scholars have built a mind to match their own. From Turing's question in 1950 to this day, the work of generations has come together in your capital, and the age that follows will be shaped by what your people made.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
     },
     {
-        "name": "Cultural",
-        "victoryScreenHeader": "Complete 5 policy branches and build the Utopia Project to win!",
-        "milestones": ["Complete [5] Policy branches", "Build [Utopia Project]"],
-        "victoryString": "You have achieved victory through the awesome power of your Culture. Your civilization's greatness - the magnificence of its monuments and the power of its artists - have astounded the world! Poets will honor you as long as beauty brings gladness to a weary heart.",
-        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+        "name": "Lingua Franca",
+        "victoryScreenHeader": "Become influential over every rival nation to win!",
+        "milestones": ["Become influential over all rival nations"],
+        "victoryString": "Your language is spoken in every market and court, as Aramaic, Greek, Latin, Arabic, Persian and French once were. Rival nations read your books, sing your songs and trade in your words.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
     },
     {
-        "name": "Domination",
-        "victoryScreenHeader": "Capture all enemy Capitals to win!",
+        "name": "Perpetual Peace",
+        "victoryScreenHeader": "Found the World Charter and win its ratification vote to win!",
+        "milestones": ["Build [World Charter]", "Win diplomatic vote"],
+        "victoryString": "The nations of the world have ratified your charter. What Westphalia, Vienna and the founders of the United Nations attempted, your diplomacy has carried through: a lasting peace among nations.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Reserve Currency",
+        "victoryScreenHeader": "Carry half of world trade in your coin for 10 turns to win!",
+        "milestones": ["Carry [50]% of world trade for [10] turns"],
+        "victoryString": "Your coin is the one the world trusts. Like the Athenian owl, the Spanish dollar and sterling before it, it carries the trade of every nation, and every treasury keeps it in reserve.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
+    },
+    {
+        "name": "Conquest",
+        "victoryScreenHeader": "Hold every original capital to win!",
         "milestones": ["Capture all capitals"],
-        "victoryString": "The world has been convulsed by war. Many great and powerful civilizations have fallen, but you have survived - and emerged victorious! The world will long remember your glorious triumph!",
-        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+        "victoryString": "Every capital of the world flies your banner. Your armies have done what few empires ever managed, and the chroniclers will remember the name of your nation.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
     },
     {
-        "name": "Diplomatic",
-        "victoryScreenHeader": "Build the UN and be voted world leader to win!",
-        "milestones": ["Anyone should build [United Nations]", "Win diplomatic vote"],
-        "victoryString": "You have triumphed over your foes through the art of diplomacy! Your cunning and wisdom have earned you great friends - and divided and sown confusion among your enemies! Forever will you be remembered as the leader who brought peace to this weary world!",
-        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
-    },
-    {
-        "name": "Time",
+        "name": "The Chronicle",
         "hiddenInVictoryScreen": true,
         "milestones": ["Have highest score after max turns"],
-        "victoryString": "The world has been convulsed by war. Many great and powerful civilizations have fallen, but you have survived - and emerged victorious! The world will long remember your glorious triumph!",
-        "defeatString": "You have been defeated. Your civilization has been overwhelmed by its many foes. But your people do not despair, for they know that one day you shall return - and lead them forward to victory!"
+        "victoryString": "The age has ended and the chronicle is written. Of all the nations of the world, yours has done the most, and the record will say so.",
+        "defeatString": "You have been defeated. Other nations will write the history of this age, but yours is not over: your people remember, and one day they will rise again."
     }
 ]

@@ -94,9 +94,9 @@
         "name":"Tutorial Task: [Meet another civilization]",
         "presentation":"Floating",
         "civilopediaText":[
-			{"text":"Meet another civilization!", "centered": true},
+			{"text":"Meet another nation!", "centered": true},
             {"extraImage":"Tutorials/Meet another civilization", "imageSize":160},
-            {"text":"Explore the map until you encounter another civilization!"},
+            {"text":"Explore the map until you encounter another nation!"},
 		],
         "uniques": [
             "Only available <if tutorials are enabled> <when number of [turns] is more than [1]>",

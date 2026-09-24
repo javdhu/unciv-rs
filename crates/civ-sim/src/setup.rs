@@ -212,9 +212,12 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
         .iter()
         .find(|(id, _)| is_settler(&rules, *id))
         .map(|(id, _)| id);
+    // The first era in Eras.json is where every game starts.
     let era = rules
         .eras
-        .by_name("Ancient era")
+        .iter()
+        .map(|(_, e)| e)
+        .min_by_key(|e| e.era_number)
         .ok_or("missing starting era")?;
     let (worker, warrior) = (unit("Worker"), unit(&era.starting_military_unit));
 
@@ -228,7 +231,7 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
     barbarians.is_barbarian = true;
     civs.push(barbarians);
     let mut world = World::new(map.grid, civs);
-    world.difficulty = rules.difficulties.id("Prince");
+    world.difficulty = rules.difficulties.id("Tutor");
     world.speed = Some(s.speed_in(&rules)?);
     world.endgame.max_turns = s.turn_limit(&rules)?;
     world.endgame.enabled_victories = enabled_victories;

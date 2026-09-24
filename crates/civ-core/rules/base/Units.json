@@ -2,7 +2,7 @@
 
 	// Info according to Civilization Wiki and https://www.civfanatics.com/civ5/info/units/gods-and-kings/
 
-	/* Ancient Era */
+	// Listed in Unciv's G&K order. An object's era is its requiredTech's era in Techs.json.
 	{
 		"name": "Worker",
 		"unitType": "Civilian",
@@ -28,7 +28,7 @@
 		"strength": 5,
 		"cost": 25,
 		"requiredTech": "Agriculture",
-		"obsoleteTech": "Scientific Theory",
+		"obsoleteTech": "Scientific Method",
 		"uniques": ["May upgrade to [Archer] through ruins-like effects", "Never appears as a Barbarian unit"],
 		"promotions": ["Ignore terrain cost"],
 		"attackSound": "nonmetalhit"
@@ -40,7 +40,7 @@
 		"strength": 8,
 		"cost": 40,
 		"requiredTech": "Agriculture",
-		"obsoleteTech": "Metal Casting",
+		"obsoleteTech": "Steel",
 		"upgradesTo": "Swordsman",
 		"uniques": ["May upgrade to [Spearman] through ruins-like effects"],
 		"attackSound": "nonmetalhit",
@@ -57,7 +57,7 @@
 		"strength": 8,
 		"cost": 40,
 		"requiredTech": "Agriculture",
-		"obsoleteTech": "Metal Casting",
+		"obsoleteTech": "Steel",
 		"promotions": ["Haka War Dance"],
 		"upgradesTo": "Swordsman",
 		"attackSound": "nonmetalhit"
@@ -71,7 +71,7 @@
 		"strength": 8,
 		"cost": 40,
 		"requiredTech": "Agriculture",
-		"obsoleteTech": "Metal Casting",
+		"obsoleteTech": "Steel",
 		"promotions": ["[Jaguar] ability","Woodsman"],
 		"upgradesTo": "Swordsman",
 		"attackSound": "nonmetalhit"
@@ -84,7 +84,7 @@
 		"movement": 2,
 		"strength": 8,
 		"cost": 20,
-		"obsoleteTech": "Metal Casting",
+		"obsoleteTech": "Steel",
 		"upgradesTo": "Swordsman",
 		"attackSound": "nonmetalhit"
 	},
@@ -163,7 +163,7 @@
 		"movement": 4,
 		"cost": 30,
 		"requiredTech": "Sailing",
-		"uniques": ["Cannot enter ocean tiles <before discovering [Astronomy]>", "May create improvements on water resources",
+		"uniques": ["Cannot enter ocean tiles <before discovering [Navigation]>", "May create improvements on water resources",
             "Uncapturable", "Automation is a primary action"]
 	},
 	{
@@ -175,7 +175,7 @@
 		"requiredTech": "Sailing",
 		"uniques": ["Cannot enter ocean tiles", "Never appears as a Barbarian unit"],
 		"upgradesTo": "Caravel",
-		"obsoleteTech": "Astronomy",
+		"obsoleteTech": "Navigation",
 		"attackSound": "nonmetalhit"
 	},
 	{
@@ -189,7 +189,7 @@
 		"requiredTech": "Sailing",
 		"uniques": ["Cannot enter ocean tiles"],
 		"upgradesTo": "Caravel",
-		"obsoleteTech": "Astronomy",
+		"obsoleteTech": "Navigation",
 		"attackSound": "nonmetalhit"
 	},
 	{
@@ -203,8 +203,8 @@
 		"cost": 56,
 		"requiredTech": "Sailing",
 		"uniques": ["Cannot enter ocean tiles", "[+50]% Strength <vs [Water] units>"],
-		"upgradesTo": "Galleass",
-		"obsoleteTech": "Astronomy",
+		"upgradesTo": "Dhow",
+		"obsoleteTech": "Navigation",
 		"attackSound": "arrow"
 	},
 	{
@@ -216,7 +216,7 @@
 		"cost": 40,
 		"uniques": ["Cannot enter ocean tiles"],
 		"upgradesTo": "Trireme",
-		"obsoleteTech": "Astronomy",
+		"obsoleteTech": "Navigation",
 		"attackSound": "nonmetalhit"
 		//Barbarian unique naval unit, weaker and slower than Trireme.
 	},
@@ -230,7 +230,7 @@
 		"requiredTech": "The Wheel",
 		"requiredResource": "Horses",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"uniques": ["No defensive terrain bonus", "Rough terrain penalty", "Never appears as a Barbarian unit"],
 		"attackSound": "arrow"
 	},
@@ -245,7 +245,7 @@
 		"cost": 56,
 		"requiredTech": "The Wheel",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"uniques": ["No defensive terrain bonus", "Rough terrain penalty"],
 		"attackSound": "arrow"
 	},
@@ -260,7 +260,7 @@
 		"cost": 56,
 		"requiredTech": "The Wheel",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"uniques": ["No defensive terrain bonus"],
 		"promotions": ["Accuracy I"],
 		"attackSound": "arrow"
@@ -276,7 +276,7 @@
 		"cost": 70,
 		"requiredTech": "The Wheel",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"uniques": ["No defensive terrain bonus"],
 		"attackSound": "elephant"
 	},
@@ -330,7 +330,7 @@
 		"strength": 10,
 		"cost": 75,
 		"requiredTech": "Bronze Working",
-		"obsoleteTech": "Physics",
+		"obsoleteTech": "Algebra",
 		"upgradesTo": "Trebuchet",
 		"uniques": ["[+300]% Strength <vs cities> <when attacking>", "No defensive terrain bonus", "[-33]% Strength <when defending>",
 		"[-1] Sight", "Can only attack [City] units"],
@@ -367,7 +367,6 @@
 		"attackSound": "metalhit"
 	},
 
-	/* Classical Era */
 	{
 		"name": "Horseman",
 		"unitType": "Mounted",
@@ -377,7 +376,7 @@
 		"requiredTech": "Horseback Riding",
 		"requiredResource": "Horses",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"uniques": ["Can move after attacking","No defensive terrain bonus","[-33]% Strength <vs cities> <when attacking>" ],
 		"hurryCostModifier": 20,
 		"attackSound": "horse"
@@ -392,7 +391,7 @@
 		"cost": 75,
 		"requiredTech": "Horseback Riding",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"promotions": ["Great Generals I"],
 		"requiredResource": "Horses",
 		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>"],
@@ -409,7 +408,7 @@
 		"cost": 100,
 		"requiredTech": "Horseback Riding",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"promotions": ["Great Generals II"],
 		"uniques": ["Can move after attacking", "No defensive terrain bonus", "[-33]% Strength <vs cities> <when attacking>",
 			"[-10]% Strength for enemy [Military] units in adjacent [All] tiles"],
@@ -426,7 +425,7 @@
 		"cost": 75,
 		"requiredTech": "Horseback Riding",
 		"upgradesTo": "Knight",
-		"obsoleteTech": "Chivalry",
+		"obsoleteTech": "Stirrups",
 		"requiredResource": "Horses",
 		"uniques": ["Can move after attacking", "[-25]% Strength <vs cities> <when attacking>"],
 		"hurryCostModifier": 20,
@@ -440,7 +439,7 @@
 		"rangedStrength": 8,
 		"cost": 75,
 		"requiredTech": "Mathematics",
-		"obsoleteTech": "Physics",
+		"obsoleteTech": "Algebra",
 		"upgradesTo": "Trebuchet",
 		"uniques": ["[+200]% Strength <vs cities> <when attacking>", "No defensive terrain bonus",
 			"Must set up to ranged attack", "[-1] Sight", "Never appears as a Barbarian unit"],
@@ -457,7 +456,7 @@
 		"rangedStrength": 10,
 		"cost": 75,
 		"requiredTech": "Mathematics",
-		"obsoleteTech": "Physics",
+		"obsoleteTech": "Algebra",
 		"upgradesTo": "Trebuchet",
 		"uniques": ["[+200]% Strength <vs cities> <when attacking>", "No defensive terrain bonus",
 			"Must set up to ranged attack", "[-1] Sight"],
@@ -521,7 +520,6 @@
 		"attackSound": "metalhit"
 	},
 
-	// Medieval Era
 	{
 		"name": "Pikeman",
 		"unitType": "Sword",
@@ -550,7 +548,7 @@
 		//"Requires [Mercenary Army]" in BNW
 	},
 	{
-		"name": "Galleass",
+		"name": "Dhow",
 		"unitType": "Ranged Water",
 		"movement": 3,
 		"strength": 16,
@@ -568,7 +566,7 @@
 		"movement": 4,
 		"strength": 20,
 		"cost": 120,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"obsoleteTech": "Military Science",
 		"upgradesTo": "Cavalry",
 		"requiredResource": "Horses",
@@ -584,7 +582,7 @@
 		"strength": 17,
 		"rangedStrength": 21,
 		"cost": 120,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"requiredResource": "Horses",
 		"upgradesTo": "Cavalry",
 		"obsoleteTech": "Military Science",
@@ -600,7 +598,7 @@
 		"movement": 4,
 		"strength": 20,
 		"cost": 135,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"requiredResource": "Horses",
 		"upgradesTo": "Cavalry",
 		"obsoleteTech": "Military Science",
@@ -618,7 +616,7 @@
 		"movement": 3,
 		"strength": 25,
 		"cost": 120,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"obsoleteTech": "Military Science",
 		"upgradesTo": "Cavalry",
 		"uniques": ["Can move after attacking","No defensive terrain bonus","[+50]% Strength <vs [Mounted] units>","[-33]% Strength <vs cities> <when attacking>"],
@@ -632,7 +630,7 @@
 		"movement": 4,
 		"strength": 20,
 		"cost": 110,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"requiredResource": "Horses",
 		"upgradesTo": "Cavalry",
 		"obsoleteTech": "Military Science",
@@ -649,7 +647,7 @@
 		"strength": 15,
 		"rangedStrength": 16,
 		"cost": 120,
-		"requiredTech": "Chivalry",
+		"requiredTech": "Stirrups",
 		"requiredResource": "Horses",
 		"upgradesTo": "Cavalry",
 		"obsoleteTech": "Military Science",
@@ -708,9 +706,9 @@
 		"strength": 12,
 		"rangedStrength": 14,
 		"cost": 120,
-		"requiredTech": "Physics",
-		"obsoleteTech": "Chemistry",
-		"upgradesTo": "Cannon",
+		"requiredTech": "Algebra",
+		"obsoleteTech": "Gunpowder",
+		"upgradesTo": "Bombard",
 		"uniques": ["[+200]% Strength <vs cities> <when attacking>","No defensive terrain bonus","Must set up to ranged attack","[-1] Sight","Never appears as a Barbarian unit"],
 		"attackSound": "throw"
 	},
@@ -723,11 +721,24 @@
 		"strength": 11,
 		"rangedStrength": 26,
 		"cost": 120,
-		"requiredTech": "Physics",
+		"requiredTech": "Algebra",
 		"obsoleteTech": "Chemistry",
 		"upgradesTo": "Cannon",
 		"uniques": ["No defensive terrain bonus","Must set up to ranged attack"],
 		"attackSound": "throw"
+	},
+	{
+		"name": "Bombard",
+		"unitType": "Siege",
+		"movement": 2,
+		"strength": 13,
+		"rangedStrength": 17,
+		"cost": 150,
+		"requiredTech": "Gunpowder",
+		"obsoleteTech": "Chemistry",
+		"upgradesTo": "Cannon",
+		"uniques": ["[+200]% Strength <vs cities> <when attacking>", "No defensive terrain bonus", "Must set up to ranged attack", "[-1] Sight", "Never appears as a Barbarian unit"],
+		"attackSound": "cannon"
 	},
 	{
 		"name": "Longswordsman",
@@ -736,8 +747,8 @@
 		"strength": 21,
 		"cost": 120,
 		"requiredTech": "Steel",
-		"upgradesTo": "Musketman",
-		"obsoleteTech": "Gunpowder",
+		"upgradesTo": "Musketeer",
+		"obsoleteTech": "Firearms",
 		"requiredResource": "Iron",
 		"attackSound": "metalhit"
 	},
@@ -750,8 +761,8 @@
 		"strength": 21,
 		"cost": 120,
 		"requiredTech": "Steel",
-		"upgradesTo": "Musketman",
-		"obsoleteTech": "Gunpowder",
+		"upgradesTo": "Musketeer",
+		"obsoleteTech": "Firearms",
 		"requiredResource": "Iron",
 		"promotions": ["Shock I", "Great Generals II"],
 		"uniques": ["Can instantly construct a [Fishing Boats] improvement"],
@@ -765,8 +776,8 @@
 		"movement": 3,
 		"strength": 21,
 		"cost": 120,
-		"requiredTech": "Metal Casting",
-		"upgradesTo": "Musketman",
+		"requiredTech": "Steel",
+		"upgradesTo": "Musketeer",
 		"obsoleteTech": "Metallurgy",
 		"requiredResource": "Iron",
 		"promotions": ["Amphibious"],
@@ -775,7 +786,6 @@
 		//Danish unique unit. Can attack from the sea without any penalty, and moves faster.
 	},
 
-	// Rennaisance Era
 
 	{
 		"name": "Caravel",
@@ -783,7 +793,7 @@
 		"movement": 4,
 		"strength": 20,
 		"cost": 120,
-		"requiredTech": "Astronomy",
+		"requiredTech": "Navigation",
 		"upgradesTo": "Ironclad",
 		"obsoleteTech": "Combustion",
 		"uniques": ["[+1] Sight", "Withdraws before melee combat <with [80]% chance>"],
@@ -798,7 +808,7 @@
 		"movement": 4,
 		"strength": 36,
 		"cost": 120,
-		"requiredTech": "Astronomy",
+		"requiredTech": "Navigation",
 		"upgradesTo": "Ironclad",
 		"obsoleteTech": "Combustion",
 		"uniques": ["Cannot enter ocean tiles"],
@@ -806,25 +816,12 @@
 		"attackSound": "cannon"
 	},
 	{
-		"name": "Musketman",
+		"name": "Musketeer",
 		"unitType": "Gunpowder",
 		"movement": 2,
 		"strength": 24,
 		"cost": 150,
-		"requiredTech": "Gunpowder",
-		"upgradesTo": "Rifleman",
-		"obsoleteTech": "Rifling",
-		"attackSound": "shot"
-	},
-	{
-		"name": "Musketeer",
-		"unitType": "Gunpowder",
-		"replaces": "Musketman",
-		"uniqueTo": "France",
-		"movement": 2,
-		"strength": 28,
-		"cost": 150,
-		"requiredTech": "Gunpowder",
+		"requiredTech": "Firearms",
 		"upgradesTo": "Rifleman",
 		"obsoleteTech": "Rifling",
 		"attackSound": "shot"
@@ -832,12 +829,12 @@
 	{
 		"name": "Janissary",
 		"unitType": "Gunpowder",
-		"replaces": "Musketman",
+		"replaces": "Musketeer",
 		"uniqueTo": "The Ottomans",
 		"movement": 2,
 		"strength": 24,
 		"cost": 150,
-		"requiredTech": "Gunpowder",
+		"requiredTech": "Firearms",
 		"upgradesTo": "Rifleman",
 		"obsoleteTech": "Rifling",
 		"promotions": ["[Janissary] ability"],
@@ -846,12 +843,12 @@
 	{
 		"name": "Minuteman",
 		"unitType": "Gunpowder",
-		"replaces": "Musketman",
+		"replaces": "Musketeer",
 		"uniqueTo": "America",
 		"movement": 2,
 		"strength": 24,
 		"cost": 150,
-		"requiredTech": "Gunpowder",
+		"requiredTech": "Firearms",
 		"upgradesTo": "Rifleman",
 		"obsoleteTech": "Rifling",
 		"uniques": ["Ignores terrain cost"],
@@ -861,12 +858,12 @@
 	{
 		"name": "Tercio",
 		"unitType": "Gunpowder",
-		"replaces": "Musketman",
+		"replaces": "Musketeer",
 		"uniqueTo": "Spain",
 		"movement": 2,
 		"strength": 26,
 		"cost": 160,
-		"requiredTech": "Gunpowder",
+		"requiredTech": "Firearms",
 		"upgradesTo": "Rifleman",
 		"obsoleteTech": "Rifling",
 		"uniques": ["[+50]% Strength <vs [Mounted] units>"],
@@ -988,7 +985,6 @@
 		"attackSound": "cannon"
 	},
 
-	// Industrial Era
 
 	{
 		"name": "Gatling Gun",
@@ -1011,7 +1007,7 @@
 		"cost": 225,
 		"requiredTech": "Rifling",
 		"obsoleteTech": "Replaceable Parts",
-		"upgradesTo": "Great War Infantry",
+		"upgradesTo": "Trench Infantry",
 		"attackSound": "shot"
 	},
 	{
@@ -1024,7 +1020,7 @@
 		"cost": 225,
 		"requiredTech": "Rifling",
 		"obsoleteTech": "Replaceable Parts",
-		"upgradesTo": "Great War Infantry",
+		"upgradesTo": "Trench Infantry",
 		"promotions": ["[Norwegian Ski Infantry] ability"],
 		"attackSound": "shot"
 	},
@@ -1038,7 +1034,7 @@
 		"cost": 225,
 		"requiredTech": "Rifling",
 		"obsoleteTech": "Replaceable Parts",
-		"upgradesTo": "Great War Infantry",
+		"upgradesTo": "Trench Infantry",
 		"promotions": ["March"],
 		"attackSound": "shot"
 	},
@@ -1052,7 +1048,7 @@
 		"cost": 200,
 		"requiredTech": "Rifling",
 		"obsoleteTech": "Replaceable Parts",
-		"upgradesTo": "Great War Infantry",
+		"upgradesTo": "Trench Infantry",
 		"promotions": ["Drill I","Home Sweet Home"],
 		"attackSound": "shot"
 	},
@@ -1131,7 +1127,6 @@
 		"attackSound": "artillery"
 	},
 
-	// Modern era
 
 	{
 		"name": "Submarine",
@@ -1146,7 +1141,7 @@
 		"attackSound": "torpedo"
 	},
 	{
-		"name": "Great War Infantry",
+		"name": "Trench Infantry",
 		"unitType": "Gunpowder",
 		"movement": 2,
 		"strength": 50,
@@ -1159,7 +1154,7 @@
 	{
 		"name": "Foreign Legion",
 		"unitType": "Gunpowder",
-		"replaces": "Great War Infantry",
+		"replaces": "Trench Infantry",
 		"uniqueTo": "France",
 		"movement": 2,
 		"strength": 50,
@@ -1187,7 +1182,7 @@
 		"attackSound": "machinegun"
 	},
 	{
-		"name": "Great War Bomber",
+		"name": "Biplane Bomber",
 		"unitType": "Bomber",
 		"movement": 1,
 		"strength": 50,
@@ -1287,7 +1282,6 @@
 		"attackSound": "shipguns"
 	},
 
-	// Atomic Era
 
 	{
 		"name": "Marine",
@@ -1494,7 +1488,6 @@
 		"attackSound": "machinegun"
 	},
 
-	// Information Era
 	{
 		"name": "Nuclear Submarine",
 		"unitType": "Submarine",
@@ -1540,7 +1533,6 @@
 		"cost": 425,
 		"requiredTech": "Lasers",
 		"requiredResource": "Aluminum",
-		"upgradesTo": "Giant Death Robot",
 		"uniques": ["Can move after attacking", "No defensive terrain bonus", "Never appears as a Barbarian unit"],
 		"attackSound": "tankshot"
 	},
@@ -1557,17 +1549,6 @@
 		"requiredResource": "Aluminum",
 		"uniques": ["[100]% chance to intercept air attacks", "[+150]% Strength <vs [Bomber] units>", "[+150]% Strength <vs [Helicopter] units>"],
 		"attackSound": "jetgun"
-	},
-	{
-		"name": "Giant Death Robot",
-		"unitType": "Armored",
-		"movement": 5,
-		"strength": 150,
-		"cost": 425,
-		"requiredTech": "Nuclear Fusion",
-		"requiredResource": "Uranium",
-		"uniques": ["Can move after attacking", "No defensive terrain bonus", "Never appears as a Barbarian unit"],
-		"attackSound": "gdrAttack"
 	},
 	{
 		"name": "Stealth Bomber",
@@ -1587,7 +1568,7 @@
 	/* Great people */
 
 	{
-		"name": "Great Artist",
+		"name": "Virtuoso",
 		"unitType": "Civilian",
 		"uniques": [
             "Empire enters a [8]-turn Golden Age <by consuming this unit>",
@@ -1598,7 +1579,7 @@
 		"movement": 2
 	},
 	{
-		"name": "Great Scientist",
+		"name": "Scholar",
 		"unitType": "Civilian",
 		"uniques": [
             "Can hurry technology research",
@@ -1609,7 +1590,7 @@
 		"movement": 2
 	},
 	{
-		"name": "Great Merchant",
+		"name": "Magnate",
 		"unitType": "Civilian",
 		"uniques": ["Can undertake a trade mission with City-State, giving a large sum of gold and [30] Influence",
             "Can instantly construct a [Customs house] improvement <by consuming this unit>",
@@ -1619,7 +1600,7 @@
 		"movement": 2
 	},
 	{
-		"name": "Great Engineer",
+		"name": "Master Builder",
 		"unitType": "Civilian",
 		"uniques": ["Can speed up construction of a building",
             "Can instantly construct a [Manufactory] improvement <by consuming this unit>",
@@ -1629,7 +1610,7 @@
 		"movement": 2
 	},
 	{
-		"name": "Great Prophet",
+		"name": "Sage",
 		"unitType": "Civilian",
 		"uniques": [
             "Can instantly construct a [Holy site] improvement <by consuming this unit> <if it hasn't used other actions yet>",
@@ -1646,7 +1627,7 @@
 		"religiousStrength": 1000
 	},
 	{
-		"name": "Great General",
+		"name": "Marshal",
 		"unitType": "Civilian",
 		"uniques": [
             "[+15]% Strength bonus for [{Military} {Land}] units within [2] tiles",
@@ -1661,7 +1642,7 @@
 		"name": "Khan",
 		"unitType": "Civilian",
 		"uniqueTo": "Mongolia",
-		"replaces": "Great General",
+		"replaces": "Marshal",
 		"uniques": [
             "[+15]% Strength bonus for [Military] units within [2] tiles",
 			"All adjacent units heal [+15] HP when healing", "[+15] HP when healing",
@@ -1673,7 +1654,7 @@
 		"movement": 5
 	},
 	{
-		"name": "Great Admiral",
+		"name": "Admiral",
 		"unitType": "Civilian Water",
 		"uniques": [
             // TODO: "[Every adjacent [{Friendly} {Water}] unit] heals [100] HP <by consuming this unit>",
@@ -1699,59 +1680,42 @@
 		"movement": 4,
 		"religiousStrength": 1000
 	},
-	{
-		"name": "Inquisitor",
-		"unitType": "Civilian",
-		"uniques": ["Prevents spreading of religion to the city it is next to",
-			"Can remove other religions from cities <in [Friendly] tiles> <once> <after which this unit is consumed>",
-            "Can be purchased with [Faith] [in all cities in which the majority religion is a major religion]",
-			"[+1] Sight", "Only available <when religion is enabled>", "Unbuildable", "Religious Unit"
-		],
-		"movement": 3
-	},
 
-	/* Spaceship Parts */
+	/* The Turing Project */
 
-	// Must be transported to the Capital for launch.
-	// Can be destroyed by any hostile military unit walking in their tile.
+	// Its four parts, built in any city and carried to the capital (docs/CONTENT.md, Victories).
+	// They reuse the spaceship machinery: a hostile military unit on their tile destroys them.
 	{
-		"name": "SS Booster",
+		"name": "Compute",
 		"unitType": "Civilian",
 		"movement": 2,
-		"cost": 750,
-		"requiredTech": "Advanced Ballistics",
-		"requiredResource": "Aluminum",
-		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [Apollo Program] is constructed>", "Uncapturable", "Can be added to [The Spaceship] in the Capital", "Limited to [3] per Civilization", "Only available <when [Scientific] Victory is enabled>"]
-		// costs 1500 in BNW
-	},
-	{
-		"name": "SS Cockpit",
-		"unitType": "Civilian",
-		"movement": 2,
-		"cost": 750,
-		"requiredTech": "Satellites",
-		"requiredResource": "Aluminum",
-		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [Apollo Program] is constructed>", "Uncapturable", "Can be added to [The Spaceship] in the Capital", "Limited to [1] per Civilization", "Only available <when [Scientific] Victory is enabled>"]
-		// costs 1500 in BNW
-	},
-	{
-		"name": "SS Engine",
-		"unitType": "Civilian",
-		"movement": 2,
-		"cost": 750,
-		"requiredTech": "Particle Physics",
-		"requiredResource": "Aluminum",
-		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [Apollo Program] is constructed>", "Uncapturable", "Can be added to [The Spaceship] in the Capital", "Limited to [1] per Civilization", "Only available <when [Scientific] Victory is enabled>"]
-		// costs 1500 in BNW
-	},
-	{
-		"name": "SS Stasis Chamber",
-		"unitType": "Civilian",
-		"movement": 2,
-		"cost": 750,
+		"cost": 1100,
 		"requiredTech": "Nanotechnology",
 		"requiredResource": "Aluminum",
-		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [Apollo Program] is constructed>", "Uncapturable", "Can be added to [The Spaceship] in the Capital", "Limited to [1] per Civilization", "Only available <when [Scientific] Victory is enabled>"]
-		// costs 1500 in BNW
+		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [The Turing Project] is constructed>", "Uncapturable", "Can be added to [The Turing Project] in the Capital", "Limited to [1] per Civilization", "Only available <when [AGI] Victory is enabled>"]
+	},
+	{
+		"name": "Data",
+		"unitType": "Civilian",
+		"movement": 2,
+		"cost": 1100,
+		"requiredTech": "Globalization",
+		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [The Turing Project] is constructed>", "Uncapturable", "Can be added to [The Turing Project] in the Capital", "Limited to [1] per Civilization", "Only available <when [AGI] Victory is enabled>"]
+	},
+	{
+		"name": "Models",
+		"unitType": "Civilian",
+		"movement": 2,
+		"cost": 1100,
+		"requiredTech": "Machine Learning",
+		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [The Turing Project] is constructed>", "Uncapturable", "Can be added to [The Turing Project] in the Capital", "Limited to [1] per Civilization", "Only available <when [AGI] Victory is enabled>"]
+	},
+	{
+		"name": "Alignment",
+		"unitType": "Civilian",
+		"movement": 2,
+		"cost": 1100,
+		"requiredTech": "AGI",
+		"uniques": ["Spaceship part", "Cannot be purchased", "Only available <if [The Turing Project] is constructed>", "Uncapturable", "Can be added to [The Turing Project] in the Capital", "Limited to [1] per Civilization", "Only available <when [AGI] Victory is enabled>"]
 	}
 ]

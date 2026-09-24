@@ -363,7 +363,7 @@ mod tests {
         let opens = |t: &TechRow, name: &str| t.unlocks.iter().any(|u| u.name == name);
         assert!(opens(tech("Mining"), "Mine"));
         assert!(opens(tech("Bronze Working"), "Spearman"));
-        assert!(tech("Bronze Working").unlocks.iter().any(|u| u.kind == "wonder"));
+        assert!(tech("Masonry").unlocks.iter().any(|u| u.kind == "wonder"));
         let spearman = t.units.iter().find(|u| u.name == "Spearman").unwrap();
         assert!(spearman.strength > 0 && spearman.cost > 0 && spearman.ranged_strength == 0);
         let resource = |name: &str| t.resources.iter().find(|x| x.name == name).unwrap();
