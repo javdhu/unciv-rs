@@ -10,6 +10,7 @@ history in one evening".
 - The world's look: [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md)
 - Client contract: [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md)
 - What is done and what is not: [docs/PLAYABLE.md](docs/PLAYABLE.md) and [docs/GAPS.md](docs/GAPS.md)
+- Marketing and social: [docs/MARKETING.md](docs/MARKETING.md), with the kit in [marketing/](marketing/)
 
 ## What is here
 
