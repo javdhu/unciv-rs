@@ -24,6 +24,10 @@
 //!                      changes before bundling them
 //!   --out PATH         write every game as JSON
 //!   --quiet            no per-game lines
+//!   --ab               seat the old AI (docs/AI.md) against the new: in each
+//!                      game half the seats play the old one, alternating
+//!                      with the seed, and the summary compares the halves
+//!   --legacy           every seat plays the old AI, for timing and baselines
 //!
 //! Every game is deterministic in its seed, so any row can be replayed alone
 //! with `--seeds S..=S`. A game that panics is reported with its seed and does
@@ -57,6 +61,8 @@ struct Options {
     out: Option<String>,
     quiet: bool,
     overlay: Option<String>,
+    ab: bool,
+    legacy: bool,
 }
 
 fn usage(error: &str) -> ! {
@@ -104,11 +110,21 @@ fn options() -> Options {
         out: None,
         quiet: false,
         overlay: None,
+        ab: false,
+        legacy: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         if flag == "--quiet" {
             o.quiet = true;
+            continue;
+        }
+        if flag == "--ab" {
+            o.ab = true;
+            continue;
+        }
+        if flag == "--legacy" {
+            o.legacy = true;
             continue;
         }
         let value = args.next().unwrap_or_else(|| usage(&format!("{flag} needs a value")));
@@ -147,6 +163,10 @@ struct CivRecord {
     techs: usize,
     era: i32,
     defeated_turn: Option<u32>,
+    /// Played the old AI (`--ab`).
+    legacy: bool,
+    /// Final score, the Chronicle's measure.
+    score: i64,
 }
 
 #[derive(Serialize, Clone)]
@@ -165,6 +185,8 @@ struct GameRecord {
     victory: Option<String>,
     victory_turn: Option<u32>,
     winner: Option<String>,
+    /// The winner's seat, which `civs` is indexed by.
+    winner_seat: Option<u8>,
     /// Won by conquest before the turn limit.
     ended_by_capture: bool,
     /// The first turn any major civ entered each era, by era name.
@@ -233,9 +255,13 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     let (mut world, rules, _) = civ_sim::new_game_in(&settings(o, seed), &[], ruleset(o)?)?;
     let r = &rules;
     let majors: Vec<CivId> = (0..o.civs).map(CivId).collect();
+    // Alternate which half is old with the seed, so neither side always gets
+    // the same starts.
+    let legacy: Vec<CivId> =
+        majors.iter().copied().filter(|c| o.legacy || (o.ab && (c.0 as u64 + seed) % 2 == 1)).collect();
     let mut civs: Vec<CivRecord> = majors
         .iter()
-        .map(|&c| CivRecord { nation: nation(&world, r, c), ..Default::default() })
+        .map(|&c| CivRecord { nation: nation(&world, r, c), legacy: legacy.contains(&c), ..Default::default() })
         .collect();
     let mut eras = BTreeMap::new();
     let mut wonders = Vec::new();
@@ -244,7 +270,7 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
     let started = Instant::now();
     let mut engine_ms_60 = None;
     while world.winner.is_none() && world.turn <= limit + 1 {
-        let mods = TurnModifiers::for_world(&world, r);
+        let mods = TurnModifiers { legacy_ai: &legacy, ..TurnModifiers::for_world(&world, r) };
         let events = finish_round(&mut world, r, CityFocus::default(), mods);
         for e in &events {
             match e {
@@ -297,6 +323,7 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
         let civ = world.civ(c).expect("major civ");
         rec.techs = civ.techs.len();
         rec.era = era_number(&world, r, c);
+        rec.score = civ_core::world::victory::score(&world, r, c).round();
     }
     let victory = world.winner.map(|(_, v)| r.victories[v].name.clone());
     Ok(GameRecord {
@@ -306,6 +333,7 @@ fn play(o: &Options, seed: u64) -> Result<GameRecord, String> {
         victory,
         victory_turn: world.victory_turn,
         winner: world.winner.map(|(c, _)| nation(&world, r, c)),
+        winner_seat: world.winner.map(|(c, _)| c.0),
         era_first_reached: eras,
         wonders,
         civs,
@@ -453,8 +481,61 @@ fn summary(o: &Options, games: &[GameRecord], panics: &[(u64, String)], rules: &
             println!("{:<10} {:>12.2} {:>14.0} {:>10}", t, mean(&c), median(c.clone()), played);
         }
     }
+    if o.ab {
+        ab_summary(games);
+    }
     for (seed, message) in panics {
         println!("\nPANIC seed {seed}: {message}");
+    }
+}
+
+/// New AI against old, from games where each played half the seats.
+fn ab_summary(games: &[GameRecord]) {
+    let side = |legacy: bool| {
+        let seats: Vec<&CivRecord> = games.iter().flat_map(|g| g.civs.iter().filter(move |c| c.legacy == legacy)).collect();
+        let wins = games
+            .iter()
+            .filter(|g| g.winner_seat.and_then(|s| g.civs.get(s as usize)).is_some_and(|c| c.legacy == legacy))
+            .count();
+        let share: Vec<f64> = games
+            .iter()
+            .filter_map(|g| {
+                let total: i64 = g.civs.iter().map(|c| c.score).sum();
+                let mine: i64 = g.civs.iter().filter(|c| c.legacy == legacy).map(|c| c.score).sum();
+                (total > 0).then(|| 100.0 * mine as f64 / total as f64)
+            })
+            .collect();
+        let per = |f: &dyn Fn(&CivRecord) -> f64| mean(&seats.iter().map(|c| f(c)).collect::<Vec<_>>());
+        (
+            wins,
+            mean(&share),
+            per(&|c| c.cities_final as f64),
+            per(&|c| c.wonders as f64),
+            per(&|c| c.cities_captured as f64),
+            per(&|c| c.wars_declared as f64),
+            per(&|c| c.defeated_turn.is_some() as u8 as f64),
+        )
+    };
+    let decided = games.iter().filter(|g| g.winner_seat.is_some()).count();
+    println!("\nNew AI vs old ({} games, {decided} with a winner)", games.len());
+    println!(
+        "{:<6} {:>6} {:>7} {:>11} {:>10} {:>9} {:>9} {:>6} {:>9}",
+        "Side", "wins", "win %", "score share", "cities", "wonders", "captures", "wars", "defeated"
+    );
+    for (name, legacy) in [("new", false), ("old", true)] {
+        let (wins, share, cities, wonders, captured, wars, defeated) = side(legacy);
+        println!(
+            "{:<6} {:>6} {:>6.1}% {:>10.1}% {:>10.2} {:>9.2} {:>9.2} {:>6.2} {:>8.0}%",
+            name,
+            wins,
+            100.0 * wins as f64 / decided.max(1) as f64,
+            share,
+            cities,
+            wonders,
+            captured,
+            wars,
+            100.0 * defeated
+        );
     }
 }
 

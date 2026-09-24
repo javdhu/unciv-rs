@@ -61,6 +61,7 @@ pub mod resources;
 pub mod ruins;
 pub mod settling;
 pub mod specialists;
+pub mod tactics;
 pub mod trade;
 pub mod tribute;
 pub mod turn;
