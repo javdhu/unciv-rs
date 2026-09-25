@@ -539,14 +539,16 @@ fn apply_damage(world: &mut World, id: Id<Unit>, damage: i32) -> bool {
     }
 }
 
-fn take_interception(world: &mut World, r: &Ruleset, attacker: Id<Unit>, target: Target) -> i32 {
+fn take_interception(world: &mut World, r: &Ruleset, attacker: Id<Unit>, target: Target) -> Option<combat::Interception> {
     let (_, tile, _) = target.facts(world).expect("validated target");
     let ctx = context(world, r, attacker).against(target.opponent()).on_tile(tile);
     if has(world, r, attacker, UniqueType::CannotBeIntercepted, &ctx, false) {
-        return 0;
+        return None;
     }
-    let Some(interceptor) = interceptor(world, r, attacker, tile, Some(target), false, None) else { return 0 };
-    apply_interception(world, r, attacker, tile, interceptor, target.opponent())
+    let selected = interceptor(world, r, attacker, tile, Some(target), false, None)?;
+    let from = world.units.get(selected).expect("selected interceptor").position;
+    let damage = apply_interception(world, r, attacker, tile, selected, target.opponent());
+    Some(combat::Interception { unit: selected, from, damage })
 }
 
 pub(crate) fn intercept_nuclear(world: &mut World, r: &Ruleset, attacker: Id<Unit>, tile: TileId, owner: CivId) {
@@ -605,9 +607,10 @@ pub fn strike(
 ) -> Result<CombatResult, AirRejection> {
     can_strike(world, r, attacker, target)?;
     let (_, tile, d_health) = target.facts(world).expect("validated");
-    let intercepted = take_interception(world, r, attacker, target);
+    let interception = take_interception(world, r, attacker, target);
+    let intercepted = interception.map_or(0, |i| i.damage);
     if world.units.get(attacker).is_none() {
-        return Ok(CombatResult { damage_to_attacker: intercepted, attacker_died: true, ..CombatResult::default() });
+        return Ok(CombatResult { damage_to_attacker: intercepted, attacker_died: true, interception, ..CombatResult::default() });
     }
     let a_parts = parts(world, r, attacker, target, false, false);
     let att = a_parts.as_ref().map_or(Fixed::ONE, |b| b.strength());
@@ -702,6 +705,7 @@ pub fn strike(
         damage_to_defender: to_d,
         attacker_died,
         defender_died,
+        interception,
         captured: None,
         tags,
     })

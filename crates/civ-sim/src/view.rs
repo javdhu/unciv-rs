@@ -1213,6 +1213,14 @@ pub struct BattleModifier {
     pub percent: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InterceptionView {
+    pub unit: EntityRef,
+    pub from: u16,
+    pub damage: i32,
+}
+
 fn battle_modifiers(mods: &[civ_core::modifiers::Modifier]) -> Vec<BattleModifier> {
     use civ_core::modifiers::SourceKind as S;
     mods.iter()
@@ -1383,6 +1391,10 @@ pub enum PresentationEvent {
         ranged: bool,
         damage_to_attacker: i32,
         damage_to_defender: i32,
+        /// An interceptor visible to this player. Damage stays separate from return fire.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        interception: Option<InterceptionView>,
         attacker_died: bool,
         defender_died: bool,
         /// What set each side's strength, as the attack preview lists it. A city's side lists none.
@@ -1782,7 +1794,10 @@ pub fn replay_for(
                             note(&mut units, *id);
                         }
                     }
-                    events.push(presentation("Attacked", text, attacked(b, me, *attacker_died, *defender_died, seen_unit)));
+                    if let Some(interception) = b.interception.filter(|i| seen_unit(i.unit) && sees(i.from)) {
+                        note(&mut units, interception.unit);
+                    }
+                    events.push(presentation("Attacked", text, attacked(b, me, *attacker_died, *defender_died, seen_unit, sees)));
                 }
                 TurnEvent::CityFounded { city, by } if *by != me && centre(*city).is_some_and(sees) => {
                     events.push(presentation(
@@ -1976,6 +1991,7 @@ fn attacked(
     attacker_died: bool,
     defender_died: bool,
     known_unit: impl Fn(Id<civ_core::world::Unit>) -> bool,
+    known_tile: impl Fn(civ_core::world::TileId) -> bool,
 ) -> PresentationEvent {
     use civ_core::world::air::Target;
     PresentationEvent::Attacked {
@@ -1994,6 +2010,9 @@ fn attacked(
         ranged: b.ranged,
         damage_to_attacker: b.damage_to_attacker,
         damage_to_defender: b.damage_to_defender,
+        interception: b.interception.filter(|i| known_unit(i.unit) && known_tile(i.from)).map(|i| InterceptionView {
+            unit: i.unit.into(), from: i.from.0, damage: i.damage,
+        }),
         attacker_died,
         defender_died,
         attacker_mods: battle_modifiers(&b.tags.attacker_mods),
@@ -2127,7 +2146,7 @@ pub fn report_for(
                 (
                     "Attacked",
                     battle_text(before, r, me, b, *attacker_died, *defender_died),
-                    attacked(b, me, *attacker_died, *defender_died, known_unit),
+                    attacked(b, me, *attacker_died, *defender_died, known_unit, known_tile),
                 )
             }
             TurnEvent::UnitMoved(m) if own_unit(m.unit) => ("UnitMoved", "Unit moved".into(), moved(m)),
@@ -2819,6 +2838,7 @@ mod tests {
                 ranged: false,
                 damage_to_attacker: 3,
                 damage_to_defender: 100,
+                interception: None,
                 tags: Default::default(),
             }),
         };
@@ -2936,6 +2956,7 @@ mod tests {
                     ranged: false,
                     damage_to_attacker: 10,
                     damage_to_defender: 20,
+                    interception: None,
                     tags: BattleTags {
                         attacker_mods: vec![
                             Modifier::additive_percent(Fixed::whole(10), Source::new(SourceKind::Other, "Flanking")),
@@ -3073,25 +3094,30 @@ mod tests {
         assert_eq!(support, after.place_unit(Unit::new(report.attacker_base, actor, far, 2)));
         report.tags.flankers = vec![support];
         report.tags.general = Some(support);
+        report.interception = Some(civ_core::world::combat::Interception { unit: support, from: far, damage: 7 });
         after.visibility.clear_visible(me);
 
         let own = report_for(&before, &after, &r, me, &events);
-        let PresentationEvent::Attacked { flankers, general, .. } = &own.events.iter().find(|e| e.kind == "Attacked").unwrap().event else { panic!("{own:?}") };
+        let PresentationEvent::Attacked { flankers, general, interception, .. } = &own.events.iter().find(|e| e.kind == "Attacked").unwrap().event else { panic!("{own:?}") };
         assert!(flankers.is_empty());
         assert_eq!(*general, None);
+        assert_eq!(*interception, None);
 
         let battle = events.into_iter().find(|e| matches!(e, TurnEvent::Battle { .. })).unwrap();
         let steps = [ReplayStep { actor, events: vec![battle.clone()], seen: sight(&before, me, &[from, at]) }];
         let replay = replay_for(&before, &after, &r, me, &steps);
-        let PresentationEvent::Attacked { flankers, general, .. } = &replay[0].events[0].event else { panic!("{replay:?}") };
+        let PresentationEvent::Attacked { flankers, general, interception, .. } = &replay[0].events[0].event else { panic!("{replay:?}") };
         assert!(flankers.is_empty());
         assert_eq!(*general, None);
+        assert_eq!(*interception, None);
         assert!(!replay[0].units.iter().any(|u| u.unit == support.into()));
 
         let seen = [ReplayStep { actor, events: vec![battle], seen: sight(&before, me, &[from, at, far]) }];
         let replay = replay_for(&before, &after, &r, me, &seen);
-        assert!(matches!(&replay[0].events[0].event, PresentationEvent::Attacked { flankers, general: Some(g), .. }
-            if flankers == &[support.into()] && *g == support.into()));
+        assert!(matches!(&replay[0].events[0].event, PresentationEvent::Attacked { flankers, general: Some(g), interception: Some(i), .. }
+            if flankers == &[support.into()] && *g == support.into()
+                && i.unit == support.into() && i.from == far.0 && i.damage == 7));
+        assert!(replay[0].units.iter().any(|u| u.unit == support.into()));
     }
 
     #[test]

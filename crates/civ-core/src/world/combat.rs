@@ -653,7 +653,16 @@ pub struct BattleReport {
     pub ranged: bool,
     pub damage_to_attacker: i32,
     pub damage_to_defender: i32,
+    /// The aircraft that tried to intercept, separate from the defender's return fire.
+    pub interception: Option<Interception>,
     pub tags: BattleTags,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Interception {
+    pub unit: Id<Unit>,
+    pub from: TileId,
+    pub damage: i32,
 }
 
 /// Both sides as they stood before a blow. [`BattleWatch::report`] reads what changed, so every kind of
@@ -691,6 +700,7 @@ impl BattleWatch {
             ranged: a.is_ranged(r) || a.is_air(r),
             damage_to_attacker: 0,
             damage_to_defender: 0,
+            interception: None,
             tags: BattleTags::default(),
         };
         Some(BattleWatch { report, attacker_health: i32::from(a.health), defender_health: health })
@@ -699,6 +709,10 @@ impl BattleWatch {
     /// A side that is gone lost all of its health; a captured civilian lost none. `tags` are the fight's own,
     /// from its result.
     pub fn report(self, world: &World, tags: BattleTags) -> BattleReport {
+        self.report_with_interception(world, tags, None)
+    }
+
+    pub fn report_with_interception(self, world: &World, tags: BattleTags, interception: Option<Interception>) -> BattleReport {
         use crate::world::air::Target;
         let attacker = world.units.get(self.report.attacker).map_or(0, |u| i32::from(u.health));
         let defender = match self.report.target {
@@ -708,6 +722,7 @@ impl BattleWatch {
         BattleReport {
             damage_to_attacker: self.attacker_health - attacker,
             damage_to_defender: self.defender_health - defender,
+            interception,
             tags,
             ..self.report
         }
@@ -781,6 +796,7 @@ pub struct CombatResult {
     pub damage_to_attacker: i32,
     pub defender_died: bool,
     pub attacker_died: bool,
+    pub interception: Option<Interception>,
     /// The civilian the attack took, if it took one.
     pub captured: Option<Capture>,
     pub tags: BattleTags,
@@ -913,6 +929,7 @@ pub fn resolve_attack(
         defender_died,
         attacker_died,
         captured: None,
+        interception: None,
         tags,
     })
 }

@@ -468,7 +468,7 @@ fn apply(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
-                        report: watch.map(|w| w.report(world, result.tags)),
+                        report: watch.map(|w| w.report_with_interception(world, result.tags, result.interception)),
                     });
                     if let Some(capture) = result.captured {
                         events.push(TurnEvent::UnitCaptured {
@@ -499,7 +499,7 @@ fn apply(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: result.defender_died,
-                            report: watch.map(|w| w.report(world, result.tags)),
+                            report: watch.map(|w| w.report_with_interception(world, result.tags, result.interception)),
                         });
                     } else {
                         let result = if ranged {

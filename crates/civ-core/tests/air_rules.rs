@@ -53,6 +53,7 @@ fn archers_do_not_intercept_and_air_strikes_take_return_fire() {
     let target = unit(&mut w, &r, 1, "Infantry", 9, 4);
     assert!(!air::can_intercept(&w, &r, archer, tile(&w, 9, 4)));
     let result = air::strike(&mut w, &r, bomber, Target::Unit(target)).unwrap();
+    assert_eq!(result.interception, None);
     assert!(result.damage_to_attacker > 0 && result.damage_to_defender > 0);
     assert_eq!(w.units.get(archer).unwrap().attacks_this_turn, 0);
     assert!(w.units.get(bomber).unwrap().health < 100);
@@ -65,7 +66,10 @@ fn interception_selects_highest_chance_and_never_the_defender() {
     let low = unit(&mut w, &r, 1, "Triplane", 9, 3);
     let high = unit(&mut w, &r, 1, "Fighter", 9, 4);
     let target = unit(&mut w, &r, 1, "Infantry", 8, 4);
-    air::strike(&mut w, &r, bomber, Target::Unit(target)).unwrap();
+    let result = air::strike(&mut w, &r, bomber, Target::Unit(target)).unwrap();
+    let interception = result.interception.expect("selected interceptor is reported");
+    assert_eq!((interception.unit, interception.from), (high, tile(&w, 9, 4)));
+    assert!(interception.damage <= result.damage_to_attacker);
     assert_eq!(w.units.get(high).unwrap().attacks_this_turn, 1);
     assert_eq!(w.units.get(low).unwrap().attacks_this_turn, 0);
     let (r, mut w) = fixture();
@@ -86,6 +90,8 @@ fn triplanes_can_miss_and_attempts_are_consumed_on_misses() {
         let mut w = original.clone();
         w.turn = turn;
         let result = air::strike(&mut w, &r, bomber, Target::Unit(target)).unwrap();
+        let interception = result.interception.expect("even a missed attempt is reported");
+        assert_eq!((interception.unit, interception.from), (fighter, tile(&w, 9, 3)));
         let mut replay = original.clone();
         replay.turn = turn;
         assert_eq!(air::strike(&mut replay, &r, bomber, Target::Unit(target)).unwrap(), result);
@@ -93,11 +99,32 @@ fn triplanes_can_miss_and_attempts_are_consumed_on_misses() {
         assert_eq!(w.units.get(fighter).unwrap().attacks_this_turn, 1);
         if w.units.get(fighter).unwrap().xp > 0 {
             hits += 1;
+            assert!(interception.damage > 0);
         } else {
             misses += 1;
+            assert_eq!(interception.damage, 0);
         }
     }
     assert!(hits > 0 && misses > 0, "deterministic chance must produce both outcomes");
+}
+
+#[test]
+fn commanded_air_strike_keeps_interception_separate_in_its_battle_report() {
+    use civ_core::world::commands::AttackTarget;
+    use civ_core::world::turn::TurnEvent;
+    let (r, mut w) = fixture();
+    let bomber = unit(&mut w, &r, 0, "Bomber", 3, 4);
+    let fighter = unit(&mut w, &r, 1, "Fighter", 9, 3);
+    let target = unit(&mut w, &r, 1, "Infantry", 8, 4);
+    reveal(&mut w, &r);
+    let result = execute(&mut w, &r, CivId(0), Command::Attack { unit: bomber, target: AttackTarget::Unit(target) }).unwrap();
+    let report = result.events.iter().find_map(|event| match event {
+        TurnEvent::Battle { report, .. } => report.as_ref(),
+        _ => None,
+    }).expect("air battle report");
+    let interception = report.interception.expect("interception recorded");
+    assert_eq!((interception.unit, interception.from), (fighter, tile(&w, 9, 3)));
+    assert!(interception.damage <= report.damage_to_attacker);
 }
 
 #[test]
@@ -120,7 +147,11 @@ fn interception_wounds_reduce_the_strike_and_stealth_reduces_interception_only()
     let mut clear = w.clone();
     clear.remove_unit(fighter);
     let with = air::strike(&mut w, &r, stealth, Target::Unit(target)).unwrap();
-    assert_eq!(with, air::strike(&mut clear, &r, stealth, Target::Unit(target)).unwrap());
+    let without = air::strike(&mut clear, &r, stealth, Target::Unit(target)).unwrap();
+    assert_eq!(with.interception.map(|i| (i.unit, i.from, i.damage)), Some((fighter, tile(&w, 9, 3), 0)));
+    assert_eq!(without.interception, None);
+    assert_eq!(with.damage_to_attacker, without.damage_to_attacker);
+    assert_eq!(with.damage_to_defender, without.damage_to_defender);
     assert_eq!(w.units.get(fighter).unwrap().attacks_this_turn, 1);
     assert_eq!(w.units.get(fighter).unwrap().xp, 0);
     assert!(with.damage_to_attacker > 0, "stealth still takes the target's defensive fire");
