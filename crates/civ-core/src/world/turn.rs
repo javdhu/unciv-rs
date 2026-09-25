@@ -697,7 +697,9 @@ fn plan_civ(
         // other growth modifiers rather than multiplied with them.
         let mut effective = (grown + crate::world::wltkd::food_bonus(city, surplus, plan.happiness)).floor() as i32;
 
-        if automated && hypothetical.queue.is_empty() && hypothetical.production_conversion.is_none() {
+        // A puppet's governor fills its queue for any owner (`CityConstructions`
+        // automates puppets), a human's included.
+        if (automated || city.puppet) && hypothetical.queue.is_empty() && hypothetical.production_conversion.is_none() {
             // What the civ nets now, so it does not commit to upkeep it
             // cannot cover.
             let net = c
@@ -712,15 +714,19 @@ fn plan_civ(
                 + c.cities.iter().map(|id| trade_gold(*id).gold.round() as i32).sum::<i32>()
                 - crate::world::connections::transportation_upkeep(world, r, civ).gold.round() as i32
                 - crate::world::economy::unit_maintenance(world, r, civ, costs.game_length, difficulty);
-            if let Some(what) = crate::world::ai::choose_construction(
-                world,
-                r,
-                civ,
-                &hypothetical,
-                costs,
-                net,
-                wants.expect("automated priorities"),
-            ) {
+            let choice = match wants {
+                Some(wants) => crate::world::ai::choose_construction(world, r, civ, &hypothetical, costs, net, wants),
+                None => crate::world::ai::choose_puppet_construction(
+                    world,
+                    r,
+                    civ,
+                    &hypothetical,
+                    costs,
+                    net,
+                    plan.happiness,
+                ),
+            };
+            if let Some(what) = choice {
                 plan.construction.push((city_id, what));
             }
         }
@@ -1969,6 +1975,8 @@ fn finish_automatic(
     let expired = world.diplomacy.tick();
     events.extend(promise_events(crate::world::promises::on_flags_expired(world, &expired)));
     events.extend(crate::world::research_agreements::tick(world));
+    // The round's eras are its own turn's, before the count moves on.
+    crate::world::policies::record_eras(world, r);
     world.turn += 1;
     for civ in world.civ_ids().collect::<Vec<_>>() {
         if world.civ(civ).is_some_and(|c| c.timed_policy_expirations.values().any(|expiry| *expiry == world.turn)) {

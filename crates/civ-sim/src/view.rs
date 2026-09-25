@@ -50,6 +50,58 @@ pub struct PlayerView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_captures: Option<Vec<PendingCaptureView>>,
+    /// Demands other nations made of this player, waiting for `answerDemand`.
+    /// They do not expire; they lapse only if the asker is destroyed. Absent
+    /// when none waits.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demands: Option<Vec<DemandView>>,
+    /// Promises in force between this player and another nation, either way.
+    /// Absent when there are none.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promises: Option<Vec<PromiseView>>,
+    /// The turn this player stood in each era by, indexed by era number (the
+    /// index in `RuleTables` era order, 0 the first), up to the era it is in
+    /// now. Eras it started in, or skipped, read the turn it got there, so the
+    /// list never decreases. Kept in the save.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub era_starts: Option<Vec<u32>>,
+    /// Nations whose cities this player promised not to spy in (`assignSpy`
+    /// is refused there while the promise runs). Absent when there are none.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spying_forbidden: Option<Vec<u8>>,
+}
+
+/// A demand waiting for this player's answer (`answerDemand`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DemandView {
+    /// Who asks.
+    pub by: u8,
+    pub demand: crate::protocol::Demand,
+    /// Agreeing makes a promise that runs until this turn. Being asked is
+    /// resented either way; refusing is resented more, and the asker
+    /// resents a refusal in turn.
+    pub promise_until: u32,
+    /// Refusing declares war on the asker (a refused `doNotAttackUs`).
+    pub refusal_declares_war: bool,
+    /// Whether refusing is possible now: a refusal that means war is refused
+    /// while a treaty forbids declaring it.
+    pub may_refuse: bool,
+}
+
+/// A promise in force: `by` promised `to` not to do something, until a turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PromiseView {
+    pub by: u8,
+    pub to: u8,
+    pub demand: crate::protocol::Demand,
+    /// The last turn it runs.
+    pub until: u32,
 }
 
 /// A city just taken, waiting for its new owner to say what becomes of it.
@@ -109,6 +161,10 @@ pub struct SpyView {
     pub action: SpyActionView,
     pub turns_remaining: u32,
     pub progress: i32,
+    /// While stealing: the science `progress` must reach for the next theft.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steal_cost: Option<i32>,
 }
 
 #[derive(
@@ -127,14 +183,25 @@ pub enum SpyActionView {
     Coup,
 }
 
-fn spy_view(id: usize, spy: &civ_core::world::espionage::Spy) -> SpyView {
+fn spy_view(w: &World, r: &Ruleset, me: CivId, id: usize, spy: &civ_core::world::espionage::Spy) -> SpyView {
     use civ_core::world::espionage::SpyAction as A;
+    // The price of the dearest technology the victim knows and we could
+    // learn, as the theft itself reckons it (`espionage::tick_in`).
+    let steal_cost = (spy.action == A::StealingTech)
+        .then(|| spy.station.and_then(|city| w.cities.get(city)))
+        .flatten()
+        .map(|city| civ_core::world::espionage::stealable(w, r, me, city.owner))
+        .filter(|techs| !techs.is_empty())
+        .map(|techs| {
+            civ_core::world::espionage::steal_cost(r, &techs, TurnModifiers::for_world(w, r).science.speed)
+        });
     SpyView {
         id,
         rank: spy.rank,
         station: spy.station.map(Into::into),
         turns_remaining: spy.turns_remaining,
         progress: spy.progress,
+        steal_cost,
         action: match spy.action {
             A::Hideout => SpyActionView::Hideout,
             A::Moving => SpyActionView::Moving,
@@ -901,8 +968,52 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                 .collect(),
         })
         .collect();
+    let demands: Vec<_> = civ_core::world::promises::asked_of(w, me)
+        .into_iter()
+        .filter(|(by, _)| w.civ(*by).is_some_and(|c| c.is_alive()))
+        .map(|(by, demand)| {
+            let war = demand == civ_core::world::diplomacy::Demand::DoNotAttackUs;
+            DemandView {
+                by: by.0,
+                demand: crate::protocol::Demand::of(demand),
+                promise_until: w.turn + civ_core::world::promises::PROMISE_TURNS - 1,
+                refusal_declares_war: war,
+                may_refuse: !war || w.diplomacy.can_declare_war(me, by),
+            }
+        })
+        .collect();
+    let promises: Vec<_> = w
+        .civs
+        .iter()
+        .filter(|c| c.id != me && w.diplomacy.have_met(me, c.id))
+        .flat_map(|c| {
+            civ_core::world::diplomacy::Demand::ALL.into_iter().flat_map(move |demand| {
+                let flag = civ_core::world::diplomacy::Flag::Agreed(demand);
+                // The promisee holds the flag about the promiser.
+                [(me, c.id), (c.id, me)].into_iter().filter_map(move |(by, to)| {
+                    let left = w.diplomacy.flag_turns(to, by, flag);
+                    (left > 0).then(|| PromiseView {
+                        by: by.0,
+                        to: to.0,
+                        demand: crate::protocol::Demand::of(demand),
+                        until: w.turn + left - 1,
+                    })
+                })
+            })
+        })
+        .collect();
+    let spying_forbidden: Vec<u8> = w
+        .civs
+        .iter()
+        .filter(|c| c.id != me && civ_core::world::espionage::keeps_promise_not_to_spy(w, r, me, c.id))
+        .map(|c| c.id.0)
+        .collect();
     PlayerView {
         pending_captures: (!pending_captures.is_empty()).then_some(pending_captures),
+        demands: (!demands.is_empty()).then_some(demands),
+        promises: (!promises.is_empty()).then_some(promises),
+        era_starts: Some(civ_core::world::policies::era_starts(w, r, me)),
+        spying_forbidden: (!spying_forbidden.is_empty()).then_some(spying_forbidden),
         slice: w.slice.as_ref().map(|s| SliceView {
             name: s.name.clone(),
             first_era: s.first_era,
@@ -936,7 +1047,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                 .spies
                 .iter()
                 .enumerate()
-                .map(|(id, spy)| spy_view(id, spy))
+                .map(|(id, spy)| spy_view(w, r, me, id, spy))
                 .collect()
         }),
         city_states: crate::city_states::for_player(w, r, me),
@@ -1206,9 +1317,134 @@ pub enum PresentationEvent {
         gold: i32,
         recruited: Option<EntityRef>,
     },
-    RebelsSpawned,
+    /// Unpaid soldiers rose against this player: `unit` is the rebel, where it
+    /// stands on `tile`, when it survived to be seen.
+    RebelsSpawned {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tile: Option<u16>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unit: Option<EntityRef>,
+    },
     BarbarianCampAppeared {
         tile: u16,
+    },
+    /// A nation asked another to stop doing something: `of` this player
+    /// (answer it with `answerDemand`), or `by` this player.
+    DemandMade {
+        by: u8,
+        of: u8,
+        demand: crate::protocol::Demand,
+    },
+    /// `by` agreed, or refused, to do what `to` asked.
+    DemandAnswered {
+        by: u8,
+        to: u8,
+        demand: crate::protocol::Demand,
+        agreed: bool,
+    },
+    /// `by` was caught breaking its promise to `to`.
+    PromiseBroken {
+        by: u8,
+        to: u8,
+        demand: crate::protocol::Demand,
+    },
+    /// `by` kept its promise to `to` to the end.
+    PromiseKept {
+        by: u8,
+        to: u8,
+        demand: crate::protocol::Demand,
+    },
+    /// A great person was born to this player. `name` is its kind, the unit
+    /// type's name; `unit` is the new unit when it can be found.
+    GreatPersonBorn {
+        name: String,
+        unit: Option<EntityRef>,
+    },
+    /// One of this player's great people was spent, and what it did.
+    GreatPersonActed {
+        outcome: GreatPersonOutcome,
+    },
+    /// One of this player's cities finished what it was building.
+    CityCompleted {
+        city: EntityRef,
+        construction: crate::protocol::ConstructionRef,
+    },
+    /// A city-state asked this player a favour; `quest` is its rule id.
+    QuestOffered {
+        city_state: u8,
+        quest: u32,
+        name: String,
+    },
+    /// This player did it, and was paid in influence.
+    QuestCompleted {
+        city_state: u8,
+        quest: u32,
+        name: String,
+        influence: i32,
+    },
+    /// Or did not, in time.
+    QuestExpired {
+        city_state: u8,
+        quest: u32,
+        name: String,
+    },
+    /// A city-state's standing with this player crossed a threshold. The
+    /// names are `CityStateRelationsView.relationship`'s.
+    CityStateRelationship {
+        city_state: u8,
+        from: String,
+        to: String,
+    },
+    /// This player's gift of gold to a city-state, and the influence it bought
+    /// (a decimal string).
+    GoldGifted {
+        city_state: u8,
+        gold: i32,
+        influence: String,
+    },
+    /// A city-state paid this player tribute: gold, or a worker.
+    TributePaid {
+        city_state: u8,
+        gold: i32,
+        worker: bool,
+    },
+    /// This player's spy carried a city-state's election.
+    ElectionRigged {
+        city_state: u8,
+    },
+    /// `by` denounced `target`, one of them this player.
+    Denounced {
+        by: u8,
+        target: u8,
+    },
+    /// One of this player's cities took a new majority religion (its key).
+    CityConverted {
+        city: EntityRef,
+        religion: u8,
+    },
+    /// One of this player's cities celebrates having the luxury it wanted.
+    WeLoveTheKingDay {
+        city: EntityRef,
+        resource: u32,
+    },
+    WeLoveTheKingDayEnded {
+        city: EntityRef,
+    },
+    /// One of this player's cities claimed a tile with its culture.
+    BordersExpanded {
+        city: EntityRef,
+        tile: u16,
+    },
+    /// A city this player was razing lost a citizen to the fire.
+    CityBurned {
+        city: EntityRef,
+        population: u32,
+    },
+    /// A city this player razed is gone; its id no longer resolves.
+    CityRazed {
+        city: EntityRef,
     },
     CityStateGift {
         city_state: u8,
@@ -1221,6 +1457,20 @@ pub enum PresentationEvent {
     Notice {
         notice: NoticeKind,
     },
+}
+
+/// What a great person did when spent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum GreatPersonOutcome {
+    /// Science poured into research; `learned` is a technology it finished.
+    Science { amount: i32, learned: Option<u32> },
+    /// Hammers added to a city's building.
+    Production { city: EntityRef, hammers: i32 },
+    TradeMission { city_state: u8, gold: i32, influence: i32 },
+    GoldenAge { turns: u32 },
+    /// An improvement built on the spot.
+    Constructed { tile: u16, improvement: u32 },
 }
 
 #[derive(
@@ -1886,10 +2136,179 @@ pub fn report_for(
                     recruited: recruited.map(Into::into),
                 },
             ),
-            TurnEvent::RebelSpawned { civ, .. } if *civ == me => (
-                "RebelsSpawned",
-                "Unhappiness has caused a rebellion".into(),
-                PresentationEvent::RebelsSpawned,
+            TurnEvent::RebelSpawned { civ, unit } if *civ == me => {
+                let seen = after.units.get(*unit).filter(|_| civ_core::world::fog::can_see_unit(after, r, me, *unit));
+                (
+                    "RebelsSpawned",
+                    "Unhappiness has caused a rebellion".into(),
+                    PresentationEvent::RebelsSpawned {
+                        tile: seen.map(|u| u.position.0),
+                        unit: seen.map(|_| (*unit).into()),
+                    },
+                )
+            }
+            TurnEvent::DemandMade { by, of, demand } if *by == me || *of == me => (
+                "DemandMade",
+                if *of == me { "A nation makes a demand of you".into() } else { "You made a demand".into() },
+                PresentationEvent::DemandMade { by: by.0, of: of.0, demand: crate::protocol::Demand::of(*demand) },
+            ),
+            TurnEvent::DemandAnswered { by, to, demand, agreed } if *by == me || *to == me => (
+                "DemandAnswered",
+                if *agreed { "A demand was agreed to".into() } else { "A demand was refused".into() },
+                PresentationEvent::DemandAnswered {
+                    by: by.0,
+                    to: to.0,
+                    demand: crate::protocol::Demand::of(*demand),
+                    agreed: *agreed,
+                },
+            ),
+            TurnEvent::PromiseBroken { by, to, demand } if *by == me || *to == me => (
+                "PromiseBroken",
+                "A promise was broken".into(),
+                PresentationEvent::PromiseBroken { by: by.0, to: to.0, demand: crate::protocol::Demand::of(*demand) },
+            ),
+            TurnEvent::PromiseKept { by, to, demand } if *by == me || *to == me => (
+                "PromiseKept",
+                "A promise was kept".into(),
+                PresentationEvent::PromiseKept { by: by.0, to: to.0, demand: crate::protocol::Demand::of(*demand) },
+            ),
+            TurnEvent::GreatPersonBorn { civ, kind } if *civ == me => {
+                // The newborn is the unit of that kind this player did not have before.
+                let unit = after
+                    .units
+                    .iter()
+                    .filter(|(id, u)| {
+                        u.owner == me
+                            && before.units.get(*id).is_none()
+                            && r.units.get(u.base).is_some_and(|b| b.name == *kind)
+                    })
+                    .map(|(id, _)| id)
+                    .last();
+                (
+                    "GreatPersonBorn",
+                    format!("A {kind} was born"),
+                    PresentationEvent::GreatPersonBorn { name: kind.clone(), unit: unit.map(Into::into) },
+                )
+            }
+            TurnEvent::GreatPersonActed { civ, outcome } if *civ == me => {
+                use civ_core::world::great_person_actions::Outcome as O;
+                let outcome = match *outcome {
+                    O::Science { amount, learned } => {
+                        GreatPersonOutcome::Science { amount, learned: learned.map(|t| t.index()) }
+                    }
+                    O::Production { city, hammers } => GreatPersonOutcome::Production { city: city.into(), hammers },
+                    O::TradeMission { city_state, gold, influence } => {
+                        GreatPersonOutcome::TradeMission { city_state: city_state.0, gold, influence }
+                    }
+                    O::GoldenAge { turns } => GreatPersonOutcome::GoldenAge { turns },
+                    O::Constructed { tile, improvement } => {
+                        GreatPersonOutcome::Constructed { tile: tile.0, improvement: improvement.index() }
+                    }
+                };
+                ("GreatPersonActed", "A great person was spent".into(), PresentationEvent::GreatPersonActed { outcome })
+            }
+            TurnEvent::CityCompleted { city, what } if own_city(*city) => (
+                "CityCompleted",
+                format!(
+                    "{} completed {}",
+                    after.cities.get(*city).map_or("A city", |c| c.name.as_str()),
+                    match what {
+                        Construction::Building(b) => r.buildings[*b].name.as_str(),
+                        Construction::Unit(u) => r.units[*u].name.as_str(),
+                    }
+                ),
+                PresentationEvent::CityCompleted { city: (*city).into(), construction: construction_ref(*what) },
+            ),
+            TurnEvent::QuestOffered { city_state, quest, to } if *to == me => (
+                "QuestOffered",
+                "A city-state asks a favour".into(),
+                PresentationEvent::QuestOffered {
+                    city_state: city_state.0,
+                    quest: quest.index(),
+                    name: r.quests.get(*quest).map_or_else(String::new, |q| q.name.clone()),
+                },
+            ),
+            TurnEvent::QuestCompleted { city_state, quest, by, influence } if *by == me => (
+                "QuestCompleted",
+                "A city-state's favour was done".into(),
+                PresentationEvent::QuestCompleted {
+                    city_state: city_state.0,
+                    quest: quest.index(),
+                    name: r.quests.get(*quest).map_or_else(String::new, |q| q.name.clone()),
+                    influence: *influence,
+                },
+            ),
+            TurnEvent::QuestExpired { city_state, quest, on } if *on == me => (
+                "QuestExpired",
+                "A city-state's favour went undone".into(),
+                PresentationEvent::QuestExpired {
+                    city_state: city_state.0,
+                    quest: quest.index(),
+                    name: r.quests.get(*quest).map_or_else(String::new, |q| q.name.clone()),
+                },
+            ),
+            TurnEvent::CityStateRelationship { city_state, major, from, to } if *major == me => (
+                "CityStateRelationship",
+                format!("A city-state is now {to:?}"),
+                PresentationEvent::CityStateRelationship {
+                    city_state: city_state.0,
+                    from: format!("{from:?}"),
+                    to: format!("{to:?}"),
+                },
+            ),
+            TurnEvent::GoldGifted { from, to, gold, influence }
+                if *from == me && after.civ(*to).is_some_and(|c| c.is_city_state()) =>
+            {
+                (
+                    "GoldGifted",
+                    format!("Gave {gold} gold"),
+                    PresentationEvent::GoldGifted { city_state: to.0, gold: *gold, influence: influence.to_string() },
+                )
+            }
+            TurnEvent::TributePaid { city_state, to, gold, worker } if *to == me => (
+                "TributePaid",
+                "A city-state paid tribute".into(),
+                PresentationEvent::TributePaid { city_state: city_state.0, gold: *gold, worker: *worker },
+            ),
+            TurnEvent::ElectionRigged { city_state, winner } if *winner == me => (
+                "ElectionRigged",
+                "Your spy carried an election".into(),
+                PresentationEvent::ElectionRigged { city_state: city_state.0 },
+            ),
+            TurnEvent::Denounced { by, target } if *by == me || *target == me => (
+                "Denounced",
+                "A nation was denounced".into(),
+                PresentationEvent::Denounced { by: by.0, target: target.0 },
+            ),
+            TurnEvent::CityConverted { city, to, .. } if own_city(*city) => (
+                "CityConverted",
+                "A city changed its faith".into(),
+                PresentationEvent::CityConverted { city: (*city).into(), religion: to.0 },
+            ),
+            TurnEvent::WeLoveTheKingDay { city, resource } if own_city(*city) => (
+                "WeLoveTheKingDay",
+                "A city celebrates".into(),
+                PresentationEvent::WeLoveTheKingDay { city: (*city).into(), resource: resource.index() },
+            ),
+            TurnEvent::WeLoveTheKingDayEnded { city } if own_city(*city) => (
+                "WeLoveTheKingDayEnded",
+                "A celebration ended".into(),
+                PresentationEvent::WeLoveTheKingDayEnded { city: (*city).into() },
+            ),
+            TurnEvent::BordersExpanded { city, tile } if own_city(*city) => (
+                "BordersExpanded",
+                "Borders expanded".into(),
+                PresentationEvent::BordersExpanded { city: (*city).into(), tile: tile.0 },
+            ),
+            TurnEvent::CityBurned { city, population } if own_city(*city) => (
+                "CityBurned",
+                "A city burns".into(),
+                PresentationEvent::CityBurned { city: (*city).into(), population: *population },
+            ),
+            TurnEvent::CityRazed { city, owner } if *owner == me => (
+                "CityRazed",
+                "A city was razed".into(),
+                PresentationEvent::CityRazed { city: (*city).into() },
             ),
             TurnEvent::CityStateGift {
                 city_state,

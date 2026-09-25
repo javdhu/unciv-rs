@@ -32,7 +32,10 @@ stored in SQLite. Losing the cookie loses access to that guest's seats.
 ## HTTP and socket flow
 
 1. `POST /api/guest` creates a guest and sets its cookie, or reuses the authenticated
-   guest. Its JSON response contains only `guestId`.
+   guest. Its JSON response contains `guestId`, and `name` once the guest chose one.
+   `POST /api/guest/name` with `{ "name": "..." }` sets the display name other members
+   see (1 to 32 characters once trimmed, no control characters; 400 otherwise) and
+   returns `{ guestId, name }`. A rename reaches running matches with the next update.
 2. `POST /api/rooms` accepts optional `width`, `height`, `majors`, `cityStates`, `speed`, `maxTurns`,
    `nation`, and `turnSeconds`. The map seed is generated and retained by the host.
    The owner receives `roomId`, its `invite`, and its assigned `ownSeat`.
@@ -52,6 +55,32 @@ stored in SQLite. Losing the cookie loses access to that guest's seats.
 The room response contains its dimensions/capacity, occupied-seat count, caller's
 seat, owner status, turn duration and match ID. Only the owner sees the invite.
 It contains no map seed, credentials or world snapshot.
+
+It also lists `members`, one per occupied seat:
+`{ seat, name: string | null, isOwner, left, connected?, ready?, controlled? }`.
+The last three appear once the match runs: the host holds a live socket for the
+seat, it finished the current turn, and a person (not a bot) plays it.
+
+## Returning players and leaving
+
+`GET /api/rooms` answers `{ rooms: RoomSummary[] }`, every room the guest holds a
+seat in, lobbies and matches alike, ordered by room id:
+`{ roomId, matchId: string | null, ownSeat, isOwner, occupiedSeats, capacity,
+turn?, finished }` (`turn` once the match started). Rooms it left are not listed.
+
+`POST /api/rooms/{roomId}/leave` answers `{ "left": true }`. Before the start, a
+member gives up its seat and its nation choice (the next guest to join takes the
+lowest free seat), and the owner closes the room, which then answers 404. After
+the start, leaving is final: the seat passes to a bot at the next round boundary
+(`pendingControl: false`), its socket is fenced, and the guest can no longer
+connect (403). The seat shows `left: true` to the other members. Leaving a room
+one holds no seat in answers 403.
+
+Inside a match, every `GameUpdate` of a room with more than one human seat
+carries `seats: SeatStatusView[]`: `{ seat, ready, controlled, connected?, name?,
+left? }` for every human seat. The session records connects and disconnects as
+inputs, so the other members receive an update when someone connects, drops, or
+finishes the turn. A restart marks every seat disconnected until it reconnects.
 
 ## Ordering and recovery
 
@@ -88,4 +117,6 @@ this slice. No interface changes or deployment are included.
 Validate with `cargo test -p civ-server`. Tests include two actual WebSocket
 clients, seat isolation, owner/origin checks, replacement sockets, failed-commit
 rollback, durable retry after restart, replay verification, exclusive database
-ownership, and deadline/controller boundary behavior.
+ownership, deadline/controller boundary behavior, seat presence and names,
+leaving before and after the start, the returning player's room list and the
+version 1 to 2 database migration (which adds `guests.name`).

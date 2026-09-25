@@ -261,6 +261,12 @@ pub fn validate(world: &World, r: &Ruleset) -> Result<(), SaveError> {
             return Err(invalid("established civilization lost its cities without settled defeat"));
         }
         rule(&r.nations, c.nation, "nation")?;
+        if c.era_starts.len() > r.eras.len().max(1)
+            || c.era_starts.iter().any(|t| *t > world.turn)
+            || !c.era_starts.windows(2).all(|w| w[0] <= w[1])
+        {
+            return Err(invalid("era history is out of order"));
+        }
         if let Some(id) = c.city_state_type {
             rule(&r.city_state_types, id, "city-state type")?;
         }
@@ -806,6 +812,24 @@ mod tests {
         // A pin is always a worked tile.
         world.cities.get_mut(id).unwrap().worked.clear();
         assert!(encode(&world, &r).is_err());
+    }
+
+    #[test]
+    fn the_eras_a_civ_reached_are_saved_and_must_run_forward() {
+        let (r, mut world, _) = populated();
+        world.civ_mut(CivId(0)).unwrap().era_starts = vec![0, 5, 9];
+        let text = encode(&world, &r).unwrap();
+        assert_eq!(decode(&text, &r).unwrap().civ(CivId(0)).unwrap().era_starts, vec![0, 5, 9]);
+        let older = mutate(&text, |w| {
+            for civ in w["civs"].as_array_mut().unwrap() {
+                civ.as_object_mut().unwrap().remove("era_starts");
+            }
+        });
+        assert!(decode(&older, &r).unwrap().civ(CivId(0)).unwrap().era_starts.is_empty());
+        world.civ_mut(CivId(0)).unwrap().era_starts = vec![5, 0];
+        assert!(encode(&world, &r).is_err());
+        world.civ_mut(CivId(0)).unwrap().era_starts = vec![0, world.turn + 1];
+        assert!(encode(&world, &r).is_err(), "no era is reached in the future");
     }
 
     #[test]

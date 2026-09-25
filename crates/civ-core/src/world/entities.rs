@@ -108,6 +108,12 @@ pub struct Civilization {
     /// Defeat has been settled and remaining units and agreements removed.
     /// The civilization stays registered so old references remain meaningful.
     pub defeated: bool,
+    /// The turn it stood in each era by, indexed by era number: an era it
+    /// started in, or skipped, reads the turn it got there. Recorded as each
+    /// round closes ([`crate::world::turn`]); absent from older saves, whose
+    /// eras are recorded from the next round on.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub era_starts: Vec<u32>,
 }
 
 impl Civilization {
@@ -164,6 +170,7 @@ impl Civilization {
             revolt_countdown: None,
             has_ever_owned_original_capital: false,
             defeated: false,
+            era_starts: Vec::new(),
         }
     }
 

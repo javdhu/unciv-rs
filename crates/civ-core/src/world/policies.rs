@@ -151,6 +151,29 @@ pub fn era_number(world: &World, r: &Ruleset, civ: CivId) -> i32 {
     })
 }
 
+/// The turn `civ` stood in each era by, indexed by era number, up to the era
+/// it is in: what the round-end record holds, and this turn for an era
+/// reached since the last round closed.
+pub fn era_starts(world: &World, r: &Ruleset, civ: CivId) -> Vec<u32> {
+    let Some(c) = world.civ(civ) else { return Vec::new() };
+    let era = era_number(world, r, civ).max(0) as usize;
+    let mut starts = c.era_starts.clone();
+    while starts.len() <= era {
+        starts.push(world.turn);
+    }
+    starts
+}
+
+/// Record, as a round closes, the eras every civ has reached.
+pub fn record_eras(world: &mut World, r: &Ruleset) {
+    for civ in world.civ_ids().collect::<Vec<_>>() {
+        let starts = era_starts(world, r, civ);
+        if let Some(c) = world.civ_mut(civ) {
+            c.era_starts = starts;
+        }
+    }
+}
+
 /// Whether this policy may be adopted, ignoring whether the culture is there.
 pub fn is_adoptable(world: &World, r: &Ruleset, civ_id: CivId, policy: Id<Policy>) -> Result<(), PolicyRejection> {
     let Some(civ) = world.civ(civ_id) else { return Err(PolicyRejection::Unknown) };

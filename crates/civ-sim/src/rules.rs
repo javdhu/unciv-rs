@@ -33,6 +33,21 @@ pub struct RuleTables {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slices: Option<Vec<SliceRow>>,
+    /// The influence at which a city-state's relationship changes rank.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub influence_thresholds: Option<InfluenceThresholds>,
+}
+
+/// Where a city-state's relationship with a major changes rank, in influence:
+/// `Ally` from `ally` (the one major furthest ahead), `Friend` from `friend`,
+/// `Neutral` from 0, `Enemy` below 0, and `Unforgivable` at `unforgivable` or
+/// less, or at war.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct InfluenceThresholds {
+    pub friend: i32,
+    pub ally: i32,
+    pub unforgivable: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -368,6 +383,11 @@ pub fn tables(r: &Ruleset) -> RuleTables {
             })
             .collect(),
         max_wave: r.max_wave,
+        influence_thresholds: Some(InfluenceThresholds {
+            friend: civ_core::world::city_states::FRIEND_THRESHOLD.floor() as i32,
+            ally: civ_core::world::city_states::ALLY_THRESHOLD.floor() as i32,
+            unforgivable: civ_core::world::city_states::UNFORGIVABLE_THRESHOLD.floor() as i32,
+        }),
         slices: (!r.slices.is_empty()).then(|| {
             r.slices
                 .iter()

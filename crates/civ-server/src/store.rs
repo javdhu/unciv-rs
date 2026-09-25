@@ -44,7 +44,7 @@ impl Store {
         let connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         let version: u32 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version > 1 {
+        if version > 2 {
             return Err(HostError::Internal);
         }
         connection.execute_batch(
@@ -65,9 +65,18 @@ impl Store {
              CREATE TABLE IF NOT EXISTS receipts(
                 match_id TEXT NOT NULL REFERENCES matches(id), seat INTEGER NOT NULL,
                 epoch TEXT NOT NULL, command_id TEXT NOT NULL, receipt TEXT NOT NULL,
-                PRIMARY KEY(match_id,seat,epoch,command_id));
-             PRAGMA user_version=1;"
+                PRIMARY KEY(match_id,seat,epoch,command_id));"
         )?;
+        // Version 2: guests may carry a display name.
+        if version < 2 {
+            let named: bool = connection
+                .prepare("SELECT 1 FROM pragma_table_info('guests') WHERE name='name'")?
+                .exists([])?;
+            if !named {
+                connection.execute_batch("ALTER TABLE guests ADD COLUMN name TEXT;")?;
+            }
+        }
+        connection.execute_batch("PRAGMA user_version=2;")?;
         Ok(Self {
             db: Mutex::new(connection),
             _owner_lock: owner_lock,
@@ -100,7 +109,65 @@ impl Store {
         if count >= 10_000 {
             return Err(HostError::Capacity);
         }
-        db.execute("INSERT INTO guests VALUES (?1,?2)", params![id, hash])?;
+        db.execute("INSERT INTO guests(id,token_hash) VALUES (?1,?2)", params![id, hash])?;
+        Ok(())
+    }
+    /// A guest's display name, if it chose one.
+    pub fn name(&self, guest: &str) -> Result<Option<String>, HostError> {
+        Ok(self
+            .lock()?
+            .query_row("SELECT name FROM guests WHERE id=?1", [guest], |r| r.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten())
+    }
+    pub fn set_name(&self, guest: &str, name: &str) -> Result<(), HostError> {
+        if self.lock()?.execute("UPDATE guests SET name=?1 WHERE id=?2", params![name, guest])? != 1 {
+            return Err(HostError::NotFound);
+        }
+        Ok(())
+    }
+    /// Every room this guest holds a seat in, newest rooms last by id order:
+    /// `(room, match, seat, owner)`.
+    pub fn rooms_of(&self, guest: &str) -> Result<Vec<(String, Option<String>, u8, bool)>, HostError> {
+        let db = self.lock()?;
+        let mut stmt = db.prepare(
+            "SELECT rooms.id, rooms.match_id, seats.seat, rooms.owner=?1 FROM seats JOIN rooms ON rooms.id=seats.room_id
+             WHERE seats.guest=?1 ORDER BY rooms.id",
+        )?;
+        let rows = stmt
+            .query_map([guest], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+    /// A guest gives up its seat before the match starts; its nation choice
+    /// goes with it. Caller holds the lobby mutex.
+    pub fn leave(&self, room: &Room, seat: u8) -> Result<(), HostError> {
+        let mut settings = room.settings.clone();
+        if let Some(seats) = settings.seats.as_mut() {
+            seats.retain(|c| c.seat != seat);
+        }
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        tx.execute("DELETE FROM seats WHERE room_id=?1 AND seat=?2", params![room.id, seat])?;
+        if tx.execute(
+            "UPDATE rooms SET settings=?1 WHERE id=?2 AND match_id IS NULL",
+            params![serde_json::to_string(&settings)?, room.id],
+        )? != 1
+        {
+            return Err(HostError::Conflict);
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    /// The owner closes a room that never started. Caller holds the lobby mutex.
+    pub fn close(&self, room: &str) -> Result<(), HostError> {
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        tx.execute("DELETE FROM seats WHERE room_id=?1", [room])?;
+        if tx.execute("DELETE FROM rooms WHERE id=?1 AND match_id IS NULL", [room])? != 1 {
+            return Err(HostError::Conflict);
+        }
+        tx.commit()?;
         Ok(())
     }
     pub fn create_room(&self, room: &Room) -> Result<(), HostError> {

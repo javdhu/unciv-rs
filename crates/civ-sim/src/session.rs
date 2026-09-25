@@ -46,6 +46,10 @@ struct Seat {
     next_human: Option<bool>,
     revision: u64,
     projection: String,
+    /// Whether the host holds a live connection for this seat, as it last
+    /// said (`stage_presence`); unknown in solo play. Absent from older saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connected: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +65,8 @@ enum Input {
     Command { seat: u8, request: CommandRequest },
     Timeout { turn: u32 },
     Controller { seat: u8, human: bool },
+    /// The host gained or lost a seat's connection; the room is told.
+    Presence { seat: u8, connected: bool },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +162,7 @@ impl Session {
                     next_human: None,
                     revision: 0,
                     projection: String::new(),
+                    connected: None,
                 }
             })
             .collect();
@@ -234,20 +241,62 @@ impl Session {
             offers: self.offers.visible(seat),
             events: Vec::new(),
             replay: None,
+            undo: Some(self.undo_state(seat)),
+            seats: self.seat_statuses(),
         })
+    }
+    /// Whether `seat` may take its last command back now. A room's other
+    /// seats acting since is left for the undo itself to find: announcing it
+    /// would tell this seat that somebody moved.
+    fn undo_state(&self, seat: u8) -> UndoState {
+        let refusal = match self.undo.get(&seat) {
+            None => Some(UndoRefusal::NothingToUndo),
+            Some(point) => point.refusal.or(point.before.is_none().then_some(UndoRefusal::NothingToUndo)),
+        };
+        UndoState { available: refusal.is_none(), refusal }
+    }
+    /// Every human seat's readiness and control, in a room of more than one.
+    fn seat_statuses(&self) -> Option<Vec<SeatStatusView>> {
+        (self.original_seats.len() > 1).then(|| self.seat_status())
+    }
+    /// Readiness, control and connection of every seat, for a room's host.
+    pub fn seat_status(&self) -> Vec<SeatStatusView> {
+        self.seats
+            .iter()
+            .map(|s| SeatStatusView {
+                seat: s.civ,
+                ready: s.ready,
+                controlled: s.human,
+                connected: s.connected,
+                name: None,
+                left: None,
+            })
+            .collect()
+    }
+    /// The host gained or lost `seat`'s connection. Every member of a room
+    /// is told; nothing in the world changes.
+    pub fn stage_presence(&self, seat: u8, connected: bool) -> Result<HostTransition, SessionError> {
+        self.seat(seat)?;
+        if self.inputs.len() >= MAX_RECORDS {
+            return Err(SessionError::Capacity);
+        }
+        let mut next = self.clone();
+        next.seats.iter_mut().find(|s| s.civ == seat).unwrap().connected = Some(connected);
+        next.inputs.push(Input::Presence { seat, connected });
+        let updates = next.refresh(&[], None)?;
+        Ok(HostTransition { next, updates })
     }
     pub fn query(&self, seat: u8, query: Query) -> Result<QueryReply, SessionError> {
         let cursor = self.cursor(seat)?;
         let result = match query {
-            Query::UnitOptions { unit } => QueryResult::UnitOptions {
-                options: crate::queries::unit_options(
-                    &self.world,
-                    &self.rules,
-                    CivId(seat),
-                    unit.id,
-                    unit.gen,
-                ),
-            },
+            Query::UnitOptions { unit, nuclear_target } => {
+                let mut options = crate::queries::unit_options(&self.world, &self.rules, CivId(seat), unit.id, unit.gen);
+                if let (Some(options), Some(target)) = (options.as_mut(), nuclear_target) {
+                    options.nuclear_preview =
+                        crate::queries::nuclear_preview(&self.world, &self.rules, CivId(seat), unit, target);
+                }
+                QueryResult::UnitOptions { options }
+            }
             Query::CityOptions { city } => QueryResult::CityOptions {
                 options: crate::queries::city_options(
                     &self.world,
@@ -630,14 +679,20 @@ impl Session {
             let seat = self.seats[index].civ;
             let view = player_view(&self.world, &self.rules, CivId(seat));
             let offers = self.offers.visible(seat);
+            let undo = self.undo_state(seat);
+            let statuses = self.seat_statuses();
             let projection = serde_json::to_string(&(
                 &view,
                 self.seats[index].ready,
                 self.seats[index].human,
                 self.seats[index].next_human,
                 &offers,
+                &statuses,
             ))
             .expect("finite player view");
+            // Undo availability rides along with the update but does not make
+            // one: it is not saved (a restored session has nothing to take
+            // back), and only a command that changes nothing moves it alone.
             let visible_events = before
                 .map(|w| report_for(w, &self.world, &self.rules, CivId(seat), events).events)
                 .unwrap_or_default();
@@ -672,6 +727,8 @@ impl Session {
                     offers,
                     events,
                     replay: (!replay.is_empty()).then_some(replay),
+                    undo: Some(undo),
+                    seats: statuses,
                 },
             ));
         }
@@ -814,7 +871,7 @@ impl Session {
                 }
             }
         }
-        let session = Self {
+        let mut session = Self {
             world,
             rules,
             ruleset_identity,
@@ -830,20 +887,24 @@ impl Session {
             version: 0,
             undo_refused: None,
         };
-        for s in &session.seats {
+        // The saved projection only decides when a seat is sent a new
+        // update. A save made before the view gained fields holds an older
+        // shape of the same knowledge, so it is derived again from the
+        // validated world rather than trusted or refused.
+        let statuses = session.seat_statuses();
+        for index in 0..session.seats.len() {
+            let s = &session.seats[index];
             let view = player_view(&session.world, &session.rules, CivId(s.civ));
-            if s.projection
-                != serde_json::to_string(&(
-                    &view,
-                    s.ready,
-                    s.human,
-                    s.next_human,
-                    session.offers.visible(s.civ),
-                ))
-                .map_err(|_| invalid("invalid projection"))?
-            {
-                return Err(invalid("saved view does not match player knowledge"));
-            }
+            let projection = serde_json::to_string(&(
+                &view,
+                s.ready,
+                s.human,
+                s.next_human,
+                session.offers.visible(s.civ),
+                &statuses,
+            ))
+            .map_err(|_| invalid("invalid projection"))?;
+            session.seats[index].projection = projection;
         }
         Ok(session)
     }
@@ -872,6 +933,7 @@ impl Session {
                         .next
                 }
                 Input::Controller { seat, human } => replay.stage_controller(*seat, *human)?.next,
+                Input::Presence { seat, connected } => replay.stage_presence(*seat, *connected)?.next,
             };
         }
         if replay.world != self.world {

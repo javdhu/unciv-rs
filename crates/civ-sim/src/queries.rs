@@ -9,7 +9,7 @@ use civ_core::world::commands::{self, Command};
 use civ_core::world::construction::{self, Construction, Rejection};
 use civ_core::modifiers::Layer;
 use civ_core::stats::Fixed;
-use civ_core::world::{air, combat, policies, purchase, research, CivId, World};
+use civ_core::world::{air, combat, policies, purchase, research, CivId, TileId, World};
 use civ_core::{Unique, UniqueType};
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +80,93 @@ pub struct UnitOptions {
     pub religion: Option<ReligionOptions>,
     pub great_person_actions: Vec<crate::protocol::GreatPersonAction>,
     pub religious_actions: Vec<crate::protocol::ReligiousAction>,
+    /// Where each `needsTarget` mission may aim now, from what the player
+    /// knows: `rebase`, `airSweep`, `paradrop` and `nuclearStrike`. A nuclear
+    /// target can still be refused for a nation the player has not met whose
+    /// land or units lie unseen in the blast. Absent for units with none.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<ActionTargets>>,
+    /// Every ability a great person has, whether or not it may be used where
+    /// it stands, with why not (`great_person_actions` lists only the legal
+    /// ones). Absent for units that are not great people.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub great_person_abilities: Option<Vec<GreatPersonAbility>>,
+    /// What a nuclear strike would do on the tile the query named in
+    /// `nuclearTarget`. Absent when none was named, or for other units.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nuclear_preview: Option<NuclearPreviewView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+pub struct ActionTargets {
+    pub action: UnitActionKind,
+    pub tiles: Vec<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GreatPersonAbility {
+    pub action: crate::protocol::GreatPersonAction,
+    /// It may be used where the unit stands now (it is in `great_person_actions`).
+    pub available: bool,
+    /// Why not, when it may not.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<GreatPersonRefusal>,
+    /// What it would bring now: science for `hurryResearch`, hammers for
+    /// `hurryProduction` (here), gold for `tradeMission`. Absent otherwise.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<i32>,
+}
+
+/// Why a great person's ability cannot be used where it stands.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum GreatPersonRefusal {
+    /// The unit has no movement left this turn.
+    NoMovement,
+    /// Nothing is being researched.
+    NothingResearched,
+    /// What is being researched or built cannot be hurried.
+    CannotBeHurried,
+    /// It must stand in one of the player's own cities.
+    NotInOwnCity,
+    /// The city there is not building a building.
+    NotABuilding,
+    /// The building would finish anyway.
+    NothingToAdd,
+    /// It must stand in a city-state's land.
+    NotACityState,
+    /// That city-state is at war with the player.
+    AtWar,
+    /// The improvement cannot stand on this tile.
+    CannotBuildHere,
+    /// This unit cannot do it any more (a prophet that has spread its faith).
+    NotAble,
+}
+
+/// What a nuclear strike on a tile would do, as far as the player can see.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NuclearPreviewView {
+    pub blast_radius: u32,
+    /// Every tile in the blast.
+    pub tiles: Vec<u16>,
+    /// Nations the strike declares war on: those holding land in the blast,
+    /// as last seen, or with units seen there. Unseen units can add more.
+    pub victims: Vec<u8>,
+    /// Percent chance a defender the player can see intercepts it; 0 when
+    /// none is seen or the weapon cannot be intercepted.
+    pub intercept_chance: i32,
+    /// Whether `nuclearStrike` would be accepted here, from what the player
+    /// knows.
+    pub legal: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -318,6 +405,11 @@ pub struct CombatPreviewView {
     pub capture: bool,
     pub attacker: CombatSideView,
     pub defender: CombatSideView,
+    /// For an air strike: percent chance a defender the player can see
+    /// intercepts it first. Absent for other attacks.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intercept_chance: Option<i32>,
 }
 
 /// The engine's attack preview, for the attacker's owner and a target it can see now. It spans the attack
@@ -341,7 +433,119 @@ pub fn combat_preview(
         }
     };
     let p = combat::preview_attack(world, r, attacker, target)?;
-    Some(CombatPreviewView { ranged: p.ranged, capture: p.capture, attacker: preview_side(&p.attacker), defender: preview_side(&p.defender) })
+    let intercept_chance = world.units.get(attacker).filter(|u| u.is_air(r)).map(|_| {
+        let (owner, tile) = match target {
+            air::Target::Unit(id) => world.units.get(id).map(|u| (u.owner, u.position)),
+            air::Target::City(id) => world.cities.get(id).map(|c| (c.owner, c.centre)),
+        }
+        .unwrap_or((civ, TileId(0)));
+        let seen = |id| civ_core::world::fog::can_see_unit(world, r, civ, id);
+        air::visible_intercept_chance(world, r, attacker, tile, Some(target), Some(owner), &seen)
+    });
+    Some(CombatPreviewView {
+        ranged: p.ranged,
+        capture: p.capture,
+        attacker: preview_side(&p.attacker),
+        defender: preview_side(&p.defender),
+        intercept_chance,
+    })
+}
+
+/// A nuclear strike on `target` by the player's own unit, previewed from
+/// what the player knows. None when the unit is not the player's nuclear
+/// weapon or the tile is beyond its reach.
+pub fn nuclear_preview(world: &World, r: &Ruleset, civ: CivId, unit: EntityRef, target: u16) -> Option<NuclearPreviewView> {
+    let (id, u) = entity(&world.units, unit.id, unit.gen).filter(|(_, u)| u.owner == civ)?;
+    if !u.has_unique(r, UniqueType::NuclearWeapon) || usize::from(target) >= world.grid.len() {
+        return None;
+    }
+    let target = TileId(target);
+    let radius = civ_core::world::nuclear::blast_radius(world, r, id);
+    let tiles = world.grid.within(target, radius);
+    let victims = Sight::of(world, r, civ).victims(civ, &tiles);
+    let seen = |other| civ_core::world::fog::can_see_unit(world, r, civ, other);
+    // Each nation whose seen units stand in the blast may send one interceptor.
+    let mut spared = Fixed::ONE;
+    for owner in &victims {
+        let chance = air::visible_intercept_chance(world, r, id, target, None, Some(*owner), &seen);
+        spared = spared * Fixed::from_fraction(i64::from(100 - chance.clamp(0, 100)), 100);
+    }
+    let intercept_chance =
+        if u.is_air(r) { (Fixed::whole(100) - spared * Fixed::whole(100)).round() as i32 } else { 0 };
+    Some(NuclearPreviewView {
+        blast_radius: radius,
+        tiles: tiles.iter().map(|t| t.0).collect(),
+        legal: nuclear_target(world, r, civ, id, target, &victims),
+        victims: victims.into_iter().map(|c| c.0).collect(),
+        intercept_chance,
+    })
+}
+
+/// Who holds each tile as the player last saw it, and whose units it sees.
+struct Sight {
+    owners: std::collections::BTreeMap<TileId, CivId>,
+    units: std::collections::BTreeMap<TileId, std::collections::BTreeSet<CivId>>,
+}
+
+impl Sight {
+    fn of(world: &World, r: &Ruleset, civ: CivId) -> Self {
+        let owners =
+            world.visibility.known_tiles(civ).filter_map(|(tile, seen)| seen.owner.map(|owner| (tile, owner))).collect();
+        let mut units: std::collections::BTreeMap<TileId, std::collections::BTreeSet<CivId>> = Default::default();
+        for (id, u) in world.units.iter() {
+            if civ_core::world::fog::can_see_unit(world, r, civ, id) {
+                units.entry(u.position).or_default().insert(u.owner);
+            }
+        }
+        Self { owners, units }
+    }
+
+    /// Other nations with land in these tiles, as last seen, or units seen there.
+    fn victims(&self, civ: CivId, tiles: &[TileId]) -> std::collections::BTreeSet<CivId> {
+        tiles
+            .iter()
+            .flat_map(|t| self.owners.get(t).copied().into_iter().chain(self.units.get(t).into_iter().flatten().copied()))
+            .filter(|owner| *owner != civ)
+            .collect()
+    }
+}
+
+/// Explored tiles in reach this nuclear weapon may strike, from what the player knows.
+fn nuclear_targets(world: &World, r: &Ruleset, civ: CivId, id: Id<civ_core::world::Unit>) -> Vec<TileId> {
+    let Some(unit) = world.units.get(id) else { return Vec::new() };
+    let sight = Sight::of(world, r, civ);
+    let radius = civ_core::world::nuclear::blast_radius(world, r, id);
+    world
+        .grid
+        .within(unit.position, air::attack_range(world, r, id).max(0) as u32)
+        .into_iter()
+        .filter(|t| {
+            world.visibility.has_explored(civ, *t)
+                && nuclear_target(world, r, civ, id, *t, &sight.victims(civ, &world.grid.within(*t, radius)))
+        })
+        .collect()
+}
+
+/// `nuclear::can_strike`, with the nations in the blast those the player knows of.
+fn nuclear_target(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    id: Id<civ_core::world::Unit>,
+    target: TileId,
+    victims: &std::collections::BTreeSet<CivId>,
+) -> bool {
+    let Some(unit) = world.units.get(id) else { return false };
+    unit.can_move()
+        && unit.attacks_left > 0
+        && target != unit.position
+        && world.visibility.has_explored(civ, target)
+        && world.grid.distance(unit.position, target) <= air::attack_range(world, r, id).max(0) as u32
+        && victims.iter().all(|other| {
+            world.civ(*other).is_none_or(|c| !c.is_alive() || c.is_barbarian)
+                || (world.diplomacy.have_met(civ, *other)
+                    && (world.diplomacy.at_war(civ, *other) || world.diplomacy.can_declare_war(civ, *other)))
+        })
 }
 
 fn preview_side(s: &combat::PreviewSide) -> CombatSideView {
@@ -464,6 +668,81 @@ pub fn unit_options(
             offer(kind, Availability::Available);
         }
     }
+    let targets = {
+        let offered = |kind: UnitActionKind| actions.iter().any(|a| a.action == kind);
+        let mut out = Vec::new();
+        for (kind, tiles) in [
+            (UnitActionKind::Rebase, offered(UnitActionKind::Rebase).then(|| air::rebase_targets(world, r, id))),
+            (UnitActionKind::AirSweep, offered(UnitActionKind::AirSweep).then(|| air::sweep_targets(world, r, id))),
+            (UnitActionKind::Paradrop, offered(UnitActionKind::Paradrop).then(|| air::paradrop_targets(world, r, id))),
+            (
+                UnitActionKind::NuclearStrike,
+                offered(UnitActionKind::NuclearStrike).then(|| nuclear_targets(world, r, civ, id)),
+            ),
+        ] {
+            if let Some(tiles) = tiles {
+                out.push(ActionTargets { action: kind, tiles: tiles.into_iter().map(|t| t.0).collect() });
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    };
+    let great_person_abilities = {
+        use crate::protocol::GreatPersonAction as A;
+        use civ_core::world::great_person_actions as gp;
+        let mods = civ_core::world::TurnModifiers::for_world(world, r);
+        let scaling = gp::Scaling { costs: mods.costs, science: mods.science };
+        let abilities = gp::abilities(r, unit);
+        (!abilities.is_empty()).then(|| {
+            abilities
+                .into_iter()
+                .map(|ability| {
+                    // The same check `great_person_actions` is filtered by.
+                    let check = if unit.can_move() {
+                        gp::can(world, r, id, ability, gp::Scaling::default()).map_err(|e| match e {
+                            gp::ActionRejection::NothingResearched => GreatPersonRefusal::NothingResearched,
+                            gp::ActionRejection::CannotBeHurried => GreatPersonRefusal::CannotBeHurried,
+                            gp::ActionRejection::NotInOwnCity => GreatPersonRefusal::NotInOwnCity,
+                            gp::ActionRejection::NotABuilding => GreatPersonRefusal::NotABuilding,
+                            gp::ActionRejection::NothingToAdd => GreatPersonRefusal::NothingToAdd,
+                            gp::ActionRejection::NotACityState => GreatPersonRefusal::NotACityState,
+                            gp::ActionRejection::AtWar => GreatPersonRefusal::AtWar,
+                            gp::ActionRejection::CannotBuildHere => GreatPersonRefusal::CannotBuildHere,
+                            gp::ActionRejection::NoSuchUnit | gp::ActionRejection::NotAble => {
+                                GreatPersonRefusal::NotAble
+                            }
+                        })
+                    } else {
+                        Err(GreatPersonRefusal::NoMovement)
+                    };
+                    let here = world
+                        .cities
+                        .iter()
+                        .find(|(_, c)| c.centre == unit.position && c.owner == civ)
+                        .map(|(city, _)| city);
+                    let amount = match ability {
+                        gp::Action::HurryResearch => Some(gp::science_from_scientist(world, civ, scaling.science)),
+                        gp::Action::HurryProduction => {
+                            here.and_then(|city| gp::hurry_amount(world, r, city, scaling.costs).ok())
+                        }
+                        gp::Action::TradeMission => Some(gp::gold_from_trade_mission(world, r, civ, scaling.costs)),
+                        _ => None,
+                    };
+                    GreatPersonAbility {
+                        action: match ability {
+                            gp::Action::HurryResearch => A::HurryResearch,
+                            gp::Action::HurryProduction => A::HurryProduction,
+                            gp::Action::TradeMission => A::TradeMission,
+                            gp::Action::GoldenAge => A::GoldenAge,
+                            gp::Action::Construct(improvement) => A::Construct { improvement: improvement.index() },
+                        },
+                        available: check.is_ok(),
+                        why: check.err(),
+                        amount,
+                    }
+                })
+                .collect()
+        })
+    };
     let promotions = if combat::can_promote(unit) {
         combat::available_promotions(r, unit)
             .into_iter()
@@ -548,6 +827,9 @@ pub fn unit_options(
         choices
     };
     Some(UnitOptions {
+        targets,
+        great_person_abilities,
+        nuclear_preview: None,
         great_person_actions,
         religious_actions,
         religion: [false, true]
