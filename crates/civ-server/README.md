@@ -12,7 +12,8 @@ database file, and exits 0. Every commit is already durable before that; the
 checkpoint only leaves one self-contained file behind.
 
 The existing Vite development server proxies `/api` and its WebSocket upgrade.
-The exact loopback origins on ports 3001 and 5199 are allowed by default.
+The exact loopback origins on ports 3001, 5199 (the dev server) and 5304 (the
+dev server the web client's smoke run starts) are allowed by default.
 
 Environment options:
 

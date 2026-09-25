@@ -23,11 +23,14 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            // this host itself, the web client's dev server, and the dev server its smoke run starts
             allowed_origins: vec![
                 "http://127.0.0.1:3001".into(),
                 "http://localhost:3001".into(),
                 "http://127.0.0.1:5199".into(),
                 "http://localhost:5199".into(),
+                "http://127.0.0.1:5304".into(),
+                "http://localhost:5304".into(),
             ],
             secure_cookie: false,
             disconnect_grace_ms: 15_000,
@@ -744,6 +747,17 @@ impl Host {
 mod tests {
     use super::*;
     use civ_sim::protocol::{Action, CommandStatus};
+
+    #[test]
+    fn the_dev_servers_are_allowed_by_default_and_nothing_else() {
+        let origins = Config::default().allowed_origins;
+        for port in [3001, 5199, 5304] {
+            for host in ["127.0.0.1", "localhost"] {
+                assert!(origins.contains(&format!("http://{host}:{port}")), "{host}:{port}");
+            }
+        }
+        assert_eq!(origins.len(), 6);
+    }
 
     async fn game(path: &Path) -> (Arc<Host>, String, String, String) {
         let host = Host::open(path, Config::default()).unwrap();
