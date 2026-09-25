@@ -31,9 +31,9 @@ a WebSocket to civ-server. Both go through `web/src/state/session.ts`, the inter
 Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Node 22.12 or newer.
 
 ```sh
-npm --prefix web ci
-npm --prefix web run wasm              # civ-sim → web/src/engine/pkg, then the bundled rule tables
-npm --prefix web run dev               # http://localhost:5199
+bun --cwd web install --frozen-lockfile
+bun --cwd web run wasm              # civ-sim → web/src/engine/pkg, then the bundled rule tables
+bun --cwd web run dev               # http://localhost:5199
 ```
 
 For rooms, run the local multiplayer host in a second terminal:
@@ -53,15 +53,15 @@ From `web/`:
 
 | script | does |
 |---|---|
-| `npm run dev` | the dev server on port 5199 |
-| `npm run wasm` | builds civ-sim to `src/engine/pkg` with wasm-pack, then runs `rules` |
-| `npm run rules` | writes the bundled rule tables (`src/engine/generated/rule-tables.json`) the title and the civilopedia read before a game, and the art's list of needs (`content/art/needs.json`) |
-| `npm run check` | svelte-check over the client and its tools |
-| `npm test` | vitest: the engine adapters, the session, the view models and modes, the world, the art and the audio |
-| `npm run build` | the production bundle in `web/dist`, with the tool pages and the non-UI session API at `engine/session.js` |
-| `npm run smoke` | plays a fixed game in headless Chromium at desktop and phone sizes and shoots every scene ([web/tools/smoke/README.md](web/tools/smoke/README.md)) |
-| `npm run art -- sheet [filter]` | a contact sheet of the procedural art entries, without a browser |
-| `npm run dsp` | compiles the Faust instruments to `src/audio/dsp/gen` |
+| `bun run dev` | the dev server on port 5199 |
+| `bun run wasm` | builds civ-sim to `src/engine/pkg` with wasm-pack, then runs `rules` |
+| `bun run rules` | writes the bundled rule tables (`src/engine/generated/rule-tables.json`) the title and the civilopedia read before a game, and the art's list of needs (`content/art/needs.json`) |
+| `bun run check` | svelte-check over the client and its tools |
+| `bun run test` | vitest: the engine adapters, the session, the view models and modes, the world, the art and the audio |
+| `bun run build` | the production bundle in `web/dist`, with the tool pages and the non-UI session API at `engine/session.js` |
+| `bun run smoke` | plays a fixed game in headless Chromium at desktop and phone sizes and shoots every scene ([web/tools/smoke/README.md](web/tools/smoke/README.md)) |
+| `bun run art -- sheet [filter]` | a contact sheet of the procedural art entries, without a browser |
+| `bun run dsp` | compiles the Faust instruments to `src/audio/dsp/gen` |
 
 The dev server also serves the tool pages: `/gallery.html` (every part of the interface in every state),
 `/art-review.html` (a fixed map study), `/wardrobe.html`, `/architecture.html`, `/contact.html?filter=unit/` (a
@@ -73,10 +73,10 @@ labelled contact sheet drawn by the game's renderer) and `/sound-lab.html`.
 cargo test --workspace --release
 python3 tools/check_protocol.py                  # the generated wire types match civ-sim
 cargo run -p civ-sim --example export_protocol   # regenerate them after a protocol change
-npm --prefix web run check
-npm --prefix web test
-npm --prefix web run build
-npm --prefix web run smoke                       # then look at the shots in web/.smoke
+bun --cwd web run check
+bun --cwd web run test
+bun --cwd web run build
+bun --cwd web run smoke                       # then look at the shots in web/.smoke
 ```
 
 CI (`.github/workflows/ci.yml`) runs the Rust tests, the determinism check, the protocol check, and the web

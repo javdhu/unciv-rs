@@ -13,7 +13,7 @@ defeat screen. Done when both acceptance tests pass:
    and on a phone.
 2. **Room.** Two browsers finish a private-room match from one link; one reloads mid-game and carries on.
 
-Neither has been recorded end to end through the new interface yet. The smoke run (`npm --prefix web run smoke`)
+Neither has been recorded end to end through the new interface yet. The smoke run (`bun --cwd web run smoke`)
 plays a fixed game's first turns at desktop and phone sizes, plays a six-turn game out to its end screen, and,
 against a local civ-server, plays a room from one link with two browsers, a dropped socket and a bot taking an
 absent seat.
@@ -96,7 +96,7 @@ Motion follows the device's reduced-motion setting.
 
 ## Verification
 
-Every change runs `npm --prefix web run check`, `npm --prefix web test` and `npm --prefix web run build`, and
+Every change runs `bun --cwd web run check`, `bun --cwd web run test` and `bun --cwd web run build`, and
 after an engine change `cargo test --workspace --release` and `python3 tools/check_protocol.py`. The view models
 and modes are tested without a DOM against fixture views and the real Wasm engine; the smoke run's shots at
 1280×800 and 390×844 are looked at against `docs/interface/`.
