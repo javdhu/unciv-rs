@@ -45,7 +45,7 @@ native=$(cargo test --quiet --release --lib the_scenario_actually_runs -- --noca
 
 echo "wasm32"
 cargo build --quiet --release --target wasm32-unknown-unknown
-wasm=$(node tools/wasm_fingerprint.mjs)
+wasm=$(bun tools/wasm_fingerprint.mjs)
 
 results=("native $native" "wasm32 $wasm")
 

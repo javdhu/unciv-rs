@@ -28,7 +28,7 @@ a WebSocket to civ-server. Both go through `web/src/state/session.ts`, the inter
 
 ## Run it
 
-Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Node 22.12 or newer.
+Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Bun 1.3 or newer (it installs, runs and tests everything; Node is not needed).
 
 ```sh
 bun --cwd web install --frozen-lockfile

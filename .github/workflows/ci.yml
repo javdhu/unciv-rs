@@ -9,8 +9,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v5
-        with: { node-version: 26 }
+      - uses: oven-sh/setup-bun@v2   # the determinism check reads the wasm fingerprint with Bun
+        with: { bun-version: 1.3.11 }
       - run: cargo test --workspace --release --locked   # full-game tests are slow unoptimised
       - run: "cargo test -p civ-core --features save --release --locked --lib save::"
       # Native and wasm32 must agree bit for bit. The runner is already linux/amd64
@@ -26,9 +26,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: wasm-pack@0.13.1 }
-      # Bun installs and runs the scripts; vite, vitest and svelte-check still run on Node, by their own shebangs
-      - uses: actions/setup-node@v5
-        with: { node-version: 26 }
+      # Bun installs and runs everything, vite, vitest and svelte-check included (web/bunfig.toml): no Node
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.3.11 }
       - run: bun install --frozen-lockfile
