@@ -1659,6 +1659,9 @@ pub struct ReplayStep {
     /// by tile. Nothing a human sees changes while another civ acts, so this
     /// is what they saw when each of its events happened.
     pub seen: Vec<(CivId, Vec<bool>)>,
+    /// Units each human could identify before the command. Tile sight alone
+    /// cannot establish whether an invisible unit was detectable then.
+    pub seen_units: Vec<(CivId, Vec<Id<Unit>>)>,
 }
 
 /// [`finish_round`], also recording each AI command for replays.
@@ -1672,12 +1675,24 @@ pub fn finish_round_recorded(
     finish_round_inner(world, r, focus, mods, Some(replay))
 }
 
-fn human_sight(world: &World) -> Vec<(CivId, Vec<bool>)> {
-    world
-        .living_civs()
-        .filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai))
-        .map(|id| (id, world.grid.ids().map(|t| world.visibility.can_see(id, t)).collect()))
-        .collect()
+fn human_sight(world: &World, r: &Ruleset) -> (Vec<(CivId, Vec<bool>)>, Vec<(CivId, Vec<Id<Unit>>)>) {
+    let viewers: Vec<_> = world.living_civs().filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai)).collect();
+    let seen = viewers
+        .iter()
+        .map(|id| (*id, world.grid.ids().map(|t| world.visibility.can_see(*id, t)).collect()))
+        .collect();
+    let seen_units = viewers
+        .iter()
+        .map(|id| {
+            let units = world
+                .units
+                .iter()
+                .filter_map(|(unit, _)| crate::world::fog::can_see_unit(world, r, *id, unit).then_some(unit))
+                .collect();
+            (*id, units)
+        })
+        .collect();
+    (seen, seen_units)
 }
 
 fn finish_round_inner(
@@ -1701,11 +1716,11 @@ fn finish_round_inner(
         .collect();
     let mut events = Vec::new();
     let mut run = |world: &mut World, civ: CivId, command| {
-        let seen = replay.as_ref().map(|_| human_sight(world));
+        let seen = replay.as_ref().map(|_| human_sight(world, r));
         if let Ok(outcome) = crate::world::commands::execute_with(world, r, civ, command, mods) {
-            if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
+            if let (Some(replay), Some((seen, seen_units))) = (replay.as_deref_mut(), seen) {
                 if !outcome.events.is_empty() {
-                    replay.push(ReplayStep { actor: civ, events: outcome.events.clone(), seen });
+                    replay.push(ReplayStep { actor: civ, events: outcome.events.clone(), seen, seen_units });
                 }
             }
             events.extend(outcome.events);
