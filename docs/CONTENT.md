@@ -1,6 +1,6 @@
 # Content
 
-What the game contains beyond the nations ([ROSTER.md](ROSTER.md)): eras, victories, techs, policies, religion, great people, wonders, buildings, units, city-states and names. Agreed 2026-09-23 in one design pass so the pieces fit together. Nothing here is built yet.
+What the game contains beyond the nations ([ROSTER.md](ROSTER.md)): eras, victories, techs, policies, religion, great people, wonders, buildings, units, city-states and names. Agreed 2026-09-23 in one design pass so the pieces fit together, and built on 2026-09-24 as the `base` ruleset (`crates/civ-core/rules/base`); [REBUILD.md](REBUILD.md) tracks how, and what followed.
 
 ## Lenses
 
@@ -160,7 +160,7 @@ Only obvious Civ coinages change; the rest stay (City-State, Golden Age, policy 
 
 - **City names change with the era.** A city is founded under its period name and renames when its owner reaches the right era: Edo → Tokyo, Byzantion → Constantinople → Istanbul, Thăng Long → Hà Nội. History moves without switching nations. Needs era-keyed city name lists and a rename event in the engine.
 - **"What we know" on every leader and wonder card**: one line splitting what is attested, reconstructed and invented, taken from the leader research notes (PLATFORM.md §7).
-- **Years read BCE / CE**, the neutral scholarly form (`hud/calendar.ts` currently prints BC/AD).
+- **Years read BCE / CE**, the neutral scholarly form (`web/src/ui/lib/calendar.ts`: "3520 BCE", "1066 CE").
 
 ## Engine work this implies
 

@@ -1,106 +1,96 @@
 # Gaps: what stands between this build and a finished game
 
-Status 2026-09-23. This lists what is missing; [PLAYABLE.md](PLAYABLE.md) holds the phase order. Sources:
-four read-only code audits (UI coverage, gameplay and AI, game feel, UX), plus a playtest from turn 0 to
-turn 33 on a laptop viewport and a 375×812 phone viewport.
+First written 2026-09-23 from four read-only code audits (UI coverage, gameplay and AI, game feel, UX) and a
+playtest to turn 33 on a laptop and a 375×812 phone. Checked again against the code on 2026-09-25, at the start of
+phase 3 of the UI rebuild ([UI-REBUILD.md](UI-REBUILD.md)), after the old HUD was replaced by the glass interface.
+[PLAYABLE.md](PLAYABLE.md) says what a player can do today.
 
 Tags: **[blocks]** a full game or a new player cannot get past it · **[friction]** noticeable every
-session · **[polish]** noticed by some players. Sizes are agent-days.
+session · **[polish]** noticed by some players. Status: **done**, **part** (what is left is said), or **open**.
 
 ## The short version
 
-- **The engine is well ahead of the UI.** 30 of the engine's 59 actions have a control. The missing 29
-  are all diplomacy, city-states, religion, spies and the late game.
-- **Presentation is ahead of controls.** 34 of 35 event types already reach the Chronicle and the
-  renderer.
-- **A human cannot finish every kind of game.** There is no way to make peace (`offerPeace`,
-  `answerOffer`), assemble spaceship parts (science victory), or vote in the World Congress (diplomatic
-  victory).
-- **The turn is invisible.** The AI's whole turn arrives as one update, so enemy moves, fights and
-  builds pop into place.
-- **A new player gets no help.** There is no tutorial, no rules lookup, no empire overview, and no
-  "play again" on the victory screen.
+- **Every engine action has a control.** `ui/test/coverage.test.ts` checks the interface against all 67 actions;
+  only the pantheon and religious beliefs have none, because the shipped rulesets raise faiths by era and never
+  offer them.
+- **A human can reach every victory.** Peace and offers are answered in the leader's call, spaceship parts are
+  added from the fan, the world vote is a choice on the dial, and the Empire sheet shows the race.
+- **The others' turns are watched.** Each round's moves are played back on the map before the next turn opens.
+- **A new player has help.** The guided turn hands over one decision at a time with a suggested move, seven coach
+  tips explain the first moments, and the civilopedia (H) holds every rule.
+- **What is left** is mostly feel and reach: moments for big events, performance tiers, a phone pass, lenses and a
+  minimap, offline play, leader media, and World Congress resolutions.
 
 ## G. Gameplay a human cannot reach
 
-| ID | Gap | Tag | Size |
+| ID | Gap | Tag | Status |
 |---|---|---|---|
-| G1 | **Diplomacy.** No leader screen, war or peace, friendship, denounce, demands, tribute, gifts, trade table or offer inbox. That is 14 actions. AI offers can never be answered. | blocks | 3–4 |
-| G2 | **Victory paths.** No spaceship assembly (`assembleSpaceshipPart`), no World Congress vote (`voteDiplomatic`), no victory-progress panel. `view.endgame` is never read. | blocks | 2 |
-| G3 | **Religion.** No pantheon, founding or enhancing, and no missionary, inquisitor or prophet actions (3 actions). The AI uses religion; the human can't. | friction | 2 |
-| G4 | **City-states.** No gift, pledge, buy or coup, and influence, quests and ally are never shown (`view.cityStates` unread). | friction | 1.5 |
-| G5 | **Great people and spies.** Only free claims are wired. Great-person actions (`greatPerson`) and the spy panel (`assignSpy`, `withdrawSpy`, `attemptCoup`) are missing. | friction | 1.5 |
-| G6 | **Air and nukes.** `rebase`, `airSweep`, `paradrop` and `nuclearStrike` are missing. | polish | 1 |
-| G7 | **Automation.** No worker automation or auto-explore for humans; only bots can use them (engine change). Every worker is micromanaged for 300+ turns. | friction | 1 |
-| G8 | **Coverage test.** No test fails when the engine gains an action with no UI (PLAYABLE P3.5). | polish | 0.25 |
+| G1 | **Diplomacy.** A leader screen with war, peace, friendship, denouncing, demands, tribute, gifts, a trade table and an offer inbox. | blocks | **done**: the leader's call (`ui/sheets/Leader.svelte`, `LeaderSay`, `Trade`), a rival's demand as a decision |
+| G2 | **Victory paths.** Spaceship assembly, the World Congress vote and a victory-progress panel. | blocks | **done**: the part is added from the unit's fan, the vote is a choice on the dial, the Empire sheet's Victory tab |
+| G3 | **Religion.** Pantheon, founding and enhancing, and missionary, inquisitor and prophet actions. | friction | **done** for the shipped rules: faiths arise by era, the state faith is adopted from the dial or the Faith tab, religious units act from their fan, buildings are bought with faith. The pantheon and beliefs are never offered |
+| G4 | **City-states.** Gift, pledge, buy and coup; influence, quests and ally. | friction | **done**: the envoy mode, the city-state sheet and the Empire's City-states tab |
+| G5 | **Great people and spies.** Great-person actions and the spy panel. | friction | **done**: abilities on the unit's fan, the Empire's Spies tab |
+| G6 | **Air and nukes.** Rebase, air sweep, paradrop and nuclear strike. | polish | **done**: one aim for all four, with the engine's preview of a blast |
+| G7 | **Automation.** Worker automation and auto-explore for humans. | friction | **done**: the engine's `automateUnit` and `exploreUnit`, Stop ends them |
+| G8 | **Coverage test.** A test that fails when the engine gains an action with no UI. | polish | **done**: `ui/test/coverage.test.ts` and `ui/coverage-pending.ts` |
 
 ## A. Rules and AI
 
-The rules are close to complete. Unique-string parse coverage is gated above 99.5%, `tools/unparsed.json`
-is empty, and all five victories are implemented. The gaps are mostly in how the AI treats a human.
+The rules are close to complete. Unique-string parse coverage is gated above 99.5%, and all victories are
+implemented.
 
-| ID | Gap | Tag | Size |
+| ID | Gap | Tag | Status |
 |---|---|---|---|
-| A1 | **The AI never approaches a human.** `choose_trades` only asks other AIs (`crates/civ-core/src/world/ai.rs:770`), and no AI path sends friendship. Every deal must start with the player, so diplomacy feels one-sided even once G1 exists. | friction | 1.5 |
-| A2 | **Every AI leader plays alike.** `Personalities.json` drives city-states but has no references in `ai.rs`. Montezuma and Gandhi use the same war, peace and wonder thresholds. | friction | 1.5 |
-| A3 | **The AI's tactics are thin.** It attacks the weakest reachable target, marches on the three nearest cities, never retreats to heal (`ai.rs:1442`), ignores wonder races (`ai.rs:401`), and takes the first valid belief (`religious_units.rs:241`). War and peace thresholds are faithful Unciv ports. | polish | 2 |
-| A4 | **World Congress is only the UN vote.** It has no resolutions: embargoes, world religion, ideology and the like (`world/victory_actions.rs`). | polish | 2 |
-| A5 | **Game length ignores speed.** `max_turns` is 500 for every speed (`crates/civ-sim/src/setup.rs:40`) although the ruleset's `Speed.total_turns` is parsed. | friction | 0.25 |
+| A1 | **The AI never approaches a human.** | friction | **done**: each AI puts at most one offer a turn in a human's inbox (`civ-core` `world/ai_offers.rs`) |
+| A2 | **Every AI leader plays alike.** | friction | **done**: leaders play by their personalities (`world/personality.rs`) |
+| A3 | **The AI's tactics are thin.** | polish | **part**: the army fights on the live map, each attack scored with the combat preview, cities bombarding and hurt units falling back to heal (`world/tactics.rs`); each AI plays to a victory goal (`world/goals.rs`) and weighs whether it can win a wonder (`world/ai.rs`). The goals are a first pass, and few games end in conquest ([AI.md](AI.md)) |
+| A4 | **World Congress is only the diplomatic vote.** No resolutions: embargoes, world religion, ideology and the like. | polish | **open** |
+| A5 | **Game length ignores speed.** | friction | **done**: without a turn limit the game lasts its speed's length (160 turns Quick, 240 Standard, 360 Epic) |
 
 ## X. UX: learning, information, flow
 
-| ID | Gap | Tag | Size |
+| ID | Gap | Tag | Status |
 |---|---|---|---|
-| X1 | **No tutorial or onboarding.** The playtest's first prompt is "Choose research" while the settler sits in a forest. Nothing says "found your city first", and there are no city-site hints. | blocks | 2–3 |
-| X2 | **No rules lookup.** No civilopedia for units, buildings, techs, policies or terrain. City-sheet rows name a building but never say what it does. Tech unlock icons are unlabelled unless long-pressed. | blocks | 2 |
-| X3 | **No empire overview.** No cities list, units list, score, demographics or victory progress. | blocks | 1.5 |
-| X4 | **The end screen is a dead end.** Victory or defeat shows the winner, with no play again, new game, stats or replay (`hud/Hud.svelte:41`). | blocks | 0.5 |
-| X5 | **New-game choices are thin.** Only map size, rivals, city-states and nation. There is no difficulty, speed, victory types or turn limit; `maxTurns: 500` is hardcoded (`state/session.ts:65`). | friction | 0.5 |
-| X6 | **One save slot.** No save list, no delete, no naming (`SAVE_KEY`, `state/session.ts:95`). | friction | 1 |
-| X7 | **No threat awareness.** At turn 33 barbarians stood beside the capital with no alert. There are no map lenses (yields, resources, religion), no minimap and no search. | friction | 2 |
-| X8 | **Safety and speed.** No undo. Raze is one tap with no confirm (`CapturePrompt.svelte:37`). No desktop keyboard shortcuts. | friction | 1 |
-| X9 | **Settings.** Only audio. No animation speed, in-app reduced motion, UI scale or colour-blind palette. | friction | 1 |
-| X10 | **Platform promises.** There is a manifest but no service worker, so the game is not actually offline-capable. Localisation isn't ready, and ARIA and live regions are sparse. | polish | 1.5 |
-| X11 | **Phone details.** The city sheet covers the city it describes. The buy-price column clips at the right edge. There is one breakpoint and no landscape layout. | polish | 1 |
-| X12 | **Multiplayer has no UI.** Transport exists (`engine/session-transports.ts`) but there is no room creation, invite link or lobby (PLAYABLE P4). | blocks* | 3–4 |
+| X1 | **No tutorial or onboarding.** | blocks | **part**: the guided turn with a suggested move on every decision, and seven coach tips that retire once learned. No scripted first game |
+| X2 | **No rules lookup.** | blocks | **done**: the civilopedia, every rule as an entry with its numbers, links and one fact, searchable, by H |
+| X3 | **No empire overview.** | blocks | **done**: the Empire sheet (cities and units, city-states, spies, faith, victory) and the rivals' scores on their discs. No demographics |
+| X4 | **The end screen is a dead end.** | blocks | **done**: the score chart, the standings, the moments, the replay on the map, Rematch, New game and Share |
+| X5 | **New-game choices are thin.** | friction | **part**: map size, rivals, city-states, wrap, speed or Blitz with its clock and slices, the turn limit, victories, seed, nation and leader. No difficulty |
+| X6 | **One save slot.** | friction | **done**: every game autosaves, and the saved games can be carried on or deleted. They are named by nation and turn, not by the player |
+| X7 | **No threat awareness.** | friction | **part**: dashed red rings with a pointer on units that can strike next turn, the hub's Defend and Strike, a coach tip, and the yields lens. No other lenses, minimap or map search |
+| X8 | **Safety and speed.** No undo, one-tap raze, no keyboard shortcuts. | friction | **done**: undo where the engine allows it (Ctrl+Z), raze in red and stoppable in the city, the keyboard of BRAND.md |
+| X9 | **Settings.** | friction | **part**: music and effects, the Blitz clock, the yields lens, tips again, and motion follows the device. No UI scale or animation speed |
+| X10 | **Platform promises.** No service worker, localisation or ARIA. | polish | **part**: controls have accessible names, and notices (the toasts), the coach, the fan's plate and the attack preview's verdict are announced; the turn's news (the rim's pips, the Chronicle) is not. The ARIA and keyboard pass is phase 3. No service worker or localisation |
+| X11 | **Phone details.** | polish | **part**: bottom sheets that stop above the fan, a dial in the corner on a phone held sideways, 50px keys. The phone pass is phase 3 |
+| X12 | **Multiplayer has no UI.** | blocks* | **done**: names, rooms, invite links, the lobby, your rooms, seats on the hub, a bot in an absent seat |
 
 \* blocks acceptance test 2 only.
 
 ## F. Game feel
 
-What works: unit hops with dust, attack lunges, projectiles and hit flashes, selection and hover rings,
-fortify marks, the positional soundscape, fog clouds that part, and zoom that retilts the camera.
-
-| ID | Gap | Tag | Size |
+| ID | Gap | Tag | Status |
 |---|---|---|---|
-| F1 | **You can't watch the AI play.** `finishTurn` returns one final update (`engine/session-client.ts:71`). Enemy moves, battles and new cities pop in. Needs per-civ event batches from civ-sim and a replay queue in the renderer. | blocks | 2–3 |
-| F2 | **The camera never reacts.** No follow on your own moves, no cut to a battle or an attacked city, no shake, no wonder or victory moment. | friction | 1.5 |
-| F3 | **Combat has no numbers.** No floating damage, no hit-stop, and deaths puff away at once. | friction | 1 |
-| F4 | **Growth is silent.** City founding, growth, border expansion, improvements, roads and completed buildings are instant repaints (`world/cities.ts:41`, `world/terrain.ts:499`). | friction | 2 |
-| F5 | **Milestones share one cue.** Golden age, era change, great person, war declared and promotion get a generic sound and a Chronicle line. There is no banner, animation or distinct cue. | friction | 1.5 |
-| F6 | **No path preview.** Tapping a reachable tile moves at once; there is no route line and no multi-turn move. | friction | 1 |
-| F7 | **Readability.** Starting units and the capital are hidden inside dense forest at play zoom (playtest turns 0 and 33). | friction | 1 |
-| F8 | **A still world.** The sun is fixed, water is static, and there are no people or animals moving when nothing happens. | polish | 2 |
-| F9 | **Thin transitions.** Loading is plain text, sheets fade in and vanish on close, and there is no start-of-turn summary. | polish | 1 |
+| F1 | **You can't watch the AI play.** | blocks | **done**: `state/replay.ts` plays each round's moves back, fights acted out, in a few seconds |
+| F2 | **The camera never reacts.** | friction | **part**: it glides to each decision and, in a playback, to what happened to the player. No shake, no wonder or victory moment |
+| F3 | **Combat has no numbers.** | friction | **done**: floating damage numbers (`world/floats.ts`), a flash on a hit, deaths that shrink away |
+| F4 | **Growth is silent.** | friction | **part**: houses fill lots as a city grows and its label's rule fills, and the chronicle tells it. No founding or growth moment |
+| F5 | **Milestones share one cue.** | friction | **open**: moments for discoveries, wonders, first contact and a new age are phase 3 |
+| F6 | **No path preview.** | friction | **done**: a tap plans the route with each turn's stop, a second tap walks it |
+| F7 | **Readability.** Units and the capital hidden in forest. | friction | **done**: plants clear round a unit, and counters fly above units close in |
+| F8 | **A still world.** | polish | **part**: seasons turn, trees sway in the wind, herds graze, cloud shadows drift |
+| F9 | **Thin transitions.** | polish | **part**: sheets and fans move as they open and close, the rim turns once a turn. Loading is still a line of text |
 
 ## P. Product vision (PLATFORM.md) vs the build
 
-PLATFORM.md promises "a world history in one evening": a colonist.io of Civ V. The build plays a
-standard-length G&K game, which runs 6–20 hours.
-
-| ID | Gap | Tag | Size |
+| ID | Gap | Tag | Status |
 |---|---|---|---|
-| P1 | **No Blitz pacing.** Only the `gods-and-kings` and `vanilla` rules ship. The planned `rulesets/blitz/` (PLATFORM.md §157, §404) doesn't exist, and PLAYABLE.md scopes balance out. This is the product's core promise. | blocks | 5+ |
-| P2 | **Room play has server support and no client.** civ-server has seat readiness and a deadline clock (`crates/civ-server/src/host.rs:105`), but no UI shows either (see X12). Reconnect and bot takeover (PLATFORM M2) are future work. | blocks* | with X12 |
-| P3 | **Leader encounters have no player.** content/leaders defines photoreal phone-call portraits, but no overlay plays them, and the ruleset still names the Unciv leaders (Ramesses, Gandhi, Darius). | friction | 2 |
-
-## How we plan each
-
-We go group by group: G, then F, then X, then A and P. For each gap we pick one of four answers: **now**
-(it joins the next phase), **later** (dated), **cut**, or **redesign** (the Civ V answer doesn't fit
-a phone-first evening game). Decisions are recorded here beside each row.
+| P1 | **No Blitz pacing.** | blocks | **done** in the rules: `crates/civ-core/rules/blitz` plays one of three 60-turn slices of two eras ([BLITZ.md](BLITZ.md)), chosen in the custom game |
+| P2 | **Room play has server support and no client.** | blocks* | **done**: see X12. Reconnect and bot takeover show on the hub |
+| P3 | **Leader encounters have no player.** | friction | **open**: the call shows the rival's disc; portraits and video wait for the leader media pipeline (PLATFORM.md §7) |
 
 ## Decisions
+
+The decisions that shaped the plan, as they were taken.
 
 1. **2026-09-23: both at once.** One track specs and tunes Blitz (P1). The UI track builds what both
    games need, starting with diplomacy (G1).
@@ -108,12 +98,13 @@ a phone-first evening game). Decisions are recorded here beside each row.
    cheap techs, so air and nukes (G6) are in scope for Blitz too. Victories: domination, score at the
    turn limit, a short culture victory, and a new **wonder race** (first to N wonders). That last one is
    a new engine victory type. **Science is also allowed**, as a short race with fewer, cheaper parts.
+   Blitz became a slice of two eras rather than a compressed tree (BLITZ.md).
 3. **2026-09-23: the UI track's order.** G1 diplomacy, then G2 victory paths with X4 (end screen and play
    again).
 4. **2026-09-23: AI turns (F1) are a fast, capped replay.** Only what the player can see, with every
    civ moving at once, capped near 3 s. The camera cuts to battles involving the player.
-5. **2026-09-23: diplomacy (G1) uses a placeholder portrait.** An engraved Almanac plate with the video
-   slot left open, so leader clips drop in later.
+5. **2026-09-23: diplomacy (G1) uses a placeholder portrait,** with the video slot left open, so leader clips drop
+   in later. The glass interface shows the rival's disc there.
 6. **2026-09-23: learning.** X1 is a guided first game: prompts through the first 15 turns of a normal
    game, then first-time hints. X2 is tap-anything encyclopedia plates; a full index screen comes later.
 7. **2026-09-23: AI.** The Blitz track takes A1 (the AI approaches the human), A2 (personalities) and A3
@@ -126,38 +117,12 @@ a phone-first evening game). Decisions are recorded here beside each row.
 11. **2026-09-23: leader media lives in Cloudflare R2.** It is kept out of git (`.gitignore`); the repo
     holds manifests only. This is a devops task.
 12. **2026-09-23: World Congress resolutions (A4) are for the full game only,** after P4.
+13. **2026-09-24: the UI rebuild.** The HUD is rebuilt as the glass interface of BRAND.md, in phases
+    (UI-REBUILD.md), and by the end of phase 2 every engine action a shipped ruleset offers has a control.
 
-## Plan
+## What remains
 
-Three tracks run at once; sizes are agent-days. The UI track's G and X panels are independent once G1's
-screen kit exists, so parallel sessions can split them.
-
-**UI track** (`web/src/{hud,state}`, `crates/civ-sim`), about 26 days alone:
-1. G1 diplomacy with a placeholder portrait (3–4)
-2. G2 and X4: victory progress, spaceship and vote buttons, end screen with play again (2.5)
-3. X12 rooms: create, invite link, lobby, readiness and deadline clock (3–4)
-4. X7, X3, X8 and G7: threat alerts, lenses, minimap, empire overview, undo, confirm raze, keys, worker
-   automation and explore (5.5)
-5. F1, civ-sim half: per-civ event batches for the capped replay (1)
-6. G3–G6: religion, city-states, great people and spies, air and nukes. All are in Blitz because the
-   full tree stays (6)
-7. X1 guided first game, then X2 tap-anything plates (4–5)
-
-**Blitz track** (new; `crates/civ-core`, new `rulesets/blitz/`), about 13 days:
-1. Spec: turn count (~100 at ~30 s), map size, tech cost curve, victory thresholds (1)
-2. The Blitz ruleset: compressed full tree, speed and turn limit; also fix A5 so the limit follows speed
-   (5)
-3. Victories: the new wonder race, short culture, short science with fewer parts (1.5)
-4. A1 the AI approaches you, A2 personalities, A3 tactics (5)
-
-**Art track** (renderer), about 7 days:
-1. F7 readability: units and capitals visible in forest (1)
-2. F3 combat numbers, hit-stop, lingering deaths (1)
-3. F1, renderer half: the capped replay queue and cuts to battles involving you (1.5)
-4. F4 growth moments, then F5 milestone moments (3.5)
-
-**Devops:** move leader media to R2 (0.5).
-
-**After P4 or in the P5 phone pass:** X5 new-game options, X6 save slots, X9 settings, X10 offline,
-localisation and ARIA, X11 phone details, F2 camera reactions, F6 path preview, F8 a living world, F9
-transitions, G8 coverage test, A4 Congress (full game), P3 leader encounters.
+In rough order: the acceptance tests of PLAYABLE.md played through; phase 3's moments (F2, F4, F5), performance
+tiers, ARIA and keyboard with the turn's news announced (X10) and phone pass (X11); a scripted first game (X1);
+difficulty levels (X5); more lenses and a minimap (X7); a service worker and localisation (X10); World Congress
+resolutions (A4); leader media (P3).

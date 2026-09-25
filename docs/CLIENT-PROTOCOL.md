@@ -1,8 +1,9 @@
 # Client communication contract
 
 Status: shared session, save/replay, solo Worker and private-room host implemented locally.
-The main UI plays solo sessions through the Worker; remote rooms are not in the UI yet. Broader rule parity,
-complete match playtests, public matchmaking and ranked play remain unfinished.
+The web client plays solo sessions through the Worker and room matches over the room's WebSocket
+([PLAYABLE.md](PLAYABLE.md)). Broader rule parity, complete match playtests, public matchmaking and ranked play
+remain unfinished.
 
 Product direction: become the Colonist.io of Civ. The first outcome is a room people can join from a
 link, play through direct control of their civilizations, and return to after connection loss.
@@ -402,10 +403,11 @@ their original command IDs and payloads. Existing subscribers receive the fresh 
 replayed transient events. An older tab fenced by `connectionReplaced`, incompatible data, or an
 exhausted retry budget stops permanently and preserves unresolved commands. `close()` cancels
 reconnect; the optional fourth argument `{ signal: AbortSignal }` also cancels an initial opening.
-The connection-status display remains a UI task.
+The dial's hub says when a room's socket is being replaced (`web/src/state/pulse.ts`).
 
-Competitive pacing and browser controls remain product work. Engine coverage targets the bundled Gods & Kings rules; arbitrary mod-only rules and editor tools are excluded. Server tests use two real WebSocket
-clients; finishing a full match in two browser UIs remains an acceptance test after UI integration.
+Competitive pacing remains product work. Engine coverage targets the game's own bundled rules (`base`, and `blitz`
+over it); arbitrary mod-only rules and editor tools are excluded. Server tests use two real WebSocket clients;
+finishing a full match in two browser windows remains an acceptance test (PLAYABLE.md).
 
 The planner suppresses unnecessary worker/settler commitments, values population-dependent building
 yields, and budgets military strength using currently available units. Production and gold/faith

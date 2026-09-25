@@ -1,183 +1,102 @@
-# Playable plan: wire the UI to the engine and finish the game
+# Playable: what a player can do, and what is left
 
-Status 2026-09-23: P0, P1 and P2 are built; P2 waits for your playtest to a victory on a laptop. P2 covered the
-ink-and-paper HUD with RhosGFX icons, every basic unit order, the combat preview and `attacked` events, the
-tech web with research goals, the city sheet (queue, citizens, specialists, buildings, tiles, bombard), the
-capture prompt, policies and free claims, banner growth bars, and the engine fix that puts human cities'
-idle citizens to work. A scripted 100-turn soak game reached the end screen with no errors. Next: P3,
-diplomacy and the rest of Gods & Kings. This is the UI track; the art track (procedural graphics) runs in
-parallel under [PROCEDURAL.md](PROCEDURAL.md).
-
-Since 2026-09-23 the order of work after P2 follows the Plan in [GAPS.md](GAPS.md): diplomacy (G1), then
-victory paths and the end screen, then rooms. A new Blitz track and the art track run beside it.
+Status 2026-09-25, from the code at the start of phase 3 of the UI rebuild ([UI-REBUILD.md](UI-REBUILD.md)). The
+whole game plays in the glass interface ([BRAND.md](BRAND.md)): every engine action a shipped ruleset offers has
+a control. [GAPS.md](GAPS.md) keeps the audit of what stands between this build and a finished game.
 
 ## Goal
 
-Someone opens civ.game, plays a full Gods & Kings game from the 3D map against AIs or friends, and
-reaches a victory or defeat screen.
+Someone opens civ.game, plays a full game from the 3D map against bots or friends, and reaches a victory or
+defeat screen. Done when both acceptance tests pass:
 
-Done when both acceptance tests pass:
-
-1. **Solo.** A full small-map game against 3 AIs, played to a victory screen through the UI, on a laptop
+1. **Solo.** A full small-map game against 3 bots, played to a victory screen through the interface, on a laptop
    and on a phone.
 2. **Room.** Two browsers finish a private-room match from one link; one reloads mid-game and carries on.
 
-Out of scope here: art (art track), leader videos, original ruleset text, matchmaking, accounts, ranked
-play, Blitz pacing and balance.
+Neither has been recorded end to end through the new interface yet. The smoke run (`npm --prefix web run smoke`)
+plays a fixed game's first turns at desktop and phone sizes, plays a six-turn game out to its end screen, and,
+against a local civ-server, plays a room from one link with two browsers, a dropped socket and a bot taking an
+absent seat.
 
 ## Where things stand
 
-- **Engine and session are done.** civ-sim protocol v4 carries 59 typed actions and 6 queries (reachable,
-  unit, city and civ options, view, rules), receipts, full player views, private offers, save and replay.
+- **Engine and session.** civ-sim protocol v4 carries 67 typed actions and 7 queries (reachable, unit, city and
+  civ options, view, rules, combat preview), receipts, full player views, private offers, undo state, the others'
+  moves for playback, saves and replay. The session embeds the game's own `base` rules and `blitz` over them.
   civ-server hosts private rooms. `SessionClient`, the IndexedDB outbox, the solo Worker and the WebSocket
   transport are built and tested.
-- **Checks are green.** `cargo check --workspace --tests` passes, svelte-check reports 0 errors, and all
-  1,062 web tests pass.
-- **The UI plays the real session (P1).** `state/session.ts` opens solo games through `openSolo`. The old
-  observer adapter remains only for the art review page.
-- **The renderer reads the wire view.** The generated `PlayerView` is a superset of the renderer's
-  `engine/protocol.ts` types, so terrain, units and cities read it without logic changes.
-- **The engine work is committed.** The 23k lines that civ.game builds against (`world/commands.rs`,
-  `save.rs` and the rest) are Unciv-master `f8f72f5`.
+- **The interface.** `web/src/ui/` over `web/src/world/`, with `web/src/state/session.ts` the one path to the
+  match (docs/ARCHITECTURE.md). The old HUD (`web/src/hud/`) was deleted on 2026-09-25.
+- **Coverage.** `ui/test/coverage.test.ts` checks every engine action against the interface. All are surfaced
+  except the pantheon and religious beliefs, which the shipped rulesets never offer (faiths arise by era).
 
-## Working beside the art track
+## What a player can do
 
-Neither track edits the other's files.
+**Start.** The title's dial is Play: a small map, three bots, two city-states and a random nation. Beside it:
+Continue, Custom game (map size, rivals, city-states, east-west wrap, speed or Blitz with its clock and a slice of
+eras, the turn limit, the victories, a seed, the nation and its leader), Play with friends, the saved games (carry
+one on or delete it), the civilopedia and Settings. Every solo game autosaves.
 
-| Track | Owns |
-|---|---|
-| UI | `web/src/{state,hud,engine}/**`, `App.svelte`, `main.ts`, `app.css`, `world/overlays.ts`, new `world/{input,banners}.ts`, `crates/civ-sim`, `crates/civ-server`, this file |
-| Art | `web/src/{art,content}/**`, `world/{scene,units,troupe,perf,terrain,cities,ink,animator,combat,fx}.ts`, `web/tools`, the review pages, PROCEDURAL.md |
+**A turn.** The dial's hub names the next decision, most urgent first, and hands it over: a captured city, a unit,
+a rival's demand, research, a free technology or great person, a world vote, the state faith, an idle city, a
+policy (EXPERIENCE.md, section 3). Its lamps count what waits. End turn is the hub once nothing is left, and
+Shift+Enter ends the turn anyway. With the Blitz clock on, a turn has 45 seconds and the game a 90-second bank. The
+others' turns are played back on the map before the next turn opens, and a tap, Esc, Shift+Enter or the hub skips
+them. Ctrl+Z takes the last order back when the engine allows it.
 
-Three seams, agreed once:
+**Units.** The fan holds the selected unit's orders, the suggested one first: move (a tap plans a route with its
+turns, a second tap or Go walks it, and a longer route becomes a go-to order walked each turn), attack with a
+preview of both sides, found a city, build an improvement, promote, fortify, sleep, skip, pillage, set up, upgrade,
+disband, gift, and the engine's auto-work and auto-explore. Great people use their abilities, religious units
+spread their faith, and a spaceship part is added in the capital. Rebase, air sweep, paradrop and nuclear strikes
+aim at a tile, the strike with the engine's preview of the blast. A foreign unit shows a plate.
 
-1. **Types.** `engine/protocol.ts` stays as the renderer's view contract, a subset of the wire view. Art
-   fixtures (`art/review-world.ts`) build it directly, and `state/session.ts` fails to compile if the
-   generated `PlayerView` stops fitting it.
-2. **Input and overlays.** `WorldScene` already has `onTile` and `setSelection`. P2 adds hover, path,
-   target and yield overlays in `overlays.ts`, and `project(tile)` for HTML banners. Changes to
-   `scene.ts` are additive hooks only, announced to the art track.
-3. **Motion.** Each update's `events`, with the views before and after, go to one renderer entry point.
-   The art track turns them into hops, lunges and topples. A real `attacked` event (civ-sim work below)
-   replaces the guess `combat.ts` makes from health differences.
+**Cities.** The city sheet: the build queue with suggested builds and their reasons, buying with gold or faith,
+avoid growth, wealth or research in place of a build, the governor's focus, pinning worked tiles (a tap on the map
+or a row), specialists, buildings with selling, buying tiles, and bombarding a target in range. A wonder that
+takes a tile is placed through the fan or on the map. A captured city is annexed, kept as a puppet, razed or
+liberated from the fan; razing can be stopped.
 
-Git: both tracks share `~/Projects/civ.game` on `main` (the user's choice), so each commits only its own
-files. The UI track's dev server is `civ-game-play` on port 5189; the art track's is `civ-game-web` on 5199.
+**The empire.** The top chips show gold, science, culture, faith and happiness with their change a turn, and
+the technology and policy under study. The Empire sheet lists cities and units, city-states, spies, the state
+faith and victory progress with the spaceship and the world vote. The research sheet is the tech web with a
+research goal; the policies sheet adopts policies. The chronicle (C, or the dial's rim) is the game's news; the
+rim's pips turn the camera to where each happened. L turns on the yields lens and H opens the civilopedia.
 
-## Phases
+**Other nations.** The rival discs, by score, open a leader's call: attitude, what is agreed, an offer or a demand
+to answer, and war, peace, peace on terms, friendship, a defensive pact, a scholarly exchange (a research
+agreement), trade (gold, gold a turn, luxuries, open borders, an embassy), demands and denouncing. A city-state
+looked at puts an envoy on the dial: gifts of gold, tribute in gold or a worker, protection, marriage (buying it
+out), and its sheet shows its influence, ally and quests. Spies are posted from the Empire sheet, where a spy in
+a city-state can attempt a coup.
 
-### P0. Safety (about 30 minutes)
+**Rooms.** A name, a room made with its settings, an invite link, the lobby's seats and nations, the rooms this
+browser holds, and a start. In the match the hub says when the socket is being replaced or a bot is playing the
+seat, and waits on the others once the turn is finished, with the room's deadline as the clock.
 
-Done 2026-09-23. The engine's 878 tests passed and its working tree was committed as Unciv-master
-`f8f72f5`. The `civ-game-play` launch entry was added. The user chose the shared folder over a worktree.
+**The end.** The result, the score chart, the standings and the moments that shaped the game; the rim becomes a
+scrubber that replays the borders on the map. Rematch, New game and Share.
 
-### P1. Wire the real session (about 1 day)
+**Settings.** Music and effects levels, the Blitz clock, the yields lens, the tips again, and the civilopedia.
+Motion follows the device's reduced-motion setting.
 
-Replace the observer with `openSolo`. No art files change.
+## What is left
 
-1. The renderer keeps `engine/protocol.ts` (see the seams). The observer adapter (`engine/worker.ts`,
-   `engine/transport.ts`, civ-sim's `Game`) stays while `art-review.ts` uses it; `state/game.ts` is gone.
-2. A new `state/session.ts` owns one `GameSession` and stores the latest `GameUpdate`, `view`, `rules`
-   and pending commands. `act(action)` fills `commandId`, `epoch` and `turnToken`, awaits the receipt,
-   and shows a rejection as a short toast.
-3. A title screen over the live 3D scene offers New game (map size, AIs, city-states, nation) and
-   Continue (the IndexedDB save).
-4. Tapping an own unit runs `reachable` and shows the reach overlay; tapping a reachable tile sends
-   `moveUnit`. End turn sends `finishTurn` and shows "Other civilizations are moving" until the next
-   update.
-
-Done when: in the browser, found a city, set production and research, move units, end 10 turns, reload,
-and continue on the same turn.
-
-Done 2026-09-23 and verified in the browser: Persepolis founded, Warrior then Worker built, Mining then
-Pottery researched, turn 14 reached (about 110 ms a turn), and reload plus Continue resumed turn 14 with
-the same gold and research. Added: nation city names in `NationRow.cities`, and a static `ruleTables()`
-Wasm export for the title screen.
-
-### P2. The core loop (4–6 days)
-
-Everything needed to play a whole game. Every control is built phone-first: bottom sheets, tap only, no
-hover-only information. P2 opens with a one-screen HUD mock for the user to choose from, like the art
-style checkpoint.
-
-1. **Units.** A bottom bar built from `unitOptions`: fortify, skip, found city, build (the worker menu),
-   pillage, promote, upgrade, disband, set up and gift. It cycles to the next unit and counts units
-   needing orders. Sleep is client-side.
-2. **Combat.** Tap an enemy to see the preview card, tap again to attack. Ranged and bombard targets are
-   highlighted.
-3. **Cities.** World-space banners show name, population, growth and production bars, and health. A city
-   sheet built from `cityOptions` covers production with turns left, gold and faith purchase, worked
-   tiles and specialists, tile buying, building sales, avoid growth and conversions. A capture prompt
-   offers annex, puppet, raze or liberate.
-4. **Empire.** A top bar shows stored and per-turn gold, science, culture and faith, plus happiness and
-   golden age. Add the research picker, the tech web, the policy picker, and free tech and great person
-   claims.
-5. **Turn flow.** The end-turn button becomes the next blocking prompt: choose research, choose
-   production, or unit needs orders. A notification feed comes from `events`; tapping one moves the
-   camera there. The victory or defeat screen reads `view.result`.
-
-Done when: a full small-map game against 3 AIs reaches a victory screen on a laptop.
-
-### P3. Diplomacy and the rest of Gods & Kings (1–1.5 weeks)
-
-Once P2's HUD kit exists the panels are independent, so they can run as parallel agent tasks.
-
-1. **Diplomacy.** A leader screen, with a placeholder portrait until leader media exists. War, peace,
-   friendship, denouncing, demands, tribute and gold gifts. A trade table and an offer inbox where
-   offers are answered or withdrawn.
-2. **City-states.** Gifts, pledges, purchase, quests and coups.
-3. **Religion and spies.** Pantheon, founding and enhancing beliefs, and missionary, inquisitor and
-   prophet actions. Assigning and withdrawing spies.
-4. **Late game.** Great-person actions, air units (rebase, sweep, paradrop), nukes, spaceship parts,
-   World Congress votes and a victory-progress panel.
-5. **Coverage test.** A table maps every `Action` variant to its UI control. The test fails when the
-   engine adds an action with no UI.
-
-Done when: the coverage test passes, and scripted saves reach each victory type through the UI.
-
-### P4. Multiplayer rooms (3–4 days)
-
-1. Create a room and join by link through civ-server's HTTP API.
-2. Add a lobby over the 3D scene with seats and nations; bots fill empty seats.
-3. Show the readiness and deadline clock, other seats' readiness, connection status and reconnects, and
-   the bot-takeover notice.
-
-Done when: acceptance test 2 passes.
-
-### P5. Phone pass (about 1 week)
-
-1. Play the full solo game on a phone and fix what breaks.
-2. Hold 30 fps on a mid-range phone and 60 fps on a 2020 laptop.
-3. Add loading, error and empty states, and sound hooks.
-
-Done when: acceptance test 1 passes on a phone.
-
-Total: about 4–5 weeks of agent work.
-
-## civ-sim additions (UI track, needed in P2)
-
-Each stays knowledge-safe like the rest of the protocol and gets its hidden-state tests.
-
-1. **Full rule tables.** Tech era, cost, prerequisites and unlocks. Unit strength, ranged strength, range,
-   cost and domain. Building cost, maintenance, wonder flag and a one-line effect. Policy branch and
-   prerequisites, promotion prerequisites, improvement yields and resource kind.
-2. **`combatPreview { attacker, target }`.** Expected damage both ways and the modifier lines, computed
-   from what the attacker can see.
-3. **Tile yields.** Yields for a city's tiles in `cityOptions`, and a `tile { id }` inspect query for
-   any known tile, computed for the viewer.
-4. **Paths and growth.** A predecessor on each `Reach` entry so the client can draw the route, a `path`
-   query for multi-turn move orders, and turns-to-grow in the city view.
-5. **An `attacked` event.** For battles the viewer fought in, it carries the attacker, defender, damage
-   and deaths.
-
-## Engine needs (civ-core; the user allowed engine edits on 2026-09-23)
-
-- Worker automation and auto-explore for human units. The bot routines exist, but human seats cannot use
-  them.
-- Event-time observation, so a viewer who saw a third party's battle can be shown it.
+- **The acceptance tests** above, played through the new interface on a laptop and a phone.
+- **Phase 3 polish** (UI-REBUILD.md): moments for discoveries, wonders, first contact and a new age; the glass
+  fallback and blur off on low performance tiers; ARIA and keyboard, with the turn's news announced to a screen
+  reader (today only notices, the coach, the fan's plate and the attack preview are); a phone pass.
+- **Aircraft on the map.** An aircraft's tap on a base does not arm its rebase yet: `ui/model/aim.ts` `mapTap`
+  does, but `App.svelte` sends map taps to `state/aim.ts` `aimTap`, which only picks while an aim is armed.
+- **Leader media.** The call shows the rival's disc; portraits and video wait for the leader media pipeline
+  (PLATFORM.md §7).
+- **Not built:** difficulty levels, other map lenses than yields, a minimap, a service worker for offline play,
+  localisation, accounts, public matchmaking and ranked play. The World Congress holds only the diplomatic vote.
+  Go-to orders are the client's own, walked each turn by `state/session.ts`.
 
 ## Verification
 
-Every phase runs `cargo test --workspace`, `npm --prefix web run check` and `npm --prefix web test`.
-State-layer tests run against a fake `GameSession`. Each phase's done-when is played in the browser
-preview and shown with a screenshot.
+Every change runs `npm --prefix web run check`, `npm --prefix web test` and `npm --prefix web run build`, and
+after an engine change `cargo test --workspace --release` and `python3 tools/check_protocol.py`. The view models
+and modes are tested without a DOM against fixture views and the real Wasm engine; the smoke run's shots at
+1280×800 and 390×844 are looked at against `docs/interface/`.
