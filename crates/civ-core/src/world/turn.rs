@@ -170,6 +170,11 @@ pub enum TurnEvent {
         tile: TileId,
     },
     UnitMoved(crate::world::movement::MoveEvent),
+    /// A unit first earned enough experience for its next promotion.
+    CanPromote { unit: Id<Unit> },
+    Promoted { unit: Id<Unit>, at: TileId, promotion: Id<crate::ruleset::Promotion> },
+    Fortified { unit: Id<Unit>, at: TileId },
+    Upgraded { unit: Id<Unit>, at: TileId, from: Id<crate::ruleset::BaseUnit>, to: Id<crate::ruleset::BaseUnit> },
     UnitDamaged {
         unit: Id<Unit>,
         civ: CivId,
@@ -962,15 +967,24 @@ pub(crate) fn explore_on_entry(
 pub fn apply_plan(world: &mut World, r: &Ruleset, plan: &TurnPlan, mods: TurnModifiers) -> Vec<TurnEvent> {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
     let owned_units = world.civ(plan.civ).map_or_else(Vec::new, |c| c.units.clone());
+    let mut events = Vec::new();
     for unit in owned_units {
         if let Some(promotion) = crate::world::military::promotion_choice(world, r, unit) {
-            let _ = crate::world::military::promote(world, r, unit, promotion);
+            if crate::world::military::promote(world, r, unit, promotion).is_ok() {
+                let at = world.units.get(unit).expect("promoted unit").position;
+                events.push(TurnEvent::Promoted { unit, at, promotion });
+            }
         }
         if crate::world::combat::can_upgrade_with(world, r, unit, mods.costs.speed).is_ok() {
-            let _ = crate::world::combat::upgrade_unit_with(world, r, unit, mods.costs.speed);
+            let u = world.units.get(unit).expect("upgradeable unit");
+            let (from, at) = (u.base, u.position);
+            if let Ok(to) = crate::world::combat::upgrade_unit_with(world, r, unit, mods.costs.speed) {
+                events.push(TurnEvent::Upgraded { unit, at, from, to });
+            }
         }
     }
-    apply_plan_inner(world, r, plan, mods, true)
+    events.extend(apply_plan_inner(world, r, plan, mods, true));
+    events
 }
 
 fn apply_plan_inner(
@@ -1057,6 +1071,8 @@ fn apply_plan_inner(
         if matches!(order, UnitOrder::Attack(_) | UnitOrder::Assault(_)) {
             crate::world::military::set_up(world, r, *unit);
         }
+        let readiness = matches!(order, UnitOrder::Attack(_) | UnitOrder::Assault(_))
+            .then(|| crate::world::commands::promotion_readiness(world));
         let before = world.units.get(*unit).map(|u| (u.position, u.movement_left, u.embarked));
         match order {
             UnitOrder::Rebase(_) | UnitOrder::AirSweep(_) | UnitOrder::Paradrop(_) | UnitOrder::NuclearStrike(_) => {
@@ -1183,8 +1199,13 @@ fn apply_plan_inner(
             }
             UnitOrder::Fortify | UnitOrder::Hold => {
                 if let Some(u) = world.units.get_mut(*unit) {
+                    let newly_fortified = *order == UnitOrder::Fortify && !u.fortified;
+                    let at = u.position;
                     u.fortified |= *order == UnitOrder::Fortify;
                     u.movement_left = Fixed::ZERO;
+                    if newly_fortified {
+                        events.push(TurnEvent::Fortified { unit: *unit, at });
+                    }
                 }
             }
             UnitOrder::Improve(improvement) => {
@@ -1227,6 +1248,9 @@ fn apply_plan_inner(
                     events.push(TurnEvent::CityFounded { city, by: plan.civ });
                 }
             }
+        }
+        if let Some(before) = readiness {
+            events.extend(crate::world::commands::newly_promotable(&before, world));
         }
     }
 

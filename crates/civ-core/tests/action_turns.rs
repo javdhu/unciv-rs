@@ -244,6 +244,55 @@ fn city_bombard_is_available_once_per_round() {
 }
 
 #[test]
+fn combat_announces_promotion_readiness_when_xp_crosses_the_threshold() {
+    let (r, mut w) = fixture();
+    let attacker = unit(&mut w, &r, 0, "Archer", 8, 8);
+    let defender = unit(&mut w, &r, 1, "Infantry", 10, 8);
+    w.units.get_mut(attacker).unwrap().xp = 9;
+    w.diplomacy.declare_war(CivId(0), CivId(1));
+    observe(&mut w, &r);
+    let events = execute(&mut w, &r, CivId(0), Command::Attack { unit: attacker, target: AttackTarget::Unit(defender) })
+        .unwrap().events;
+    assert_eq!(events.iter().filter(|e| matches!(e, TurnEvent::CanPromote { unit } if *unit == attacker)).count(), 1);
+    assert!(civ_core::world::combat::can_promote(w.units.get(attacker).unwrap()));
+}
+
+#[test]
+fn training_orders_announce_the_change_once_and_keep_the_original_unit_id() {
+    let (r, mut w) = fixture();
+    let warrior = unit(&mut w, &r, 0, "Warrior", 4, 8);
+    let at = w.units.get(warrior).unwrap().position;
+    let events = execute(&mut w, &r, CivId(0), Command::Fortify { unit: warrior }).unwrap().events;
+    assert_eq!(events, vec![TurnEvent::Fortified { unit: warrior, at }]);
+    w.units.get_mut(warrior).unwrap().refresh(2);
+    assert!(execute(&mut w, &r, CivId(0), Command::Fortify { unit: warrior }).unwrap().events.is_empty());
+
+    let (r, mut w) = fixture();
+    let warrior = unit(&mut w, &r, 0, "Warrior", 4, 8);
+    let at = w.units.get(warrior).unwrap().position;
+    w.units.get_mut(warrior).unwrap().xp = 10;
+    let promotion = r.promotions.id("Shock I").unwrap();
+    let events = execute(&mut w, &r, CivId(0), Command::Promote { unit: warrior, promotion }).unwrap().events;
+    assert_eq!(events, vec![TurnEvent::Promoted { unit: warrior, at, promotion }]);
+
+    let (r, mut w) = fixture();
+    let warrior = unit(&mut w, &r, 0, "Warrior", 4, 8);
+    let at = w.units.get(warrior).unwrap().position;
+    let from = w.units.get(warrior).unwrap().base;
+    let iron = r.resources.id("Iron").unwrap();
+    w.civ_mut(CivId(0)).unwrap().techs.extend(r.technologies.ids());
+    w.civ_mut(CivId(0)).unwrap().gold = 100;
+    w.grid.resource[at.0 as usize] = Some(iron);
+    w.grid.resource_amount[at.0 as usize] = 1;
+    w.grid.improvement[at.0 as usize] = r.improvements.id("Mine");
+    let events = execute(&mut w, &r, CivId(0), Command::Upgrade { unit: warrior }).unwrap().events;
+    let to = w.units.get(warrior).unwrap().base;
+    assert_ne!(from, to);
+    assert_eq!(events, vec![TurnEvent::Upgraded { unit: warrior, at, from, to }]);
+    assert_eq!(w.units.get(warrior).unwrap().base, to);
+}
+
+#[test]
 fn commands_do_not_bank_income_and_finish_round_banks_exactly_once() {
     let (r, mut w) = fixture();
     let city = w.civ(CivId(0)).unwrap().cities[0];

@@ -1255,6 +1255,11 @@ pub enum PresentationEvent {
         embark: Option<Embark>,
         zoc: bool,
     },
+    /// This player's unit crossed the XP threshold for its next promotion.
+    CanPromote { unit: EntityRef },
+    Promoted { unit: EntityRef, at: u16, promotion: u32 },
+    Fortified { unit: EntityRef, at: u16 },
+    Upgraded { unit: EntityRef, at: u16, from: u32, to: u32 },
     CityFounded {
         city: EntityRef,
         by: u8,
@@ -1749,6 +1754,14 @@ pub fn replay_for(
                     note(&mut units, m.unit);
                     events.push(presentation("UnitMoved", "Unit moved".into(), moved(m)));
                 }
+                TurnEvent::Promoted { unit, at, .. }
+                | TurnEvent::Fortified { unit, at }
+                | TurnEvent::Upgraded { unit, at, .. }
+                    if sees(*at) && seen_unit(*unit) =>
+                {
+                    note(&mut units, *unit);
+                    events.extend(unit_change(before, r, me, event));
+                }
                 TurnEvent::Battle { attacker_died, defender_died, report: Some(b) } => {
                     let ours = b.attacker_owner == me || b.defender_owner == me;
                     let target_hides = matches!(b.target, Target::Unit(id) if hides(id));
@@ -1929,6 +1942,34 @@ fn moved(m: &civ_core::world::movement::MoveEvent) -> PresentationEvent {
     }
 }
 
+fn unit_change(before: &World, r: &Ruleset, me: CivId, event: &TurnEvent) -> Option<EventView> {
+    let who = |id| {
+        if before.units.get(id).is_some_and(|u| u.owner == me) {
+            format!("Your {}", unit_kind(before, r, id, "unit"))
+        } else {
+            "A unit".into()
+        }
+    };
+    Some(match event {
+        TurnEvent::Promoted { unit, at, promotion } => presentation(
+            "Promoted",
+            format!("{} was promoted", who(*unit)),
+            PresentationEvent::Promoted { unit: (*unit).into(), at: at.0, promotion: promotion.index() },
+        ),
+        TurnEvent::Fortified { unit, at } => presentation(
+            "Fortified",
+            format!("{} fortified", who(*unit)),
+            PresentationEvent::Fortified { unit: (*unit).into(), at: at.0 },
+        ),
+        TurnEvent::Upgraded { unit, at, from, to } => presentation(
+            "Upgraded",
+            format!("{} was upgraded", who(*unit)),
+            PresentationEvent::Upgraded { unit: (*unit).into(), at: at.0, from: from.index(), to: to.index() },
+        ),
+        _ => return None,
+    })
+}
+
 fn attacked(
     b: &civ_core::world::combat::BattleReport,
     me: CivId,
@@ -2090,6 +2131,17 @@ pub fn report_for(
                 )
             }
             TurnEvent::UnitMoved(m) if own_unit(m.unit) => ("UnitMoved", "Unit moved".into(), moved(m)),
+            TurnEvent::CanPromote { unit } if party(*unit) => (
+                "CanPromote",
+                "Your unit can promote".into(),
+                PresentationEvent::CanPromote { unit: (*unit).into() },
+            ),
+            TurnEvent::Promoted { unit, .. }
+            | TurnEvent::Fortified { unit, .. }
+            | TurnEvent::Upgraded { unit, .. } if party(*unit) => {
+                out.extend(unit_change(before, r, me, event));
+                continue;
+            }
             // The rest of what the renderer animates, where this player is a party to it.
             TurnEvent::UnitCaptured { from_owner, to_owner, .. } if *from_owner == me || *to_owner == me => {
                 out.extend(motion(before, r, me, event, known_unit, known_tile, known_city, |t| after.visibility.can_see(me, t)));
@@ -3104,13 +3156,47 @@ mod tests {
         assert_eq!(replay[0].units, vec![ReplayUnit { unit: mine.into(), owner: me.0, base: my.base.index() }]);
     }
 
+    #[test]
+    fn training_facts_reach_the_owner_and_visible_foreign_actions_replay() {
+        use civ_core::world::ReplayStep;
+        let Motion { before, after, r, me, actor, .. } = motion_fixture();
+        let (mine, my) = before.units.iter().find(|(_, u)| u.owner == me).unwrap();
+        let (theirs, foreign) = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap();
+        let promotion = r.promotions.ids().next().unwrap();
+        let to = r.unit("Swordsman").unwrap();
+        let own = [
+            TurnEvent::CanPromote { unit: mine },
+            TurnEvent::Promoted { unit: mine, at: my.position, promotion },
+            TurnEvent::Fortified { unit: mine, at: my.position },
+            TurnEvent::Upgraded { unit: mine, at: my.position, from: my.base, to },
+        ];
+        let report = report_for(&before, &after, &r, me, &own).events;
+        assert_eq!(kinds(&report), ["canPromote", "promoted", "fortified", "upgraded"]);
+        assert!(matches!(report[3].event, PresentationEvent::Upgraded { from, to: dest, .. }
+            if from == my.base.index() && dest == to.index()));
+
+        let foreign_events = vec![
+            TurnEvent::CanPromote { unit: theirs },
+            TurnEvent::Promoted { unit: theirs, at: foreign.position, promotion },
+            TurnEvent::Fortified { unit: theirs, at: foreign.position },
+            TurnEvent::Upgraded { unit: theirs, at: foreign.position, from: foreign.base, to },
+        ];
+        assert!(report_for(&before, &after, &r, me, &foreign_events).events.is_empty());
+        let seen = [ReplayStep { actor, events: foreign_events.clone(), seen: sight(&before, me, &[foreign.position]) }];
+        let replay = replay_for(&before, &after, &r, me, &seen);
+        assert_eq!(kinds(&replay[0].events), ["promoted", "fortified", "upgraded"]);
+        assert!(replay[0].units.iter().any(|u| u.unit == theirs.into()));
+        let hidden = [ReplayStep { actor, events: foreign_events, seen: sight(&before, me, &[]) }];
+        assert!(replay_for(&before, &after, &r, me, &hidden).is_empty());
+    }
+
     /// Every presentation kind is sorted: replayed, or left out of replays on purpose. A replayed kind
     /// must come out of [`replay_for`], so a kind that falls through its `_ => {}` arm fails here.
     #[test]
     fn no_replayable_kind_is_dropped_silently() {
         use civ_core::world::ReplayStep;
         const REPLAYED: &[&str] =
-            &["unitMoved", "attacked", "cityFounded", "cityCaptured", "captured", "withdrew", "pillaged", "nuked"];
+            &["unitMoved", "attacked", "cityFounded", "cityCaptured", "captured", "withdrew", "pillaged", "nuked", "promoted", "fortified", "upgraded"];
         // What a replay does not animate: the player's own news, diplomacy and bookkeeping.
         const LEFT_OUT: &[&str] = &[
             "faithArose", "stateFaithAdopted", "cityRenamed", "cityPopulation", "techLearned", "ruinsExplored",
@@ -3119,7 +3205,7 @@ mod tests {
             "voteResolved", "defensivePactSigned", "friendshipSigned", "researchAgreementSigned",
             "researchAgreementCompleted", "coupResolved", "techStolen", "spyCaught", "unitDamaged", "campCleared",
             "rebelsSpawned", "barbarianCampAppeared", "demandMade", "demandAnswered", "promiseBroken", "promiseKept",
-            "greatPersonBorn", "greatPersonActed", "cityCompleted", "questOffered", "questCompleted", "questExpired",
+            "canPromote", "greatPersonBorn", "greatPersonActed", "cityCompleted", "questOffered", "questCompleted", "questExpired",
             "cityStateRelationship", "goldGifted", "tributePaid", "electionRigged", "denounced", "cityConverted",
             "weLoveTheKingDay", "weLoveTheKingDayEnded", "bordersExpanded", "cityBurned", "cityRazed",
             "cityStateGift", "cityStateMarried", "notice",
@@ -3138,7 +3224,13 @@ mod tests {
                 "sort `{kind}` into REPLAYED, with a replay_for arm and a motion_fixture event, or into LEFT_OUT"
             );
         }
-        let Motion { before, after, r, me, actor, events, tiles } = motion_fixture();
+        let Motion { before, after, r, me, actor, mut events, tiles } = motion_fixture();
+        let (unit, foreign) = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap();
+        events.extend([
+            TurnEvent::Promoted { unit, at: foreign.position, promotion: r.promotions.ids().next().unwrap() },
+            TurnEvent::Fortified { unit, at: foreign.position },
+            TurnEvent::Upgraded { unit, at: foreign.position, from: foreign.base, to: r.unit("Swordsman").unwrap() },
+        ]);
         let steps = vec![ReplayStep { actor, events, seen: sight(&before, me, &tiles) }];
         let mut got = kinds(&replay_for(&before, &after, &r, me, &steps)[0].events);
         got.sort();

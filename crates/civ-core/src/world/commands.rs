@@ -189,15 +189,33 @@ fn execute_inner(
 ) -> Result<ActionOutcome, CommandRejection> {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
     validate_actor(world, civ, &command)?;
+    let readiness = matches!(&command, Command::Attack { .. } | Command::Bombard { .. } | Command::AirSweep { .. } | Command::NuclearStrike { .. })
+        .then(|| promotion_readiness(world));
     let mut staged = world.clone();
     if manual {
         if let Some(u) = ordered_unit(&command).and_then(|id| staged.units.get_mut(id)) {
             u.automation = None;
         }
     }
-    let events = apply(&mut staged, r, civ, command, mods)?;
+    let mut events = apply(&mut staged, r, civ, command, mods)?;
+    if let Some(before) = readiness {
+        events.extend(newly_promotable(&before, &staged));
+    }
     *world = staged;
     Ok(ActionOutcome { events })
+}
+
+/// Only combat actions need this snapshot. An XP threshold is news once, when it is crossed,
+/// even when the fight awarded several separate pieces of XP.
+pub(crate) fn promotion_readiness(world: &World) -> Vec<(Id<Unit>, bool)> {
+    world.units.iter().map(|(id, u)| (id, crate::world::combat::can_promote(u))).collect()
+}
+
+pub(crate) fn newly_promotable(before: &[(Id<Unit>, bool)], after: &World) -> Vec<TurnEvent> {
+    before.iter().filter_map(|(id, ready)| {
+        (!*ready && after.units.get(*id).is_some_and(crate::world::combat::can_promote))
+            .then_some(TurnEvent::CanPromote { unit: *id })
+    }).collect()
 }
 
 fn validate_actor(world: &World, civ: CivId, command: &Command) -> Result<(), CommandRejection> {
@@ -634,8 +652,13 @@ fn apply(
             {
                 return Err(NotAllowed);
             }
+            let newly_fortified = !u.fortified;
+            let at = u.position;
             u.fortified = true;
             u.movement_left = Fixed::ZERO;
+            if newly_fortified {
+                events.push(TurnEvent::Fortified { unit, at });
+            }
         }
         SkipUnit { unit } => {
             moving(world, unit)?;
@@ -648,10 +671,15 @@ fn apply(
         }
         Promote { unit, promotion } => {
             crate::world::military::promote(world, r, unit, promotion).map_err(|_| Unavailable)?;
+            let at = world.units.get(unit).expect("promoted unit").position;
+            events.push(TurnEvent::Promoted { unit, at, promotion });
         }
         Upgrade { unit } => {
             moving(world, unit)?;
-            crate::world::combat::upgrade_unit_with(world, r, unit, mods.costs.speed).map_err(|_| Unavailable)?;
+            let u = world.units.get(unit).expect("validated unit");
+            let (from, at) = (u.base, u.position);
+            let to = crate::world::combat::upgrade_unit_with(world, r, unit, mods.costs.speed).map_err(|_| Unavailable)?;
+            events.push(TurnEvent::Upgraded { unit, at, from, to });
         }
         Pillage { unit } => {
             moving(world, unit)?;
