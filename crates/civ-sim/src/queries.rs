@@ -9,6 +9,7 @@ use civ_core::world::commands::{self, Command};
 use civ_core::world::construction::{self, Construction, Rejection};
 use civ_core::modifiers::Layer;
 use civ_core::stats::Fixed;
+use civ_core::world::purchase::Bearing;
 use civ_core::world::{air, combat, policies, purchase, research, CivId, TileId, World};
 use civ_core::{Unique, UniqueType};
 use serde::{Deserialize, Serialize};
@@ -882,37 +883,24 @@ pub fn unit_options(
     })
 }
 
-fn conditional_price(unique: &Unique) -> bool {
-    let price_rule = matches!(
+/// Whether what a unique does could hinge on something outside this player's
+/// knowledge: any conditional at all, or the city filter that consults the
+/// creed founder's live religious status even without one.
+fn private_condition(unique: &Unique) -> bool {
+    !unique.conditionals.is_empty()
+        || unique.params.iter().any(|p| {
+            p.trim().trim_start_matches("in ")
+                == "all cities in which the majority religion is a major religion"
+        })
+}
+
+/// One of an item's own uniques that changes its production cost
+/// (`construction::production_cost_in`) under a private condition.
+fn private_production_cost(unique: &Unique) -> bool {
+    matches!(
         unique.unique_type(),
-        Some(
-            UniqueType::BuyItemsDiscount
-                | UniqueType::CostIncreasesPerCity
-                | UniqueType::CostPercentageChange
-                | UniqueType::BuyUnitsDiscount
-                | UniqueType::BuyBuildingsDiscount
-                | UniqueType::BuyUnitsIncreasingCost
-                | UniqueType::BuyBuildingsIncreasingCost
-                | UniqueType::BuyUnitsByProductionCost
-                | UniqueType::BuyBuildingsByProductionCost
-                | UniqueType::BuyUnitsWithStat
-                | UniqueType::BuyBuildingsWithStat
-                | UniqueType::BuyUnitsForAmountStat
-                | UniqueType::BuyBuildingsForAmountStat
-                | UniqueType::CanBePurchasedForAmountStat
-                | UniqueType::CanBePurchasedWithStat
-                | UniqueType::CannotBePurchased
-                | UniqueType::Unbuildable
-        )
-    );
-    // This filter consults the creed founder's live religious status, even
-    // without an explicit conditional. Keep that status out of a quote.
-    price_rule
-        && (!unique.conditionals.is_empty()
-            || unique.params.iter().any(|p| {
-                p.trim().trim_start_matches("in ")
-                    == "all cities in which the majority religion is a major religion"
-            }))
+        Some(UniqueType::CostIncreasesPerCity | UniqueType::CostPercentageChange)
+    ) && private_condition(unique)
 }
 
 pub fn city_options(
@@ -928,6 +916,12 @@ pub fn city_options(
     let modifiers = civ_core::world::TurnModifiers::for_world(world, r).costs; // Core derives current city/empire context.
     let puppet_may_buy = city.uniques.has(UniqueType::MayBuyConstructionsInPuppets)
         || owner.uniques.has(UniqueType::MayBuyConstructionsInPuppets);
+    // What `purchase::cost` reads besides the item's own uniques, narrowed to
+    // those whose effect could hinge on something this player cannot see.
+    let private_in_force: Vec<&Unique> = civ_core::world::religion::city_uniques(world, r, city)
+        .into_iter()
+        .filter(|u| private_condition(u))
+        .collect();
     let mut choices = Vec::new();
     for what in r
         .buildings
@@ -990,19 +984,38 @@ pub fn city_options(
             }),
             Construction::Building(_) => false,
         };
-        let has_conditional_price = own.iter().any(conditional_price)
-            || owner.uniques.all().any(conditional_price)
-            || city.uniques.all().any(conditional_price);
+        // How far a unique with a private condition reaches into this item's
+        // price in `stat`. Only one that names this item (or all items) and
+        // this stat can hide anything; the rest leave the quote exact.
+        let hidden = |stat: Stat| -> Bearing {
+            own.iter()
+                .filter(|u| private_condition(u))
+                .map(|u| purchase::own_bearing(u, stat))
+                .chain(
+                    private_in_force
+                        .iter()
+                        .map(|u| purchase::bearing(r, u, what, stat)),
+                )
+                .max()
+                .unwrap_or(Bearing::Unrelated)
+        };
+        let unquoted = PriceQuote {
+            amount: None,
+            affordable: None,
+            availability: Availability::NeedsConfirmation,
+            refusal: None,
+        };
         let quote = |stat: Stat| -> Option<PriceQuote> {
-            if has_conditional_price {
-                return Some(PriceQuote {
-                    amount: None,
-                    affordable: None,
-                    availability: Availability::NeedsConfirmation,
-                    refusal: None,
-                });
+            let hidden = hidden(stat);
+            // Whether it is for sale at all may be the hidden part.
+            if hidden == Bearing::Sale {
+                return Some(unquoted.clone());
             }
+            // Not for sale in this stat, whatever the condition says.
             let amount = purchase::cost(world, r, id, what, stat, modifiers)?;
+            if hidden == Bearing::Price {
+                return Some(unquoted.clone());
+            }
             let balance = match stat {
                 Stat::Gold => owner.gold,
                 Stat::Faith => owner.faith.stored,
@@ -1042,7 +1055,9 @@ pub fn city_options(
         choices.push(ConstructionChoice {
             construction: reference,
             name,
-            production_cost: if local.is_ok() && !has_conditional_price {
+            // Hidden only when the item's own cost rides on a private
+            // condition; a purchase price's condition never hides it.
+            production_cost: if local.is_ok() && !own.iter().any(private_production_cost) {
                 construction::production_cost_in(world, r, id, what, modifiers)
             } else {
                 None

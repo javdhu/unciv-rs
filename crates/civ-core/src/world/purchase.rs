@@ -303,6 +303,80 @@ pub fn cost(
     shop.price(what, stat)
 }
 
+/// What a unique could do to [`cost`] for one item in one stat, were it in
+/// force.
+///
+/// Answered from the unique's kind, stat and item filter alone — the
+/// parameters the pipeline above matches on — never from its conditionals or
+/// its city filter, so a caller that must not evaluate those (a player who
+/// cannot see what they hinge on) can still tell whether they matter here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Bearing {
+    /// It never touches this item's price in this stat.
+    Unrelated,
+    /// It may move the price of an item that is for sale either way.
+    Price,
+    /// It may decide whether the item is for sale in this stat at all.
+    Sale,
+}
+
+/// How a unique of the city or its civ bears on this item's price: the
+/// `May buy …` prices name an item and a stat, the discounts a stat (and, for
+/// the specific ones, an item).
+pub fn bearing(r: &Ruleset, unique: &Unique, what: Construction, stat: Stat) -> Bearing {
+    use Construction::{Building as B, Unit as U};
+    use UniqueType as T;
+    if matches!(stat, Stat::Production | Stat::Happiness) {
+        return Bearing::Unrelated;
+    }
+    let p = &unique.params;
+    // `p[at]` is this stat, `p[item]` matches this item, as `Shop` asks.
+    let names = |len: usize, at: usize, item: usize| {
+        p.len() >= len
+            && p[at] == stat.name()
+            && match what {
+                U(id) => base_unit_matches(r, id, &p[item]) == Verdict::True,
+                B(id) => building_matches(r, id, &p[item]) == Verdict::True,
+            }
+    };
+    match (unique.unique_type(), what) {
+        (Some(T::BuyUnitsIncreasingCost), U(_)) | (Some(T::BuyBuildingsIncreasingCost), B(_)) if names(5, 2, 0) => {
+            Bearing::Sale
+        }
+        (Some(T::BuyUnitsByProductionCost), U(_)) | (Some(T::BuyBuildingsByProductionCost), B(_)) if names(3, 1, 0) => {
+            Bearing::Sale
+        }
+        (Some(T::BuyUnitsWithStat), U(_)) | (Some(T::BuyBuildingsWithStat), B(_)) if names(3, 1, 0) => Bearing::Sale,
+        (Some(T::BuyUnitsForAmountStat), U(_)) | (Some(T::BuyBuildingsForAmountStat), B(_)) if names(4, 2, 0) => {
+            Bearing::Sale
+        }
+        (Some(T::BuyItemsDiscount), _) if p.first().is_some_and(|s| s == stat.name()) => Bearing::Price,
+        (Some(T::BuyUnitsDiscount), U(_)) | (Some(T::BuyBuildingsDiscount), B(_)) if names(3, 0, 1) => Bearing::Price,
+        _ => Bearing::Unrelated,
+    }
+}
+
+/// How one of the item's own uniques bears on its price in `stat`: whether it
+/// is for sale is the item's to say (`Can be purchased …`, `Cannot be
+/// purchased`, and for gold `Unbuildable`), and its production cost is what a
+/// gold price, or a price in `times their normal Production cost`, is worked
+/// from.
+pub fn own_bearing(unique: &Unique, stat: Stat) -> Bearing {
+    use UniqueType as T;
+    if matches!(stat, Stat::Production | Stat::Happiness) {
+        return Bearing::Unrelated;
+    }
+    let p = &unique.params;
+    match unique.unique_type() {
+        Some(T::CannotBePurchased) => Bearing::Sale,
+        Some(T::CanBePurchasedWithStat) if p.first().is_some_and(|s| s == stat.name()) => Bearing::Sale,
+        Some(T::CanBePurchasedForAmountStat) if p.get(1).is_some_and(|s| s == stat.name()) => Bearing::Sale,
+        Some(T::Unbuildable) if stat == Stat::Gold => Bearing::Sale,
+        Some(T::CostIncreasesPerCity | T::CostPercentageChange) => Bearing::Price,
+        _ => Bearing::Unrelated,
+    }
+}
+
 fn reserve(world: &World, civ: crate::world::grid::CivId, stat: Stat) -> i64 {
     world.civ(civ).map_or(0, |c| match stat {
         Stat::Gold => c.gold as i64,

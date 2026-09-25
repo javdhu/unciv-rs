@@ -3,13 +3,13 @@ use civ_core::ruleset::Ruleset;
 use civ_core::stats::Stat;
 use civ_core::world::city::City;
 use civ_core::world::commands::{self, Command};
-use civ_core::world::construction::{Construction, CostModifiers};
+use civ_core::world::construction::{self, Construction, CostModifiers};
 use civ_core::world::entities::Civilization;
 use civ_core::world::grid::TileGrid;
-use civ_core::world::{combat, policies, purchase, research, CivId, Unit, World};
-use civ_core::Unique;
+use civ_core::world::{combat, policies, purchase, research, CivId, TurnModifiers, Unit, World};
+use civ_core::{Unique, UniqueType};
 use civ_sim::protocol::ConstructionRef;
-use civ_sim::queries::{self, Availability, UnitActionKind};
+use civ_sim::queries::{self, Availability, Refusal, UnitActionKind};
 
 const ME: CivId = CivId(0);
 const OTHER: CivId = CivId(1);
@@ -232,6 +232,131 @@ fn potentially_private_conditional_prices_are_explicitly_unknown() {
         queries::city_options(&w, &r, ME, city.index(), city.generation()).unwrap(),
         expected
     );
+}
+
+/// A finished policy branch adds a conditional price to the civ's uniques:
+/// `Commerce Complete` sells Magnates for faith, from the Age of Steam, where
+/// the majority religion is a major one. That hides the one price it names
+/// and nothing else: every build keeps its production cost, so it can still
+/// be queued, and every price that was quoted before is quoted after, as
+/// `purchase` would charge it.
+#[test]
+fn a_finished_policy_branch_hides_only_the_price_it_names() {
+    let (mut w, r, _, city, _) = fixture();
+    // Commerce opens in the Age of Paper; know that era's techs and those before.
+    let paper = r.eras.by_name("Age of Paper").unwrap().era_number;
+    let known: Vec<_> = r
+        .technologies
+        .iter()
+        .filter(|(_, t)| {
+            t.era(&r)
+                .and_then(|e| r.eras.get(e))
+                .is_some_and(|e| e.era_number <= paper)
+        })
+        .map(|(id, _)| id)
+        .collect();
+    w.civ_mut(ME).unwrap().techs.extend(known);
+    let before = queries::city_options(&w, &r, ME, city.index(), city.generation()).unwrap();
+    let finisher = r.policies.id("Commerce Complete").unwrap();
+    let branch = r.policies[finisher].branch;
+    let members = r
+        .policies
+        .iter()
+        .filter(|(id, p)| p.branch == branch && !policies::is_finisher(&r, *id))
+        .count();
+    w.civ_mut(ME).unwrap().pending_rewards.free_policies = members as _;
+    while let Some(policy) = r.policies.ids().find(|id| {
+        r.policies[*id].branch == branch && policies::is_adoptable(&w, &r, ME, *id).is_ok()
+    }) {
+        commands::execute(&mut w, &r, ME, Command::AdoptPolicy { policy }).unwrap();
+    }
+    let owner = w.civ(ME).unwrap();
+    assert!(owner.adopted_policies.contains(&finisher));
+    assert!(owner.uniques.all().any(|u| {
+        u.unique_type() == Some(UniqueType::BuyUnitsIncreasingCost)
+            && u.params.first().is_some_and(|p| p == "Magnate")
+            && !u.conditionals.is_empty()
+    }));
+
+    let after = queries::city_options(&w, &r, ME, city.index(), city.generation()).unwrap();
+    let modifiers = TurnModifiers::for_world(&w, &r).costs;
+    let magnate = r.units.id("Magnate").unwrap();
+    let what = |c: &ConstructionRef| match *c {
+        ConstructionRef::Building { id } => {
+            Construction::Building(r.buildings.ids().find(|b| b.index() == id).unwrap())
+        }
+        ConstructionRef::Unit { id } => {
+            Construction::Unit(r.units.ids().find(|u| u.index() == id).unwrap())
+        }
+    };
+    assert!(after.choices.iter().any(|c| c.refusal.is_none()));
+    for choice in &after.choices {
+        let what = what(&choice.construction);
+        if choice.refusal.is_none() {
+            assert!(
+                choice.production_cost.is_some(),
+                "{} can be queued",
+                choice.name
+            );
+            assert_eq!(
+                choice.production_cost,
+                construction::production_cost_in(&w, &r, city, what, modifiers),
+                "{}",
+                choice.name
+            );
+        }
+        if what == Construction::Unit(magnate) {
+            continue;
+        }
+        let was = before
+            .choices
+            .iter()
+            .find(|c| c.construction == choice.construction);
+        let was = was.unwrap_or_else(|| panic!("{} is offered only after the branch", choice.name));
+        for (stat, quote, old) in [
+            (Stat::Gold, &choice.gold, &was.gold),
+            (Stat::Faith, &choice.faith, &was.faith),
+        ] {
+            // Hidden before the branch too: the item's own price has a
+            // condition (a Missionary is sold where the majority religion is
+            // a major one).
+            if old.as_ref().is_some_and(|q| q.amount.is_none()) {
+                assert_eq!(quote, old, "{}'s {stat:?} price", choice.name);
+                continue;
+            }
+            assert_eq!(
+                quote.as_ref().map(|q| q.amount.clone()),
+                purchase::cost(&w, &r, city, what, stat, modifiers).map(|c| Some(c.to_string())),
+                "{}'s {stat:?} price is quoted exactly",
+                choice.name
+            );
+        }
+    }
+    let monument = after.choices.iter().find(|c| c.name == "Monument").unwrap();
+    assert!(monument.production_cost.is_some());
+    assert!(monument.gold.as_ref().unwrap().amount.is_some());
+    // The Magnate is bought, never built. Its faith price may hinge on the
+    // condition, so it is offered unquoted; it has no gold price at all.
+    let bought = after
+        .choices
+        .iter()
+        .find(|c| {
+            c.construction
+                == ConstructionRef::Unit {
+                    id: magnate.index(),
+                }
+        })
+        .unwrap();
+    assert!(!before
+        .choices
+        .iter()
+        .any(|c| c.construction == bought.construction));
+    assert_eq!(bought.production_cost, None);
+    assert_eq!(bought.refusal, Some(Refusal::PurchaseOnly));
+    assert_eq!(bought.gold, None);
+    let faith = bought.faith.as_ref().unwrap();
+    assert_eq!((faith.amount.as_deref(), faith.affordable), (None, None));
+    assert_eq!(faith.availability, Availability::NeedsConfirmation);
 }
 
 #[test]
