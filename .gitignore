@@ -9,6 +9,8 @@ target
 __pycache__/
 # output of `bun --cwd web run art -- bake`
 assets/procgen/
+# `npm --prefix web run studio` images, the daemon's port and its log
+assets/studio/
 # paid Polyperfect sources for tools/animals.ts (converted output lives in web/src/art/pack)
 assets/pack/
 # wrangler local state

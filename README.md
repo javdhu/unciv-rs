@@ -11,6 +11,7 @@ history in one evening".
 - Client contract: [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md)
 - What is done and what is not: [docs/PLAYABLE.md](docs/PLAYABLE.md) and [docs/GAPS.md](docs/GAPS.md)
 - Marketing and social: [docs/MARKETING.md](docs/MARKETING.md), with the kit in [marketing/](marketing/)
+- Art tool research and proposal: [docs/STUDIO.md](docs/STUDIO.md)
 
 ## What is here
 
