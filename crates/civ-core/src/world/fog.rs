@@ -44,31 +44,37 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
         (height, height + i32::from(blocks))
     };
     let source = heights(from).0;
-    let mut highest = BTreeMap::from([(from, source)]);
-    let mut visible = vec![from];
     let reach = range.saturating_add(1);
-    // the tiles of each ring, in `within`'s order
-    let mut rings = vec![Vec::new(); reach as usize + 1];
-    for tile in grid.within(from, reach) {
-        let distance = grid.distance(from, tile);
-        if (1..=reach).contains(&distance) {
-            rings[distance as usize].push(tile);
-        }
+    // `within` gives the reach in ascending id order, so a tile's slot is found by a binary search; each slot holds
+    // the highest ground seen on the way to that tile, once its ring is done
+    let tiles = grid.within(from, reach);
+    let slot = |tile: TileId| tiles.binary_search(&tile).ok();
+    let distance: Vec<u32> = tiles.iter().map(|&t| grid.distance(from, t)).collect();
+    let mut highest: Vec<Option<i32>> = vec![None; tiles.len()];
+    if let Some(i) = slot(from) {
+        highest[i] = Some(source);
     }
-    for (distance, tiles) in rings.iter().enumerate().skip(1) {
-        let mut ring = Vec::new();
-        for &tile in tiles {
-            let (unit_height, tile_height) = heights(tile);
-            if distance as u32 == reach && (attack || tile_height <= source) {
+    let mut visible = vec![from];
+    let mut ring: Vec<(usize, i32)> = Vec::new();
+    for d in 1..=reach {
+        ring.clear();
+        for (i, &tile) in tiles.iter().enumerate() {
+            if distance[i] != d {
                 continue;
             }
-            let Some(previous) = grid.neighbours(tile).filter_map(|n| highest.get(&n).copied()).min() else { continue };
+            let (unit_height, tile_height) = heights(tile);
+            if d == reach && (attack || tile_height <= source) {
+                continue;
+            }
+            let Some(previous) = grid.neighbours(tile).filter_map(|n| slot(n).and_then(|j| highest[j])).min() else { continue };
             if source >= previous || (if attack { unit_height } else { tile_height }) > previous {
                 visible.push(tile);
             }
-            ring.push((tile, tile_height.max(previous)));
+            ring.push((i, tile_height.max(previous)));
         }
-        highest.extend(ring);
+        for &(i, h) in &ring {
+            highest[i] = Some(h);
+        }
     }
     visible.sort();
     visible
@@ -218,11 +224,9 @@ pub struct Visibility {
     /// Civ-major: civ `c` occupies `[c*words, (c+1)*words)`.
     explored: Vec<u64>,
     visible: Vec<u64>,
-    /// Sparse, and ordered so iteration is reproducible.
-    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
-    memory: BTreeMap<(CivId, TileId), TileMemory>,
-    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
-    tile_observations: BTreeMap<(CivId, TileId), TileObservation>,
+    /// A row a civ, iterated in (civ, tile) order so iteration is reproducible, and saved as entries.
+    memory: CivTiles<TileMemory>,
+    tile_observations: CivTiles<TileObservation>,
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
     city_observations: BTreeMap<(CivId, TileId), CityObservation>,
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
@@ -237,8 +241,8 @@ impl Visibility {
             words,
             explored: vec![0; words * civs],
             visible: vec![0; words * civs],
-            memory: BTreeMap::new(),
-            tile_observations: BTreeMap::new(),
+            memory: CivTiles::default(),
+            tile_observations: CivTiles::default(),
             city_observations: BTreeMap::new(),
             civ_observations: BTreeMap::new(),
         }
@@ -331,10 +335,7 @@ impl Visibility {
     }
 
     pub fn known_tiles(&self, civ: CivId) -> impl Iterator<Item = (TileId, &TileObservation)> {
-        self.tile_observations
-            .iter()
-            .filter(move |((viewer, _), _)| *viewer == civ)
-            .map(|((_, tile), seen)| (*tile, seen))
+        self.tile_observations.row(civ)
     }
 
     pub fn known_cities(&self, civ: CivId) -> impl Iterator<Item = &CityObservation> {
@@ -369,8 +370,8 @@ impl Visibility {
             }
         }
         let tile_key_valid = |(civ, tile): &(CivId, TileId)| (civ.0 as usize) < civs && (tile.0 as usize) < tiles;
-        if !self.memory.keys().all(tile_key_valid)
-            || !self.tile_observations.keys().all(tile_key_valid)
+        if !self.memory.keys().all(|k| tile_key_valid(&k))
+            || !self.tile_observations.keys().all(|k| tile_key_valid(&k))
             || !self.city_observations.keys().all(tile_key_valid)
             || self.civ_observations.keys().any(|(a, b)| a.0 as usize >= civs || b.0 as usize >= civs)
             || self.memory.values().any(|m| m.owner.is_some_and(|owner| owner.0 as usize >= civs))
@@ -478,6 +479,8 @@ pub fn remember_improvement(world: &mut World, r: &Ruleset, viewer: CivId, tile:
 /// cannot reconstruct a city seen briefly while a scout passed it.
 pub fn capture_observations(world: &mut World, r: &Ruleset) {
     let viewers: Vec<_> = world.civ_ids().collect();
+    let mut centres: Vec<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
+    centres.sort_unstable();
     for viewer in viewers {
         for tile in world.grid.ids() {
             let visible = world.visibility.can_see(viewer, tile);
@@ -493,21 +496,58 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
             } else {
                 world.visibility.tile_observations.get(&(viewer, tile)).and_then(|o| o.placed)
             };
-            let seen = TileObservation {
-                placed,
-                terrain: world.grid.terrain[i],
-                features: world.grid.features[i].clone(),
-                natural_wonder: world.grid.natural_wonder[i],
-                resource: world.grid.resource[i],
-                improvement: if visible { world.grid.improvement[i] } else { prior.and_then(|m| m.improvement) },
-                improvement_pillaged: visible && world.grid.improvement_pillaged[i],
-                road: if visible { world.grid.road[i] } else { RoadLevel::None },
-                road_pillaged: visible && world.grid.road_pillaged[i],
-                river_edges: world.grid.river_edges[i],
-                owner: if visible { world.grid.owner[i] } else { None },
-                observed_turn: world.turn,
-            };
-            world.visibility.tile_observations.insert((viewer, tile), seen);
+            let improvement = if visible { world.grid.improvement[i] } else { prior.and_then(|m| m.improvement) };
+            let improvement_pillaged = visible && world.grid.improvement_pillaged[i];
+            let road = if visible { world.grid.road[i] } else { RoadLevel::None };
+            let road_pillaged = visible && world.grid.road_pillaged[i];
+            let owner = if visible { world.grid.owner[i] } else { None };
+            // A tile seen as it was already remembered needs no new record (fog runs after every step of every
+            // move). Every field is named, so a field added to the record must be added here too.
+            let unchanged = world.visibility.tile_observations.get(&(viewer, tile)).is_some_and(|o| {
+                let TileObservation {
+                    placed: was_placed,
+                    terrain,
+                    features,
+                    natural_wonder,
+                    resource,
+                    improvement: was_improvement,
+                    improvement_pillaged: was_pillaged,
+                    road: was_road,
+                    road_pillaged: was_road_pillaged,
+                    river_edges,
+                    owner: was_owner,
+                    observed_turn,
+                } = o;
+                *was_placed == placed
+                    && *terrain == world.grid.terrain[i]
+                    && *features == world.grid.features[i]
+                    && *natural_wonder == world.grid.natural_wonder[i]
+                    && *resource == world.grid.resource[i]
+                    && *was_improvement == improvement
+                    && *was_pillaged == improvement_pillaged
+                    && *was_road == road
+                    && *was_road_pillaged == road_pillaged
+                    && *river_edges == world.grid.river_edges[i]
+                    && *was_owner == owner
+                    && *observed_turn == world.turn
+            });
+            if !unchanged {
+                let seen = TileObservation {
+                    placed,
+                    terrain: world.grid.terrain[i],
+                    features: world.grid.features[i].clone(),
+                    natural_wonder: world.grid.natural_wonder[i],
+                    resource: world.grid.resource[i],
+                    improvement,
+                    improvement_pillaged,
+                    road,
+                    road_pillaged,
+                    river_edges: world.grid.river_edges[i],
+                    owner,
+                    observed_turn: world.turn,
+                };
+                world.visibility.tile_observations.insert((viewer, tile), seen);
+            }
             if visible {
                 world.visibility.remember(
                     viewer,
@@ -522,11 +562,16 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
         }
         // Seeing empty ground clears a remembered city. Losing sight does not.
         let visible_tiles = world.visibility.visible_tiles(viewer);
-        world.visibility.city_observations.retain(|(civ, tile), _| {
-            *civ != viewer
-                || visible_tiles.binary_search(tile).is_err()
-                || world.cities.iter().any(|(_, city)| city.centre == *tile)
-        });
+        let gone: Vec<_> = world
+            .visibility
+            .city_observations
+            .range((viewer, TileId(0))..=(viewer, TileId(u16::MAX)))
+            .map(|(key, _)| *key)
+            .filter(|(_, tile)| visible_tiles.binary_search(tile).is_ok() && centres.binary_search(tile).is_err())
+            .collect();
+        for key in gone {
+            world.visibility.city_observations.remove(&key);
+        }
         for (id, city) in world.cities.iter() {
             if city.owner != viewer && !world.visibility.can_see(viewer, city.centre) {
                 continue;
@@ -556,11 +601,15 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
                 },
             );
         }
+        // the civs this viewer sees a city or a tile of, gathered once; seeing a unit is the costly test, left last
+        let mut shown: Vec<CivId> = visible_tiles.iter().filter_map(|t| world.grid.owner[t.0 as usize]).collect();
+        shown.extend(world.cities.iter().filter(|(_, c)| world.visibility.can_see(viewer, c.centre)).map(|(_, c)| c.owner));
+        shown.sort_unstable();
+        shown.dedup();
         for civ in &world.civs {
             let observed = civ.id == viewer
-                || world.units.iter().any(|(id, u)| u.owner == civ.id && can_see_unit(world, r, viewer, id))
-                || world.cities.iter().any(|(_, c)| c.owner == civ.id && world.visibility.can_see(viewer, c.centre))
-                || visible_tiles.iter().any(|t| world.grid.owner[t.0 as usize] == Some(civ.id));
+                || shown.binary_search(&civ.id).is_ok()
+                || world.units.iter().any(|(id, u)| u.owner == civ.id && can_see_unit(world, r, viewer, id));
             let first_contact = world.diplomacy.have_met(viewer, civ.id)
                 && !world.visibility.civ_observations.contains_key(&(viewer, civ.id));
             if observed || first_contact {
@@ -888,5 +937,107 @@ mod tests {
         assert_eq!(w.units.get(moving).unwrap().base, scout);
         assert!(w.grid.improvement[1].is_some());
         assert!(outcome.events.is_empty());
+    }
+}
+
+/// A value for each (civ, tile), kept densely, a row a civ. It reads and writes like the
+/// `BTreeMap<(CivId, TileId), T>` it replaced, iterates in the same (civ, tile) order, and saves as the same list of
+/// entries (`serialization::map_as_entries`). Fog reads and writes it for every civ and every tile it sees, on every
+/// step of every move, where the map's lookups were most of the cost.
+#[derive(Debug, Clone)]
+pub(crate) struct CivTiles<T> {
+    rows: Vec<Vec<Option<T>>>,
+    len: usize,
+}
+
+impl<T> Default for CivTiles<T> {
+    fn default() -> Self {
+        CivTiles { rows: Vec::new(), len: 0 }
+    }
+}
+
+impl<T> CivTiles<T> {
+    pub(crate) fn get(&self, &(civ, tile): &(CivId, TileId)) -> Option<&T> {
+        self.rows.get(civ.0 as usize)?.get(tile.0 as usize)?.as_ref()
+    }
+
+    pub(crate) fn get_mut(&mut self, &(civ, tile): &(CivId, TileId)) -> Option<&mut T> {
+        self.rows.get_mut(civ.0 as usize)?.get_mut(tile.0 as usize)?.as_mut()
+    }
+
+    pub(crate) fn contains_key(&self, key: &(CivId, TileId)) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub(crate) fn insert(&mut self, (civ, tile): (CivId, TileId), value: T) -> Option<T> {
+        let (c, t) = (civ.0 as usize, tile.0 as usize);
+        if self.rows.len() <= c {
+            self.rows.resize_with(c + 1, Vec::new);
+        }
+        let row = &mut self.rows[c];
+        if row.len() <= t {
+            row.resize_with(t + 1, || None);
+        }
+        let old = row[t].replace(value);
+        if old.is_none() {
+            self.len += 1;
+        }
+        old
+    }
+
+    /// Every entry, in (civ, tile) order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ((CivId, TileId), &T)> {
+        self.rows.iter().enumerate().flat_map(|(c, row)| {
+            row.iter().enumerate().filter_map(move |(t, v)| v.as_ref().map(|v| ((CivId(c as u8), TileId(t as u16)), v)))
+        })
+    }
+
+    pub(crate) fn keys(&self) -> impl Iterator<Item = (CivId, TileId)> + '_ {
+        self.iter().map(|(k, _)| k)
+    }
+
+    pub(crate) fn values(&self) -> impl Iterator<Item = &T> {
+        self.iter().map(|(_, v)| v)
+    }
+
+    /// One civ's entries, in tile order.
+    pub(crate) fn row(&self, civ: CivId) -> impl Iterator<Item = (TileId, &T)> {
+        self.rows
+            .get(civ.0 as usize)
+            .into_iter()
+            .flat_map(|row| row.iter().enumerate().filter_map(|(t, v)| v.as_ref().map(|v| (TileId(t as u16), v))))
+    }
+}
+
+/// Equal when they hold the same entries, however their rows grew.
+impl<T: PartialEq> PartialEq for CivTiles<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.iter().eq(other.iter())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: serde::Serialize> serde::Serialize for CivTiles<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.len))?;
+        for (key, value) in self.iter() {
+            seq.serialize_element(&(&key, value))?;
+        }
+        seq.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for CivTiles<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let entries = Vec::<((CivId, TileId), T)>::deserialize(deserializer)?;
+        let mut map = CivTiles::default();
+        for (key, value) in entries {
+            if map.insert(key, value).is_some() {
+                return Err(serde::de::Error::custom("duplicate snapshot map key"));
+            }
+        }
+        Ok(map)
     }
 }

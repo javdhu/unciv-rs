@@ -446,25 +446,44 @@ impl TileGrid {
     /// Every tile within `radius` steps, including `from`, in ascending id
     /// order so callers that fold over it get the same answer everywhere.
     pub fn within(&self, from: TileId, radius: u32) -> Vec<TileId> {
-        let mut seen = vec![false; self.len()];
-        let mut frontier = vec![from];
-        seen[from.0 as usize] = true;
-        for _ in 0..radius {
-            let mut next = Vec::new();
-            for t in frontier.drain(..) {
-                for n in self.neighbours(t) {
-                    if !seen[n.0 as usize] {
-                        seen[n.0 as usize] = true;
-                        next.push(n);
+        // Which tiles this search has reached, stamped rather than cleared: a unit's sight asks this for every unit
+        // on every step, and a map-sized mask made and swept each time cost more than the search.
+        thread_local! {
+            static SEEN: std::cell::RefCell<(u32, Vec<u32>)> = const { std::cell::RefCell::new((0, Vec::new())) };
+        }
+        SEEN.with(|cell| {
+            let (stamp, seen) = &mut *cell.borrow_mut();
+            if seen.len() < self.len() {
+                seen.resize(self.len(), 0);
+            }
+            *stamp = stamp.wrapping_add(1);
+            if *stamp == 0 {
+                seen.fill(0);
+                *stamp = 1;
+            }
+            let mark = *stamp;
+            let mut out = vec![from];
+            seen[from.0 as usize] = mark;
+            let mut start = 0;
+            for _ in 0..radius {
+                let end = out.len();
+                for k in start..end {
+                    let t = out[k];
+                    for n in self.neighbours(t) {
+                        if seen[n.0 as usize] != mark {
+                            seen[n.0 as usize] = mark;
+                            out.push(n);
+                        }
                     }
                 }
+                if out.len() == end {
+                    break;
+                }
+                start = end;
             }
-            frontier = next;
-            if frontier.is_empty() {
-                break;
-            }
-        }
-        self.ids().filter(|t| seen[t.0 as usize]).collect()
+            out.sort_unstable();
+            out
+        })
     }
 
     /// Tiles at exactly `distance` steps, in ascending id order.
