@@ -59,8 +59,12 @@ It contains no map seed, credentials or world snapshot.
 
 It also lists `members`, one per occupied seat:
 `{ seat, name: string | null, isOwner, left, connected?, ready?, controlled? }`.
-The last three appear once the match runs: the host holds a live socket for the
-seat, it finished the current turn, and a person (not a bot) plays it.
+Before the start, `connected` says whether the member made a room call (the
+lobby reads `GET /api/rooms/{roomId}` every two seconds) in the last six
+seconds; this presence is kept in memory only. Once the match runs, `connected`
+says the host holds a live socket for the seat, and `ready` and `controlled`
+appear: it finished the current turn, and a person (not a bot) plays it. A room
+that plays a Blitz slice names it in `slice`.
 
 ## Returning players and leaving
 

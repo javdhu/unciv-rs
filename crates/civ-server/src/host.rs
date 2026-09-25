@@ -10,7 +10,11 @@ use civ_sim::{
     Settings,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+    sync::Arc,
+};
 use tokio::sync::{broadcast, watch, Mutex, RwLock};
 
 #[derive(Debug, Clone)]
@@ -212,11 +216,18 @@ pub(crate) struct ConnectionLease {
     pub fence: watch::Receiver<u64>,
 }
 
+/// How long a lobby member counts as there after its last room call. The
+/// lobby reads the room every two seconds, so three missed readings mean away.
+pub(crate) const LOBBY_PRESENCE_MS: u64 = 6_000;
+
 pub struct Host {
     pub(crate) config: Config,
     pub(crate) store: Store,
     lobby: Mutex<()>,
     matches: RwLock<BTreeMap<String, Arc<Mutex<Match>>>>,
+    /// When each (room, guest) last called for its room before the start.
+    /// Only shown to the room, so it is kept in memory and not persisted.
+    seen: std::sync::Mutex<HashMap<(String, String), u64>>,
 }
 impl Host {
     /// Restores durable sessions. Connections lost with the process enter a fresh reconnect grace.
@@ -282,6 +293,7 @@ impl Host {
             store,
             lobby: Mutex::new(()),
             matches: RwLock::new(matches),
+            seen: std::sync::Mutex::new(HashMap::new()),
         }))
     }
     pub(crate) async fn create_room(
@@ -393,6 +405,19 @@ impl Host {
             }
         }
         Ok(())
+    }
+    /// A member called for its room before the start: it is in the lobby.
+    pub(crate) fn saw(&self, room: &str, guest: &str, now: u64) {
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        // Only recent calls matter, so the map holds no more than the lobbies being read.
+        seen.retain(|_, at| now.saturating_sub(*at) < LOBBY_PRESENCE_MS);
+        seen.insert((room.to_string(), guest.to_string()), now);
+    }
+    /// Whether a member called for its room within the last few seconds.
+    pub(crate) fn present(&self, room: &str, guest: &str, now: u64) -> bool {
+        let seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        seen.get(&(room.to_string(), guest.to_string()))
+            .is_some_and(|at| now.saturating_sub(*at) < LOBBY_PRESENCE_MS)
     }
     /// A started match's turn, whether it finished, and whether `seat` left it.
     pub(crate) async fn match_summary(&self, match_id: &str, seat: u8) -> Result<Option<(u32, bool, bool)>, HostError> {
@@ -757,6 +782,19 @@ mod tests {
             }
         }
         assert_eq!(origins.len(), 6);
+    }
+
+    #[test]
+    fn a_lobby_member_is_there_for_a_few_seconds_after_each_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path().join("state.sqlite"), Config::default()).unwrap();
+        assert!(!host.present("room", "ana", 1_000), "never seen");
+        host.saw("room", "ana", 1_000);
+        assert!(host.present("room", "ana", 1_000 + LOBBY_PRESENCE_MS - 1));
+        assert!(!host.present("room", "ana", 1_000 + LOBBY_PRESENCE_MS), "three readings missed");
+        assert!(!host.present("other", "ana", 1_000), "per room");
+        host.saw("room", "ben", 1_000 + LOBBY_PRESENCE_MS);
+        assert_eq!(host.seen.lock().unwrap().len(), 1, "stale calls are forgotten");
     }
 
     async fn game(path: &Path) -> (Arc<Host>, String, String, String) {

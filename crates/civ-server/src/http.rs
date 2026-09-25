@@ -1,4 +1,4 @@
-use crate::{host::ConnectionLease, opaque_id, store::Room, token_hash, Host, HostError};
+use crate::{host::ConnectionLease, now_ms, opaque_id, store::Room, token_hash, Host, HostError};
 use axum::{
     extract::{
         rejection::JsonRejection,
@@ -204,13 +204,17 @@ struct RoomResponse {
     speed: String,
     ruleset: String,
     victories: Option<Vec<String>>,
+    /// The Blitz slice, when the room plays one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slice: Option<String>,
     /// Each occupied seat's chosen nation and leader, if any.
     seats: Vec<civ_sim::SeatChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     invite: Option<String>,
     match_id: Option<String>,
-    /// Every occupied seat: who holds it, and once the match runs, whether
-    /// they are connected, have finished the turn, or left it to a bot.
+    /// Every occupied seat: who holds it and whether they are there (in the
+    /// lobby, or connected once the match runs), and once the match runs,
+    /// whether they have finished the turn or left it to a bot.
     members: Vec<MemberView>,
 }
 #[derive(Serialize)]
@@ -219,6 +223,8 @@ struct MemberView {
     seat: u8,
     name: Option<String>,
     is_owner: bool,
+    /// Before the start, whether they read the room in the last few seconds;
+    /// once the match runs, whether the host holds a live socket for the seat.
     #[serde(skip_serializing_if = "Option::is_none")]
     connected: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -236,18 +242,27 @@ async fn room_response(host: &Host, room: Room, guest: &str) -> Result<Json<Room
         .ok_or(HostError::Forbidden)?;
     let is_owner = room.owner == guest;
     let rules = civ_sim::content::shared_ruleset(room.settings.ruleset_name()).map_err(|_| HostError::Internal)?;
+    let now = now_ms();
     let live = match &room.match_id {
         Some(id) => host.seat_states(id).await?,
-        None => Vec::new(),
+        None => {
+            // Every room call a member makes before the start, the lobby's reading of it above all, says it is there.
+            host.saw(&room.id, guest, now);
+            Vec::new()
+        }
     };
     let mut members = Vec::new();
     for (seat, member) in &room.seats {
         let state = live.iter().find(|s| s.seat == *seat);
+        let connected = match room.match_id {
+            Some(_) => state.and_then(|s| s.connected),
+            None => Some(host.present(&room.id, member, now)),
+        };
         members.push(MemberView {
             seat: *seat,
             name: host.store.name(member)?,
             is_owner: *member == room.owner,
-            connected: state.and_then(|s| s.connected),
+            connected,
             ready: state.map(|s| s.ready),
             controlled: state.map(|s| s.controlled),
             left: state.is_some_and(|s| s.left == Some(true)),
@@ -285,6 +300,7 @@ async fn room_response(host: &Host, room: Room, guest: &str) -> Result<Json<Room
             })
             .collect(),
         victories: room.settings.victories.clone(),
+        slice: room.settings.slice.clone(),
         invite: is_owner.then_some(room.invite),
         match_id: room.match_id,
     }))
