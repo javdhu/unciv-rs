@@ -77,7 +77,7 @@ implemented.
 | F5 | **Milestones share one cue.** | friction | **open**: moments for discoveries, wonders, first contact and a new age are phase 3 |
 | F6 | **No path preview.** | friction | **done**: a tap plans the route with each turn's stop, a second tap walks it |
 | F7 | **Readability.** Units and the capital hidden in forest. | friction | **done**: plants clear round a unit, and counters fly above units close in |
-| F8 | **A still world.** | polish | **part**: seasons turn, trees sway in the wind, herds graze, cloud shadows drift |
+| F8 | **A still world.** | polish | **part**: trees sway in the wind, herds graze, cloud shadows drift; seasons and a day and night each behind a switch in Settings, off by default |
 | F9 | **Thin transitions.** | polish | **part**: sheets and fans move as they open and close, the rim turns once a turn. Loading is still a line of text |
 
 ## P. Product vision (PLATFORM.md) vs the build

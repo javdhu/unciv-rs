@@ -191,7 +191,8 @@ resources, herds, cities, towns and wonder plots have their own owners. Static g
 is instanced, and so are units: every unit of one shape is a slot in one instanced mesh, posed in the vertex
 shader (`world/troupe.ts`), walking routes found through the world's streets, gates, fords and woods
 (`world/way.ts`). An `attacked` event names both sides, and `world/combat.ts` acts fights out from it. Fog is a
-neutral haze (`world/veil.ts`), light a neutral grade (`world/light.ts`), and outlines a thin ink pass
+linen haze (`world/veil.ts`), light a warm tabletop grade (`world/light.ts`, with an optional day and night in
+`world/daynight.ts`), and outlines a thin ink pass
 (`world/ink.ts`); [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) has the look. The map's marks (counters, city labels,
 route stops, yields, floating numbers) follow the interface's grammar in `world/world.css`. Quality follows the
 device and steps down when frames run slow (`world/perf.ts`).
