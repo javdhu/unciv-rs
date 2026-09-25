@@ -12,7 +12,8 @@ database file, and exits 0. Every commit is already durable before that; the
 checkpoint only leaves one self-contained file behind.
 
 The existing Vite development server proxies `/api` and its WebSocket upgrade.
-The exact loopback origins on ports 3001 and 5199 are allowed by default.
+The exact loopback origins on ports 3001, 5199 (the dev server) and 5304 (the
+dev server the web client's smoke run starts) are allowed by default.
 
 Environment options:
 
@@ -58,8 +59,12 @@ It contains no map seed, credentials or world snapshot.
 
 It also lists `members`, one per occupied seat:
 `{ seat, name: string | null, isOwner, left, connected?, ready?, controlled? }`.
-The last three appear once the match runs: the host holds a live socket for the
-seat, it finished the current turn, and a person (not a bot) plays it.
+Before the start, `connected` says whether the member made a room call (the
+lobby reads `GET /api/rooms/{roomId}` every two seconds) in the last six
+seconds; this presence is kept in memory only. Once the match runs, `connected`
+says the host holds a live socket for the seat, and `ready` and `controlled`
+appear: it finished the current turn, and a person (not a bot) plays it. A room
+that plays a Blitz slice names it in `slice`.
 
 ## Returning players and leaving
 

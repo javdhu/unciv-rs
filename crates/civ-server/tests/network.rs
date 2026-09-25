@@ -393,6 +393,7 @@ async fn guests_name_themselves_find_their_rooms_and_leave() {
     assert_eq!(members.len(), 2);
     assert_eq!((&members[0]["name"], &members[0]["isOwner"]), (&json!("Ada"), &json!(true)));
     assert!(members[1]["name"].is_null() && members[1].get("ready").is_none(), "no live state before the start");
+    assert_eq!((&members[0]["connected"], &members[1]["connected"]), (&json!(true), &json!(true)), "both just called for the room");
     let mine = fetch(&server, &client, &b, "/api/rooms").await;
     assert_eq!(mine["rooms"][0]["roomId"], room_id.as_str());
     assert_eq!(mine["rooms"][0]["ownSeat"], 1);
