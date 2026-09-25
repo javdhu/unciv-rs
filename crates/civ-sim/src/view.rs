@@ -555,6 +555,10 @@ pub struct CityView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_refs: Option<Vec<crate::protocol::ConstructionRef>>,
+    /// The active world wonder's authoritative site and paid fraction. Own cities only.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wonder_construction: Option<WonderConstructionView>,
     pub food_stored: Option<i32>,
     pub production_stored: Option<i32>,
     pub production_overflow: Option<i32>,
@@ -562,6 +566,14 @@ pub struct CityView {
     pub own: Option<CityStateView>,
     pub visible: bool,
     pub observed_turn: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WonderConstructionView {
+    pub building: u32,
+    pub tile: u16,
+    pub fraction: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -782,6 +794,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             tiles: c.tiles.iter().map(|t| t.0).collect(),
             queue: None,
             queue_refs: None,
+            wonder_construction: None,
             food_stored: None,
             production_stored: None,
             production_overflow: None,
@@ -811,6 +824,20 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     .collect(),
             ),
             queue_refs: Some(c.queue.iter().map(|q| construction_ref(*q)).collect()),
+            wonder_construction: c.queue.first().and_then(|what| {
+                let Construction::Building(b) = *what else { return None };
+                if r.buildings[b].is_wonder != Some(true) {
+                    return None;
+                }
+                let tile = civ_core::world::placement::site_for(w, r, id, b)?;
+                let costs = civ_core::world::TurnModifiers::for_world(w, r).costs;
+                let cost = civ_core::world::construction::production_cost_in(w, r, id, *what, costs)?;
+                Some(WonderConstructionView {
+                    building: b.index(),
+                    tile: tile.0,
+                    fraction: (c.current_production() as f64 / cost.max(1) as f64).clamp(0.0, 1.0),
+                })
+            }),
             own: Some(CityStateView {
                 capital: c.uniques.has(civ_core::UniqueType::IndicatesCapital),
                 founder: c.founder.0,

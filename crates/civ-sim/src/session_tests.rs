@@ -1835,6 +1835,17 @@ fn a_player_chooses_where_a_wonder_stands_and_it_is_built_there() {
             queue: vec![ConstructionRef::Building { id: temple.index() }],
         },
     );
+    let unfinished = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    let work = unfinished.cities.iter().find(|c| c.id == city.index()).unwrap().wonder_construction.as_ref().unwrap();
+    assert_eq!((work.building, work.tile, work.fraction), (temple.index(), other, 0.0));
+    let foreign = crate::view::player_view(&s.world, &s.rules, CivId(1));
+    assert!(foreign.cities.iter().all(|c| c.wonder_construction.is_none()));
+    let costs = TurnModifiers::for_world(&s.world, &s.rules).costs;
+    civ_core::world::construction::apply_production_in(&mut s.world, &s.rules, city, 10, costs).unwrap();
+    let progressed = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    let work = progressed.cities.iter().find(|c| c.id == city.index()).unwrap().wonder_construction.as_ref().unwrap();
+    assert_eq!(work.tile, other);
+    assert!(work.fraction > 0.0 && work.fraction < 1.0);
     // Its production arrives all at once.
     let costs = TurnModifiers::for_world(&s.world, &s.rules).costs;
     civ_core::world::construction::apply_production_in(&mut s.world, &s.rules, city, 1_000_000, costs).unwrap();
@@ -1843,6 +1854,7 @@ fn a_player_chooses_where_a_wonder_stands_and_it_is_built_there() {
     civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
     assert_eq!(civ_core::world::placement::standing(&s.world, city, temple), Some(TileId(other)));
     let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    assert!(view.cities.iter().find(|c| c.id == city.index()).unwrap().wonder_construction.is_none());
     let placed = view.tiles.iter().find(|t| t.id == other).and_then(|t| t.placed.as_ref());
     assert!(placed.is_some_and(|p| p.building == temple.index() && p.wonder), "the view shows it: {placed:?}");
 }
