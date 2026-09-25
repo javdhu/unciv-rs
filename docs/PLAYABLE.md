@@ -37,12 +37,12 @@ Continue, Custom game (map size, rivals, city-states, east-west wrap, speed or B
 eras, the turn limit, the victories, a seed, the nation and its leader), Play with friends, the saved games (carry
 one on or delete it), the civilopedia and Settings. Every solo game autosaves.
 
-**A turn.** The dial's hub names the next decision, threats first, and hands it over: a unit, an idle city,
-research, a policy, a capture, a free technology or great person, the state faith, a world vote, a rival's demand.
-Its lamps count what waits. End turn is the hub once nothing is left, and Shift+Enter ends the turn anyway. With
-the Blitz clock on, a turn has 45 seconds and the game a 90-second bank. The others' turns are played back on the
-map before the next turn opens, and a tap, Esc, Shift+Enter or the hub skips them. Ctrl+Z takes the last order back
-when the engine allows it.
+**A turn.** The dial's hub names the next decision, most urgent first, and hands it over: a captured city, a unit,
+a rival's demand, research, a free technology or great person, a world vote, the state faith, an idle city, a
+policy (EXPERIENCE.md, section 3). Its lamps count what waits. End turn is the hub once nothing is left, and
+Shift+Enter ends the turn anyway. With the Blitz clock on, a turn has 45 seconds and the game a 90-second bank. The
+others' turns are played back on the map before the next turn opens, and a tap, Esc, Shift+Enter or the hub skips
+them. Ctrl+Z takes the last order back when the engine allows it.
 
 **Units.** The fan holds the selected unit's orders, the suggested one first: move (a tap plans a route with its
 turns, a second tap or Go walks it, and a longer route becomes a go-to order walked each turn), attack with a
@@ -84,7 +84,8 @@ Motion follows the device's reduced-motion setting.
 
 - **The acceptance tests** above, played through the new interface on a laptop and a phone.
 - **Phase 3 polish** (UI-REBUILD.md): moments for discoveries, wonders, first contact and a new age; the glass
-  fallback and blur off on low performance tiers; ARIA and keyboard; a phone pass.
+  fallback and blur off on low performance tiers; ARIA and keyboard, with the turn's news announced to a screen
+  reader (today only notices, the coach, the fan's plate and the attack preview are); a phone pass.
 - **Aircraft on the map.** An aircraft's tap on a base does not arm its rebase yet: `ui/model/aim.ts` `mapTap`
   does, but `App.svelte` sends map taps to `state/aim.ts` `aimTap`, which only picks while an aim is armed.
 - **Leader media.** The call shows the rival's disc; portraits and video wait for the leader media pipeline

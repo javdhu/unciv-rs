@@ -125,7 +125,7 @@ stays small: `abilities` (great people, religious units, spaceship parts), `aim`
 nuclear strike), `envoy` (the city-state looked at), `demands`, `undo`, `replay` (the others' turns played back),
 `rooms` and `pulse` (rooms, their lobby and a socket's health), `placement` (a wonder's site) and `clock` (the Blitz
 clock). The pure game logic beside them is `board` (who needs orders, what threatens what), `decisions` (the guided
-turn, threats first, each unit with a suggested move), `orders` and `paths` (go-to routes and their turns),
+turn, most urgent first, each unit with a suggested move), `orders` and `paths` (go-to routes and their turns),
 `cityplan` (suggested builds with reasons), `yields`, `diplomacy`, `history` and `coach`.
 
 Every engine action is reachable from the interface or listed in `ui/coverage-pending.ts`, and

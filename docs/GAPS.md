@@ -60,7 +60,7 @@ implemented.
 | X7 | **No threat awareness.** | friction | **part**: dashed red rings with a pointer on units that can strike next turn, the hub's Defend and Strike, a coach tip, and the yields lens. No other lenses, minimap or map search |
 | X8 | **Safety and speed.** No undo, one-tap raze, no keyboard shortcuts. | friction | **done**: undo where the engine allows it (Ctrl+Z), raze in red and stoppable in the city, the keyboard of BRAND.md |
 | X9 | **Settings.** | friction | **part**: music and effects, the Blitz clock, the yields lens, tips again, and motion follows the device. No UI scale or animation speed |
-| X10 | **Platform promises.** No service worker, localisation or ARIA. | polish | **part**: controls have accessible names and news is announced; the ARIA and keyboard pass is phase 3. No service worker or localisation |
+| X10 | **Platform promises.** No service worker, localisation or ARIA. | polish | **part**: controls have accessible names, and notices (the toasts), the coach, the fan's plate and the attack preview's verdict are announced; the turn's news (the rim's pips, the Chronicle) is not. The ARIA and keyboard pass is phase 3. No service worker or localisation |
 | X11 | **Phone details.** | polish | **part**: bottom sheets that stop above the fan, a dial in the corner on a phone held sideways, 50px keys. The phone pass is phase 3 |
 | X12 | **Multiplayer has no UI.** | blocks* | **done**: names, rooms, invite links, the lobby, your rooms, seats on the hub, a bot in an absent seat |
 
@@ -123,6 +123,6 @@ The decisions that shaped the plan, as they were taken.
 ## What remains
 
 In rough order: the acceptance tests of PLAYABLE.md played through; phase 3's moments (F2, F4, F5), performance
-tiers, ARIA and keyboard (X10) and phone pass (X11); a scripted first game (X1); difficulty levels (X5); more
-lenses and a minimap (X7); a service worker and localisation (X10); World Congress resolutions (A4); leader media
-(P3).
+tiers, ARIA and keyboard with the turn's news announced (X10) and phone pass (X11); a scripted first game (X1);
+difficulty levels (X5); more lenses and a minimap (X7); a service worker and localisation (X10); World Congress
+resolutions (A4); leader media (P3).
