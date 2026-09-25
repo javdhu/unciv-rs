@@ -58,6 +58,9 @@ pub struct Ruleset {
     pub city_state_types: Registry<CityStateType>,
     /// What city-states ask of major civs. See `world::quests`.
     pub quests: Registry<Quest>,
+    /// Each terrain's part in line of sight, by index: its VisibilityElevation and whether it blocks sight at the
+    /// same elevation. Derived at load, because fog reads it for every tile in every unit's sight.
+    pub terrain_sight: Vec<(i32, bool)>,
     /// What ancient ruins may give. See `world::ruins`.
     pub ruin_rewards: Registry<RuinReward>,
     /// AI leaders' traits (`Personalities.json`), named by `Nation.personality`.
@@ -377,6 +380,16 @@ impl Ruleset {
                 .filter_map(|p| p.parse::<i32>().ok())
                 .sum();
         }
+        self.terrain_sight = self.terrains.ids().map(|id| self.terrains.get(id).map_or((0, false), terrain_sight_of)).collect();
+    }
+
+    /// A terrain's line-of-sight elevation, and whether it blocks sight at the same elevation.
+    pub fn terrain_sight(&self, id: Id<Terrain>) -> (i32, bool) {
+        match self.terrain_sight.get(id.index() as usize) {
+            Some(&sight) => sight,
+            // a ruleset assembled by hand, without the derive pass
+            None => self.terrains.get(id).map_or((0, false), terrain_sight_of),
+        }
     }
 
     /// Read every `*.json` in a directory. Native only — wasm has no filesystem.
@@ -510,4 +523,15 @@ impl Ruleset {
         let name = &self.default_difficulty()?.name;
         self.difficulties.id(name)
     }
+}
+
+fn terrain_sight_of(t: &Terrain) -> (i32, bool) {
+    let height = t
+        .uniques
+        .iter()
+        .filter(|u| u.unique_type() == Some(UniqueType::VisibilityElevation))
+        .filter_map(|u| u.params.first()?.parse::<i32>().ok())
+        .sum();
+    let blocks = t.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::BlocksLineOfSightAtSameElevation));
+    (height, blocks)
 }

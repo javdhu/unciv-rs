@@ -35,28 +35,31 @@ use std::collections::BTreeMap;
 /// sight. Paths are evaluated by rings so same-distance tiles cannot relay sight.
 pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: u32, attack: bool) -> Vec<TileId> {
     let heights = |tile: TileId| {
-        let terrain: Vec<_> = grid.terrains(tile).filter_map(|id| r.terrains.get(id)).collect();
-        let height: i32 = terrain
-            .iter()
-            .flat_map(|t| &t.uniques)
-            .filter(|u| u.unique_type() == Some(crate::UniqueType::VisibilityElevation))
-            .filter_map(|u| u.params.first()?.parse::<i32>().ok())
-            .sum();
-        let blocks = terrain
-            .iter()
-            .flat_map(|t| &t.uniques)
-            .any(|u| u.unique_type() == Some(crate::UniqueType::BlocksLineOfSightAtSameElevation));
+        let (mut height, mut blocks) = (0, false);
+        for id in grid.terrains(tile) {
+            let (h, b) = r.terrain_sight(id);
+            height += h;
+            blocks |= b;
+        }
         (height, height + i32::from(blocks))
     };
     let source = heights(from).0;
     let mut highest = BTreeMap::from([(from, source)]);
     let mut visible = vec![from];
-    let tiles = grid.within(from, range.saturating_add(1));
-    for distance in 1..=range.saturating_add(1) {
+    let reach = range.saturating_add(1);
+    // the tiles of each ring, in `within`'s order
+    let mut rings = vec![Vec::new(); reach as usize + 1];
+    for tile in grid.within(from, reach) {
+        let distance = grid.distance(from, tile);
+        if (1..=reach).contains(&distance) {
+            rings[distance as usize].push(tile);
+        }
+    }
+    for (distance, tiles) in rings.iter().enumerate().skip(1) {
         let mut ring = Vec::new();
-        for tile in tiles.iter().copied().filter(|tile| grid.distance(from, *tile) == distance) {
+        for &tile in tiles {
             let (unit_height, tile_height) = heights(tile);
-            if distance == range.saturating_add(1) && (attack || tile_height <= source) {
+            if distance as u32 == reach && (attack || tile_height <= source) {
                 continue;
             }
             let Some(previous) = grid.neighbours(tile).filter_map(|n| highest.get(&n).copied()).min() else { continue };

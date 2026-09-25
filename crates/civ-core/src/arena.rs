@@ -19,6 +19,7 @@
 //! picks-first over entities would then desync client from server.
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::fmt;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
@@ -98,13 +99,13 @@ impl<T> fmt::Debug for Id<T> {
 #[derive(Debug, Clone)]
 pub struct Registry<T> {
     items: Vec<T>,
-    by_name: HashMap<String, Id<T>>,
+    by_name: HashMap<String, Id<T>, BuildHasherDefault<NameHasher>>,
     names: Vec<String>,
 }
 
 impl<T> Default for Registry<T> {
     fn default() -> Self {
-        Registry { items: Vec::new(), by_name: HashMap::new(), names: Vec::new() }
+        Registry { items: Vec::new(), by_name: HashMap::default(), names: Vec::new() }
     }
 }
 
@@ -415,5 +416,28 @@ mod tests {
         assert_eq!(first, second, "a mod overriding an object keeps its id");
         assert_eq!(r.len(), 1);
         assert_eq!(r[first], Unit("modded"));
+    }
+}
+
+/// The hasher for looking rules up by name: the rotate-multiply hash rustc uses for its own tables. Names are
+/// looked up constantly (a unit's type and promotions, every time its rules are read), and SipHash's defence
+/// against crafted keys buys nothing for a ruleset's own names. Lookups only: nothing iterates the map, so the
+/// hasher cannot change an order.
+#[derive(Default)]
+struct NameHasher(u64);
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            self.0 = (self.0.rotate_left(5) ^ u64::from_le_bytes(c.try_into().unwrap())).wrapping_mul(K);
+        }
+        for &b in chunks.remainder() {
+            self.0 = (self.0.rotate_left(5) ^ u64::from(b)).wrapping_mul(K);
+        }
+    }
+    fn finish(&self) -> u64 {
+        self.0
     }
 }
