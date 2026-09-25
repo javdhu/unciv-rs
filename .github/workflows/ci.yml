@@ -1,6 +1,12 @@
 name: ci
 on: { push: { branches: [main] }, pull_request: {}, workflow_dispatch: {} }
 concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
+# CI's release builds skip fat LTO (which linked every test binary on one core: 28 of the rust job's 35 minutes)
+# and optimise for speed rather than size. They are for tests and checks only; nothing built here ships.
+env:
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "3"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
 jobs:
   rust:
     runs-on: ubuntu-latest
