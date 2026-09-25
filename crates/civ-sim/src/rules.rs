@@ -194,6 +194,8 @@ pub struct BuildingRow {
     pub effects: Vec<String>,
     /// The building it needs in the city first, by name.
     pub requires: Option<String>,
+    /// The nation whose unique building this is, by name.
+    pub unique_to: Option<String>,
     /// One line on what is attested, reconstructed and invented (wonders).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -521,6 +523,7 @@ pub fn tables(r: &Ruleset) -> RuleTables {
                 percent: x.percent_stat_bonus.iter().map(|(k, v)| (k.clone(), *v)).collect(),
                 effects: x.uniques.iter().filter_map(rule_text).collect(),
                 requires: x.required_building.clone(),
+                unique_to: x.unique_to.clone(),
                 what_we_know: x.what_we_know.clone(),
             })
             .collect(),
@@ -562,5 +565,10 @@ mod tests {
         assert!(t.improvements.iter().any(|i| i.name == "Farm" && i.yields.food == 1));
         let monument = t.buildings.iter().find(|b| b.name == "Monument").unwrap();
         assert!(monument.yields.culture > 0 && monument.maintenance >= 0);
+        assert_eq!(monument.unique_to, None);
+        // a nation's own Monument is opened by no technology, so only its row names the nation
+        let kurgan = t.buildings.iter().find(|b| b.name == "Kurgan").unwrap();
+        assert_eq!(kurgan.unique_to.as_deref(), Some("Scythia"));
+        assert!(t.technologies.iter().all(|x| x.unlocks.iter().all(|u| u.name != "Kurgan")));
     }
 }
