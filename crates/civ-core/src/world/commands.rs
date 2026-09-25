@@ -607,9 +607,13 @@ fn apply(
                 .filter(|_| crate::world::fog::can_see_unit(world, r, civ, target))
                 .ok_or(InvalidTarget)?;
             enemy(world, civ, u.owner, u.position)?;
+            let watch = crate::world::combat::BattleWatch::before_city_bombard(world, city, target);
             let result = crate::world::combat::city_bombard(world, r, city, target).map_err(|_| NotAllowed)?;
             world.cities.get_mut(city).expect("validated city").attacks_left -= 1;
-            events.push(TurnEvent::Battle { attacker_died: false, defender_died: result.defender_died, report: None });
+            events.push(TurnEvent::Battle {
+                attacker_died: false, defender_died: result.defender_died,
+                report: watch.map(|w| w.report(world, result.tags)),
+            });
         }
         FoundCity { unit, name } => {
             moving(world, unit)?;

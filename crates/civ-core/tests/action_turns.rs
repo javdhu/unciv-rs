@@ -234,7 +234,16 @@ fn city_bombard_is_available_once_per_round() {
     w.diplomacy.declare_war(CivId(0), CivId(1));
     observe(&mut w, &r);
     let command = Command::Bombard { city, target };
-    execute(&mut w, &r, CivId(0), command.clone()).unwrap();
+    let outcome = execute(&mut w, &r, CivId(0), command.clone()).unwrap();
+    let report = outcome.events.iter().find_map(|e| match e {
+        TurnEvent::Battle { report, .. } => report.as_ref(),
+        _ => None,
+    }).expect("city bombard report");
+    assert_eq!(report.attacker, civ_core::world::air::Target::City(city));
+    assert_eq!(report.attacker_base, None);
+    assert_eq!(report.target, civ_core::world::air::Target::Unit(target));
+    assert_eq!((report.from, report.at), (w.cities.get(city).unwrap().centre, w.units.get(target).unwrap().position));
+    assert!(report.ranged && report.damage_to_defender > 0 && report.damage_to_attacker == 0);
     assert_eq!(w.cities.get(city).unwrap().attacks_left, 0);
     let before = w.clone();
     assert!(execute(&mut w, &r, CivId(0), command).is_err());

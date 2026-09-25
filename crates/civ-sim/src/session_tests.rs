@@ -1315,9 +1315,9 @@ fn a_battle_between_two_ais_in_view_is_replayed_in_order() {
         .iter()
         .flat_map(|b| b.events.iter().map(move |e| (b.civ, e)))
         .find(|(_, e)| {
-            matches!(&e.event, crate::view::PresentationEvent::Attacked { attacker, .. }
-                if (attacker.id, attacker.gen) == (strong.index(), strong.generation())
-                    || (attacker.id, attacker.gen) == (weak.index(), weak.generation()))
+            matches!(&e.event, crate::view::PresentationEvent::Attacked { attacker: crate::protocol::AttackTarget::Unit { unit }, .. }
+                if (unit.id, unit.gen) == (strong.index(), strong.generation())
+                    || (unit.id, unit.gen) == (weak.index(), weak.generation()))
         })
         .expect("the fight in view is in the replay");
     assert!(fight.0 == 1 || fight.0 == 2);

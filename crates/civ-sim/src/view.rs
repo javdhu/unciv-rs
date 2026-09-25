@@ -1384,7 +1384,7 @@ pub enum PresentationEvent {
     Attacked {
         /// This player struck the blow.
         viewer_attacked: bool,
-        attacker: EntityRef,
+        attacker: crate::protocol::AttackTarget,
         target: crate::protocol::AttackTarget,
         from: u16,
         at: u16,
@@ -1638,7 +1638,10 @@ fn battle_text(
     attacker_died: bool,
     defender_died: bool,
 ) -> String {
-    let a = r.units[b.attacker_base].name.as_str();
+    let a = match b.attacker {
+        civ_core::world::air::Target::Unit(_) => b.attacker_base.map_or("a unit".to_string(), |id| r.units[id].name.clone()),
+        civ_core::world::air::Target::City(id) => before.cities.get(id).map_or("a city".to_string(), |c| c.name.clone()),
+    };
     let defender = match (b.target, b.defender_base) {
         (civ_core::world::air::Target::City(id), _) => before.cities.get(id).map_or("a city".to_string(), |c| c.name.clone()),
         (_, Some(base)) => r.units[base].name.clone(),
@@ -1647,6 +1650,20 @@ fn battle_text(
     let city = matches!(b.target, civ_core::world::air::Target::City(_));
     let an = |name: &str| if name.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
     let d = if city { defender.clone() } else { format!("{} {defender}", an(&defender)) };
+    if matches!(b.attacker, civ_core::world::air::Target::City(_)) {
+        let yours = if city { defender } else { format!("your {defender}") };
+        return if b.attacker_owner == me {
+            if defender_died { format!("Your {a} destroyed {d}") }
+            else if b.damage_to_defender == 0 { format!("Your {a} bombarded {d} to no effect") }
+            else { format!("Your {a} bombarded {d} for {}", b.damage_to_defender) }
+        } else if defender_died {
+            format!("{a} destroyed {yours}")
+        } else if b.damage_to_defender == 0 {
+            format!("{a} bombarded {yours} to no effect")
+        } else {
+            format!("{a} bombarded {yours} for {}", b.damage_to_defender)
+        };
+    }
     if b.attacker_owner == me {
         if defender_died {
             format!("Your {a} destroyed {d}")
@@ -1659,12 +1676,12 @@ fn battle_text(
         }
     } else {
         let yours = if city { defender.clone() } else { format!("your {defender}") };
-        let them = format!("{} {a}", an(a));
+        let them = format!("{} {a}", an(&a));
         let them = them[..1].to_uppercase() + &them[1..];
         if defender_died {
             format!("{them} destroyed {yours}")
         } else if attacker_died {
-            format!("{} destroyed {} {a}", if city { defender.clone() } else { format!("Your {defender}") }, an(a))
+            format!("{} destroyed {} {a}", if city { defender.clone() } else { format!("Your {defender}") }, an(&a))
         } else if b.damage_to_defender == 0 {
             format!("{them} attacked {yours} to no effect")
         } else {
@@ -1678,8 +1695,8 @@ fn battle_text(
 #[serde(rename_all = "camelCase")]
 pub struct ReplayBatch {
     pub civ: u8,
-    /// In the order they happened: `unitMoved` steps and `attacked`,
-    /// `cityFounded` and `cityCaptured` events.
+    /// In the order they happened: movement, combat, captures, withdrawals,
+    /// pillaging, nuclear strikes and visible unit changes, along with city events.
     pub events: Vec<EventView>,
     /// Who moves and fights in these events, so the renderer can draw units
     /// that are no longer in the final view.
@@ -1776,18 +1793,22 @@ pub fn replay_for(
                 }
                 TurnEvent::Battle { attacker_died, defender_died, report: Some(b) } => {
                     let ours = b.attacker_owner == me || b.defender_owner == me;
+                    let attacker_hides = matches!(b.attacker, Target::Unit(id) if hides(id));
                     let target_hides = matches!(b.target, Target::Unit(id) if hides(id));
-                    if !ours && !(sees(b.from) && sees(b.at) && !hides(b.attacker) && !target_hides) {
+                    if !ours && !(sees(b.from) && sees(b.at) && !attacker_hides && !target_hides) {
                         continue;
                     }
-                    note(&mut units, b.attacker);
+                    if let Target::Unit(id) = b.attacker {
+                        note(&mut units, id);
+                    }
                     if let Target::Unit(id) = b.target {
                         note(&mut units, id);
                     }
                     let text = if ours {
                         battle_text(before, r, me, b, *attacker_died, *defender_died)
                     } else {
-                        format!("{} {} attacked {}", nation(b.attacker_owner), r.units[b.attacker_base].name, nation(b.defender_owner))
+                        let kind = b.attacker_base.map_or("city", |id| r.units[id].name.as_str());
+                        format!("{} {} attacked {}", nation(b.attacker_owner), kind, nation(b.defender_owner))
                     };
                     for id in b.tags.flankers.iter().chain(&b.tags.general) {
                         if seen_unit(*id) {
@@ -1996,7 +2017,14 @@ fn attacked(
     use civ_core::world::air::Target;
     PresentationEvent::Attacked {
         viewer_attacked: b.attacker_owner == me,
-        attacker: b.attacker.into(),
+        attacker: match b.attacker {
+            Target::Unit(id) => crate::protocol::AttackTarget::Unit {
+                unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+            },
+            Target::City(id) => crate::protocol::AttackTarget::City {
+                city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+            },
+        },
         target: match b.target {
             Target::Unit(id) => crate::protocol::AttackTarget::Unit {
                 unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
@@ -2827,8 +2855,8 @@ mod tests {
             attacker_died: false,
             defender_died: true,
             report: Some(BattleReport {
-                attacker: unit,
-                attacker_base: foreign.base,
+                attacker: civ_core::world::air::Target::Unit(unit),
+                attacker_base: Some(foreign.base),
                 attacker_owner: actor,
                 target: civ_core::world::air::Target::Unit(unit),
                 defender_base: Some(foreign.base),
@@ -2945,8 +2973,8 @@ mod tests {
                 attacker_died: false,
                 defender_died: false,
                 report: Some(BattleReport {
-                    attacker: theirs,
-                    attacker_base: their.base,
+                    attacker: civ_core::world::air::Target::Unit(theirs),
+                    attacker_base: Some(their.base),
                     attacker_owner: actor,
                     target: civ_core::world::air::Target::Unit(mine),
                     defender_base: Some(my.base),
@@ -3090,8 +3118,9 @@ mod tests {
         let from = report.from;
         let at = report.at;
         let far = before.grid.ids().find(|t| before.grid.distance(*t, from) > 6 && before.grid.distance(*t, at) > 6).unwrap();
-        let support = before.place_unit(Unit::new(report.attacker_base, actor, far, 2));
-        assert_eq!(support, after.place_unit(Unit::new(report.attacker_base, actor, far, 2)));
+        let base = report.attacker_base.expect("unit attacker");
+        let support = before.place_unit(Unit::new(base, actor, far, 2));
+        assert_eq!(support, after.place_unit(Unit::new(base, actor, far, 2)));
         report.tags.flankers = vec![support];
         report.tags.general = Some(support);
         report.interception = Some(civ_core::world::combat::Interception { unit: support, from: far, damage: 7 });
@@ -3214,6 +3243,35 @@ mod tests {
         assert!(replay[0].units.iter().any(|u| u.unit == theirs.into()));
         let hidden = [ReplayStep { actor, events: foreign_events, seen: sight(&before, me, &[]) }];
         assert!(replay_for(&before, &after, &r, me, &hidden).is_empty());
+    }
+
+    #[test]
+    fn city_bombard_projects_a_city_attacker_without_a_phantom_replay_unit() {
+        use civ_core::world::{ReplayStep, City};
+        let Motion { mut before, r, me, actor, events, .. } = motion_fixture();
+        let city_tile = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap().1.position;
+        let city = before.found_city(City::found("Foreign City", actor, city_tile));
+        let after = before.clone();
+        let mut battle = events.into_iter().find(|e| matches!(e, TurnEvent::Battle { .. })).unwrap();
+        let TurnEvent::Battle { report: Some(ref mut b), .. } = battle else { unreachable!() };
+        b.attacker = civ_core::world::air::Target::City(city);
+        b.attacker_base = None;
+        b.from = city_tile;
+        b.ranged = true;
+        b.damage_to_attacker = 0;
+        b.tags = Default::default();
+        let civ_core::world::air::Target::Unit(defended) = b.target else { unreachable!() };
+        let own = report_for(&before, &after, &r, me, &[battle.clone()]);
+        assert!(matches!(&own.events[0].event, PresentationEvent::Attacked {
+            attacker: crate::protocol::AttackTarget::City { city: who }, from, ranged: true, ..
+        } if who.id == city.index() && *from == city_tile.0));
+        assert!(own.events[0].text.contains("Foreign City bombarded your"));
+        let seen = [ReplayStep { actor, events: vec![battle], seen: sight(&before, me, &[city_tile]) }];
+        let replay = replay_for(&before, &after, &r, me, &seen);
+        assert!(matches!(replay[0].events[0].event, PresentationEvent::Attacked {
+            attacker: crate::protocol::AttackTarget::City { .. }, ..
+        }));
+        assert_eq!(replay[0].units.iter().map(|u| u.unit).collect::<Vec<_>>(), vec![defended.into()]);
     }
 
     /// Every presentation kind is sorted: replayed, or left out of replays on purpose. A replayed kind

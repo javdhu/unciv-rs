@@ -524,7 +524,7 @@ fn a_sweep_that_meets_an_aircraft_reports_the_dogfight_and_one_that_meets_nothin
     };
     let events = execute(&mut w, &r, CivId(0), Command::AirSweep { unit: fighter, target: to }).unwrap().events;
     let [report] = &reports(&events)[..] else { panic!("one dogfight: {events:?}") };
-    assert_eq!((report.attacker, report.target), (fighter, Target::Unit(enemy)));
+    assert_eq!((report.attacker, report.target), (Target::Unit(fighter), Target::Unit(enemy)));
     assert!(report.damage_to_attacker > 0 && report.damage_to_defender > 0);
     let second = unit(&mut w, &r, 0, "Fighter", 3, 4);
     let far = tile(&w, 5, 10);

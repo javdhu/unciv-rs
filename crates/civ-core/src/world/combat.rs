@@ -640,8 +640,9 @@ pub struct Capture {
 /// Who fought whom, from where, and what the blow cost each side. Presentation shows it to the two sides.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BattleReport {
-    pub attacker: Id<Unit>,
-    pub attacker_base: Id<BaseUnit>,
+    pub attacker: crate::world::air::Target,
+    /// None when the attacker is a city.
+    pub attacker_base: Option<Id<BaseUnit>>,
     pub attacker_owner: crate::world::grid::CivId,
     pub target: crate::world::air::Target,
     /// The defending unit's type; none when a city defends.
@@ -689,8 +690,8 @@ impl BattleWatch {
             }
         };
         let report = BattleReport {
-            attacker,
-            attacker_base: a.base,
+            attacker: Target::Unit(attacker),
+            attacker_base: Some(a.base),
             attacker_owner: a.owner,
             target,
             defender_base: base,
@@ -706,6 +707,22 @@ impl BattleWatch {
         Some(BattleWatch { report, attacker_health: i32::from(a.health), defender_health: health })
     }
 
+    pub fn before_city_bombard(world: &World, city: Id<crate::world::City>, target: Id<Unit>) -> Option<BattleWatch> {
+        use crate::world::air::Target;
+        let a = world.cities.get(city)?;
+        let d = world.units.get(target)?;
+        Some(BattleWatch {
+            report: BattleReport {
+                attacker: Target::City(city), attacker_base: None, attacker_owner: a.owner,
+                target: Target::Unit(target), defender_base: Some(d.base), defender_owner: d.owner,
+                from: a.centre, at: d.position, ranged: true,
+                damage_to_attacker: 0, damage_to_defender: 0, interception: None, tags: BattleTags::default(),
+            },
+            attacker_health: a.health,
+            defender_health: i32::from(d.health),
+        })
+    }
+
     /// A side that is gone lost all of its health; a captured civilian lost none. `tags` are the fight's own,
     /// from its result.
     pub fn report(self, world: &World, tags: BattleTags) -> BattleReport {
@@ -714,7 +731,10 @@ impl BattleWatch {
 
     pub fn report_with_interception(self, world: &World, tags: BattleTags, interception: Option<Interception>) -> BattleReport {
         use crate::world::air::Target;
-        let attacker = world.units.get(self.report.attacker).map_or(0, |u| i32::from(u.health));
+        let attacker = match self.report.attacker {
+            Target::Unit(id) => world.units.get(id).map_or(0, |u| i32::from(u.health)),
+            Target::City(id) => world.cities.get(id).map_or(0, |c| c.health),
+        };
         let defender = match self.report.target {
             Target::Unit(id) => world.units.get(id).map_or(0, |u| i32::from(u.health)),
             Target::City(id) => world.cities.get(id).map_or(0, |c| c.health),
@@ -1380,8 +1400,10 @@ pub fn city_bombard(
     }
 
     let att = city_combat_strength(world, r, city_id, Some(target_unit_id), true);
-    let def = combat_strength(world, r, target_unit_id, crate::world::air::Target::City(city_id), true)
+    let defender_parts = combat_parts(world, r, target_unit_id, crate::world::air::Target::City(city_id), true, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
+    let def = defender_parts.strength();
+    let tags = BattleTags::of(None, Some(&defender_parts));
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, city.centre, target.position).unit_interval();
 
@@ -1407,7 +1429,7 @@ pub fn city_bombard(
         u.health = (u.health as i32 - to_target).max(1) as u8;
     }
 
-    Ok(CombatResult { damage_to_defender: to_target, defender_died: target_died, ..CombatResult::default() })
+    Ok(CombatResult { damage_to_defender: to_target, defender_died: target_died, tags, ..CombatResult::default() })
 }
 
 /// Result of deploying a nuclear weapon.

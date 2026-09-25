@@ -591,7 +591,7 @@ fn attack_commands_report_who_fought_and_what_it_cost() {
             _ => None,
         })
         .expect("the attack reports its participants");
-    assert_eq!((report.attacker, report.attacker_owner, report.defender_owner), (a, CivId(0), CivId(1)));
+    assert_eq!((report.attacker, report.attacker_owner, report.defender_owner), (air::Target::Unit(a), CivId(0), CivId(1)));
     assert_eq!((report.target, report.from, report.at, report.ranged), (air::Target::Unit(d), tile(&w, 4, 4), tile(&w, 5, 4), false));
     assert_eq!(report.damage_to_attacker, 100 - i32::from(w.units.get(a).map_or(0, |u| u.health)));
     assert_eq!(report.damage_to_defender, 100 - i32::from(w.units.get(d).map_or(0, |u| u.health)));
