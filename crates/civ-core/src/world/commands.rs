@@ -63,6 +63,14 @@ pub enum Command {
     Purchase { city: Id<City>, what: Construction, currency: Stat },
     AdoptPolicy { policy: Id<Policy> },
     AssignCitizens { city: Id<City>, worked: Vec<TileId>, specialists: Allocation },
+    /// What the city's governor works its citizens for; they are placed
+    /// afresh at once and every turn after (`world::assignment`).
+    SetCityFocus { city: Id<City>, focus: crate::world::assignment::CityFocus },
+    /// Pin a tile so the city always works it, or unpin it. Either way the
+    /// citizens are placed afresh around the pins at once.
+    LockTile { city: Id<City>, tile: TileId, locked: bool },
+    /// Answer a capture by keeping the puppet (`conquest::keep_puppet`).
+    KeepPuppet { city: Id<City> },
     GreatPerson { unit: Id<Unit>, action: crate::world::great_person_actions::Action },
     Religious { unit: Id<Unit>, action: crate::world::religious_units::ReligiousAction },
     ChoosePantheon { belief: Id<Belief> },
@@ -234,6 +242,9 @@ fn validate_actor(world: &World, civ: CivId, command: &Command) -> Result<(), Co
         | SetAvoidGrowth { city, .. }
         | Purchase { city, .. }
         | AssignCitizens { city, .. }
+        | SetCityFocus { city, .. }
+        | LockTile { city, .. }
+        | KeepPuppet { city }
         | Annex { city }
         | Raze { city }
         | StopRazing { city }
@@ -736,8 +747,47 @@ fn apply(
                 return Err(InvalidTarget);
             }
             let c = world.cities.get_mut(city).expect("validated city");
+            // A pinned tile left out is unpinned (`stopWorkingTile`).
+            c.locked_tiles.retain(|t| worked.contains(t));
             c.worked = worked;
             c.specialists = specialists;
+        }
+        SetCityFocus { city, focus } => {
+            let c = world.cities.get_mut(city).expect("validated city");
+            if c.puppet {
+                return Err(NotAllowed);
+            }
+            c.focus = focus;
+            // A new focus places everyone afresh, specialists too; pins stay.
+            c.specialists.clear();
+            crate::world::assignment::reassign_citizens(world, r, city);
+        }
+        LockTile { city, tile, locked } => {
+            target_tile(world, tile)?;
+            let c = world.cities.get(city).expect("validated city");
+            if c.puppet {
+                return Err(NotAllowed);
+            }
+            if locked && !c.locked_tiles.contains(&tile) {
+                let taken = crate::world::assignment::taken_by_sisters(world, city, |_, other| other.worked.clone());
+                if !crate::world::city::workable_tiles(&world.grid, c).contains(&tile) || taken.contains(&tile) {
+                    return Err(InvalidTarget);
+                }
+                // One pin per citizen.
+                if c.locked_tiles.len() as u32 >= c.population {
+                    return Err(NotAllowed);
+                }
+                world.cities.get_mut(city).expect("validated city").locked_tiles.push(tile);
+            } else if !locked {
+                if !c.locked_tiles.contains(&tile) {
+                    return Err(NotAllowed);
+                }
+                world.cities.get_mut(city).expect("validated city").locked_tiles.retain(|t| *t != tile);
+            }
+            crate::world::assignment::reassign_citizens(world, r, city);
+        }
+        KeepPuppet { city } => {
+            crate::world::conquest::keep_puppet(world, city).ok_or(NotAllowed)?;
         }
         GreatPerson { unit, action } => {
             moving(world, unit)?;
@@ -918,7 +968,7 @@ fn apply(
         OfferFriendship { target } => {
             known_party(world, civ, target)?;
             if !world.civ(target).is_some_and(|c| c.is_ai)
-                || !crate::world::research_agreements::wants_friendship(world, target, civ)
+                || !crate::world::research_agreements::wants_friendship(world, r, target, civ)
             {
                 return Err(NotAllowed);
             }

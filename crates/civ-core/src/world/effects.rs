@@ -326,7 +326,7 @@ pub fn on_policy_adopted(world: &mut World, r: &Ruleset, civ: CivId, policy: Id<
 
 pub fn on_construction_completed(world: &mut World, r: &Ruleset, city: Id<City>, what: Construction, speed: Fixed) {
     let science = crate::world::research::ScienceModifiers {
-        speed: world.speed_rules(r, speed).map_or(speed, |s| s.science_cost_modifier),
+        speed: crate::world::slices::science_cost(world, r, world.speed_rules(r, speed).map_or(speed, |s| s.science_cost_modifier)),
         ..Default::default()
     };
     on_construction_completed_with_science(world, r, city, what, speed, science);

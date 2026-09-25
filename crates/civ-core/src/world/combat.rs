@@ -957,8 +957,13 @@ pub fn capture_city(
     if let Some(old) = previous_owner.filter(|c| world.civ(*c).is_some_and(|c| c.is_city_state() && !c.is_alive())) {
         crate::world::quests::on_city_state_conquered(world, r, old, new_owner);
     }
-    if world.civ(new_owner).is_some_and(|c| c.is_ai) && crate::world::ai::should_raze(world, r, new_owner, city_id) {
-        let _ = crate::world::conquest::raze(world, city_id);
+    if world.civ(new_owner).is_some_and(|c| c.is_ai) {
+        if crate::world::ai::should_raze(world, r, new_owner, city_id) {
+            let _ = crate::world::conquest::raze(world, city_id);
+        }
+    } else if let Some(c) = world.cities.get_mut(city_id).filter(|c| c.puppet) {
+        // A human answers this turn (`CityConquestPopup`); see `conquest::capture_choices`.
+        c.capture_pending = true;
     }
 }
 

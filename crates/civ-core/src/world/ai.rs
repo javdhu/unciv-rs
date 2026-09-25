@@ -25,17 +25,37 @@ use crate::world::grid::{CivId, TileId};
 use crate::world::policies::{is_adoptable, PolicyModifiers};
 use crate::world::research::{available_techs, tech_cost_in, ScienceModifiers};
 use crate::world::world::World;
+use crate::world::goals::{self, Goal};
 use crate::UniqueType;
+
+/// What a tech on the goal's route counts for, as a percent of its cost.
+const BEELINE_PERCENT: i32 = 55;
+
+/// How much the war threshold moves with the goal, in thousandths of the
+/// rival's strength: a conqueror needs less of an edge, a builder more.
+const CONQUEROR_EDGE: i64 = 300;
+const BUILDER_CAUTION: i64 = 250;
 
 /// What to research next.
 ///
 /// Cheapest first. A crude opinion, but a defensible one: early techs unlock
 /// the things later techs build on, so rushing an expensive one usually costs
 /// more than it returns. Ties break on id.
+///
+/// Techs on the route to the civ's goal ([`goals::beeline`]) count as
+/// [`BEELINE_PERCENT`] of their cost, so a conqueror heads for its next
+/// soldier and a scientist for the victory's buildings without neglecting
+/// the cheap techs on the way.
 pub fn choose_research(world: &World, r: &Ruleset, civ: CivId, m: ScienceModifiers) -> Option<Id<Technology>> {
+    let route = if world.is_legacy_ai(civ) {
+        std::collections::BTreeSet::new()
+    } else {
+        goals::beeline(world, r, civ, goals::goal(world, r, civ))
+    };
     available_techs(r, world.civ(civ)?)
         .into_iter()
         .filter_map(|t| tech_cost_in(world, r, civ, t, m).map(|c| (c, t)))
+        .map(|(c, t)| (if route.contains(&t) { c * BEELINE_PERCENT / 100 } else { c }, t))
         .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)))
         .map(|(_, t)| t)
 }
@@ -66,7 +86,16 @@ pub fn choose_construction(
 ) -> Option<Construction> {
     let Priorities { want_settler, want_worker, want_scout, want_military, happiness } = wants;
     let civ_ref = world.civ(civ)?;
+    let leader = crate::world::personality::of(world, r, civ);
     let weights = ranking_weights();
+    // A leader values each yield by its focus on it (ConstructionAutomation.kt:359:
+    // `buildingStats[stat] *= personality.scaledFocus(PersonalityValue[stat])`).
+    let mut focused = weights;
+    for stat in Stat::ALL {
+        if let Some(t) = crate::world::personality::Trait::of_stat(stat) {
+            focused[stat] = weights[stat] * leader.scaled(t);
+        }
+    }
     // Computed once per call rather than once per candidate: it walks every
     // victory's milestone list, and this closure runs for every building in
     // the ruleset, in every city, every turn.
@@ -98,6 +127,7 @@ pub fn choose_construction(
     if winning.is_some() {
         return winning;
     }
+    let wonder_window = wonder_window(world, r, civ, city, production);
 
     available(r, civ_ref, city)
         .into_iter()
@@ -172,7 +202,15 @@ pub fn choose_construction(
                         // well as its cost; raw strength/cost ties Scout with
                         // Warrior and otherwise keeps obsolete armies forever.
                         if want_military {
-                            military_value(strength)
+                            // ConstructionAutomation.kt:178. The leader's
+                            // taste applies to the old AI too, so `--ab`
+                            // measures only docs/AI.md's levels.
+                            let taste = leader.modifier(crate::world::personality::Trait::Military, Fixed::permille(300));
+                            if world.is_legacy_ai(civ) {
+                                military_value(strength) * taste
+                            } else {
+                                military_value(strength) * army_need(world, r, civ, id) * taste
+                            }
                         } else {
                             return None;
                         }
@@ -186,6 +224,14 @@ pub fn choose_construction(
                 }
                 Construction::Building(id) => {
                     let b = r.buildings.get(id)?;
+                    if b.is_wonder == Some(true) {
+                        if let Some(window) = wonder_window {
+                            let remaining = cost.saturating_sub(city.production_for(what)).max(0);
+                            if production <= 0 || (remaining + production - 1) / production > window {
+                                return None;
+                            }
+                        }
+                    }
                     // Evaluate the same yields the city will receive. Many
                     // buildings (notably a Library's science per population)
                     // put their benefit in uniques rather than flat fields.
@@ -197,7 +243,7 @@ pub fn choose_construction(
                     for stat in Stat::ALL {
                         stats[stat] = output[stat] - current_output[stat];
                     }
-                    let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * weights[s]).sum();
+                    let mut flat: Fixed = Stat::ALL.into_iter().map(|s| stats[s] * focused[s]).sum();
 
                     // Upkeep is priced, not gated.
                     //
@@ -288,7 +334,7 @@ pub fn wants_settler(world: &World, r: &Ruleset, civ: CivId) -> bool {
     if crate::world::happiness::happiness(world, r, civ, None) < 0 {
         return false;
     }
-    if c.cities.len() >= TARGET_CITIES {
+    if c.cities.len() >= city_target(crate::world::personality::of(world, r, civ)) {
         return false;
     }
     // One in flight at a time.
@@ -854,10 +900,17 @@ pub fn choose_trades(
 pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId> {
     use crate::stats::Precise;
     use crate::world::diplomacy::Flag;
-    let _ = r;
     if !world.civ(civ).is_some_and(|c| c.is_major() && c.is_ai) {
         return Vec::new();
     }
+    // DiplomacyAutomation.kt:588-591: willingness 0 never denounces; otherwise
+    // the opinion drop needed scales by `1 / scaledFocus(DenounceWillingness)`.
+    let leader = crate::world::personality::of(world, r, civ);
+    let willingness = leader.scaled(crate::world::personality::Trait::DenounceWillingness);
+    if willingness.is_zero() {
+        return Vec::new();
+    }
+    let personality = Precise::from_fixed(Fixed::ONE.checked_div(willingness).unwrap_or(Fixed::ONE));
     let known: Vec<CivId> = world
         .civ_ids()
         .filter(|o| *o != civ && world.civ(*o).is_some_and(|c| c.is_major()) && world.diplomacy.have_met(civ, *o))
@@ -870,7 +923,7 @@ pub fn choose_denunciations(world: &World, r: &Ruleset, civ: CivId) -> Vec<CivId
         }
         let opinion = crate::world::opinion::opinion(world, civ, other);
         let Some(friendliness) = Precise::from_ratio(1005, 1000).pow(opinion) else { continue };
-        let required = Precise::whole(-65) * friendliness * Precise::from_ratio(11, 10).powi(active);
+        let required = Precise::whole(-65) * personality * friendliness * Precise::from_ratio(11, 10).powi(active);
         if Precise::from_fixed(crate::world::opinion::smoothed_delta(world, civ, other)) <= required {
             out.push(other);
             active += 1;
@@ -1180,6 +1233,11 @@ pub fn should_raze(world: &World, r: &Ruleset, civ: CivId, city: Id<City>) -> bo
     let _ = r;
     let Some(c) = world.cities.get(city) else { return false };
     let city_state = world.civ(civ).is_some_and(|x| x.is_city_state());
+    // A civ playing for conquest or score keeps what it takes: every city
+    // is score, and a razed one is a capital it must take again.
+    if !city_state && !world.is_legacy_ai(civ) && matches!(goals::goal(world, r, civ), Goal::Conquest | Goal::Score) {
+        return false;
+    }
     (c.population < 4 || city_state) && c.founder != civ && crate::world::conquest::can_raze(world, city).is_ok()
 }
 
@@ -1316,6 +1374,75 @@ fn unit_strength(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> i32 {
     r.units.get(base).map_or(0, |u| u.strength.unwrap_or(0).max(u.ranged_strength.unwrap_or(0))).max(0)
 }
 
+/// What a unit does in an army.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    Melee,
+    Ranged,
+    Siege,
+    Naval,
+    Air,
+}
+
+fn role(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> Role {
+    let Some(b) = r.units.get(base) else { return Role::Melee };
+    match r.unit_types.by_name(&b.unit_type).map(|t| t.movement_type.as_str()) {
+        Some("Water") => Role::Naval,
+        Some("Air") => Role::Air,
+        _ if b.unit_type == "Siege" => Role::Siege,
+        _ if b.ranged_strength.unwrap_or(0) > 0 => Role::Ranged,
+        _ => Role::Melee,
+    }
+}
+
+/// How much the army wants one more unit of this unit's role, as a
+/// multiplier on its value (docs/AI.md, level 2). Strength per hammer alone
+/// fills an army with whatever is cheapest per point, which on a coast is
+/// ships that can never reach an inland city, and never siege.
+///
+/// Each role has a share of the army it aims for; below it the role is worth
+/// more, above twice it much less. A conqueror wants siege and melee to take
+/// cities; everyone keeps the navy and air force to a minority.
+fn army_need(world: &World, r: &Ruleset, civ: CivId, base: Id<crate::ruleset::BaseUnit>) -> Fixed {
+    let Some(c) = world.civ(civ) else { return Fixed::ONE };
+    let queued = c.cities.iter().filter_map(|id| world.cities.get(*id)).flat_map(|city| &city.queue).filter_map(|what| {
+        match what {
+            Construction::Unit(b) if unit_strength(r, *b) > 0 => Some(*b),
+            _ => None,
+        }
+    });
+    let army: Vec<Role> = c
+        .units
+        .iter()
+        .filter_map(|u| world.units.get(*u))
+        .filter(|u| unit_strength(r, u.base) > 0)
+        .map(|u| u.base)
+        .chain(queued)
+        .map(|b| role(r, b))
+        .collect();
+    let conqueror = goals::goal(world, r, civ) == Goal::Conquest;
+    let want = role(r, base);
+    // Shares in thousandths.
+    let target: i64 = match (want, conqueror) {
+        (Role::Siege, true) => 250,
+        (Role::Siege, false) => 60,
+        (Role::Ranged, _) => 250,
+        (Role::Melee, true) => 400,
+        (Role::Melee, false) => 450,
+        (Role::Naval, true) => 100,
+        (Role::Naval, false) => 200,
+        (Role::Air, _) => 200,
+    };
+    let have = army.iter().filter(|r| **r == want).count() as i64 * 1000 / (army.len() as i64 + 1);
+    if have < target {
+        Fixed::permille(if conqueror && want == Role::Siege { 2_500 } else { 1_600 })
+    } else if have > target * 2 {
+        Fixed::permille(300)
+    } else {
+        Fixed::ONE
+    }
+}
+
 fn military_value(strength: i32) -> Fixed {
     // Preserve the old Warrior value (24) while rewarding stronger units
     // for limited frontage. All scoring stays in deterministic fixed point.
@@ -1329,7 +1456,8 @@ fn military_value(strength: i32) -> Fixed {
 /// rather than merely noticed.
 pub fn target_military(world: &World, r: &Ruleset, civ: CivId) -> usize {
     let Some(c) = world.civ(civ) else { return 0 };
-    let base = c.cities.len() * 2;
+    let per_city = if !world.is_legacy_ai(civ) && goals::goal(world, r, civ) == Goal::Conquest { 3 } else { 2 };
+    let base = c.cities.len() * per_city;
     let mine = military_strength(world, r, civ);
     let strongest_rival = world
         .civ_ids()
@@ -1384,6 +1512,91 @@ pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
         < Fixed::whole(strength) * Fixed::whole(target_military(world, r, civ) as i32)
 }
 
+/// How many times the other's strength a leader wants before a war.
+///
+/// Half again for a neutral, as much as twice for an ally, merely equal for
+/// the unforgivable: Unciv adds the same ten-to-minus-ten relationship term to
+/// its war motivation (`MotivationToAttackAutomation.getRelationshipModifier`).
+/// Personality, in the threshold's terms (MotivationToAttackAutomation.kt):
+/// - the relationship term is scaled by Loyal (:214), so a loyal leader needs
+///   even more to turn on a friend and a disloyal one hardly cares;
+/// - the base motivation is `-15 * inverseScaledFocus(DeclareWar)` (:48), so
+///   an eager leader needs less of an edge and a reluctant one more.
+pub fn war_ratio_needed(
+    leader: crate::world::personality::Leader,
+    level: crate::world::opinion::RelationshipLevel,
+) -> Fixed {
+    use crate::world::opinion::RelationshipLevel as L;
+    use crate::world::personality::Trait;
+    let base = match level {
+        L::Unforgivable => Fixed::ONE,
+        L::Enemy => Fixed::permille(1_250),
+        L::Competitor => Fixed::permille(1_400),
+        L::Neutral => Fixed::permille(1_500),
+        L::Favorable => Fixed::permille(1_600),
+        L::Friend => Fixed::permille(1_750),
+        L::Ally => Fixed::whole(2),
+    };
+    let neutral = Fixed::permille(1_500);
+    (neutral + (base - neutral) * leader.scaled(Trait::Loyal))
+        * (Fixed::permille(700) + Fixed::permille(300) * leader.inverse(Trait::DeclareWar))
+}
+
+/// How many turns this city may spend on a world wonder, or `None` to leave
+/// wonders unrestricted (the old AI).
+///
+/// Unciv builds wonders only in cities producing at least the empire's
+/// average, and only once the empire has 12 citizens
+/// (ConstructionAutomation.kt:258-266); otherwise `Some(0)`. Past that, a
+/// wonder is worth starting only if it can be finished before a rival is
+/// likely to finish it first. The AI knows which wonders are built and when,
+/// and nothing of what rivals are building, so it estimates that from the pace
+/// at which others have taken wonders: with `n` still unbuilt and rivals
+/// finishing one every `k` turns, a given one lasts about `n * k` turns. Unciv
+/// instead subtracts the AI's rank in technologies, which reads every civ's
+/// research; this reads nothing hidden.
+fn wonder_window(world: &World, r: &Ruleset, civ: CivId, city: &City, production: i32) -> Option<i32> {
+    if world.is_legacy_ai(civ) {
+        return None;
+    }
+    let c = world.civ(civ)?;
+    let golden = crate::world::golden_age::is_golden(world, civ);
+    let ours: Vec<i32> = c
+        .cities
+        .iter()
+        .filter_map(|id| world.cities.get(*id))
+        .map(|city| crate::world::city::city_yield_in(world, r, city, golden).production.floor().max(0) as i32)
+        .collect();
+    let average = ours.iter().sum::<i32>() / (ours.len().max(1) as i32);
+    let citizens: u32 = c.cities.iter().filter_map(|id| world.cities.get(*id)).map(|c| c.population).sum();
+    if city.puppet || production < average || citizens < 12 {
+        return Some(0);
+    }
+    let is_world_wonder = |b: &Id<crate::ruleset::Building>| r.buildings.get(*b).is_some_and(|b| b.is_wonder == Some(true));
+    let taken_by_rivals =
+        world.cities.iter().filter(|(_, c)| c.owner != civ).flat_map(|(_, c)| c.built.iter()).filter(|b| is_world_wonder(b)).count()
+            as i32;
+    let built: std::collections::BTreeSet<_> =
+        world.cities.iter().flat_map(|(_, c)| c.built.iter()).filter(|b| is_world_wonder(b)).collect();
+    let unbuilt = r.buildings.ids().filter(|b| is_world_wonder(b) && !built.contains(b)).count() as i32;
+    if taken_by_rivals == 0 {
+        // No rival has shown its pace yet: allow a generous window.
+        return Some(60);
+    }
+    let every = (world.turn as i32).max(1) / taken_by_rivals;
+    Some((unbuilt * every).clamp(10, 60))
+}
+
+/// How many cities a leader aims for: 3 at Expansion 0, 5 at 5, 7 at 10.
+/// Unciv reads no personality value when training settlers; this is our own
+/// use of the trait it names for exactly this.
+pub fn city_target(leader: crate::world::personality::Leader) -> usize {
+    (Fixed::whole(TARGET_CITIES as i32)
+        * leader.modifier(crate::world::personality::Trait::Expansion, Fixed::permille(400)))
+    .round()
+    .max(1) as usize
+}
+
 /// Whether to declare war on a civ already met.
 ///
 /// Only with a clear advantage and something to take. An AI that declares war
@@ -1394,25 +1607,32 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
     if !world.diplomacy.have_met(civ, other) || !world.diplomacy.can_declare_war(civ, other) {
         return false;
     }
+    use crate::world::personality::Trait;
+    let leader = crate::world::personality::of(world, r, civ);
+    // DiplomacyAutomation.kt:365: a leader with no will to declare war never does.
+    if leader.value(Trait::DeclareWar) == 0 {
+        return false;
+    }
     let (mine, theirs) = (military_strength(world, r, civ), military_strength(world, r, other));
     // How much stronger we must be depends on what we think of them: half
     // again for a neutral, as much as twice for an ally, merely equal for the
     // unforgivable. Unciv adds the same ten-to-minus-ten relationship term to
     // its war motivation (`MotivationToAttackAutomation.getRelationshipModifier`).
-    use crate::world::opinion::RelationshipLevel as L;
-    let needed = match crate::world::opinion::relationship(world, civ, other) {
-        L::Unforgivable => Fixed::ONE,
-        L::Enemy => Fixed::permille(1_250),
-        L::Competitor => Fixed::permille(1_400),
-        L::Neutral => Fixed::permille(1_500),
-        L::Favorable => Fixed::permille(1_600),
-        L::Friend => Fixed::permille(1_750),
-        L::Ally => Fixed::whole(2),
+    let needed = war_ratio_needed(leader, crate::world::opinion::relationship(world, civ, other));
+    let needed = if world.is_legacy_ai(civ) {
+        needed
+    } else if goals::goal(world, r, civ) == Goal::Conquest {
+        (needed - Fixed::permille(CONQUEROR_EDGE)).max(Fixed::permille(900))
+    } else {
+        needed + Fixed::permille(BUILDER_CAUTION)
     };
     if mine < theirs * needed || mine.is_zero() {
         return false;
     }
-    // Something of theirs must be within reach, or the war is a gesture.
+    // Something of theirs must be within reach, or the war is a gesture. How
+    // far counts as reach depends on aggression (`Far away cities` and
+    // `Close cities`, :73-83, both scaled by inverseScaledFocus(Aggressive)).
+    let reach = (Fixed::whole(8) * leader.modifier(Trait::Aggressive, Fixed::permille(500))).floor().max(3) as u32;
     let their_cities: Vec<_> = world.cities.iter().filter(|(_, c)| c.owner == other).map(|(_, c)| c.centre).collect();
     world
         .civ(civ)
@@ -1420,7 +1640,7 @@ pub fn should_declare_war(world: &World, r: &Ruleset, civ: CivId, other: CivId) 
             c.units
                 .iter()
                 .filter_map(|u| world.units.get(*u))
-                .any(|u| their_cities.iter().any(|t| world.grid.distance(u.position, *t) <= 8))
+                .any(|u| their_cities.iter().any(|t| world.grid.distance(u.position, *t) <= reach))
         })
         .unwrap_or(false)
 }
@@ -1451,6 +1671,10 @@ pub fn wants_peace(world: &World, r: &Ruleset, civ: CivId, other: CivId) -> bool
     // Winning clearly: press on.
     if mine > (theirs * Fixed::whole(2)) {
         return false;
+    }
+    // A conqueror that is not losing keeps going far longer.
+    if !world.is_legacy_ai(civ) && mine >= theirs && goals::goal(world, r, civ) == Goal::Conquest {
+        return turns > STALEMATE_LENGTH * 3;
     }
     // A grinding stalemate is worth ending.
     turns > STALEMATE_LENGTH
@@ -1488,6 +1712,32 @@ pub fn military_order(
     }
     if let Some(to) = crate::world::air::paradrop_order(world, r, unit) {
         return Some(UnitOrder::Paradrop(to));
+    }
+
+    // Hurt units look after themselves first (UnitAutomation.automateUnitMoves):
+    // below half health they only retreat or heal (:84), and a unit that can
+    // heal to full where it stands within two turns, with no enemy near,
+    // waits for it (:87).
+    let tactics = !world.is_legacy_ai(civ);
+    if tactics && u.health < 50 {
+        if let Some(order) = retreat_order(world, r, civ, unit).or_else(|| heal_order(world, r, civ, unit)) {
+            return Some(order);
+        }
+    }
+    if tactics && u.health < 100 && heals_here_within(world, r, civ, unit, 2) {
+        return Some(rest_order(world, r, unit));
+    }
+    if tactics {
+        if let Some(order) = attack_order(world, r, civ, unit) {
+            return Some(order);
+        }
+        // After fighting, heal when not badly needed elsewhere (:106).
+        if u.health < 80 {
+            if let Some(order) = heal_order(world, r, civ, unit) {
+                return Some(order);
+            }
+        }
+        return advance_order(world, r, civ, unit).or_else(|| (u.health < 100).then(|| heal_order(world, r, civ, unit)).flatten());
     }
 
     // Use the same target restrictions and range as command execution. Siege
@@ -1535,7 +1785,12 @@ pub fn military_order(
         }
     }
 
-    // At war and nothing to hit? Walk toward their nearest city.
+    advance_order(world, r, civ, unit)
+}
+
+/// At war and nothing to hit? Walk toward their nearest city.
+fn advance_order(world: &World, r: &Ruleset, civ: CivId, unit: Id<crate::world::entities::Unit>) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
     let enemy_cities: Vec<_> = world
         .cities
         .iter()
@@ -1549,6 +1804,217 @@ pub fn military_order(
         .take(3)
         .find_map(|t| crate::world::movement::step_toward(world, r, unit, t))
         .map(UnitOrder::MoveTo)
+}
+
+/// Where a unit may reach this turn and what each target would cost it.
+fn in_reach(world: &World, r: &Ruleset, unit: Id<crate::world::entities::Unit>, tile: TileId) -> bool {
+    let Some(u) = world.units.get(unit) else { return false };
+    let range = crate::world::air::attack_range(world, r, unit);
+    world.grid.distance(u.position, tile) <= range as u32
+        && (!u.is_ranged(r)
+            || crate::world::combat::has_line_of_sight(
+                &world.grid,
+                r,
+                u.position,
+                tile,
+                u.has_unique(r, crate::UniqueType::IndirectFire),
+            ))
+}
+
+/// The best target in reach, by Unciv's valuation (BattleHelper.chooseAttackTarget,
+/// getCityAttackValue, getUnitAttackValue): a city it can take is worth
+/// everything; otherwise a city is worth 100, a siege unit's 100 more and a
+/// ranged one's 10 more, less half its health over 60, and 15 more for every
+/// military unit near it that is at war with its owner (5 less for each at war
+/// with us), so soldiers assault a city together; a unit is worth
+/// `200 - its health + the damage done`. Nothing of 30 or under, and nothing
+/// the attacker would not survive: `damage to attacker < its health`
+/// (BattleHelper.tryAttackNearbyEnemy), judged on the average roll.
+fn attack_order(world: &World, r: &Ruleset, civ: CivId, unit: Id<crate::world::entities::Unit>) -> Option<UnitOrder> {
+    use crate::world::air::Target;
+    let u = world.units.get(unit)?;
+    if u.attacks_left == 0 {
+        return None;
+    }
+    let mean = |range: (i32, i32)| (range.0 + range.1) / 2;
+    let survivable = |target: Target| {
+        let p = crate::world::combat::preview_attack(world, r, unit, target)?;
+        (mean(p.attacker.damage) < i32::from(u.health)).then_some(p)
+    };
+    let cities = world
+        .cities
+        .iter()
+        .filter(|(id, city)| {
+            city.owner != civ
+                && world.diplomacy.at_war(civ, city.owner)
+                && world.visibility.can_see(civ, city.centre)
+                && in_reach(world, r, unit, city.centre)
+                && crate::world::military::may_attack(world, r, unit, Target::City(*id))
+        })
+        .filter_map(|(id, city)| {
+            let p = survivable(Target::City(id))?;
+            let takes = p.capture || (!u.is_ranged(r) && city.health <= mean(p.defender.damage));
+            let value = if takes {
+                10_000
+            } else {
+                let kind = if is_siege(r, u) {
+                    100
+                } else if u.is_ranged(r) {
+                    10
+                } else {
+                    0
+                };
+                let company: i32 = world
+                    .units
+                    .iter()
+                    .filter(|(_, other)| other.is_military(r) && world.grid.distance(other.position, city.centre) <= 2)
+                    .map(|(_, other)| {
+                        let against_us = if world.diplomacy.at_war(other.owner, civ) { -5 } else { 0 };
+                        let against_them = if world.diplomacy.at_war(other.owner, city.owner) { 15 } else { 0 };
+                        against_us + against_them
+                    })
+                    .sum();
+                100 + kind - (city.health - 60) / 2 + company
+            };
+            Some((value, UnitOrder::Assault(id), id.index()))
+        });
+    let units = world
+        .units
+        .iter()
+        .filter(|(id, other)| {
+            other.owner != civ
+                && world.diplomacy.at_war(civ, other.owner)
+                && crate::world::fog::can_see_unit(world, r, civ, *id)
+                && in_reach(world, r, unit, other.position)
+                && crate::world::military::may_attack(world, r, unit, Target::Unit(*id))
+        })
+        .filter_map(|(id, other)| {
+            let p = survivable(Target::Unit(id))?;
+            let value = if other.is_civilian(r) { 50 } else { 200 - i32::from(other.health) + mean(p.defender.damage) };
+            Some((value, UnitOrder::Attack(id), id.index() + 1_000_000))
+        });
+    cities
+        .chain(units)
+        .filter(|(value, ..)| *value > 30)
+        .max_by(|a, b| a.0.cmp(&b.0).then(b.2.cmp(&a.2)))
+        .map(|(_, order, _)| order)
+}
+
+/// A ranged unit with a bonus against cities (`BaseUnit.isProbablySiegeUnit`).
+fn is_siege(r: &Ruleset, u: &crate::world::entities::Unit) -> bool {
+    u.is_ranged(r)
+        && r.units.get(u.base).is_some_and(|b| {
+            b.uniques.iter().any(|x| {
+                x.unique_type() == Some(crate::UniqueType::Strength)
+                    && x.params.first().and_then(|p| p.trim_start_matches('+').parse::<i32>().ok()).unwrap_or(0) > 0
+                    && x.conditionals.iter().any(|c| c.unique_type() == Some(crate::UniqueType::ConditionalVsCity))
+            })
+        })
+}
+
+/// Distance to the nearest at-war military unit this civ can see, looking no
+/// further than `max` (ThreatManager.getDistanceToClosestEnemyUnit).
+fn enemy_distance(world: &World, r: &Ruleset, civ: CivId, tile: TileId, max: u32) -> u32 {
+    world
+        .units
+        .iter()
+        .filter(|(id, other)| {
+            other.owner != civ
+                && other.is_military(r)
+                && world.diplomacy.at_war(civ, other.owner)
+                && crate::world::fog::can_see_unit(world, r, civ, *id)
+        })
+        .map(|(_, other)| world.grid.distance(tile, other.position))
+        .filter(|d| *d <= max)
+        .min()
+        .unwrap_or(max + 1)
+}
+
+/// Within reach of a visible enemy's attack (ThreatManager.getDangerousTiles).
+fn dangerous(world: &World, r: &Ruleset, civ: CivId, tile: TileId) -> bool {
+    world.units.iter().any(|(id, other)| {
+        other.owner != civ
+            && other.is_military(r)
+            && world.diplomacy.at_war(civ, other.owner)
+            && crate::world::fog::can_see_unit(world, r, civ, id)
+            && world.grid.distance(tile, other.position) <= crate::world::air::attack_range(world, r, id).max(1) as u32
+    })
+}
+
+/// Fortify if the unit can, otherwise just stay: either way it rests.
+fn rest_order(world: &World, r: &Ruleset, unit: Id<crate::world::entities::Unit>) -> UnitOrder {
+    let can_fortify = world.units.get(unit).is_some_and(|u| {
+        u.is_military(r)
+            && u.is_land_unit(r)
+            && !u.embarked
+            && !u.fortified
+            && !u.has_unique(r, crate::UniqueType::NoDefensiveTerrainBonus)
+    });
+    if can_fortify {
+        UnitOrder::Fortify
+    } else {
+        UnitOrder::Hold
+    }
+}
+
+/// UnitAutomation.canUnitHealInTurnsOnCurrentTile: no enemy within 3 (or a
+/// solid city under it) and enough healing here to be whole in `turns`.
+fn heals_here_within(world: &World, r: &Ruleset, civ: CivId, unit: Id<crate::world::entities::Unit>, turns: i32) -> bool {
+    let Some(u) = world.units.get(unit) else { return false };
+    let city_safe = world.cities.iter().any(|(_, c)| c.centre == u.position && c.health > 50);
+    if !city_safe && enemy_distance(world, r, civ, u.position, 3) <= 3 {
+        return false;
+    }
+    let needed = (100 - i32::from(u.health) + turns - 1) / turns;
+    needed <= crate::world::healing::heal_rank(world, r, unit, u.position)
+}
+
+/// UnitAutomation.tryHealUnit: rest here if this is a safe place to heal,
+/// otherwise go to the reachable tile out of danger that heals best.
+fn heal_order(world: &World, r: &Ruleset, civ: CivId, unit: Id<crate::world::entities::Unit>) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    let here = u.position;
+    if !dangerous(world, r, civ, here) && heals_here_within(world, r, civ, unit, 3) {
+        return Some(rest_order(world, r, unit));
+    }
+    let rank_here = crate::world::healing::heal_rank(world, r, unit, here);
+    let best = crate::world::movement::reachable_for_unit(world, r, unit)
+        .into_keys()
+        .filter(|t| *t != here && !dangerous(world, r, civ, *t))
+        .map(|t| (crate::world::healing::heal_rank(world, r, unit, t), t))
+        .max_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+    match best {
+        Some((rank, to)) if rank > rank_here => Some(UnitOrder::MoveTo(to)),
+        _ => Some(rest_order(world, r, unit)),
+    }
+}
+
+/// UnitAutomation.tryRetreat: with an enemy within three tiles, step to a
+/// reachable tile further from it, preferring the way home.
+fn retreat_order(world: &World, r: &Ruleset, civ: CivId, unit: Id<crate::world::entities::Unit>) -> Option<UnitOrder> {
+    let u = world.units.get(unit)?;
+    if !u.is_military(r) || u.is_air(r) {
+        return None;
+    }
+    let ours = enemy_distance(world, r, civ, u.position, 4);
+    if ours > 3 {
+        return None;
+    }
+    let home = world
+        .civ(civ)?
+        .cities
+        .iter()
+        .filter_map(|c| world.cities.get(*c))
+        .map(|c| c.centre)
+        .min_by_key(|t| (world.grid.distance(u.position, *t), t.0))
+        .filter(|t| world.grid.distance(u.position, *t) < 20);
+    let mut options: Vec<TileId> =
+        crate::world::movement::reachable_for_unit(world, r, unit).into_keys().filter(|t| *t != u.position).collect();
+    match home {
+        Some(home) => options.sort_by_key(|t| (world.grid.distance(*t, home), t.0)),
+        None => options.sort_by_key(|t| (std::cmp::Reverse(enemy_distance(world, r, civ, *t, 3)), t.0)),
+    }
+    options.into_iter().find(|t| enemy_distance(world, r, civ, *t, 4) > ours).map(UnitOrder::MoveTo)
 }
 
 /// What a unit is told to do. Deliberately small: the turn loop applies these,
@@ -1567,6 +2033,10 @@ pub enum UnitOrder {
     /// A great person's one act, where it stands.
     GreatPerson(crate::world::great_person_actions::Action),
     Religious(crate::world::religious_units::ReligiousAction),
+    /// Dig in where it stands, to heal (`fortifyIfCan`).
+    Fortify,
+    /// Stay put this turn: resting heals too, for units that cannot fortify.
+    Hold,
 }
 
 /// Which policy to adopt, if one is affordable.
@@ -1579,7 +2049,19 @@ pub fn choose_policy(world: &World, r: &Ruleset, civ: CivId, m: PolicyModifiers)
     if c.culture_stored < cost && c.pending_rewards.free_policies == 0 {
         return None;
     }
-    r.policies.ids().filter(|p| is_adoptable(world, r, civ, *p).is_ok()).min()
+    // Every policy costs the same, so "cheapest" was the lowest id. A leader
+    // prefers its favourite branches (`priorities`, PolicyManager.kt:52).
+    let leader = crate::world::personality::of(world, r, civ);
+    let priority = |p: Id<Policy>| {
+        r.policies[p]
+            .branch
+            .and_then(|b| r.policy_branches.name_of(b))
+            .map_or(0, |name| leader.branch_priority(name))
+    };
+    r.policies
+        .ids()
+        .filter(|p| is_adoptable(world, r, civ, *p).is_ok())
+        .min_by(|a, b| priority(*b).cmp(&priority(*a)).then(a.cmp(b)))
 }
 
 /// What a city should work toward, given what its owner lacks.
@@ -1610,6 +2092,34 @@ mod tests {
         g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
         let nation = r.nations.ids().next().unwrap();
         World::new(g, vec![Civilization::new(CivId(0), nation, false)])
+    }
+
+    #[test]
+    fn wonders_wait_for_a_real_economy_and_a_race_that_can_be_won() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.civs.push(Civilization::new(CivId(1), r.nations.ids().nth(1).unwrap(), true));
+        let home = w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(4, 4).unwrap()));
+        w.cities.get_mut(home).unwrap().population = 4;
+        let city = w.cities.get(home).unwrap().clone();
+        // A small empire builds no wonders at all (ConstructionAutomation.kt:262).
+        assert_eq!(wonder_window(&w, &r, CivId(0), &city, 10), Some(0));
+        w.cities.get_mut(home).unwrap().population = 12;
+        let city = w.cities.get(home).unwrap().clone();
+        // Nobody has shown a pace yet: a generous window, for the empire's
+        // best producer (a city below its empire's average waits).
+        assert_eq!(wonder_window(&w, &r, CivId(0), &city, 1_000), Some(60));
+        // A rival taking wonders fast shortens it.
+        let rival = w.found_city_in(&r, City::found("Athens", CivId(1), w.grid.id_at(12, 12).unwrap()));
+        let wonders: Vec<_> = r.buildings.iter().filter(|(_, b)| b.is_wonder == Some(true)).map(|(id, _)| id).collect();
+        w.cities.get_mut(rival).unwrap().built.extend(wonders.iter().take(wonders.len() - 3).copied());
+        w.turn = 40;
+        let fast = wonder_window(&w, &r, CivId(0), &city, 1_000).unwrap();
+        assert!(fast < 60, "{fast}");
+        assert_eq!(fast, 10, "three left, one taken every turn or so: the floor");
+        // The old AI is not restricted.
+        w.civ_mut(CivId(0)).unwrap().legacy_ai = true;
+        assert_eq!(wonder_window(&w, &r, CivId(0), &city, 10), None);
     }
 
     #[test]

@@ -45,6 +45,36 @@ pub struct PlayerView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walls: Option<Vec<WallView>>,
+    /// Cities this player took this turn and has not yet decided about: a
+    /// decision to put to the player. Absent when none waits.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_captures: Option<Vec<PendingCaptureView>>,
+}
+
+/// A city just taken, waiting for its new owner to say what becomes of it.
+/// It is a puppet meanwhile, and stays one if the round closes unanswered.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+pub struct PendingCaptureView {
+    pub city: crate::protocol::EntityRef,
+    /// The answers allowed now, in the order Unciv offers them. Keep and
+    /// annex always; liberate only for a city whose founder is someone else
+    /// who can take it back; raze unless `CityStateView.razeRefusal` says why.
+    pub choices: Vec<CaptureChoice>,
+}
+
+/// One answer to a capture, and the action that gives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureChoice {
+    /// `liberateCity`: return it to its founder.
+    Liberate,
+    /// `annex`: govern it yourself.
+    Annex,
+    /// `keepPuppet`: leave it to its governor.
+    Keep,
+    /// `raze`: burn it, a citizen a turn.
+    Raze,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -454,6 +484,10 @@ pub struct CityView {
     pub tiles: Vec<u16>,
     /// Own cities only.
     pub queue: Option<Vec<String>>,
+    /// Own cities only: the same queue as typed references, front first.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_refs: Option<Vec<crate::protocol::ConstructionRef>>,
     pub food_stored: Option<i32>,
     pub production_stored: Option<i32>,
     pub production_overflow: Option<i32>,
@@ -485,6 +519,32 @@ pub struct CityStateView {
     pub production_conversion: Option<crate::protocol::ProductionConversion>,
     pub food_per_turn: i32,
     pub production_per_turn: i32,
+    /// It holds its owner's palace.
+    #[serde(default)]
+    pub capital: bool,
+    /// The civ that founded it.
+    #[serde(default)]
+    pub founder: u8,
+    /// Who held it before its owner, if it has changed hands.
+    #[serde(default)]
+    pub previous_owner: Option<u8>,
+    /// The first city its founder built.
+    #[serde(default)]
+    pub original_capital: bool,
+    /// Whether `raze` would be accepted.
+    #[serde(default)]
+    pub may_raze: bool,
+    /// Why `raze` would be refused, when it would.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raze_refusal: Option<crate::queries::Refusal>,
+    /// What its governor works the citizens for (`setCityFocus`).
+    #[serde(default)]
+    pub focus: crate::protocol::CityFocus,
+    /// Tiles pinned with `lockTile`, in the order they were pinned; each is
+    /// also in `worked`.
+    #[serde(default)]
+    pub locked_tiles: Vec<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -654,6 +714,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             population: c.population,
             tiles: c.tiles.iter().map(|t| t.0).collect(),
             queue: None,
+            queue_refs: None,
             food_stored: None,
             production_stored: None,
             production_overflow: None,
@@ -682,7 +743,16 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     })
                     .collect(),
             ),
+            queue_refs: Some(c.queue.iter().map(|q| construction_ref(*q)).collect()),
             own: Some(CityStateView {
+                capital: c.uniques.has(civ_core::UniqueType::IndicatesCapital),
+                founder: c.founder.0,
+                previous_owner: c.previous_owner.map(|p| p.0),
+                original_capital: c.original_capital,
+                may_raze: civ_core::world::conquest::can_raze(w, id).is_ok(),
+                raze_refusal: civ_core::world::conquest::can_raze(w, id).err().and_then(crate::queries::Refusal::raze),
+                focus: crate::protocol::CityFocus::of(c.focus),
+                locked_tiles: c.locked_tiles.iter().map(|t| t.0).collect(),
                 religion: CityReligionView {
                     majority: c.faith.majority(c.population).map(|id| id.0),
                     majority_pantheon: c.faith.majority_pantheon(c.population).map(|id| id.0),
@@ -761,14 +831,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                 c.production_progress
                     .iter()
                     .map(|(what, stored)| ProductionProgressView {
-                        construction: match what {
-                            Construction::Building(id) => {
-                                crate::protocol::ConstructionRef::Building { id: id.index() }
-                            }
-                            Construction::Unit(id) => {
-                                crate::protocol::ConstructionRef::Unit { id: id.index() }
-                            }
-                        },
+                        construction: construction_ref(*what),
                         stored: *stored,
                     })
                     .collect(),
@@ -818,7 +881,28 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
         });
     }
     civs.sort_by_key(|c| c.id);
+    let pending_captures: Vec<_> = w
+        .cities
+        .iter()
+        .filter(|(_, c)| c.owner == me && c.capture_pending)
+        .map(|(id, _)| PendingCaptureView {
+            city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+            choices: civ_core::world::conquest::capture_choices(w, id)
+                .into_iter()
+                .map(|choice| {
+                    use civ_core::world::conquest::CaptureChoice as Core;
+                    match choice {
+                        Core::Liberate => CaptureChoice::Liberate,
+                        Core::Annex => CaptureChoice::Annex,
+                        Core::Keep => CaptureChoice::Keep,
+                        Core::Raze => CaptureChoice::Raze,
+                    }
+                })
+                .collect(),
+        })
+        .collect();
     PlayerView {
+        pending_captures: (!pending_captures.is_empty()).then_some(pending_captures),
         slice: w.slice.as_ref().map(|s| SliceView {
             name: s.name.clone(),
             first_era: s.first_era,
@@ -953,6 +1037,13 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
         units,
         cities,
         civs,
+    }
+}
+
+pub(crate) fn construction_ref(what: Construction) -> crate::protocol::ConstructionRef {
+    match what {
+        Construction::Building(id) => crate::protocol::ConstructionRef::Building { id: id.index() },
+        Construction::Unit(id) => crate::protocol::ConstructionRef::Unit { id: id.index() },
     }
 }
 

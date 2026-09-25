@@ -19,6 +19,14 @@
 //! starving city "pick a tile that gives exactly as much Food as we need to Not
 //! Starve that also has other good yields instead of always picking the Highest
 //! Food tile".
+//!
+//! A player may give a city a focus and pin tiles (`City.cityAIFocus`,
+//! `City.lockedTiles`). A city with either is managed: every turn its citizens
+//! are placed afresh, pins first, the rest by the focus
+//! ([`reassign_citizens_for`]), as Unciv's `reassignPopulation` does. A city
+//! with neither keeps the player's own picks and places only idle citizens.
+
+use std::collections::BTreeSet;
 
 use crate::ruleset::Ruleset;
 use crate::stats::{Fixed, Stat, Stats};
@@ -43,6 +51,7 @@ pub fn ranking_weights() -> Stats {
 const STARVATION_URGENCY: i32 = 8;
 
 /// What a city is being managed for.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CityFocus {
     #[default]
@@ -144,7 +153,7 @@ pub fn rank_for_city_work(yields: Stats, city: &City, focus: CityFocus, surplus_
 ///
 /// Ties break on [`TileId`], so two machines reach the same answer.
 pub fn rank_available_tiles(grid: &TileGrid, r: &Ruleset, city: &City, focus: CityFocus) -> Vec<(TileId, Ranking)> {
-    rank_tiles(grid, r, city, focus, None)
+    rank_tiles(grid, r, city, focus, None, None)
 }
 
 fn observed_yield(
@@ -156,17 +165,20 @@ fn observed_yield(
     observer.map_or_else(|| tile_yield(grid, r, tile), |civ| crate::world::yields::tile_yield_for(grid, r, tile, civ))
 }
 
+/// `taken`, when given, holds tiles another of the owner's cities works or
+/// stands on; they are never ranked.
 fn rank_tiles(
     grid: &TileGrid,
     r: &Ruleset,
     city: &City,
     focus: CityFocus,
     observer: Option<&crate::world::entities::Civilization>,
+    taken: Option<&BTreeSet<TileId>>,
 ) -> Vec<(TileId, Ranking)> {
     let surplus = crate::world::city::food_surplus(grid, r, city);
     let mut ranked: Vec<(TileId, Ranking)> = workable_tiles(grid, city)
         .into_iter()
-        .filter(|t| !city.worked.contains(t))
+        .filter(|t| !city.worked.contains(t) && taken.is_none_or(|taken| !taken.contains(t)))
         .map(|t| (t, rank_for_city_work(observed_yield(grid, r, t, observer), city, focus, surplus)))
         .collect();
     ranked.sort_by(|a, b| b.1.score.cmp(&a.1.score).then(a.0.cmp(&b.0)));
@@ -189,7 +201,7 @@ pub fn best_tile_for_new_citizen(grid: &TileGrid, r: &Ruleset, city: &City, focu
 /// fits neither stays unemployed. `bonus` is what every specialist here gets
 /// from uniques, which a city alone cannot see.
 pub fn assign_idle_citizens(grid: &TileGrid, r: &Ruleset, city: &mut City, focus: CityFocus, bonus: Stats) {
-    assign_idle(grid, r, city, focus, bonus, None)
+    assign_idle(grid, r, city, focus, bonus, None, None)
 }
 
 pub fn assign_idle_citizens_for(
@@ -200,7 +212,7 @@ pub fn assign_idle_citizens_for(
     bonus: Stats,
     civ: &crate::world::entities::Civilization,
 ) {
-    assign_idle(grid, r, city, focus, bonus, Some(civ))
+    assign_idle(grid, r, city, focus, bonus, Some(civ), None)
 }
 
 fn assign_idle(
@@ -210,11 +222,12 @@ fn assign_idle(
     focus: CityFocus,
     bonus: Stats,
     observer: Option<&crate::world::entities::Civilization>,
+    taken: Option<&BTreeSet<TileId>>,
 ) {
     let slots = crate::world::specialists::slots(r, city);
     while city.idle_population() > 0 {
         let surplus = crate::world::city::food_surplus(grid, r, city);
-        let tile = rank_tiles(grid, r, city, focus, observer).into_iter().next();
+        let tile = rank_tiles(grid, r, city, focus, observer, taken).into_iter().next();
         let job = slots
             .iter()
             .filter(|(id, max)| city.specialists.get(id).copied().unwrap_or(0) < **max)
@@ -241,14 +254,81 @@ fn assign_idle(
 /// the citizen it lost.
 /// Put a city's idle citizens to work, leaving the ones already placed where they are. Human cities call
 /// this when they are founded and when they grow, as Unciv's governor does.
+/// A city its owner manages (a focus or a pinned tile) places them by its
+/// focus and around the tiles its sister cities work.
 pub fn place_idle_citizens(world: &mut crate::world::World, r: &Ruleset, id: crate::arena::Id<City>) {
     let Some(mut city) = world.cities.get(id).cloned() else { return };
     let Some(civ) = world.civ(city.owner) else { return };
     let bonus = crate::world::specialists::bonus_per_specialist(world, r, id);
-    assign_idle_citizens_for(&world.grid, r, &mut city, CityFocus::None, bonus, civ);
+    let taken = city.is_managed().then(|| taken_by_sisters(world, id, |_, c| c.worked.clone()));
+    let focus = city.focus;
+    assign_idle(&world.grid, r, &mut city, focus, bonus, Some(civ), taken.as_ref());
     if let Some(c) = world.cities.get_mut(id) {
         c.worked = city.worked;
         c.specialists = city.specialists;
+    }
+}
+
+/// Tiles a city may not take because another city of its owner stands on
+/// them or works them. `worked` says which tiles a sister city works; the
+/// turn loop passes what it has already planned for those planned first.
+pub fn taken_by_sisters(
+    world: &crate::world::World,
+    id: crate::arena::Id<City>,
+    worked: impl Fn(crate::arena::Id<City>, &City) -> Vec<TileId>,
+) -> BTreeSet<TileId> {
+    let Some(owner) = world.cities.get(id).map(|c| c.owner) else { return BTreeSet::new() };
+    world
+        .cities
+        .iter()
+        .filter(|(other, c)| *other != id && c.owner == owner)
+        .flat_map(|(other, c)| worked(other, c).into_iter().chain(std::iter::once(c.centre)))
+        .collect()
+}
+
+/// Work every citizen afresh (`City.reassignPopulation`): the pinned tiles
+/// first, then one citizen at a time to the best open tile or slot for the
+/// focus, as [`assign_idle_citizens`] does. Specialists already in their
+/// slots stay there. A pin that can no longer be worked — the tile was lost,
+/// or the city shrank below its pins — is dropped: a pinned tile is always a
+/// worked one, as in Unciv, where `stopWorkingTile` unpins.
+pub fn reassign_citizens_for(
+    grid: &TileGrid,
+    r: &Ruleset,
+    city: &mut City,
+    focus: CityFocus,
+    bonus: Stats,
+    civ: &crate::world::entities::Civilization,
+    taken: &BTreeSet<TileId>,
+) {
+    let workable = workable_tiles(grid, city);
+    let mut pinned: Vec<TileId> = Vec::new();
+    for t in &city.locked_tiles {
+        if workable.contains(t) && !taken.contains(t) && !pinned.contains(t) {
+            pinned.push(*t);
+        }
+    }
+    pinned.truncate(city.population as usize);
+    city.worked = pinned;
+    release_extra(grid, r, city, focus, bonus, Some(civ));
+    assign_idle(grid, r, city, focus, bonus, Some(civ), Some(taken));
+    let worked = city.worked.clone();
+    city.locked_tiles.retain(|t| worked.contains(t));
+}
+
+/// [`reassign_citizens_for`] on a city in the world, now, as its owner
+/// changes its focus or its pins.
+pub fn reassign_citizens(world: &mut crate::world::World, r: &Ruleset, id: crate::arena::Id<City>) {
+    let Some(mut city) = world.cities.get(id).cloned() else { return };
+    let Some(civ) = world.civ(city.owner) else { return };
+    let bonus = crate::world::specialists::bonus_per_specialist(world, r, id);
+    let taken = taken_by_sisters(world, id, |_, c| c.worked.clone());
+    let focus = city.focus;
+    reassign_citizens_for(&world.grid, r, &mut city, focus, bonus, civ, &taken);
+    if let Some(c) = world.cities.get_mut(id) {
+        c.worked = city.worked;
+        c.specialists = city.specialists;
+        c.locked_tiles = city.locked_tiles;
     }
 }
 
@@ -286,28 +366,35 @@ fn release_extra(
 
     while city.worked.len() as u32 + crate::world::specialists::count(city) > city.population {
         let surplus = crate::world::city::food_surplus(grid, r, city);
+        // A pinned tile goes last, after every other tile and every
+        // specialist (Unciv ranks it ten points up).
         let worst_tile = city
             .worked
             .iter()
-            .map(|t| (rank_for_city_work(observed_yield(grid, r, *t, observer), city, focus, surplus).score, *t))
-            .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+            .map(|t| {
+                let pinned = city.locked_tiles.contains(t);
+                (pinned, rank_for_city_work(observed_yield(grid, r, *t, observer), city, focus, surplus).score, *t)
+            })
+            .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(&a.2)));
         let worst_job = city
             .specialists
             .keys()
             .map(|id| (crate::world::specialists::rank(r, city, *id, bonus, focus, surplus), *id))
             .min_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
         match (worst_tile, worst_job) {
-            (Some((tv, t)), Some((jv, _))) if tv < jv => city.worked.retain(|w| *w != t),
+            (Some((false, tv, t)), Some((jv, _))) if tv < jv => city.worked.retain(|w| *w != t),
             (_, Some((_, id))) => {
                 if let Some(n) = city.specialists.get_mut(&id) {
                     *n -= 1;
                 }
                 city.specialists.retain(|_, n| *n > 0);
             }
-            (Some((_, t)), None) => city.worked.retain(|w| *w != t),
+            (Some((_, _, t)), None) => city.worked.retain(|w| *w != t),
             (None, None) => break,
         }
     }
+    let worked = city.worked.clone();
+    city.locked_tiles.retain(|t| worked.contains(t));
 }
 
 /// Current food balance including consumption, for callers that have a city

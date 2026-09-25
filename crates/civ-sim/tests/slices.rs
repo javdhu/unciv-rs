@@ -6,16 +6,16 @@ use civ_core::world::research::{can_research, ResearchRejection};
 use civ_sim::{advance, content, new_game_in, player_view, tables, Settings};
 
 fn rules() -> Ruleset {
-    let mut sources: Vec<(String, String)> = content::SOURCES
+    let sources: Vec<(String, String)> = content::SOURCES
         .iter()
         .chain(content::BLITZ_SOURCES)
         .map(|(f, t)| (f.to_string(), t.to_string()))
         .collect();
-    sources.push((
-        "ModOptions.json".into(),
-        include_str!("data/slices-ModOptions.json").into(),
-    ));
     Ruleset::from_sources(&sources).unwrap()
+}
+
+fn victories(w: &civ_core::world::World, r: &Ruleset) -> Vec<String> {
+    w.endgame.enabled_victories.as_ref().unwrap().iter().map(|v| r.victories[*v].name.clone()).collect()
 }
 
 fn settings(slice: &str) -> Settings {
@@ -151,4 +151,88 @@ fn rule_tables_offer_the_slices_and_what_each_can_be_won_by() {
         new_game_in(&settings("Renaissance"), &[], rules()).is_err(),
         "an unknown slice is refused"
     );
+}
+
+#[test]
+fn a_slice_begins_in_its_own_era_with_the_namesake_tech() {
+    for (slice, era, opener) in [("Crossroads", "Age of Paper", "Paper"), ("Engines", "Age of Steam", "Steam Power")] {
+        let (w, r, me) = new_game_in(&settings(slice), &[], rules()).unwrap();
+        let tech = r.technologies.id(opener).unwrap();
+        for c in w.civs.iter().filter(|c| c.is_major()) {
+            assert!(c.techs.contains(&tech), "{slice}: {opener} is known from the start");
+        }
+        assert_eq!(
+            civ_core::world::policies::era_number(&w, &r, me),
+            r.eras.by_name(era).unwrap().era_number,
+            "{slice} begins in the {era}"
+        );
+        // only the namesake: the rest of the era is still to research
+        let known_in_era = w.civ(me).unwrap().techs.iter().filter(|t| era_of(&r, **t) == r.eras.by_name(era).unwrap().era_number).count();
+        assert_eq!(known_in_era, 1, "{slice}");
+    }
+    let (w, r, me) = new_game_in(&settings("Cradles"), &[], rules()).unwrap();
+    let first = r.eras.values().map(|e| e.era_number).min().unwrap();
+    assert_eq!(civ_core::world::policies::era_number(&w, &r, me), first, "Cradles starts as a full game does");
+}
+
+#[test]
+fn a_victory_gated_past_the_slice_is_not_offered() {
+    let r = rules();
+    let sail = r.victory_knobs.trade_share_from_era.as_deref().expect("base sets tradeShareFromEra");
+    assert_eq!(sail, "Age of Sail");
+    let (w, r, _) = new_game_in(&settings("Cradles"), &[], rules()).unwrap();
+    let names = victories(&w, &r);
+    assert!(!names.iter().any(|n| n == "Reserve Currency"), "trade counts only from the Age of Sail: {names:?}");
+    assert!(names.iter().any(|n| n == "Lingua Franca"), "{names:?}");
+    for slice in ["Crossroads", "Engines"] {
+        let (w, r, _) = new_game_in(&settings(slice), &[], rules()).unwrap();
+        assert!(victories(&w, &r).iter().any(|n| n == "Reserve Currency"), "{slice}");
+    }
+    let rc = r.victories.by_name("Reserve Currency").unwrap();
+    assert_eq!(civ_core::world::slices::victory_era(&r, rc), r.eras.by_name("Age of Sail").unwrap().era_number);
+}
+
+#[test]
+fn a_slice_sets_its_own_pace_and_victory_knobs() {
+    use civ_core::world::{slices, TurnModifiers};
+    let r = rules();
+    let full = TurnModifiers::for_speed(&r, r.speeds.id("Blitz")).science.speed;
+    for (slice, percent) in [("Cradles", 100), ("Crossroads", 31), ("Engines", 19)] {
+        let (w, r, _) = new_game_in(&settings(slice), &[], rules()).unwrap();
+        assert_eq!(r.slices.iter().find(|s| s.name == slice).unwrap().science_cost_percent, percent);
+        let speed = TurnModifiers::for_world(&w, &r).science.speed;
+        assert_eq!(speed, slices::science_cost(&w, &r, full), "{slice}");
+        if percent == 100 {
+            assert_eq!(speed, full, "{slice} keeps the full game's tech costs");
+        } else {
+            assert!(speed < full, "{slice} researches faster than the full game");
+        }
+    }
+    // knob keys on a slice entry replace ModOptions' own while it plays, and only then
+    let (w, r, _) = new_game_in(&settings("Cradles"), &[], rules()).unwrap();
+    let knobs = slices::victory_knobs(&w, &r);
+    assert_eq!(knobs.influence_floor, 800);
+    assert_eq!(knobs.trade_share_from_era, r.victory_knobs.trade_share_from_era, "unset keys keep the ruleset's");
+    assert_ne!(r.victory_knobs.influence_floor, 800);
+    let (w, r, _) = new_game_in(&Settings { slice: None, ..settings("Cradles") }, &[], rules()).unwrap();
+    assert_eq!(slices::victory_knobs(&w, &r), &r.victory_knobs);
+}
+
+#[test]
+fn a_slice_that_counts_trade_from_its_start_offers_reserve_currency() {
+    let mut sources: Vec<(String, String)> = content::SOURCES
+        .iter()
+        .chain(content::BLITZ_SOURCES)
+        .map(|(f, t)| (f.to_string(), t.to_string()))
+        .collect();
+    sources.push((
+        "ModOptions.json".into(),
+        r#"{"slices": [{"name": "Cradles", "eras": ["Age of Bronze", "Age of Iron"], "tradeShareFromEra": "Age of Bronze"},
+                       {"name": "Bad", "eras": ["Age of Bronze"], "tradeShareFromEra": "Age of Gold"}]}"#
+            .into(),
+    ));
+    let r = Ruleset::from_sources(&sources).unwrap();
+    let (w, r, _) = new_game_in(&settings("Cradles"), &[], r).unwrap();
+    assert!(victories(&w, &r).iter().any(|n| n == "Reserve Currency"), "{:?}", victories(&w, &r));
+    assert!(r.civgame_problems().iter().any(|p| p.contains("slice Bad: tradeShareFromEra")), "{:?}", r.civgame_problems());
 }

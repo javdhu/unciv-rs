@@ -60,6 +60,9 @@ pub struct Ruleset {
     pub quests: Registry<Quest>,
     /// What ancient ruins may give. See `world::ruins`.
     pub ruin_rewards: Registry<RuinReward>,
+    /// AI leaders' traits (`Personalities.json`), named by `Nation.personality`.
+    /// See `world::personality`.
+    pub personalities: Registry<Personality>,
     /// Rules that apply to everyone, from `GlobalUniques.json`.
     ///
     /// This is where Civ keeps the consequences of unhappiness — the growth and
@@ -229,6 +232,7 @@ impl Ruleset {
                     }
                 }
                 "Specialists.json" => flat(&mut r.specialists, &doc, Specialist::from_json),
+                "Personalities.json" => flat(&mut r.personalities, &doc, Personality::from_json),
                 "VictoryTypes.json" => flat(&mut r.victories, &doc, Victory::from_json),
                 "CityStateTypes.json" => flat(&mut r.city_state_types, &doc, CityStateType::from_json),
                 "Quests.json" => flat(&mut r.quests, &doc, Quest::from_json),
@@ -307,6 +311,12 @@ impl Ruleset {
     /// `Terrain.kt:212`). These fields are invisible to schema inference —
     /// nothing in the json mentions them — so they are established here.
     fn derive(&mut self) {
+        // A slice's victory knobs: the ruleset's, with its own keys over them.
+        let knobs = self.victory_knobs.clone();
+        for slice in &mut self.slices {
+            slice.settle_knobs(&knobs);
+        }
+
         // An era's number is its position in Eras.json.
         let era_ids: Vec<_> = self.eras.ids().collect();
         for (i, id) in era_ids.into_iter().enumerate() {

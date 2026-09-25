@@ -376,6 +376,8 @@ pub fn new_game_in(s: &Settings, humans: &[u8], rules: Ruleset) -> Result<(World
                     })
                     .map(|(id, _)| id),
             )
+            // and its first era's namesake tech, so it begins in that era
+            .chain(slice.iter().flat_map(|slice| civ_core::world::slices::opening_techs(&rules, slice)))
             .chain(
                 world
                     .civ(civ)

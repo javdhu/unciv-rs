@@ -387,7 +387,7 @@ pub fn purchase(
     m: CostModifiers,
 ) -> Result<i64, PurchaseRejection> {
     let science = crate::world::research::ScienceModifiers {
-        speed: world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier),
+        speed: crate::world::slices::science_cost(world, r, world.speed_rules(r, m.speed).map_or(m.speed, |s| s.science_cost_modifier)),
         ..Default::default()
     };
     purchase_with_science(world, r, city, what, stat, m, science)

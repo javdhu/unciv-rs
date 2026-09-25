@@ -520,7 +520,9 @@ impl Session {
             | Action::SetProductionConversion { .. }
             | Action::SetAvoidGrowth { .. }
             | Action::SetResearch { .. }
-            | Action::AssignCitizens { .. } => !room,
+            | Action::AssignCitizens { .. }
+            | Action::SetCityFocus { .. }
+            | Action::LockTile { .. } => !room,
             _ => false,
         };
         if events.iter().any(|e| matches!(e, E::Battle { .. } | E::UnitDamaged { .. } | E::CityCaptured { .. })) {
@@ -1044,6 +1046,16 @@ impl Session {
                     .map(|s| Ok((registry(&r.specialists, s.specialist)?, s.count)))
                     .collect::<Result<_, RejectionCode>>()?,
             },
+            Action::SetCityFocus { city: c, focus } => Command::SetCityFocus {
+                city: city(*c)?,
+                focus: focus.engine(),
+            },
+            Action::LockTile { city: c, tile: t, locked } => Command::LockTile {
+                city: city(*c)?,
+                tile: tile(*t)?,
+                locked: *locked,
+            },
+            Action::KeepPuppet { city: c } => Command::KeepPuppet { city: city(*c)? },
             Action::GreatPerson { unit: u, action } => Command::GreatPerson {
                 unit: unit(*u)?,
                 action: match action {

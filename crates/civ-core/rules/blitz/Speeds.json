@@ -1,14 +1,14 @@
 [
     // Blitz plays a slice of eras at the full game's pace (docs/CONTENT.md, Spine). Until the engine can start a
     // game in a later era, the slice is Cradles: the Age of Bronze and the Age of Iron, 60 turns from 4000 BCE to
-    // 500 CE. Costs are Standard's; only the turn count and the length of deals change.
+    // 500 CE. Costs and growth are Standard's; only the turn count and the length of deals change.
     {
         "name": "Blitz",
         "modifier": 1.0,
         "productionCostModifier": 1.0,
         "goldCostModifier": 1.0,
         "scienceCostModifier": 1.0,
-        "cultureCostModifier": 1.0,
+        "cultureCostModifier": 0.25,
         "faithCostModifier": 1.0,
         "improvementBuildLengthModifier": 1.0,
         "barbarianModifier": 1.0,
@@ -18,6 +18,8 @@
         "religiousPressureAdjacentCity": 6,
         "peaceDealDuration": 5,
         "dealDuration": 15,
+        "growthModifier": 0.3,
+        "greatPersonModifier": 0.12,
         "startYear": -4000,
         "turns": [
             {"yearsPerTurn": 93.33, "untilTurn": 30},

@@ -265,6 +265,21 @@ fn exact_score_ties_use_civilization_order_and_disabled_victories_stay_disabled(
 }
 
 #[test]
+fn a_city_state_ahead_on_score_does_not_block_the_time_victory() {
+    let (mut r, mut w) = setup(2);
+    // civ.game's rule (`chronicleAmongLivingMajors`); G&K ranks every civ.
+    r.chronicle_among_living_majors = true;
+    w.civ_mut(CivId(1)).unwrap().city_state_type = r.city_state_types.ids().next();
+    w.civ_mut(CivId(1)).unwrap().techs.extend(r.technologies.ids().take(20));
+    assert!(w.civ(CivId(1)).unwrap().is_city_state());
+    assert_eq!(victory::score_leader(&w, &r), Some(CivId(0)));
+    w.endgame.max_turns = 1;
+    w.turn = 1;
+    only(&mut w, &r, "Time");
+    assert_eq!(victory::winner(&w, &r), Some((CivId(0), r.victories.id("Time").unwrap())));
+}
+
+#[test]
 fn switching_research_preserves_separate_work_and_overflow_is_consumed_once() {
     use civ_core::world::research::{apply_science_in, invested, tech_cost_in};
     let (r, mut w) = setup(2);

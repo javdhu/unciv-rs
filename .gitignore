@@ -1,6 +1,8 @@
 .DS_Store
 node_modules/
 web/dist
+# the smoke run's shots and report (web/tools/smoke)
+web/.smoke/
 target
 __pycache__/
 # output of `npm --prefix web run art -- bake`
@@ -15,3 +17,5 @@ assets/pack/
 content/leaders/**/*.png
 content/leaders/**/*.jpg
 content/leaders/**/*.mp4
+# agent worktrees (parallel lanes)
+.claude/worktrees/

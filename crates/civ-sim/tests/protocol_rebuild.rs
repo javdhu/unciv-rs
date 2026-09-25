@@ -34,6 +34,18 @@ fn rule_tables_list_the_faiths_with_their_traits() {
 }
 
 #[test]
+fn rule_tables_give_each_specialist_its_yields_and_great_person_points() {
+    let t = tables(&content::load().unwrap());
+    let scientist = t.specialists.iter().find(|s| s.name == "Scientist").unwrap();
+    assert_eq!(scientist.yields.science, 3);
+    assert_eq!(scientist.yields.food + scientist.yields.production + scientist.yields.gold, 0);
+    let [points] = scientist.great_person_points.as_slice() else { panic!("one kind of great person") };
+    assert_eq!(points.points, 3);
+    assert_eq!(t.units.iter().find(|u| u.id == points.unit).unwrap().name, "Scholar");
+    assert!(t.specialists.iter().all(|s| !s.great_person_points.is_empty()));
+}
+
+#[test]
 fn effects_read_with_civ_games_names() {
     let t = tables(&content::load().unwrap());
     let texts = t
@@ -205,5 +217,42 @@ fn construction_choices_agree_with_the_queue_check() {
             == civ_sim::protocol::ConstructionRef::Building {
                 id: charter.index()
             }));
+    }
+}
+
+/// Every effect the rule tables send reads as prose: no brackets, braces or
+/// angle-bracketed conditionals, nothing meant only for the engine.
+#[test]
+fn every_effect_reads_as_prose() {
+    let t = tables(&content::load().unwrap());
+    let effects: Vec<&String> = t
+        .buildings
+        .iter()
+        .flat_map(|b| &b.effects)
+        .chain(t.beliefs.iter().flat_map(|b| &b.effects))
+        .chain(
+            t.nations
+                .iter()
+                .flat_map(|n| n.leaders.iter().flatten())
+                .flat_map(|l| &l.effects),
+        )
+        .collect();
+    assert!(
+        effects.len() > 200,
+        "the base effects are all here: {}",
+        effects.len()
+    );
+    for text in effects {
+        assert!(
+            !text
+                .chars()
+                .any(|c| matches!(c, '[' | ']' | '{' | '}' | '<' | '>')),
+            "{text:?}"
+        );
+        assert!(
+            !text.contains("Suppress warning") && !text.contains("  ") && text.trim() == text,
+            "{text:?}"
+        );
+        assert!(!text.is_empty());
     }
 }

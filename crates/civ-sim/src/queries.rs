@@ -95,6 +95,42 @@ pub struct BeliefRequirement {
     pub count: u32,
 }
 
+/// Why an option shown to the player would be refused now, so the choice can
+/// say so. Only reasons the player's own knowledge supports: a refusal that
+/// could depend on something unseen carries no reason, and the action itself
+/// stays the authority.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum Refusal {
+    /// A puppet's governor decides this; annex the city first.
+    Puppet,
+    /// The city is still resisting its conqueror.
+    Resistance,
+    /// It can be bought here but not built.
+    PurchaseOnly,
+    /// A unit of the same kind already stands in the city.
+    Occupied,
+    /// The treasury holds too little.
+    CannotAfford,
+    /// A founder's first city is never razed.
+    OriginalCapital,
+    /// A religion's holy city is never razed.
+    HolyCity,
+}
+
+impl Refusal {
+    pub fn raze(why: civ_core::world::conquest::RazeRejection) -> Option<Self> {
+        use civ_core::world::conquest::RazeRejection as R;
+        match why {
+            R::OriginalCapital => Some(Self::OriginalCapital),
+            R::HolyCity => Some(Self::HolyCity),
+            R::NoSuchCity => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 pub struct PriceQuote {
     /// Exact decimal amount, or unknown when a conditional price could depend
@@ -102,6 +138,10 @@ pub struct PriceQuote {
     pub amount: Option<String>,
     pub affordable: Option<bool>,
     pub availability: Availability,
+    /// Why `purchase` would refuse it now, when a known price says it would.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<Refusal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -119,6 +159,11 @@ pub struct ConstructionChoice {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sites: Option<SiteChoice>,
+    /// Why `setProduction` would refuse it now: `puppet`, `resistance` or
+    /// `purchaseOnly`. Absent when it may be queued.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<Refusal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -128,6 +173,10 @@ pub struct SiteChoice {
     pub selected: Option<u16>,
     /// A world wonder takes its tile (nobody works it again).
     pub takes_tile: bool,
+    /// The engine's own pick, whatever the player chose: the suggestion.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -171,6 +220,11 @@ pub struct WorkableTile {
 pub struct SpecialistSlot {
     pub specialist: u32,
     pub slots: u32,
+    /// What one specialist of this kind yields here: its own yields
+    /// (`RuleTables.specialists`) plus what the empire's rules add to every
+    /// specialist, before the city's percentage bonuses.
+    #[serde(default)]
+    pub yields: crate::rules::Yields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -182,6 +236,10 @@ pub struct SellBuildingChoice {
 pub struct TilePurchaseChoice {
     pub tile: u16,
     pub gold: String,
+    /// The treasury holds the price. Tiles the city could buy but cannot
+    /// afford are listed too, with `false`.
+    #[serde(default)]
+    pub affordable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -586,6 +644,8 @@ pub fn city_options(
         entity(&world.cities, index, generation).filter(|(_, city)| city.owner == civ)?;
     let owner = world.civ(civ)?;
     let modifiers = civ_core::world::TurnModifiers::for_world(world, r).costs; // Core derives current city/empire context.
+    let puppet_may_buy = city.uniques.has(UniqueType::MayBuyConstructionsInPuppets)
+        || owner.uniques.has(UniqueType::MayBuyConstructionsInPuppets);
     let mut choices = Vec::new();
     for what in r
         .buildings
@@ -639,6 +699,15 @@ pub fn city_options(
         {
             continue;
         }
+        // A bought unit needs its kind's place in the city centre free, as
+        // `purchase` checks; only our own units stand there.
+        let occupied = match what {
+            Construction::Unit(base) => r.units.get(base).is_some_and(|row| {
+                let prospective = civ_core::world::Unit::new(base, civ, city.centre, row.movement);
+                civ_core::world::movement::is_tile_occupied_for(world, r, city.centre, &prospective)
+            }),
+            Construction::Building(_) => false,
+        };
         let has_conditional_price = own.iter().any(conditional_price)
             || owner.uniques.all().any(conditional_price)
             || city.uniques.all().any(conditional_price);
@@ -648,6 +717,7 @@ pub fn city_options(
                     amount: None,
                     affordable: None,
                     availability: Availability::NeedsConfirmation,
+                    refusal: None,
                 });
             }
             let amount = purchase::cost(world, r, id, what, stat, modifiers)?;
@@ -656,10 +726,22 @@ pub fn city_options(
                 Stat::Faith => owner.faith.stored,
                 _ => 0,
             };
+            let affordable = i64::from(balance) >= amount;
             Some(PriceQuote {
                 amount: Some(amount.to_string()),
-                affordable: Some(i64::from(balance) >= amount),
+                affordable: Some(affordable),
                 availability: Availability::NeedsConfirmation,
+                refusal: if city.puppet && !puppet_may_buy {
+                    Some(Refusal::Puppet)
+                } else if city.resistance > 0 {
+                    Some(Refusal::Resistance)
+                } else if occupied {
+                    Some(Refusal::Occupied)
+                } else if !affordable {
+                    Some(Refusal::CannotAfford)
+                } else {
+                    None
+                },
             })
         };
         let gold = quote(Stat::Gold);
@@ -695,8 +777,19 @@ pub fn city_options(
                     tiles: civ_core::world::placement::valid_sites(world, r, id, b).into_iter().map(|t| t.0).collect(),
                     selected: civ_core::world::placement::site_for(world, r, id, b).map(|t| t.0),
                     takes_tile: civ_core::world::placement::takes_tile(r, b),
+                    best: civ_core::world::placement::best_site(world, r, id, b).map(|t| t.0),
                 }),
                 _ => None,
+            },
+            // The queue refuses a puppet's and a resisting city's work first.
+            refusal: if city.puppet {
+                Some(Refusal::Puppet)
+            } else if city.resistance > 0 {
+                Some(Refusal::Resistance)
+            } else if local.is_err() {
+                Some(Refusal::PurchaseOnly)
+            } else {
+                None
             },
         });
     }
@@ -748,10 +841,17 @@ pub fn city_options(
         } else {
             Vec::new()
         },
-        specialist_slots: civ_core::world::specialists::slots(r, city)
-            .into_iter()
-            .map(|(specialist, slots)| SpecialistSlot { specialist: specialist.index(), slots })
-            .collect(),
+        specialist_slots: {
+            let bonus = civ_core::world::specialists::bonus_per_specialist(world, r, id);
+            civ_core::world::specialists::slots(r, city)
+                .into_iter()
+                .map(|(specialist, slots)| SpecialistSlot {
+                    specialist: specialist.index(),
+                    slots,
+                    yields: crate::rules::Yields::of(civ_core::world::specialists::base_stats(r, specialist) + bonus),
+                })
+                .collect()
+        },
         sellable_buildings: r
             .buildings
             .ids()
@@ -764,24 +864,21 @@ pub fn city_options(
                 })
             })
             .collect(),
+        // Priced as `buyTile` charges, with every tile it would accept but
+        // for the gold.
         purchasable_tiles: world
             .grid
             .within(city.centre, 3)
             .into_iter()
             .filter(|tile| world.visibility.can_see(civ, *tile))
             .filter_map(|tile| {
-                civ_core::world::expansion::buy_tile(
-                    &mut world.clone(),
-                    r,
-                    id,
-                    tile,
-                    civ_core::stats::Fixed::ONE,
-                )
-                .ok()
-                .map(|gold| TilePurchaseChoice {
-                    tile: tile.0,
-                    gold: gold.to_string(),
-                })
+                civ_core::world::expansion::tile_price(world, r, id, tile, modifiers.gold_cost)
+                    .ok()
+                    .map(|gold| TilePurchaseChoice {
+                        tile: tile.0,
+                        gold: gold.to_string(),
+                        affordable: i64::from(owner.gold) >= gold,
+                    })
             })
             .collect(),
     })

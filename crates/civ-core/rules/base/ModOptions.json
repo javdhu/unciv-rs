@@ -1,4 +1,13 @@
 {
     "isBaseRuleset": true,
-    "defaultDifficulty": "Tutor"
+    "defaultDifficulty": "Tutor",
+    // Reserve currencies begin with the Spanish dollar.
+    "tradeShareFromEra": "Age of Sail",
+    "chronicleAmongLivingMajors": true,
+    // Influence and trade tuned for 240 turns with growthModifier and cultureCostModifier (Speeds.json):
+    // 12 AI games end 42% The Chronicle, 25% Reserve Currency, 17% Lingua Franca, 17% Conquest, all after turn 170.
+    "influencePercent": 55,
+    "influenceFloor": 2500,
+    "worldTradePerMajor": 30,
+    "worldTradePerMajorPerEra": 6
 }

@@ -248,13 +248,26 @@ fn belief_pair(world: &World, r: &Ruleset, civ: CivId, enhancing: bool) -> Optio
     let required = belief_requirements(world, r, civ, enhancing);
     let mut available = available_belief_choices(world, r);
     let mut chosen = Vec::new();
+    // ReligionAutomation.chooseBeliefs: the best rated of each kind, one at a
+    // time. The classic AI took the first of each.
+    let rated = !world.is_legacy_ai(civ);
+    let take = |available: &mut Vec<Id<Belief>>, kind: Option<&str>| -> Option<Id<Belief>> {
+        let fits: Vec<_> =
+            available.iter().copied().filter(|id| kind.is_none_or(|k| r.beliefs[*id].r#type == k)).collect();
+        let pick = if rated { crate::world::belief_rating::best(world, r, civ, &fits)? } else { *fits.first()? };
+        available.retain(|id| *id != pick);
+        Some(pick)
+    };
     for (kind, n) in required.iter().filter(|(kind, _)| kind.as_str() != "Any") {
         for _ in 0..*n {
-            let at = available.iter().position(|id| r.beliefs[*id].r#type == *kind)?;
-            chosen.push(available.remove(at));
+            chosen.push(take(&mut available, Some(kind.as_str()))?);
         }
     }
-    chosen.extend(available.into_iter().take(required.get("Any").copied().unwrap_or(0) as usize));
+    for _ in 0..required.get("Any").copied().unwrap_or(0) {
+        if let Some(pick) = take(&mut available, None) {
+            chosen.push(pick);
+        }
+    }
     Some(chosen)
 }
 

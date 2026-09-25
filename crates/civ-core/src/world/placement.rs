@@ -172,6 +172,7 @@ pub fn place(world: &mut World, r: &Ruleset, city: Id<City>, building: Id<Buildi
         });
         for (_, c) in world.cities.iter_mut() {
             c.worked.retain(|t| *t != tile);
+            c.locked_tiles.retain(|t| *t != tile);
         }
     }
     world.grid.placed.insert(tile, Placed { building, takes_tile: takes, canal: is_canal(r, building) });

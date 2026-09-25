@@ -240,9 +240,10 @@ impl std::fmt::Display for BuyTileRejection {
 
 impl std::error::Error for BuyTileRejection {}
 
-/// Buy a tile with gold, returning what it cost (`canBuyTile`, `buyTile`).
-pub fn buy_tile(
-    world: &mut World,
+/// What buying this tile would cost, if the city may buy it at all — every
+/// check [`buy_tile`] makes except whether the treasury holds enough.
+pub fn tile_price(
+    world: &World,
     r: &Ruleset,
     city: Id<City>,
     tile: TileId,
@@ -261,8 +262,19 @@ pub fn buy_tile(
     if !world.grid.neighbours(tile).any(|n| c.tiles.binary_search(&n).is_ok()) {
         return Err(BuyTileRejection::NotContiguous);
     }
-    let owner = c.owner;
-    let cost = gold_cost_of_tile(world, r, city, tile, gold_speed).ok_or(BuyTileRejection::NoSuchCity)?;
+    gold_cost_of_tile(world, r, city, tile, gold_speed).ok_or(BuyTileRejection::NoSuchCity)
+}
+
+/// Buy a tile with gold, returning what it cost (`canBuyTile`, `buyTile`).
+pub fn buy_tile(
+    world: &mut World,
+    r: &Ruleset,
+    city: Id<City>,
+    tile: TileId,
+    gold_speed: Fixed,
+) -> Result<i64, BuyTileRejection> {
+    let cost = tile_price(world, r, city, tile, gold_speed)?;
+    let owner = world.cities.get(city).ok_or(BuyTileRejection::NoSuchCity)?.owner;
     let gold = world.civ(owner).map_or(0, |c| c.gold);
     if (gold as i64) < cost {
         return Err(BuyTileRejection::NotEnoughGold { cost, gold });

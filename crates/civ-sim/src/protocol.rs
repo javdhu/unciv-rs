@@ -35,6 +35,59 @@ impl ProductionConversion {
     }
 }
 
+/// What a city's governor works its citizens for (Unciv's `CityFocus`). A
+/// single yield counts three times; the two growth foci count their yield
+/// twice and food one and a half times. `balanced` is Unciv's default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum CityFocus {
+    #[default]
+    Balanced,
+    Food,
+    Production,
+    Gold,
+    Science,
+    Culture,
+    Faith,
+    GoldGrowth,
+    ProductionGrowth,
+}
+
+impl CityFocus {
+    pub fn engine(self) -> civ_core::world::assignment::CityFocus {
+        use civ_core::stats::Stat;
+        use civ_core::world::assignment::CityFocus as Core;
+        match self {
+            Self::Balanced => Core::None,
+            Self::Food => Core::Single(Stat::Food),
+            Self::Production => Core::Single(Stat::Production),
+            Self::Gold => Core::Single(Stat::Gold),
+            Self::Science => Core::Single(Stat::Science),
+            Self::Culture => Core::Single(Stat::Culture),
+            Self::Faith => Core::Single(Stat::Faith),
+            Self::GoldGrowth => Core::GoldGrowth,
+            Self::ProductionGrowth => Core::ProductionGrowth,
+        }
+    }
+
+    /// The wire name of an engine focus; one no player can choose reads as balanced.
+    pub fn of(focus: civ_core::world::assignment::CityFocus) -> Self {
+        use civ_core::stats::Stat;
+        use civ_core::world::assignment::CityFocus as Core;
+        match focus {
+            Core::Single(Stat::Food) => Self::Food,
+            Core::Single(Stat::Production) => Self::Production,
+            Core::Single(Stat::Gold) => Self::Gold,
+            Core::Single(Stat::Science) => Self::Science,
+            Core::Single(Stat::Culture) => Self::Culture,
+            Core::Single(Stat::Faith) => Self::Faith,
+            Core::GoldGrowth => Self::GoldGrowth,
+            Core::ProductionGrowth => Self::ProductionGrowth,
+            Core::None | Core::Single(_) => Self::Balanced,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Currency {
@@ -267,6 +320,32 @@ pub enum Action {
         city: EntityRef,
         worked: Vec<u16>,
         specialists: Vec<SpecialistAssignment>,
+    },
+    /// Choose what the city's governor works its citizens for. They are
+    /// placed afresh at once (pinned tiles first, specialists too), and the
+    /// unpinned ones again every turn while the focus is not `balanced` or
+    /// the city has a pin. Refused for a puppet.
+    SetCityFocus {
+        city: EntityRef,
+        focus: CityFocus,
+    },
+    /// Pin one of the city's workable tiles so it is always worked
+    /// (`locked: true`), or unpin it. Either way the citizens are placed
+    /// afresh around the pins at once, and every turn after while the city
+    /// has a pin or a focus. At most one pin per citizen; refused for a
+    /// puppet, a tile another of your cities works, and unpinning a tile
+    /// that is not pinned.
+    LockTile {
+        city: EntityRef,
+        tile: u16,
+        locked: bool,
+    },
+    /// Keep a city just taken as a puppet, answering its capture (one of
+    /// `PlayerView.pendingCaptures`). `annex`, `raze` and `liberateCity`
+    /// answer it too; an unanswered capture stays a puppet when the round
+    /// closes.
+    KeepPuppet {
+        city: EntityRef,
     },
     GreatPerson {
         unit: EntityRef,

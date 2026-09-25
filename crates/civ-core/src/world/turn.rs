@@ -499,7 +499,9 @@ impl TurnModifiers<'_> {
 
     /// The modifiers of the world's own speed.
     pub fn for_world(world: &World, r: &Ruleset) -> Self {
-        Self::for_speed(r, world.speed)
+        let mut m = Self::for_speed(r, world.speed);
+        m.science.speed = crate::world::slices::science_cost(world, r, m.science.speed);
+        m
     }
 }
 
@@ -623,10 +625,26 @@ fn plan_civ(
         let mut hypothetical = city.clone();
         let bonus = crate::world::specialists::bonus_per_specialist(world, r, city_id);
         // A puppet's governor works its citizens for gold (`CityTurnManager.startTurn`).
-        let focus = if city.puppet { CityFocus::Single(crate::stats::Stat::Gold) } else { focus };
-        crate::world::assignment::release_extra_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
-        // Every governor places idle citizens; a human player's own picks stay where they are.
-        crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+        let focus = if city.puppet {
+            CityFocus::Single(crate::stats::Stat::Gold)
+        } else if city.focus != CityFocus::None {
+            city.focus
+        } else {
+            focus
+        };
+        if city.is_managed() && !city.puppet {
+            // A focus or a pin: every citizen is placed afresh, around the
+            // tiles the civ's other cities work or were just given.
+            let taken = crate::world::assignment::taken_by_sisters(world, city_id, |id, other| {
+                let planned = plan.assignments.iter().find(|(planned, _)| *planned == id);
+                planned.map_or_else(|| other.worked.clone(), |(_, worked)| worked.clone())
+            });
+            crate::world::assignment::reassign_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c, &taken);
+        } else {
+            crate::world::assignment::release_extra_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+            // Every governor places idle citizens; a human player's own picks stay where they are.
+            crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
+        }
         let golden = crate::world::golden_age::is_golden(world, civ);
         let base_output =
             crate::world::city::city_yield_with_happiness(world, r, &hypothetical, golden, Some(plan.happiness));
@@ -1118,6 +1136,12 @@ fn apply_plan_inner(
                     }
                 }
             }
+            UnitOrder::Fortify | UnitOrder::Hold => {
+                if let Some(u) = world.units.get_mut(*unit) {
+                    u.fortified |= *order == UnitOrder::Fortify;
+                    u.movement_left = Fixed::ZERO;
+                }
+            }
             UnitOrder::Improve(improvement) => {
                 if let Some(tile) = world.units.get(*unit).map(|u| u.position) {
                     if let Ok(crate::world::improvements::WorkEvent::Finished { improvement, .. }) =
@@ -1185,6 +1209,8 @@ fn apply_plan_inner(
         }
         if let Some(city) = world.cities.get_mut(*city_id) {
             city.worked = worked.clone();
+            // A pin the city can no longer work lapses with the tile.
+            city.locked_tiles.retain(|t| worked.contains(t));
         }
     }
     for (city_id, specialists) in &plan.specialists {
@@ -1605,16 +1631,27 @@ fn finish_round_inner(
         .map(|id| plan_civ_turn(world, r, id, focus, mods))
         .collect();
     let mut events = Vec::new();
-    for plan in &plans {
-        for command in ai_commands(world, r, plan, mods) {
-            let seen = replay.as_ref().map(|_| human_sight(world));
-            if let Ok(outcome) = crate::world::commands::execute_with(world, r, plan.civ, command, mods) {
-                if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
-                    if !outcome.events.is_empty() {
-                        replay.push(ReplayStep { actor: plan.civ, events: outcome.events.clone(), seen });
-                    }
+    let mut run = |world: &mut World, civ: CivId, command| {
+        let seen = replay.as_ref().map(|_| human_sight(world));
+        if let Ok(outcome) = crate::world::commands::execute_with(world, r, civ, command, mods) {
+            if let (Some(replay), Some(seen)) = (replay.as_deref_mut(), seen) {
+                if !outcome.events.is_empty() {
+                    replay.push(ReplayStep { actor: civ, events: outcome.events.clone(), seen });
                 }
-                events.extend(outcome.events);
+            }
+            events.extend(outcome.events);
+        }
+    };
+    for plan in &plans {
+        let live = !world.is_legacy_ai(plan.civ);
+        for command in ai_commands(world, r, plan, mods, live) {
+            run(world, plan.civ, command);
+        }
+        // The army decides on the map as it now stands (docs/AI.md, level 1).
+        if live {
+            let mut tactics = crate::world::tactics::Tactics::new(world, r, plan.civ);
+            while let Some(command) = tactics.next(world, r) {
+                run(world, plan.civ, command);
             }
         }
     }
@@ -1634,11 +1671,14 @@ fn finish_round_inner(
     events
 }
 
+/// The plan as commands. With `live_tactics`, orders for the units
+/// [`crate::world::tactics`] commands are left out; it decides them later.
 fn ai_commands(
     world: &World,
     r: &Ruleset,
     plan: &TurnPlan,
     mods: TurnModifiers,
+    live_tactics: bool,
 ) -> Vec<crate::world::commands::Command> {
     use crate::world::commands::{AttackTarget, Command};
     let mut commands = Vec::new();
@@ -1668,6 +1708,9 @@ fn ai_commands(
         }
     }
     for (unit, order) in &plan.orders {
+        if live_tactics && crate::world::tactics::takes(world, r, *unit) {
+            continue;
+        }
         if matches!(order, UnitOrder::Attack(_) | UnitOrder::Assault(_))
             && world.units.get(*unit).is_some_and(|u| u.has_unique(r, crate::UniqueType::MustSetUp) && !u.set_up)
         {
@@ -1694,6 +1737,8 @@ fn ai_commands(
                 Command::FoundCity { unit: *unit, name }
             }
             UnitOrder::Improve(improvement) => Command::Improve { unit: *unit, improvement: *improvement },
+            UnitOrder::Fortify => Command::Fortify { unit: *unit },
+            UnitOrder::Hold => Command::SkipUnit { unit: *unit },
             UnitOrder::GreatPerson(action) => Command::GreatPerson { unit: *unit, action: *action },
             UnitOrder::Religious(action) => Command::Religious { unit: *unit, action: *action },
         });
@@ -1910,6 +1955,8 @@ fn finish_automatic(
     for (_, city) in world.cities.iter_mut() {
         city.attacks_left = 1;
         city.sold_building_this_turn = false;
+        // An unanswered capture stays the puppet it already is.
+        city.capture_pending = false;
     }
     update_visibility_in(world, r);
     crate::world::fog::capture_observations(world, r);
@@ -3091,41 +3138,57 @@ mod warfare {
     /// loop rather than by calling combat directly.
     #[test]
     fn armies_at_war_actually_fight() {
-        let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
-        let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
-        g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
-        let nation = r.nations.ids().next().unwrap();
-        let mut w =
-            World::new(g, vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)]);
-        w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
-        w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
+        let duel = |classic: bool| {
+            let r = Ruleset::load_dir("rules/gods-and-kings").unwrap().unwrap();
+            let mut g = TileGrid::new(12, 12, r.terrain("Grassland").unwrap());
+            g.owner.iter_mut().for_each(|o| *o = Some(CivId(0)));
+            let nation = r.nations.ids().next().unwrap();
+            let mut w = World::new(
+                g,
+                vec![Civilization::new(CivId(0), nation, true), Civilization::new(CivId(1), nation, true)],
+            );
+            w.found_city_in(&r, City::found("Rome", CivId(0), w.grid.id_at(3, 3).unwrap()));
+            w.found_city_in(&r, City::found("Carthage", CivId(1), w.grid.id_at(9, 9).unwrap()));
+            if classic {
+                for c in [CivId(0), CivId(1)] { w.civ_mut(c).unwrap().legacy_ai = true; }
+            }
 
-        let warrior = r.unit("Warrior").unwrap();
-        let movement = r.units.get(warrior).unwrap().movement;
-        let a = w.grid.id_at(6, 6).unwrap();
-        let b = w.grid.neighbours(a).next().unwrap();
-        w.place_unit(Unit::new(warrior, CivId(0), a, movement));
-        w.place_unit(Unit::new(warrior, CivId(1), b, movement));
+            let warrior = r.unit("Warrior").unwrap();
+            let movement = r.units.get(warrior).unwrap().movement;
+            let a = w.grid.id_at(6, 6).unwrap();
+            let b = w.grid.neighbours(a).next().unwrap();
+            w.place_unit(Unit::new(warrior, CivId(0), a, movement));
+            w.place_unit(Unit::new(warrior, CivId(1), b, movement));
 
-        w.diplomacy.meet(CivId(0), CivId(1));
-        w.diplomacy.declare_war(CivId(0), CivId(1));
+            w.diplomacy.meet(CivId(0), CivId(1));
+            w.diplomacy.declare_war(CivId(0), CivId(1));
 
-        let prince = r.difficulties.by_name("Prince");
+            let prince = r.difficulties.by_name("Prince");
 
-        let mut battles = 0;
-        let mut deaths = 0;
-        for _ in 0..30 {
-            for e in
-                advance_turn(&mut w, &r, CityFocus::None, TurnModifiers { difficulty: prince, ..Default::default() })
-            {
-                if let TurnEvent::Battle { attacker_died, defender_died, .. } = e {
-                    battles += 1;
-                    deaths += attacker_died as u32 + defender_died as u32;
+            let mut battles = 0;
+            let mut deaths = 0;
+            for _ in 0..30 {
+                for e in advance_turn(
+                    &mut w,
+                    &r,
+                    CityFocus::None,
+                    TurnModifiers { difficulty: prince, ..Default::default() },
+                ) {
+                    if let TurnEvent::Battle { attacker_died, defender_died, .. } = e {
+                        battles += 1;
+                        deaths += attacker_died as u32 + defender_died as u32;
+                    }
                 }
             }
-        }
-        println!("{battles} battles, {deaths} units destroyed");
+            println!("classic={classic}: {battles} battles, {deaths} units destroyed");
+            (battles, deaths)
+        };
+        // The AI pulls a beaten soldier back to heal (UnitAutomation.tryRetreat),
+        // so a lone duel on open ground need not end in a death.
+        let (battles, _) = duel(false);
         assert!(battles > 0, "adjacent enemies at war should fight");
-        assert!(deaths > 0, "and someone should eventually lose");
+        // Without those tactics they fight on until one falls.
+        let (battles, deaths) = duel(true);
+        assert!(battles > 0 && deaths > 0, "and someone should eventually lose");
     }
 }

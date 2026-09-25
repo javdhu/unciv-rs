@@ -1771,3 +1771,280 @@ fn choose_site_reaches_the_engine_and_is_refused_for_a_building_that_stands_nowh
     let t = s.stage_command(0, req).unwrap();
     assert!(matches!(t.receipt.result, CommandStatus::Rejected { .. }));
 }
+
+#[test]
+fn a_player_chooses_where_a_wonder_stands_and_it_is_built_there() {
+    let s = session();
+    let settler = own_unit(&s, 0, true);
+    let mut s = apply(
+        s,
+        0,
+        "found",
+        Action::FoundCity {
+            unit: settler,
+            name: "First city".into(),
+        },
+    );
+    let city = s.world.civs[0].cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    for t in s.world.grid.within(centre, 2) {
+        s.world.claim_tile(city, t);
+    }
+    let temple = s.rules.buildings.id("Temple of Artemis").unwrap();
+    let techs: Vec<_> = s.rules.technologies.ids().collect();
+    s.world.civs[0].techs.extend(techs);
+    s.world.civs[0].gold = 100_000;
+    let city_ref = EntityRef {
+        id: city.index(),
+        gen: city.generation(),
+    };
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+    let choice = options
+        .choices
+        .iter()
+        .find(|c| c.construction == ConstructionRef::Building { id: temple.index() })
+        .expect("the Temple of Artemis is offered");
+    let sites = choice.sites.as_ref().expect("a wonder stands on a tile");
+    assert!(sites.takes_tile && sites.tiles.len() > 1);
+    let best = sites.selected.unwrap();
+    let other = *sites.tiles.iter().find(|t| **t != best).unwrap();
+
+    let s = apply(
+        s,
+        0,
+        "site",
+        Action::ChooseSite {
+            city: city_ref,
+            building: temple.index(),
+            tile: other,
+        },
+    );
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+    let choice = options
+        .choices
+        .iter()
+        .find(|c| c.construction == ConstructionRef::Building { id: temple.index() })
+        .unwrap();
+    assert_eq!(choice.sites.as_ref().unwrap().selected, Some(other), "the choice is remembered");
+    let mut s = apply(
+        s,
+        0,
+        "queue",
+        Action::SetProduction {
+            city: city_ref,
+            queue: vec![ConstructionRef::Building { id: temple.index() }],
+        },
+    );
+    // Its production arrives all at once.
+    let costs = TurnModifiers::for_world(&s.world, &s.rules).costs;
+    civ_core::world::construction::apply_production_in(&mut s.world, &s.rules, city, 1_000_000, costs).unwrap();
+    assert!(s.world.cities.get(city).unwrap().built.contains(&temple));
+    // As the end of a round does, before the next update is drawn.
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    assert_eq!(civ_core::world::placement::standing(&s.world, city, temple), Some(TileId(other)));
+    let view = crate::view::player_view(&s.world, &s.rules, CivId(0));
+    let placed = view.tiles.iter().find(|t| t.id == other).and_then(|t| t.placed.as_ref());
+    assert!(placed.is_some_and(|p| p.building == temple.index() && p.wonder), "the view shows it: {placed:?}");
+}
+
+fn city_ref(id: Id<civ_core::world::City>) -> EntityRef {
+    EntityRef { id: id.index(), gen: id.generation() }
+}
+fn city_view(s: &Session, seat: u8, id: Id<civ_core::world::City>) -> Option<crate::view::CityView> {
+    s.current_update(seat).unwrap().view.cities.into_iter().find(|c| c.id == id.index() && c.gen == id.generation())
+}
+
+#[test]
+fn a_city_focus_and_pins_are_actions_and_part_of_the_own_city_view() {
+    use crate::protocol::CityFocus as Focus;
+    let solo = Session::new(Settings { majors: 2, city_states: 0, ..Settings::default() }, "focus".into(), vec![0]);
+    let s = found_capital(solo.unwrap(), 0);
+    let city = s.world.civs[0].cities[0];
+    let c = city_view(&s, 0, city).unwrap();
+    assert_eq!(c.queue_refs, Some(Vec::new()));
+    let own = c.own.unwrap();
+    assert!(own.capital && own.original_capital && !own.may_raze);
+    assert_eq!(own.raze_refusal, Some(crate::queries::Refusal::OriginalCapital));
+    assert_eq!((own.founder, own.previous_owner), (0, None));
+    assert_eq!(own.focus, Focus::Balanced);
+    assert!(own.locked_tiles.is_empty());
+    let theirs = crate::view::player_view(&s.world, &s.rules, CivId(1));
+    let seen = theirs.cities.iter().find(|c| c.id == city.index());
+    assert!(seen.is_none_or(|c| c.own.is_none() && c.queue_refs.is_none()), "not for foreign eyes");
+
+    let s = apply(s, 0, "focus", Action::SetCityFocus { city: city_ref(city), focus: Focus::Production });
+    assert_eq!(city_view(&s, 0, city).unwrap().own.unwrap().focus, Focus::Production);
+    assert_eq!(s.world.cities.get(city).unwrap().focus, Focus::Production.engine());
+    let options = crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+    let tile = options.workable_tiles.iter().find(|t| !t.worked && !t.taken).unwrap().tile;
+    let s = apply(s, 0, "pin", Action::LockTile { city: city_ref(city), tile, locked: true });
+    let own = city_view(&s, 0, city).unwrap().own.unwrap();
+    assert_eq!(own.locked_tiles, vec![tile]);
+    assert!(own.worked.contains(&tile));
+    // Solo, a pin comes off with an undo, like any citizen change.
+    let s = apply(s, 0, "unpin", Action::Undo);
+    assert!(city_view(&s, 0, city).unwrap().own.unwrap().locked_tiles.is_empty());
+
+    // The queue is typed as well as named.
+    let unit = options
+        .choices
+        .iter()
+        .find(|c| matches!(c.construction, ConstructionRef::Unit { .. }) && c.refusal.is_none())
+        .unwrap()
+        .construction
+        .clone();
+    let s = apply(s, 0, "build", Action::SetProduction { city: city_ref(city), queue: vec![unit.clone()] });
+    let c = city_view(&s, 0, city).unwrap();
+    assert_eq!(c.queue_refs, Some(vec![unit]));
+    assert_eq!(c.queue.map(|q| q.len()), Some(1));
+    s.verify_replay().unwrap();
+}
+
+#[test]
+fn a_captured_city_waits_for_its_new_owners_answer() {
+    use crate::view::{CaptureChoice, PendingCaptureView};
+    let mut s = session();
+    for seat in [0, 1] {
+        s = found_capital(s, seat);
+    }
+    clear_barbarians(&mut s);
+    // A second city of theirs, far from both capitals, with a free tile beside it.
+    let free = |s: &Session, t: TileId| {
+        s.world.grid.owner[t.0 as usize].is_none()
+            && s.world.units.iter().all(|(_, u)| u.position != t)
+            && s.world.cities.iter().all(|(_, c)| s.world.grid.distance(c.centre, t) > 3)
+    };
+    let (site, stand) = s
+        .world
+        .grid
+        .ids()
+        .filter(|t| free(&s, *t))
+        .find_map(|t| s.world.grid.neighbours(t).find(|n| free(&s, *n)).map(|n| (t, n)))
+        .unwrap();
+    for t in [site, stand] {
+        s.world.grid.terrain[t.0 as usize] = s.rules.terrain("Grassland").unwrap();
+        s.world.grid.features[t.0 as usize].clear();
+    }
+    let veii = s.world.found_city_in(&s.rules, civ_core::world::City::found("Veii", CivId(1), site));
+    s.world.claim_tile(veii, site);
+    let c = s.world.cities.get_mut(veii).unwrap();
+    c.health = 1;
+    c.population = 3;
+    let (attacker, warrior) = warrior_of(&s, 0);
+    s.world.units.get_mut(attacker).unwrap().position = stand;
+    s.world.diplomacy.declare_war(CivId(0), CivId(1));
+    civ_core::world::turn::update_visibility(&mut s.world);
+    civ_core::world::fog::capture_observations(&mut s.world, &s.rules);
+    s.refresh(&[], None).unwrap();
+    assert!(s.current_update(0).unwrap().view.pending_captures.is_none());
+
+    let s = apply(s, 0, "take", Action::Attack { unit: warrior, target: AttackTarget::City { city: city_ref(veii) } });
+    assert_eq!(s.world.cities.get(veii).unwrap().owner, CivId(0));
+    assert_eq!(
+        s.current_update(0).unwrap().view.pending_captures,
+        Some(vec![PendingCaptureView {
+            city: city_ref(veii),
+            choices: vec![CaptureChoice::Annex, CaptureChoice::Keep, CaptureChoice::Raze],
+        }])
+    );
+    let own = city_view(&s, 0, veii).unwrap().own.unwrap();
+    assert!(own.puppet && own.may_raze && !own.capital && !own.original_capital);
+    assert_eq!((own.founder, own.previous_owner, own.raze_refusal), (1, Some(1), None));
+    assert!(s.current_update(1).unwrap().view.pending_captures.is_none(), "only the conqueror decides");
+
+    let s = apply(s, 0, "keep", Action::KeepPuppet { city: city_ref(veii) });
+    assert!(s.current_update(0).unwrap().view.pending_captures.is_none());
+    assert!(s.world.cities.get(veii).unwrap().puppet);
+    let again = s.stage_command(0, request(&s, 0, "keep-again", Action::KeepPuppet { city: city_ref(veii) })).unwrap();
+    assert!(matches!(again.receipt.result, CommandStatus::Rejected { .. }));
+}
+
+#[test]
+fn city_options_say_why_they_refuse_and_price_every_tile_the_city_could_buy() {
+    use crate::queries::Refusal;
+    let mut s = found_capital(session(), 0);
+    let city = s.world.civs[0].cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    let options =
+        |s: &Session| crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation()).unwrap();
+
+    s.world.civs[0].gold = 0;
+    let poor = options(&s);
+    assert!(!poor.purchasable_tiles.is_empty(), "tiles are listed even when the treasury is empty");
+    assert!(poor.purchasable_tiles.iter().all(|t| !t.affordable));
+    for quote in poor.choices.iter().filter_map(|c| c.gold.as_ref()).filter(|q| q.amount.is_some()) {
+        assert!(matches!(quote.refusal, Some(Refusal::CannotAfford | Refusal::Occupied)), "{quote:?}");
+    }
+    s.world.civs[0].gold = 100_000;
+    let rich = options(&s);
+    let tiles = |o: &crate::queries::CityOptions| {
+        o.purchasable_tiles.iter().map(|t| (t.tile, t.gold.clone())).collect::<Vec<_>>()
+    };
+    assert_eq!(tiles(&rich), tiles(&poor));
+    assert!(rich.purchasable_tiles.iter().all(|t| t.affordable));
+
+    // A unit of the kind already standing in the city cannot be bought.
+    let unit = rich
+        .choices
+        .iter()
+        .find(|c| {
+            matches!(c.construction, ConstructionRef::Unit { .. }) && c.gold.as_ref().is_some_and(|q| q.amount.is_some())
+        })
+        .unwrap();
+    let ConstructionRef::Unit { id } = unit.construction else { unreachable!() };
+    let base = s.rules.units.ids().find(|b| b.index() == id).unwrap();
+    s.world.place_unit(civ_core::world::Unit::new(base, CivId(0), centre, 2));
+    let quote = options(&s).choices.into_iter().find(|c| c.construction == unit.construction).unwrap().gold.unwrap();
+    assert_eq!(quote.refusal, Some(Refusal::Occupied));
+
+    // A specialist slot says what its specialist yields here.
+    let (building, _) = s.rules.buildings.iter().find(|(_, b)| b.specialist_slots.contains_key("Scientist")).unwrap();
+    let c = s.world.cities.get_mut(city).unwrap();
+    c.built.insert(building);
+    civ_core::world::city::rebuild_city_uniques(&s.rules, c);
+    let scientist = s.rules.specialists.id("Scientist").unwrap();
+    let slot = options(&s).specialist_slots.into_iter().find(|slot| slot.specialist == scientist.index()).unwrap();
+    assert_eq!(slot.yields.science, 3);
+
+    // A puppet's governor decides both what is built and what is bought.
+    s.world.cities.get_mut(city).unwrap().puppet = true;
+    let puppet = options(&s);
+    assert!(puppet.choices.iter().all(|c| c.refusal == Some(Refusal::Puppet)));
+    assert!(puppet
+        .choices
+        .iter()
+        .filter_map(|c| c.gold.as_ref())
+        .all(|q| q.amount.is_none() || q.refusal == Some(Refusal::Puppet)));
+    assert!(puppet.purchasable_tiles.is_empty());
+}
+
+#[test]
+fn a_wonder_site_keeps_the_engines_own_pick_beside_the_players() {
+    let mut s = found_capital(session(), 0);
+    let city = s.world.civs[0].cities[0];
+    let centre = s.world.cities.get(city).unwrap().centre;
+    for t in s.world.grid.within(centre, 2) {
+        s.world.claim_tile(city, t);
+    }
+    let techs: Vec<_> = s.rules.technologies.ids().collect();
+    s.world.civs[0].techs.extend(techs);
+    let temple = s.rules.buildings.id("Temple of Artemis").unwrap();
+    let sites = |s: &Session| {
+        crate::queries::city_options(&s.world, &s.rules, CivId(0), city.index(), city.generation())
+            .unwrap()
+            .choices
+            .into_iter()
+            .find(|c| c.construction == ConstructionRef::Building { id: temple.index() })
+            .unwrap()
+            .sites
+            .unwrap()
+    };
+    let before = sites(&s);
+    assert!(before.best.is_some());
+    assert_eq!(before.best, before.selected, "unchosen, the engine's pick stands");
+    let other = *before.tiles.iter().find(|t| Some(**t) != before.best).unwrap();
+    let s = apply(s, 0, "site", Action::ChooseSite { city: city_ref(city), building: temple.index(), tile: other });
+    let after = sites(&s);
+    assert_eq!(after.selected, Some(other));
+    assert_eq!(after.best, before.best, "the suggestion stays the engine's");
+}

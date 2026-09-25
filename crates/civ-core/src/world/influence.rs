@@ -75,7 +75,7 @@ pub fn influence_rate(world: &World, r: &Ruleset, from: CivId, over: CivId) -> i
     if from == over || !d.have_met(from, over) {
         return 0;
     }
-    let knobs = &r.victory_knobs;
+    let knobs = crate::world::slices::victory_knobs(world, r);
     // War does not stop a culture reaching its enemy, but halves it and
     // closes every channel that carries more.
     if d.at_war(from, over) {
@@ -102,13 +102,13 @@ pub fn influence_over(world: &World, from: CivId, over: CivId) -> i64 {
 /// `from`'s influence over `over` has passed all the culture `over` ever made.
 pub fn is_influential(world: &World, r: &Ruleset, from: CivId, over: CivId) -> bool {
     let influence = influence_over(world, from, over);
-    from != over && influence >= r.victory_knobs.influence_floor && influence > lifetime_culture(world, over)
+    from != over && influence >= crate::world::slices::victory_knobs(world, r).influence_floor && influence > lifetime_culture(world, over)
 }
 
 /// How far `from` is toward being influential over `over`, in tenths of a
 /// percent (1000 and above is there).
 pub fn influence_progress(world: &World, r: &Ruleset, from: CivId, over: CivId) -> i64 {
-    let need = lifetime_culture(world, over).max(r.victory_knobs.influence_floor - 1) + 1;
+    let need = lifetime_culture(world, over).max(crate::world::slices::victory_knobs(world, r).influence_floor - 1) + 1;
     influence_over(world, from, over).max(0) * 1000 / need.max(1)
 }
 
@@ -134,7 +134,7 @@ pub fn trade_volume(world: &World, r: &Ruleset, civ: CivId) -> i64 {
 /// plus `worldTradePerMajorPerEra` for each era the leading civ has
 /// reached), and zero for a civ before `tradeShareFromEra`.
 pub fn trade_shares(world: &World, r: &Ruleset) -> BTreeMap<CivId, u16> {
-    let knobs = &r.victory_knobs;
+    let knobs = crate::world::slices::victory_knobs(world, r);
     let civs = majors(world);
     let era = |c: CivId| crate::world::policies::era_number(world, r, c);
     let leading = civs.iter().map(|c| era(*c)).max().unwrap_or(0);

@@ -312,7 +312,12 @@ fn placeholders(template: &str) -> impl Iterator<Item = &str> {
 /// cannot research past the last of `eras`, and ends after `turns` turns,
 /// when The Chronicle (the highest score) decides if nobody has won. Written
 /// in `ModOptions.json` under `slices`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// A slice may set its own pace and victory reach: `scienceCostPercent`
+/// scales tech costs in that slice, and any victory knob key
+/// (`influencePercent`, `influenceFloor`, `worldTradePerMajor`, ... see
+/// [`VictoryKnobs`]) replaces the ruleset's value while the slice plays.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SliceDef {
     pub name: String,
     /// The eras it covers, in order; the first is where it starts.
@@ -321,6 +326,25 @@ pub struct SliceDef {
     /// Calendar years at its first and last turn, for the date shown.
     pub start_year: Option<i32>,
     pub end_year: Option<i32>,
+    /// `scienceCostPercent`: tech costs in this slice, as a percent of the
+    /// full game's (100 unless set).
+    pub science_cost_percent: i64,
+    /// The victory knobs in force in this slice: the ruleset's, with the
+    /// slice entry's own knob keys laid over them. Filled once loading is done.
+    pub victory_knobs: VictoryKnobs,
+    /// The slice entry as written, for laying its knob keys over the
+    /// ruleset's once every file has loaded.
+    pub(crate) entry: Option<Json>,
+}
+
+impl SliceDef {
+    /// Lay the entry's knob keys over the ruleset's `knobs`.
+    pub(crate) fn settle_knobs(&mut self, knobs: &VictoryKnobs) {
+        self.victory_knobs = knobs.clone();
+        if let Some(entry) = &self.entry {
+            read_victory_knobs(entry, &mut self.victory_knobs);
+        }
+    }
 }
 
 pub fn read_slice(j: &Json) -> Option<SliceDef> {
@@ -330,6 +354,9 @@ pub fn read_slice(j: &Json) -> Option<SliceDef> {
         turns: j.get("turns").and_then(|v| v.as_i32()).unwrap_or(60).max(1) as u32,
         start_year: j.get("startYear").and_then(|v| v.as_i32()),
         end_year: j.get("endYear").and_then(|v| v.as_i32()),
+        science_cost_percent: j.get("scienceCostPercent").and_then(|v| v.as_i64()).unwrap_or(100).max(1),
+        victory_knobs: VictoryKnobs::default(),
+        entry: Some(j.clone()),
     })
 }
 
@@ -388,5 +415,51 @@ pub fn read_victory_knobs(j: &Json, into: &mut VictoryKnobs) {
     }
     if let Some(v) = int("worldTradePerMajorPerEra") {
         into.world_trade_per_major_per_era = v.max(0);
+    }
+}
+
+impl super::Ruleset {
+    /// References in civ.game's own fields that name nothing: a faith's era,
+    /// homeland or trait, a city rename's era, a slice's era, the trade era.
+    /// Each one would silently switch its rule off.
+    pub fn civgame_problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let era = |name: &str| self.eras.by_name(name).is_some();
+        for f in &self.faiths {
+            if !era(&f.era) {
+                out.push(format!("faith {}: no era {}", f.name, f.era));
+            }
+            for home in f.homeland.iter().filter(|h| self.nations.by_name(h).is_none()) {
+                out.push(format!("faith {}: no nation {home}", f.name));
+            }
+            for b in f.beliefs.iter().filter(|b| self.beliefs.by_name(b).is_none()) {
+                out.push(format!("faith {}: no belief {b}", f.name));
+            }
+        }
+        for (_, n) in self.nations.iter() {
+            for step in n.city_renames.iter().filter(|s| !era(&s.era)) {
+                out.push(format!("nation {}: rename {} to {} names no era {}", n.name, step.from, step.to, step.era));
+            }
+            for step in n
+                .city_renames
+                .iter()
+                .filter(|s| !n.cities.contains(&s.from) && !n.city_renames.iter().any(|t| t.to == s.from))
+            {
+                out.push(format!("nation {}: rename from {}, which is not one of its cities", n.name, step.from));
+            }
+        }
+        for s in &self.slices {
+            for e in s.eras.iter().filter(|e| !era(e)) {
+                out.push(format!("slice {}: no era {e}", s.name));
+            }
+            if let Some(e) = s.victory_knobs.trade_share_from_era.as_deref().filter(|e| !era(e)) {
+                out.push(format!("slice {}: tradeShareFromEra: no era {e}", s.name));
+            }
+        }
+        if let Some(e) = self.victory_knobs.trade_share_from_era.as_deref().filter(|e| !era(e)) {
+            out.push(format!("tradeShareFromEra: no era {e}"));
+        }
+        out.sort();
+        out
     }
 }
