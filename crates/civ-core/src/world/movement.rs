@@ -10,8 +10,8 @@
 //! point left still able to enter a marsh — it simply ends its turn there. A
 //! naive "cost must fit in the budget" check gets this wrong and strands units.
 //!
-//! Search order is fixed. The frontier is kept sorted by `(cost, TileId)`
-//! rather than left to a hash, because two machines walking the same map must
+//! Search order is fixed. The frontier takes the least `(cost, TileId)`
+//! from a priority queue, because two machines walking the same map must
 //! expand the same tiles in the same order or their units end up in different
 //! places.
 
@@ -22,10 +22,24 @@ use crate::unique_type::UniqueType;
 use crate::world::entities::Unit;
 use crate::world::grid::{CivId, RoadLevel, TileGrid, TileId};
 use crate::world::world::World;
-use std::collections::BTreeMap;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap};
 
 /// A city centre always costs one to enter, whatever it was built on.
 const CITY_CENTRE_COST: Fixed = Fixed::ONE;
+
+type CityCentres = BTreeMap<TileId, CivId>;
+
+fn city_centres(world: &World) -> CityCentres {
+    world.cities.iter().map(|(_, city)| (city.centre, city.owner)).collect()
+}
+
+fn city_owner(world: &World, centres: Option<&CityCentres>, tile: TileId) -> Option<CivId> {
+    match centres {
+        Some(centres) => centres.get(&tile).copied(),
+        None => world.cities.iter().find(|(_, city)| city.centre == tile).map(|(_, city)| city.owner),
+    }
+}
 
 /// Cost of entering `to`, ignoring roads, rivers and zones of control.
 ///
@@ -145,11 +159,9 @@ pub fn reachable(
     }
 
     // (cost, tile) ordering makes expansion order identical on every machine.
-    let mut frontier: Vec<(Fixed, TileId)> = vec![(Fixed::ZERO, from)];
+    let mut frontier = BinaryHeap::from([Reverse((Fixed::ZERO, from))]);
 
-    while !frontier.is_empty() {
-        frontier.sort_by(|a, b| b.cmp(a)); // cheapest last, so `pop` takes it
-        let (cost_here, tile) = frontier.pop().expect("non-empty");
+    while let Some(Reverse((cost_here, tile))) = frontier.pop() {
         if best.get(&tile).is_some_and(|c| *c < cost_here) {
             continue; // superseded
         }
@@ -165,7 +177,7 @@ pub fn reachable(
             if best.get(&next).is_none_or(|c| *c > total) {
                 best.insert(next, total);
                 if can_continue {
-                    frontier.push((total, next));
+                    frontier.push(Reverse((total, next)));
                 }
             }
         }
@@ -175,6 +187,12 @@ pub fn reachable(
 
 /// Returns whether movement between adjacent tiles `from` and `to` is affected by Zone of Control.
 pub fn is_movement_affected_by_zoc(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> bool {
+    is_movement_affected_by_zoc_with_centres(world, r, unit, from, to, None)
+}
+
+fn is_movement_affected_by_zoc_with_centres(
+    world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, centres: Option<&CityCentres>,
+) -> bool {
     if unit.has_unique(r, UniqueType::IgnoresZOC) {
         return false;
     }
@@ -182,8 +200,8 @@ pub fn is_movement_affected_by_zoc(world: &World, r: &Ruleset, unit: &Unit, from
         if world.grid.distance(n, to) != 1 {
             continue;
         }
-        if let Some(city) = world.cities.iter().find(|(_, c)| c.centre == n).map(|(_, c)| c) {
-            if world.diplomacy.at_war(unit.owner, city.owner) {
+        if let Some(owner) = city_owner(world, centres, n) {
+            if world.diplomacy.at_war(unit.owner, owner) {
                 return true;
             }
         }
@@ -280,6 +298,12 @@ pub fn may_unit_enter_territory(world: &World, r: &Ruleset, unit: &Unit, owner: 
 
 /// Whether this unit may pass through a tile, including its border privileges.
 pub fn can_pass_through(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
+    can_pass_through_with_centres(world, r, tile, unit, None)
+}
+
+fn can_pass_through_with_centres(
+    world: &World, r: &Ruleset, tile: TileId, unit: &Unit, centres: Option<&CityCentres>,
+) -> bool {
     if let Some(owner) = world.grid.owner[tile.0 as usize] {
         if !may_unit_enter_territory(world, r, unit, owner) {
             return false;
@@ -290,8 +314,8 @@ pub fn can_pass_through(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -
             return false;
         }
     }
-    for (_, city) in world.cities.iter() {
-        if city.centre == tile && city.owner != unit.owner && world.diplomacy.at_war(unit.owner, city.owner) {
+    if let Some(owner) = city_owner(world, centres, tile) {
+        if owner != unit.owner && world.diplomacy.at_war(unit.owner, owner) {
             return false;
         }
     }
@@ -320,13 +344,26 @@ pub fn step_cost_for_unit_with_zoc(
     budget: Fixed,
     consider_zoc: bool,
 ) -> Option<Fixed> {
+    step_cost_for_unit_with_centres(world, r, unit, from, to, budget, consider_zoc, None)
+}
+
+fn step_cost_for_unit_with_centres(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+    budget: Fixed,
+    consider_zoc: bool,
+    centres: Option<&CityCentres>,
+) -> Option<Fixed> {
     let _ = budget;
-    step_cost_parts(world, r, unit, from, to, consider_zoc).map(|(cost, _)| cost)
+    step_cost_parts(world, r, unit, from, to, consider_zoc, centres).map(|(cost, _)| cost)
 }
 
 /// [`step_cost_for_unit`], and whether a zone of control set it: such a step costs all the movement left.
 pub fn step_cost_and_zoc(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> Option<(Fixed, bool)> {
-    step_cost_parts(world, r, unit, from, to, true)
+    step_cost_parts(world, r, unit, from, to, true, None)
 }
 
 fn step_cost_parts(
@@ -336,8 +373,9 @@ fn step_cost_parts(
     from: TileId,
     to: TileId,
     consider_zoc: bool,
+    centres: Option<&CityCentres>,
 ) -> Option<(Fixed, bool)> {
-    if !can_traverse(world, r, unit, from, to) {
+    if !can_traverse_with_borders(world, r, unit, from, to, true, centres) {
         return None;
     }
     let from_water = world.grid.is_water(r, from);
@@ -351,14 +389,14 @@ fn step_cost_parts(
             .unwrap_or(Fixed::whole(100));
         return Some((cost, false));
     }
-    if consider_zoc && is_movement_affected_by_zoc(world, r, unit, from, to) {
+    if consider_zoc && is_movement_affected_by_zoc_with_centres(world, r, unit, from, to, centres) {
         return Some((Fixed::whole(100), true));
     }
-    open_step_cost(world, r, unit, from, to).map(|cost| (cost, false))
+    open_step_cost(world, r, unit, from, to, centres).map(|cost| (cost, false))
 }
 
 /// A step that neither crosses the shore nor meets a zone of control: roads, rivers, terrain and walls.
-fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> Option<Fixed> {
+fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, centres: Option<&CityCentres>) -> Option<Fixed> {
     if unit.has_unique(r, UniqueType::AllTilesCost1Move) {
         return Some(Fixed::ONE);
     }
@@ -389,7 +427,7 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
             && world.grid.features[tile.0 as usize]
                 .iter()
                 .any(|f| matches!(r.terrains[*f].name.as_str(), "Forest" | "Jungle"));
-        if forest || world.cities.iter().any(|(_, c)| c.centre == tile) {
+        if forest || city_owner(world, centres, tile).is_some() {
             RoadLevel::Road
         } else {
             RoadLevel::None
@@ -419,7 +457,7 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
     if river {
         return Some(Fixed::whole(100));
     }
-    let terrain = if world.cities.iter().any(|(_, c)| c.centre == to) {
+    let terrain = if city_owner(world, centres, to).is_some() {
         CITY_CENTRE_COST
     } else {
         Fixed::whole(r.terrains[world.grid.terrains(to).last()?].movement_cost.unwrap_or(1))
@@ -480,21 +518,20 @@ fn search_for_unit(
         return best;
     }
 
-    let mut frontier: Vec<(Fixed, TileId)> = vec![(Fixed::ZERO, from)];
+    let centres = city_centres(world);
+    let mut frontier = BinaryHeap::from([Reverse((Fixed::ZERO, from))]);
 
-    while !frontier.is_empty() {
-        frontier.sort_by(|a, b| b.cmp(a));
-        let (cost_here, tile) = frontier.pop().expect("non-empty");
+    while let Some(Reverse((cost_here, tile))) = frontier.pop() {
         if best.get(&tile).is_some_and(|c| *c < cost_here) {
             continue;
         }
 
         for next in world.grid.neighbours(tile) {
-            if !can_pass_through(world, r, next, unit) {
+            if !can_pass_through_with_centres(world, r, next, unit, Some(&centres)) {
                 continue;
             }
 
-            let Some(step) = step_cost_for_unit(world, r, unit, tile, next, budget - cost_here) else {
+            let Some(step) = step_cost_for_unit_with_centres(world, r, unit, tile, next, budget - cost_here, true, Some(&centres)) else {
                 continue;
             };
 
@@ -507,7 +544,7 @@ fn search_for_unit(
                     parents.insert(next, tile);
                 }
                 if can_continue {
-                    frontier.push((total, next));
+                    frontier.push(Reverse((total, next)));
                 }
             }
         }
@@ -531,7 +568,7 @@ pub(crate) fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
 /// Who stands where and how far it can go this turn are left out; this is
 /// for planning a route over many turns, which [`reachable_for_unit`] cannot.
 pub fn can_traverse(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> bool {
-    can_traverse_with_borders(world, r, unit, from, to, true)
+    can_traverse_with_borders(world, r, unit, from, to, true, None)
 }
 
 fn can_traverse_with_borders(
@@ -541,6 +578,7 @@ fn can_traverse_with_borders(
     from: TileId,
     to: TileId,
     respect_borders: bool,
+    centres: Option<&CityCentres>,
 ) -> bool {
     let _ = from;
     if !world.grid.contains(to) || !unit_terrain_passable(world, r, unit, to) {
@@ -553,7 +591,7 @@ fn can_traverse_with_borders(
     }
     let water = world.grid.is_water(r, to);
     // Ships enter land only at a city or through a canal (world::placement).
-    if unit.is_water_unit(r) && !water && !world.grid.is_canal(to) && !world.cities.iter().any(|(_, c)| c.centre == to)
+    if unit.is_water_unit(r) && !water && !world.grid.is_canal(to) && city_owner(world, centres, to).is_none()
     {
         return false;
     }
@@ -584,6 +622,7 @@ fn can_traverse_with_borders(
 /// search answers "how far is it from here" for every tile the unit could
 /// reach this turn.
 pub fn distances_to(world: &World, r: &Ruleset, unit: &Unit, target: TileId, radius: u32) -> BTreeMap<TileId, u32> {
+    let centres = city_centres(world);
     let mut dist: BTreeMap<TileId, u32> = BTreeMap::new();
     dist.insert(target, 0);
     let mut frontier = vec![target];
@@ -597,7 +636,7 @@ pub fn distances_to(world: &World, r: &Ruleset, unit: &Unit, target: TileId, rad
                     continue;
                 }
                 // Could the unit step *from* there *to* here?
-                if can_traverse(world, r, unit, from, tile) {
+                if can_traverse_with_borders(world, r, unit, from, tile, true, Some(&centres)) {
                     dist.insert(from, steps);
                     next.push(from);
                 }
@@ -682,7 +721,7 @@ pub fn displace_unit(world: &mut World, r: &Ruleset, id: Id<Unit>) -> bool {
         while let Some(from) = frontier.pop_front() {
             for tile in world.grid.neighbours(from) {
                 if reachable.contains(&tile)
-                    || !can_traverse_with_borders(world, r, &unit, from, tile, false)
+                    || !can_traverse_with_borders(world, r, &unit, from, tile, false, None)
                     || world
                         .units
                         .iter()

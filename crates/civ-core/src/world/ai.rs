@@ -158,6 +158,9 @@ fn choose_construction_among(
         return winning;
     }
     let wonder_window = wonder_window(world, r, civ, city, production);
+    // Candidate buildings change only `built` and the derived unique index. Reuse one
+    // hypothetical city instead of copying its tiles, queue and progress for each candidate.
+    let mut hypothetical = city.clone();
 
     available(r, civ_ref, city)
         .into_iter()
@@ -266,10 +269,13 @@ fn choose_construction_among(
                     // Evaluate the same yields the city will receive. Many
                     // buildings (notably a Library's science per population)
                     // put their benefit in uniques rather than flat fields.
-                    let mut hypothetical = city.clone();
-                    hypothetical.built.insert(id);
+                    let added = hypothetical.built.insert(id);
                     crate::world::city::rebuild_city_uniques(r, &mut hypothetical);
                     let output = crate::world::city::city_yield_in(world, r, &hypothetical, golden);
+                    if added {
+                        hypothetical.built.remove(&id);
+                    }
+                    hypothetical.uniques = city.uniques.clone();
                     let mut stats = crate::stats::Stats::ZERO;
                     for stat in Stat::ALL {
                         stats[stat] = output[stat] - current_output[stat];
