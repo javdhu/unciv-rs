@@ -318,6 +318,19 @@ fn choose_construction_among(
                         }
                     }
 
+                    // A world wonder is worth more than its yields: it is what
+                    // a civ is remembered by, and what anyone watching the
+                    // game waits for. Its yields alone never beat a cheaper
+                    // building on value per hammer, so across 233 turns the
+                    // AI left 28 of 49 unbuilt and none after turn 148. A
+                    // share of its own cost puts it in the running at any
+                    // price, more for leaders who care about culture.
+                    if b.is_wonder == Some(true) {
+                        flat += Fixed::whole(cost)
+                            * Fixed::permille(WONDER_APPETITE)
+                            * leader.modifier(crate::world::personality::Trait::Culture, Fixed::permille(500));
+                    }
+
                     // An unhappy empire is not merely poorer, it is stalled.
                     // Weight what fixes that by how bad it has got, so a
                     // colosseum beats a library exactly when it should.
@@ -459,6 +472,9 @@ fn is_work_boat(r: &Ruleset, base: Id<crate::ruleset::BaseUnit>) -> bool {
 /// treats it as out of reach. Beyond this it is not a goal, it is a way to
 /// build nothing for the rest of the game.
 const VICTORY_BUILD_HORIZON: i32 = 30;
+
+/// Prestige a world wonder carries on top of its yields, per mille of its cost.
+const WONDER_APPETITE: i64 = 100;
 
 /// How badly this civ wants a building that is a victory milestone.
 ///
