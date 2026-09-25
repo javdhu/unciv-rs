@@ -321,6 +321,22 @@ pub fn step_cost_for_unit_with_zoc(
     consider_zoc: bool,
 ) -> Option<Fixed> {
     let _ = budget;
+    step_cost_parts(world, r, unit, from, to, consider_zoc).map(|(cost, _)| cost)
+}
+
+/// [`step_cost_for_unit`], and whether a zone of control set it: such a step costs all the movement left.
+pub fn step_cost_and_zoc(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> Option<(Fixed, bool)> {
+    step_cost_parts(world, r, unit, from, to, true)
+}
+
+fn step_cost_parts(
+    world: &World,
+    r: &Ruleset,
+    unit: &Unit,
+    from: TileId,
+    to: TileId,
+    consider_zoc: bool,
+) -> Option<(Fixed, bool)> {
     if !can_traverse(world, r, unit, from, to) {
         return None;
     }
@@ -328,17 +344,21 @@ pub fn step_cost_for_unit_with_zoc(
     let to_water = world.grid.is_water(r, to);
     if unit.is_land_unit(r) && from_water != to_water && !unit.has_unique(r, UniqueType::CanMoveOnWater) {
         let kind = if from_water { UniqueType::ReducedDisembarkCost } else { UniqueType::ReducedEmbarkCost };
-        return Some(
-            active_uniques(world, r, unit, to)
-                .filter(|u| u.unique_type() == Some(kind))
-                .filter_map(|u| u.params.first().and_then(|n| Fixed::parse(n)))
-                .min()
-                .unwrap_or(Fixed::whole(100)),
-        );
+        let cost = active_uniques(world, r, unit, to)
+            .filter(|u| u.unique_type() == Some(kind))
+            .filter_map(|u| u.params.first().and_then(|n| Fixed::parse(n)))
+            .min()
+            .unwrap_or(Fixed::whole(100));
+        return Some((cost, false));
     }
     if consider_zoc && is_movement_affected_by_zoc(world, r, unit, from, to) {
-        return Some(Fixed::whole(100));
+        return Some((Fixed::whole(100), true));
     }
+    open_step_cost(world, r, unit, from, to).map(|cost| (cost, false))
+}
+
+/// A step that neither crosses the shore nor meets a zone of control: roads, rivers, terrain and walls.
+fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId) -> Option<Fixed> {
     if unit.has_unique(r, UniqueType::AllTilesCost1Move) {
         return Some(Fixed::ONE);
     }
@@ -757,12 +777,41 @@ impl std::fmt::Display for MoveRejection {
 
 impl std::error::Error for MoveRejection {}
 
+/// A step across the shore: a land unit boarding, or stepping back onto land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Embark {
+    Embark,
+    Land,
+}
+
+impl Embark {
+    /// The crossing between a unit's embarked flag before and after a step, if it changed.
+    pub fn between(was: bool, now: bool) -> Option<Embark> {
+        match (was, now) {
+            (false, true) => Some(Embark::Embark),
+            (true, false) => Some(Embark::Land),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MoveEvent {
     pub unit: Id<Unit>,
     pub from: TileId,
     pub to: TileId,
     pub spent: Fixed,
+    /// Set on the step where the unit boarded or landed.
+    pub embark: Option<Embark>,
+    /// The step entered an enemy's zone of control, which cost all the movement left.
+    pub zoc: bool,
+}
+
+impl MoveEvent {
+    /// A move that neither crossed the shore nor met a zone of control.
+    pub fn plain(unit: Id<Unit>, from: TileId, to: TileId, spent: Fixed) -> MoveEvent {
+        MoveEvent { unit, from, to, spent, embark: None, zoc: false }
+    }
 }
 
 /// Move a unit, spending movement. Fails rather than half-moving.
@@ -817,10 +866,11 @@ pub fn move_unit_with(
         if !can_pass_through(world, r, next, unit) || (next == to && is_tile_occupied_for(world, r, next, unit)) {
             break;
         }
-        let Some(cost) = step_cost_for_unit(world, r, unit, last, next, unit.movement_left) else { break };
+        let Some((cost, zoc)) = step_cost_and_zoc(world, r, unit, last, next) else { break };
         let cost = cost.min(unit.movement_left);
         let embarked =
             unit.is_land_unit(r) && !unit.has_unique(r, UniqueType::CanMoveOnWater) && world.grid.is_water(r, next);
+        let embark = Embark::between(unit.embarked, embarked);
         let unit = world.units.get_mut(unit_id).expect("unit checked above");
         unit.position = next;
         unit.embarked = embarked;
@@ -832,11 +882,11 @@ pub fn move_unit_with(
         crate::world::air::move_payload(world, unit_id, next);
         crate::world::military::on_enter(world, r, unit_id);
         spent += cost;
-        entered(world, MoveEvent { unit: unit_id, from: last, to: next, spent: cost });
+        entered(world, MoveEvent { unit: unit_id, from: last, to: next, spent: cost, embark, zoc });
         last = next;
     }
     let ended = world.units.get(unit_id).map_or(last, |u| u.position);
-    Ok(MoveEvent { unit: unit_id, from, to: ended, spent })
+    Ok(MoveEvent::plain(unit_id, from, ended, spent))
 }
 
 /// Restore every unit's movement. Called when its owner's turn begins.
@@ -1135,6 +1185,53 @@ mod tests {
             step_cost_for_unit(&w, &r, w.units.get(id_a).unwrap(), a, b, Fixed::whole(2)),
             Some(Fixed::whole(100))
         );
+    }
+
+    /// Each step says whether it boarded or landed, and only the step that did.
+    #[test]
+    fn steps_name_the_shore_they_cross() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let (land, near, far) = (w.grid.id_at(4, 3).unwrap(), w.grid.id_at(4, 4).unwrap(), w.grid.id_at(4, 5).unwrap());
+        for water in [near, far] {
+            w.grid.terrain[water.0 as usize] = r.terrain("Coast").unwrap();
+        }
+        w.civ_mut(CivId(0)).unwrap().techs.insert(r.technologies.id("Optics").unwrap());
+        let id = warrior(&mut w, &r, land);
+        let mut steps = Vec::new();
+        move_unit_with(&mut w, &r, id, near, |_, m| steps.push(m)).unwrap();
+        w.units.get_mut(id).unwrap().refresh(2);
+        move_unit_with(&mut w, &r, id, far, |_, m| steps.push(m)).unwrap();
+        w.units.get_mut(id).unwrap().refresh(2);
+        move_unit_with(&mut w, &r, id, near, |_, m| steps.push(m)).unwrap();
+        w.units.get_mut(id).unwrap().refresh(2);
+        move_unit_with(&mut w, &r, id, land, |_, m| steps.push(m)).unwrap();
+        let crossings: Vec<_> = steps.iter().map(|m| (m.from, m.to, m.embark)).collect();
+        assert_eq!(
+            crossings,
+            [(land, near, Some(Embark::Embark)), (near, far, None), (far, near, None), (near, land, Some(Embark::Land))]
+        );
+        assert!(steps.iter().all(|m| !m.zoc), "no enemy anywhere");
+    }
+
+    /// A step into an enemy's zone of control is marked, and costs the rest of the unit's movement.
+    #[test]
+    fn a_step_into_a_zone_of_control_is_marked() {
+        let r = ruleset();
+        let mut w = world(&r, "Grassland");
+        let (a, b) = (w.grid.id_at(4, 4).unwrap(), w.grid.id_at(4, 5).unwrap());
+        let id = warrior(&mut w, &r, a);
+        let shared = w.grid.neighbours(a).find(|&n| n != b && w.grid.distance(n, b) == 1).unwrap();
+        let nation = r.nations.ids().next().unwrap();
+        w.civs.push(Civilization::new(CivId(1), nation, true));
+        w.place_unit(Unit::new(r.unit("Warrior").unwrap(), CivId(1), shared, 2));
+        w.diplomacy.meet(CivId(0), CivId(1));
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        let mut steps = Vec::new();
+        move_unit_with(&mut w, &r, id, b, |_, m| steps.push(m)).unwrap();
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0].zoc && steps[0].embark.is_none());
+        assert_eq!((steps[0].spent, w.units.get(id).unwrap().movement_left), (Fixed::whole(2), Fixed::ZERO));
     }
 
     #[test]

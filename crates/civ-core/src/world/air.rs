@@ -509,12 +509,23 @@ fn health_factor(world: &World, r: &Ruleset, id: Id<Unit>) -> Fixed {
 }
 
 fn strength(world: &World, r: &Ruleset, id: Id<Unit>, opponent: Target, defending: bool, sweep: bool) -> Fixed {
+    parts(world, r, id, opponent, defending, sweep).map_or(Fixed::ONE, |b| b.strength())
+}
+
+fn parts(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    opponent: Target,
+    defending: bool,
+    sweep: bool,
+) -> Option<combat::Breakdown> {
     let bonus = if sweep && !defending {
         sum(world, r, id, UniqueType::StrengthWhenAirsweep, &context(world, r, id), false)
     } else {
         0
     };
-    combat::combat_strength_with_bonus(world, r, id, opponent, defending, bonus).unwrap_or(Fixed::ONE)
+    combat::combat_parts(world, r, id, opponent, defending, bonus)
 }
 
 fn apply_damage(world: &mut World, id: Id<Unit>, damage: i32) -> bool {
@@ -596,22 +607,25 @@ pub fn strike(
     let (_, tile, d_health) = target.facts(world).expect("validated");
     let intercepted = take_interception(world, r, attacker, target);
     if world.units.get(attacker).is_none() {
-        return Ok(CombatResult {
-            damage_to_attacker: intercepted,
-            damage_to_defender: 0,
-            attacker_died: true,
-            defender_died: false,
-        });
+        return Ok(CombatResult { damage_to_attacker: intercepted, attacker_died: true, ..CombatResult::default() });
     }
-    let att = strength(world, r, attacker, target, false, false);
-    let (def, d_factor, civilian) = match target {
-        Target::City(id) => (combat::city_combat_strength(world, r, id, Some(attacker), false), Fixed::ONE, false),
-        Target::Unit(id) => (
-            strength(world, r, id, Target::Unit(attacker), true, false),
-            health_factor(world, r, id),
-            world.units.get(id).expect("validated").is_civilian(r),
-        ),
+    let a_parts = parts(world, r, attacker, target, false, false);
+    let att = a_parts.as_ref().map_or(Fixed::ONE, |b| b.strength());
+    let (def, d_factor, civilian, d_parts) = match target {
+        Target::City(id) => {
+            (combat::city_combat_strength(world, r, id, Some(attacker), false), Fixed::ONE, false, None)
+        }
+        Target::Unit(id) => {
+            let d_parts = parts(world, r, id, Target::Unit(attacker), true, false);
+            (
+                d_parts.as_ref().map_or(Fixed::ONE, |b| b.strength()),
+                health_factor(world, r, id),
+                world.units.get(id).expect("validated").is_civilian(r),
+                d_parts,
+            )
+        }
     };
+    let tags = combat::BattleTags::of(a_parts.as_ref(), d_parts.as_ref());
     let mut rng = random(world, attacker, tile, 2);
     let roll = rng.unit_interval();
     let ratio = combat::strength_ratio(att, def);
@@ -683,7 +697,14 @@ pub fn strike(
     if defender_died && !attacker_died {
         crate::world::military::heal_on_kill(world, r, attacker);
     }
-    Ok(CombatResult { damage_to_attacker: intercepted + to_a, damage_to_defender: to_d, attacker_died, defender_died })
+    Ok(CombatResult {
+        damage_to_attacker: intercepted + to_a,
+        damage_to_defender: to_d,
+        attacker_died,
+        defender_died,
+        captured: None,
+        tags,
+    })
 }
 
 pub fn can_sweep(world: &World, r: &Ruleset, id: Id<Unit>, tile: TileId) -> Result<(), AirRejection> {
@@ -708,16 +729,18 @@ pub fn sweep(world: &mut World, r: &Ruleset, attacker: Id<Unit>, tile: TileId) -
     let selected = interceptor(world, r, attacker, tile, None, true, None);
     let rng = random(world, attacker, tile, 3);
     spend_mission(world, r, attacker);
-    let mut result =
-        CombatResult { damage_to_attacker: 0, damage_to_defender: 0, attacker_died: false, defender_died: false };
+    let mut result = CombatResult::default();
     let Some(defender) = selected else { return Ok(result) };
     let is_air = world.units.get(defender).expect("selected").is_air(r);
     world.units.get_mut(defender).expect("selected").spend_attack();
     if !is_air {
         return Ok(result);
     }
-    let a = strength(world, r, attacker, Target::Unit(defender), false, true);
-    let d = strength(world, r, defender, Target::Unit(attacker), true, false);
+    let a_parts = parts(world, r, attacker, Target::Unit(defender), false, true);
+    let d_parts = parts(world, r, defender, Target::Unit(attacker), true, false);
+    let a = a_parts.as_ref().map_or(Fixed::ONE, |b| b.strength());
+    let d = d_parts.as_ref().map_or(Fixed::ONE, |b| b.strength());
+    result.tags = combat::BattleTags::of(a_parts.as_ref(), d_parts.as_ref());
     let ratio = combat::strength_ratio(a, d);
     let mut damage_rng = rng.clone();
     let roll = damage_rng.unit_interval();
@@ -796,7 +819,7 @@ pub fn paradrop(
     unit.set_up = false;
     unit.embarked = false;
     move_payload(world, id, to);
-    Ok(crate::world::movement::MoveEvent { unit: id, from, to, spent: Fixed::ONE })
+    Ok(crate::world::movement::MoveEvent::plain(id, from, to, Fixed::ONE))
 }
 
 /// Choose useful air missions only from observed targets and owned bases.

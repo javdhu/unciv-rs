@@ -65,7 +65,7 @@ impl Source {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modifier {
     pub layer: Layer,
     /// For [`Layer::Base`] and [`Layer::Clamp`], an absolute amount.

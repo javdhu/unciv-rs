@@ -1174,6 +1174,70 @@ impl<T> From<Id<T>> for EntityRef {
     }
 }
 
+/// A move step across the shore: boarding, or stepping back onto land.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum Embark {
+    Embark,
+    Land,
+}
+
+/// Where a modifier on a strength came from.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum ModifierKind {
+    Terrain,
+    Feature,
+    Resource,
+    Improvement,
+    Building,
+    Policy,
+    Promotion,
+    Belief,
+    Difficulty,
+    Nation,
+    Era,
+    Other,
+}
+
+/// A modifier a side fought with: the attack preview's line (label, percentage points), and its kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BattleModifier {
+    pub kind: ModifierKind,
+    pub label: String,
+    pub percent: i32,
+}
+
+fn battle_modifiers(mods: &[civ_core::modifiers::Modifier]) -> Vec<BattleModifier> {
+    use civ_core::modifiers::SourceKind as S;
+    mods.iter()
+        .filter(|m| crate::queries::listed_modifier(m))
+        .map(|m| BattleModifier {
+            kind: match m.source.kind {
+                S::Terrain => ModifierKind::Terrain,
+                S::Feature => ModifierKind::Feature,
+                S::Resource => ModifierKind::Resource,
+                S::Improvement => ModifierKind::Improvement,
+                S::Building => ModifierKind::Building,
+                S::Policy => ModifierKind::Policy,
+                S::Promotion => ModifierKind::Promotion,
+                S::Belief => ModifierKind::Belief,
+                S::Difficulty => ModifierKind::Difficulty,
+                S::Nation => ModifierKind::Nation,
+                S::Era => ModifierKind::Era,
+                S::Other => ModifierKind::Other,
+            },
+            label: crate::queries::modifier_label(&m.source.name),
+            percent: m.amount.round() as i32,
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 #[serde(
     tag = "type",
@@ -1181,10 +1245,15 @@ impl<T> From<Id<T>> for EntityRef {
     rename_all_fields = "camelCase"
 )]
 pub enum PresentationEvent {
+    /// One step. `cost` is the movement it spent, as `UnitView.moves` counts it; `zoc` says an enemy's
+    /// zone of control made it cost everything left.
     UnitMoved {
         unit: EntityRef,
         from: u16,
         to: u16,
+        cost: f64,
+        embark: Option<Embark>,
+        zoc: bool,
     },
     CityFounded {
         city: EntityRef,
@@ -1311,6 +1380,46 @@ pub enum PresentationEvent {
         damage_to_defender: i32,
         attacker_died: bool,
         defender_died: bool,
+        /// What set each side's strength, as the attack preview lists it. A city's side lists none.
+        attacker_mods: Vec<BattleModifier>,
+        defender_mods: Vec<BattleModifier>,
+        /// The attacker's units beside the target that its flanking bonus counted.
+        flankers: Vec<EntityRef>,
+        /// The great general whose aura counted toward the attacker's strength.
+        general: Option<EntityRef>,
+    },
+    /// A melee attack took a civilian at `at`: it passes from `from` to `to` under the same id, and
+    /// `becomes` is its new unit type when that changed (a Settler becomes a Worker).
+    Captured {
+        unit: EntityRef,
+        at: u16,
+        from: u8,
+        to: u8,
+        by: EntityRef,
+        becomes: Option<u32>,
+    },
+    /// A defender slipped from `from` to `to` before `attacker`'s blow landed. The step also arrives as
+    /// a `unitMoved` costing nothing.
+    Withdrew {
+        unit: EntityRef,
+        from: u16,
+        to: u16,
+        attacker: EntityRef,
+    },
+    /// A unit pillaged the tile it stands on, healing `healed` and taking `gold`.
+    Pillaged {
+        unit: EntityRef,
+        tile: u16,
+        healed: u8,
+        gold: i32,
+    },
+    /// A nuclear weapon struck `at`: the blast `tiles`, the units it `destroyed` and the `cities` it damaged.
+    Nuked {
+        unit: EntityRef,
+        at: u16,
+        tiles: Vec<u16>,
+        destroyed: Vec<EntityRef>,
+        cities: Vec<EntityRef>,
     },
     CampCleared {
         tile: u16,
@@ -1590,6 +1699,11 @@ pub fn replay_for(
         }) && !civ_core::world::fog::can_see_unit(after, r, me, id)
     };
     let centre = |id| after.cities.get(id).or_else(|| before.cities.get(id)).map(|c| c.centre);
+    let city_owner = |id| after.cities.get(id).or_else(|| before.cities.get(id)).map(|c| c.owner);
+    let owned = |id| unit_of(id).is_some_and(|u| u.owner == me);
+    let holds = |t: civ_core::world::TileId| {
+        [before, after].iter().any(|w| w.grid.owner.get(t.0 as usize).copied().flatten() == Some(me))
+    };
     let nation = |c: CivId| {
         after.civ(c).map_or_else(
             || "Someone".to_string(),
@@ -1619,11 +1733,7 @@ pub fn replay_for(
                     if sees(m.from) && sees(m.to) && !hides(m.unit) && unit_of(m.unit).is_some_and(|u| u.owner != me) =>
                 {
                     note(&mut units, m.unit);
-                    events.push(presentation(
-                        "UnitMoved",
-                        "Unit moved".into(),
-                        PresentationEvent::UnitMoved { unit: m.unit.into(), from: m.from.0, to: m.to.0 },
-                    ));
+                    events.push(presentation("UnitMoved", "Unit moved".into(), moved(m)));
                 }
                 TurnEvent::Battle { attacker_died, defender_died, report: Some(b) } => {
                     let ours = b.attacker_owner == me || b.defender_owner == me;
@@ -1640,29 +1750,10 @@ pub fn replay_for(
                     } else {
                         format!("{} {} attacked {}", nation(b.attacker_owner), r.units[b.attacker_base].name, nation(b.defender_owner))
                     };
-                    events.push(presentation(
-                        "Attacked",
-                        text,
-                        PresentationEvent::Attacked {
-                            viewer_attacked: b.attacker_owner == me,
-                            attacker: b.attacker.into(),
-                            target: match b.target {
-                                Target::Unit(id) => crate::protocol::AttackTarget::Unit {
-                                    unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
-                                },
-                                Target::City(id) => crate::protocol::AttackTarget::City {
-                                    city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
-                                },
-                            },
-                            from: b.from.0,
-                            at: b.at.0,
-                            ranged: b.ranged,
-                            damage_to_attacker: b.damage_to_attacker,
-                            damage_to_defender: b.damage_to_defender,
-                            attacker_died: *attacker_died,
-                            defender_died: *defender_died,
-                        },
-                    ));
+                    for id in b.tags.flankers.iter().chain(&b.tags.general) {
+                        note(&mut units, *id);
+                    }
+                    events.push(presentation("Attacked", text, attacked(b, me, *attacker_died, *defender_died)));
                 }
                 TurnEvent::CityFounded { city, by } if *by != me && centre(*city).is_some_and(sees) => {
                     events.push(presentation(
@@ -1677,6 +1768,38 @@ pub fn replay_for(
                         "City changed hands".into(),
                         PresentationEvent::CityCaptured { city: (*city).into(), by: by.0 },
                     ));
+                }
+                // A capture, withdrawal or pillage: its tile in sight, or the viewer a party to it.
+                TurnEvent::UnitCaptured { unit, at, from_owner, to_owner, by, .. }
+                    if *from_owner == me || *to_owner == me || (sees(*at) && !hides(*by)) =>
+                {
+                    note(&mut units, *unit);
+                    note(&mut units, *by);
+                    events.extend(motion(before, r, me, event));
+                }
+                TurnEvent::UnitWithdrew { unit, from, attacker, .. }
+                    if owned(*unit) || owned(*attacker) || (sees(*from) && !hides(*unit) && !hides(*attacker)) =>
+                {
+                    note(&mut units, *unit);
+                    note(&mut units, *attacker);
+                    events.extend(motion(before, r, me, event));
+                }
+                TurnEvent::Pillaged(p) if owned(p.unit) || holds(p.tile) || (sees(p.tile) && !hides(p.unit)) => {
+                    note(&mut units, p.unit);
+                    events.extend(motion(before, r, me, event));
+                }
+                // A nuke: any tile of the blast in sight, or the viewer hit or striking.
+                TurnEvent::NuclearStrike { unit, result, .. }
+                    if owned(*unit)
+                        || result.units_destroyed.iter().any(|id| owned(*id))
+                        || result.cities_damaged.iter().any(|id| city_owner(*id) == Some(me))
+                        || result.tiles_affected.iter().any(|t| holds(*t) || sees(*t)) =>
+                {
+                    note(&mut units, *unit);
+                    for id in &result.units_destroyed {
+                        note(&mut units, *id);
+                    }
+                    events.extend(motion(before, r, me, event));
                 }
                 _ => {}
             }
@@ -1775,6 +1898,110 @@ fn presentation(kind: &str, text: String, event: PresentationEvent) -> EventView
     }
 }
 
+fn moved(m: &civ_core::world::movement::MoveEvent) -> PresentationEvent {
+    use civ_core::world::movement::Embark as E;
+    PresentationEvent::UnitMoved {
+        unit: m.unit.into(),
+        from: m.from.0,
+        to: m.to.0,
+        cost: moves(m.spent.raw()),
+        embark: m.embark.map(|e| match e {
+            E::Embark => Embark::Embark,
+            E::Land => Embark::Land,
+        }),
+        zoc: m.zoc,
+    }
+}
+
+fn attacked(
+    b: &civ_core::world::combat::BattleReport,
+    me: CivId,
+    attacker_died: bool,
+    defender_died: bool,
+) -> PresentationEvent {
+    use civ_core::world::air::Target;
+    PresentationEvent::Attacked {
+        viewer_attacked: b.attacker_owner == me,
+        attacker: b.attacker.into(),
+        target: match b.target {
+            Target::Unit(id) => crate::protocol::AttackTarget::Unit {
+                unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+            },
+            Target::City(id) => crate::protocol::AttackTarget::City {
+                city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
+            },
+        },
+        from: b.from.0,
+        at: b.at.0,
+        ranged: b.ranged,
+        damage_to_attacker: b.damage_to_attacker,
+        damage_to_defender: b.damage_to_defender,
+        attacker_died,
+        defender_died,
+        attacker_mods: battle_modifiers(&b.tags.attacker_mods),
+        defender_mods: battle_modifiers(&b.tags.defender_mods),
+        flankers: b.tags.flankers.iter().map(|id| (*id).into()).collect(),
+        general: b.tags.general.map(Into::into),
+    }
+}
+
+/// A capture, withdrawal, pillage or nuclear strike, worded for `me`. Whether `me` may see it is the
+/// caller's rule: [`report_for`] keeps the ones `me` took part in, [`replay_for`] also those in sight.
+fn motion(before: &World, r: &Ruleset, me: CivId, event: &TurnEvent) -> Option<EventView> {
+    let kind = |id| unit_kind(before, r, id, "unit");
+    let owner = |id| before.units.get(id).map(|u| u.owner);
+    Some(match event {
+        TurnEvent::UnitCaptured { unit, at, from_owner, to_owner, by, becomes } => presentation(
+            "Captured",
+            if *to_owner == me {
+                format!("Captured a {}", kind(*unit))
+            } else if *from_owner == me {
+                format!("Your {} was captured", kind(*unit))
+            } else {
+                format!("A {} was captured", kind(*unit))
+            },
+            PresentationEvent::Captured {
+                unit: (*unit).into(),
+                at: at.0,
+                from: from_owner.0,
+                to: to_owner.0,
+                by: (*by).into(),
+                becomes: becomes.map(|b| b.index()),
+            },
+        ),
+        TurnEvent::UnitWithdrew { unit, from, to, attacker } => presentation(
+            "Withdrew",
+            if owner(*unit) == Some(me) {
+                format!("Your {} withdrew", kind(*unit))
+            } else {
+                format!("A {} withdrew", kind(*unit))
+            },
+            PresentationEvent::Withdrew { unit: (*unit).into(), from: from.0, to: to.0, attacker: (*attacker).into() },
+        ),
+        TurnEvent::Pillaged(p) => presentation(
+            "Pillaged",
+            if owner(p.unit) == Some(me) {
+                format!("Your {} pillaged a tile", kind(p.unit))
+            } else {
+                "A tile was pillaged".into()
+            },
+            PresentationEvent::Pillaged { unit: p.unit.into(), tile: p.tile.0, healed: p.healed, gold: p.gold_pillaged },
+        ),
+        TurnEvent::NuclearStrike { unit, target, result } => presentation(
+            "Nuked",
+            if owner(*unit) == Some(me) { "Your nuclear strike landed".into() } else { "A nuclear strike".into() },
+            PresentationEvent::Nuked {
+                unit: (*unit).into(),
+                at: target.0,
+                tiles: result.tiles_affected.iter().map(|t| t.0).collect(),
+                destroyed: result.units_destroyed.iter().map(|id| (*id).into()).collect(),
+                cities: result.cities_damaged.iter().map(|id| (*id).into()).collect(),
+            },
+        ),
+        _ => return None,
+    })
+}
+
 /// Project only explicitly supported events. Before/after snapshots establish
 /// ownership, not historical visibility, so foreign movement is omitted here;
 /// [`replay_for`] reports it from event-time sight records.
@@ -1793,41 +2020,48 @@ pub fn report_for(
         before.cities.get(id).is_some_and(|c| c.owner == me)
             && after.cities.get(id).is_some_and(|c| c.owner == me)
     };
+    // Either side of a fight: its unit may be gone by the end.
+    let party = |id| after.units.get(id).or_else(|| before.units.get(id)).is_some_and(|u| u.owner == me);
     let mut out = Vec::new();
     for event in events {
         let (kind, text, payload) = match event {
             TurnEvent::Battle { attacker_died, defender_died, report: Some(b) }
                 if b.attacker_owner == me || b.defender_owner == me =>
             {
-                ("Attacked", battle_text(before, r, me, b, *attacker_died, *defender_died), PresentationEvent::Attacked {
-                    viewer_attacked: b.attacker_owner == me,
-                    attacker: b.attacker.into(),
-                    target: match b.target {
-                        civ_core::world::air::Target::Unit(id) => crate::protocol::AttackTarget::Unit {
-                            unit: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
-                        },
-                        civ_core::world::air::Target::City(id) => crate::protocol::AttackTarget::City {
-                            city: crate::protocol::EntityRef { id: id.index(), gen: id.generation() },
-                        },
-                    },
-                    from: b.from.0,
-                    at: b.at.0,
-                    ranged: b.ranged,
-                    damage_to_attacker: b.damage_to_attacker,
-                    damage_to_defender: b.damage_to_defender,
-                    attacker_died: *attacker_died,
-                    defender_died: *defender_died,
-                })
+                (
+                    "Attacked",
+                    battle_text(before, r, me, b, *attacker_died, *defender_died),
+                    attacked(b, me, *attacker_died, *defender_died),
+                )
             }
-            TurnEvent::UnitMoved(m) if own_unit(m.unit) => (
-                "UnitMoved",
-                "Unit moved".into(),
-                PresentationEvent::UnitMoved {
-                    unit: m.unit.into(),
-                    from: m.from.0,
-                    to: m.to.0,
-                },
-            ),
+            TurnEvent::UnitMoved(m) if own_unit(m.unit) => ("UnitMoved", "Unit moved".into(), moved(m)),
+            // The rest of what the renderer animates, where this player is a party to it.
+            TurnEvent::UnitCaptured { from_owner, to_owner, .. } if *from_owner == me || *to_owner == me => {
+                out.extend(motion(before, r, me, event));
+                continue;
+            }
+            TurnEvent::UnitWithdrew { unit, attacker, .. } if party(*unit) || party(*attacker) => {
+                out.extend(motion(before, r, me, event));
+                continue;
+            }
+            TurnEvent::Pillaged(p)
+                if party(p.unit) || after.grid.owner.get(p.tile.0 as usize).copied().flatten() == Some(me) =>
+            {
+                out.extend(motion(before, r, me, event));
+                continue;
+            }
+            TurnEvent::NuclearStrike { unit, target: _, result }
+                if party(*unit)
+                    || result.units_destroyed.iter().any(|id| party(*id))
+                    || result
+                        .cities_damaged
+                        .iter()
+                        .any(|id| after.cities.get(*id).or_else(|| before.cities.get(*id)).is_some_and(|c| c.owner == me))
+                    || result.tiles_affected.iter().any(|t| before.grid.owner.get(t.0 as usize).copied().flatten() == Some(me)) =>
+            {
+                out.extend(motion(before, r, me, event));
+                continue;
+            }
             TurnEvent::CityFounded { city, by } if *by == me => (
                 "CityFounded",
                 "City founded".into(),
@@ -2458,7 +2692,7 @@ mod tests {
             before.grid.ids().find(|t| before.grid.distance(*t, a) > 6).unwrap(),
         );
         let moved = |from, to| {
-            TurnEvent::UnitMoved(civ_core::world::movement::MoveEvent { unit, from, to, spent: civ_core::stats::Fixed::ONE })
+            TurnEvent::UnitMoved(civ_core::world::movement::MoveEvent::plain(unit, from, to, civ_core::stats::Fixed::ONE))
         };
         let battle = |from, at| TurnEvent::Battle {
             attacker_died: false,
@@ -2475,6 +2709,7 @@ mod tests {
                 ranged: false,
                 damage_to_attacker: 3,
                 damage_to_defender: 100,
+                tags: Default::default(),
             }),
         };
         let sight = |tiles: &[civ_core::world::TileId]| {
@@ -2519,12 +2754,12 @@ mod tests {
         after.visibility.observe(me, from);
         after.visibility.observe(me, to);
         let events = [
-            TurnEvent::UnitMoved(civ_core::world::movement::MoveEvent {
+            TurnEvent::UnitMoved(civ_core::world::movement::MoveEvent::plain(
                 unit,
                 from,
                 to,
-                spent: civ_core::stats::Fixed::ONE,
-            }),
+                civ_core::stats::Fixed::ONE,
+            )),
             TurnEvent::TechLearned {
                 civ: foreign.owner,
                 tech: r.technologies.ids().next().unwrap(),
@@ -2543,5 +2778,204 @@ mod tests {
         assert!(report_for(&before, &after, &r, me, &events)
             .events
             .is_empty());
+    }
+
+    /// A world at game start, a foreign actor whose units act, and one event of every kind a replay
+    /// shows, each with `me` a party to it where that is possible. `after` has the city the events found.
+    struct Motion {
+        before: World,
+        after: World,
+        r: Ruleset,
+        me: CivId,
+        actor: CivId,
+        events: Vec<TurnEvent>,
+        tiles: Vec<civ_core::world::TileId>,
+    }
+
+    fn motion_fixture() -> Motion {
+        use civ_core::modifiers::{Modifier, Source, SourceKind};
+        use civ_core::stats::Fixed;
+        use civ_core::world::combat::{BattleReport, BattleTags, NuclearStrikeResult, PillageEvent};
+        use civ_core::world::movement::{Embark as E, MoveEvent};
+        let (before, r, me) = crate::new_game(&crate::Settings::default()).unwrap();
+        let (mine, my) = before.units.iter().find(|(_, u)| u.owner == me).map(|(id, u)| (id, u.clone())).unwrap();
+        let (theirs, their) =
+            before.units.iter().find(|(_, u)| u.owner != me && u.is_military(&r)).map(|(id, u)| (id, u.clone())).unwrap();
+        let actor = their.owner;
+        let (a, b) = (their.position, before.grid.neighbours(their.position).next().unwrap());
+        let (m, n) = (my.position, before.grid.neighbours(my.position).next().unwrap());
+        let mut after = before.clone();
+        after.grid.owner[m.0 as usize] = Some(me);
+        let city = after.found_city(civ_core::world::City::found("Motion", actor, b));
+        let events = vec![
+            TurnEvent::UnitMoved(MoveEvent { embark: Some(E::Embark), zoc: true, ..MoveEvent::plain(mine, m, n, Fixed::ONE) }),
+            TurnEvent::UnitMoved(MoveEvent { embark: Some(E::Land), ..MoveEvent::plain(theirs, a, b, Fixed::from_fraction(1, 2)) }),
+            TurnEvent::Battle {
+                attacker_died: false,
+                defender_died: false,
+                report: Some(BattleReport {
+                    attacker: theirs,
+                    attacker_base: their.base,
+                    attacker_owner: actor,
+                    target: civ_core::world::air::Target::Unit(mine),
+                    defender_base: Some(my.base),
+                    defender_owner: me,
+                    from: a,
+                    at: m,
+                    ranged: false,
+                    damage_to_attacker: 10,
+                    damage_to_defender: 20,
+                    tags: BattleTags {
+                        attacker_mods: vec![
+                            Modifier::additive_percent(Fixed::whole(10), Source::new(SourceKind::Other, "Flanking")),
+                            Modifier::additive_percent(Fixed::ZERO, Source::new(SourceKind::Other, "Mission")),
+                        ],
+                        defender_mods: vec![Modifier::additive_percent(
+                            Fixed::whole(25),
+                            Source::new(SourceKind::Terrain, "Tile"),
+                        )],
+                        flankers: vec![theirs],
+                        general: Some(theirs),
+                    },
+                }),
+            },
+            TurnEvent::CityFounded { city, by: actor },
+            TurnEvent::CityCaptured { city, by: actor },
+            TurnEvent::UnitCaptured { unit: mine, at: m, from_owner: me, to_owner: actor, by: theirs, becomes: r.unit("Worker") },
+            TurnEvent::UnitWithdrew { unit: mine, from: m, to: n, attacker: theirs },
+            TurnEvent::Pillaged(PillageEvent { unit: theirs, tile: m, healed: 25, gold_pillaged: 7 }),
+            TurnEvent::NuclearStrike {
+                unit: theirs,
+                target: m,
+                result: NuclearStrikeResult { tiles_affected: vec![m, n], units_destroyed: vec![mine], cities_damaged: vec![] },
+            },
+        ];
+        Motion { before, after, r, me, actor, events, tiles: vec![a, b, m, n] }
+    }
+
+    fn sight(w: &World, me: CivId, tiles: &[civ_core::world::TileId]) -> Vec<(CivId, Vec<bool>)> {
+        let mut v = vec![false; w.grid.len()];
+        for t in tiles {
+            v[t.0 as usize] = true;
+        }
+        vec![(me, v)]
+    }
+
+    fn kinds(events: &[EventView]) -> Vec<String> {
+        events.iter().map(|e| serde_json::to_value(&e.event).unwrap()["type"].as_str().unwrap().to_string()).collect()
+    }
+
+    /// Each new fact reaches the player who took part in it, in its report and in the replay of the
+    /// round, with the fields the renderer animates.
+    #[test]
+    fn motion_facts_reach_the_report_and_the_replay() {
+        use civ_core::world::ReplayStep;
+        let Motion { before, after, r, me, actor, events, tiles } = motion_fixture();
+        let report = report_for(&before, &after, &r, me, &events).events;
+        assert_eq!(kinds(&report), ["unitMoved", "attacked", "captured", "withdrew", "pillaged", "nuked"]);
+        assert!(matches!(report[0].event, PresentationEvent::UnitMoved { cost, embark: Some(Embark::Embark), zoc: true, .. } if cost == 1.0));
+        let PresentationEvent::Attacked { attacker_mods, defender_mods, flankers, general, .. } = &report[1].event else {
+            panic!("{report:?}")
+        };
+        assert_eq!(attacker_mods, &[BattleModifier { kind: ModifierKind::Other, label: "Flanking".into(), percent: 10 }]);
+        assert_eq!(defender_mods, &[BattleModifier { kind: ModifierKind::Terrain, label: "Terrain".into(), percent: 25 }]);
+        let [theirs] = flankers[..] else { panic!("{flankers:?}") };
+        assert_eq!(*general, Some(theirs));
+        assert!(matches!(&report[2].event, PresentationEvent::Captured { becomes: Some(b), to, .. } if Some(*b) == r.unit("Worker").map(|w| w.index()) && *to == actor.0));
+        assert!(matches!(&report[3].event, PresentationEvent::Withdrew { attacker, .. } if *attacker == theirs));
+        assert!(matches!(&report[4].event, PresentationEvent::Pillaged { healed: 25, gold: 7, .. }));
+        assert!(matches!(&report[5].event, PresentationEvent::Nuked { tiles, destroyed, .. } if tiles.len() == 2 && destroyed.len() == 1));
+
+        // In the replay: the foreign step in sight, and everything this player was a party to, seen or not.
+        let steps = vec![ReplayStep { actor, events: events.clone(), seen: sight(&before, me, &tiles) }];
+        let replay = replay_for(&before, &after, &r, me, &steps);
+        let got = kinds(&replay[0].events);
+        assert_eq!(got, ["unitMoved", "attacked", "cityFounded", "cityCaptured", "captured", "withdrew", "pillaged", "nuked"]);
+        assert!(matches!(replay[0].events[0].event, PresentationEvent::UnitMoved { cost, embark: Some(Embark::Land), zoc: false, .. } if cost == 0.5));
+        let blind = vec![ReplayStep { actor, events, seen: sight(&before, me, &[]) }];
+        let got = kinds(&replay_for(&before, &after, &r, me, &blind)[0].events);
+        assert_eq!(got, ["attacked", "captured", "withdrew", "pillaged", "nuked"], "a party sees its own");
+    }
+
+    /// Someone else's capture, withdrawal, pillage or nuke is replayed only if its tile was in sight.
+    #[test]
+    fn third_party_motion_follows_sight() {
+        use civ_core::world::ReplayStep;
+        let Motion { before, after, r, me, actor, events, tiles } = motion_fixture();
+        let (theirs, their) = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap();
+        let (a, b) = (their.position, tiles[1]);
+        let third = CivId(99);
+        let events: Vec<_> = events
+            .into_iter()
+            .filter_map(|e| match e {
+                TurnEvent::UnitCaptured { becomes, .. } => {
+                    Some(TurnEvent::UnitCaptured { unit: theirs, at: a, from_owner: third, to_owner: actor, by: theirs, becomes })
+                }
+                TurnEvent::UnitWithdrew { .. } => Some(TurnEvent::UnitWithdrew { unit: theirs, from: a, to: b, attacker: theirs }),
+                TurnEvent::Pillaged(p) => Some(TurnEvent::Pillaged(civ_core::world::combat::PillageEvent { tile: a, ..p })),
+                TurnEvent::NuclearStrike { unit, .. } => Some(TurnEvent::NuclearStrike {
+                    unit,
+                    target: b,
+                    result: civ_core::world::combat::NuclearStrikeResult {
+                        tiles_affected: vec![b],
+                        units_destroyed: vec![],
+                        cities_damaged: vec![],
+                    },
+                }),
+                _ => None,
+            })
+            .collect();
+        let replayed = |seen: &[civ_core::world::TileId]| {
+            let steps = vec![ReplayStep { actor, events: events.clone(), seen: sight(&before, me, seen) }];
+            replay_for(&before, &after, &r, me, &steps).first().map_or_else(Vec::new, |b| kinds(&b.events))
+        };
+        assert_eq!(replayed(&[a, b]), ["captured", "withdrew", "pillaged", "nuked"]);
+        assert_eq!(replayed(&[a]), ["captured", "withdrew", "pillaged"], "the blast was out of sight");
+        assert_eq!(replayed(&[b]), ["nuked"], "the rest happened on a tile out of sight");
+        assert!(replayed(&[]).is_empty());
+    }
+
+    /// Every presentation kind is sorted: replayed, or left out of replays on purpose. A replayed kind
+    /// must come out of [`replay_for`], so a kind that falls through its `_ => {}` arm fails here.
+    #[test]
+    fn no_replayable_kind_is_dropped_silently() {
+        use civ_core::world::ReplayStep;
+        const REPLAYED: &[&str] =
+            &["unitMoved", "attacked", "cityFounded", "cityCaptured", "captured", "withdrew", "pillaged", "nuked"];
+        // What a replay does not animate: the player's own news, diplomacy and bookkeeping.
+        const LEFT_OUT: &[&str] = &[
+            "faithArose", "stateFaithAdopted", "cityRenamed", "cityPopulation", "techLearned", "ruinsExplored",
+            "ruinsCleared", "naturalWonderDiscovered", "religiousUnitActed", "prophetBorn", "faithPurchased",
+            "purchased", "civsMet", "warDeclared", "peaceMade", "victory", "partAssembled", "votingOpened",
+            "voteResolved", "defensivePactSigned", "friendshipSigned", "researchAgreementSigned",
+            "researchAgreementCompleted", "coupResolved", "techStolen", "spyCaught", "unitDamaged", "campCleared",
+            "rebelsSpawned", "barbarianCampAppeared", "demandMade", "demandAnswered", "promiseBroken", "promiseKept",
+            "greatPersonBorn", "greatPersonActed", "cityCompleted", "questOffered", "questCompleted", "questExpired",
+            "cityStateRelationship", "goldGifted", "tributePaid", "electionRigged", "denounced", "cityConverted",
+            "weLoveTheKingDay", "weLoveTheKingDayEnded", "bordersExpanded", "cityBurned", "cityRazed",
+            "cityStateGift", "cityStateMarried", "notice",
+        ];
+        let schema = serde_json::to_value(schemars::schema_for!(PresentationEvent)).unwrap();
+        let all: Vec<&str> = schema["oneOf"]
+            .as_array()
+            .expect("an internally tagged enum")
+            .iter()
+            .map(|v| v["properties"]["type"]["const"].as_str().expect("a tagged variant"))
+            .collect();
+        assert!(all.len() > REPLAYED.len() + 40, "read every variant: {all:?}");
+        for kind in &all {
+            assert!(
+                REPLAYED.contains(kind) != LEFT_OUT.contains(kind),
+                "sort `{kind}` into REPLAYED, with a replay_for arm and a motion_fixture event, or into LEFT_OUT"
+            );
+        }
+        let Motion { before, after, r, me, actor, events, tiles } = motion_fixture();
+        let steps = vec![ReplayStep { actor, events, seen: sight(&before, me, &tiles) }];
+        let mut got = kinds(&replay_for(&before, &after, &r, me, &steps)[0].events);
+        got.sort();
+        got.dedup();
+        let mut want: Vec<_> = REPLAYED.iter().map(|k| k.to_string()).collect();
+        want.sort();
+        assert_eq!(got, want, "a replayed kind never reached the replay");
     }
 }

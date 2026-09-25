@@ -350,14 +350,14 @@ fn apply(
                 {
                     break;
                 }
-                let Some(cost) = crate::world::movement::step_cost_for_unit(world, r, u, from, next, u.movement_left)
-                else {
+                let Some((cost, zoc)) = crate::world::movement::step_cost_and_zoc(world, r, u, from, next) else {
                     break;
                 };
                 let cost = cost.min(u.movement_left);
                 let embarked = u.is_land_unit(r)
                     && world.grid.is_water(r, next)
                     && !u.has_unique(r, crate::UniqueType::CanMoveOnWater);
+                let embark = crate::world::movement::Embark::between(u.embarked, embarked);
                 if transit_checkpoint.is_none()
                     && (!world.units_at(next).is_empty()
                         || world.cities.iter().any(|(_, c)| c.centre == next && c.owner != civ))
@@ -379,6 +379,8 @@ fn apply(
                     from,
                     to: next,
                     spent: cost,
+                    embark,
+                    zoc,
                 }));
                 crate::world::turn::explore_on_entry(world, r, unit, mods, &sites, &mut events);
                 let can_stop = world.units.get(unit).is_none_or(|moving| {
@@ -404,7 +406,7 @@ fn apply(
             if !u.is_military(r) || u.attacks_left == 0 || u.has_unique(r, UniqueType::NuclearWeapon) {
                 return Err(NotAllowed);
             }
-            let before = (u.position, u.movement_left);
+            let before = (u.position, u.movement_left, u.embarked);
             let air = u.is_air(r);
             let ranged = u.is_ranged(r);
             let (tile, owner) = match target {
@@ -448,15 +450,27 @@ fn apply(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
-                        report: watch.map(|w| w.report(world)),
+                        report: watch.map(|w| w.report(world, result.tags)),
                     });
+                    if let Some(capture) = result.captured {
+                        events.push(TurnEvent::UnitCaptured {
+                            unit: capture.unit,
+                            at: capture.at,
+                            from_owner: capture.from_owner,
+                            to_owner: capture.to_owner,
+                            by: unit,
+                            becomes: capture.becomes,
+                        });
+                    }
                     if let Some(after) = world.units.get(target).filter(|u| u.position != tile) {
-                        events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                            unit: target,
-                            from: tile,
-                            to: after.position,
-                            spent: Fixed::ZERO,
-                        }));
+                        // Only a withdrawal moves the defender.
+                        events.push(TurnEvent::UnitWithdrew { unit: target, from: tile, to: after.position, attacker: unit });
+                        events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent::plain(
+                            target,
+                            tile,
+                            after.position,
+                            Fixed::ZERO,
+                        )));
                         let sites = crate::world::natural_wonders::sites(&world.grid);
                         crate::world::turn::explore_on_entry(world, r, target, mods, &sites, &mut events);
                     }
@@ -467,7 +481,7 @@ fn apply(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: result.defender_died,
-                            report: watch.map(|w| w.report(world)),
+                            report: watch.map(|w| w.report(world, result.tags)),
                         });
                     } else {
                         let result = if ranged {
@@ -479,7 +493,7 @@ fn apply(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: false,
-                            report: watch.map(|w| w.report(world)),
+                            report: watch.map(|w| w.report(world, result.tags)),
                         });
                         if result.captured {
                             events.push(TurnEvent::CityCaptured { city, by: civ });
@@ -490,10 +504,13 @@ fn apply(
             if let Some(after) = world.units.get(unit) {
                 if before.0 != after.position {
                     events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                        unit,
-                        from: before.0,
-                        to: after.position,
-                        spent: (before.1 - after.movement_left).max(Fixed::ZERO),
+                        embark: crate::world::movement::Embark::between(before.2, after.embarked),
+                        ..crate::world::movement::MoveEvent::plain(
+                            unit,
+                            before.0,
+                            after.position,
+                            (before.1 - after.movement_left).max(Fixed::ZERO),
+                        )
                     }));
                     let sites = crate::world::natural_wonders::sites(&world.grid);
                     crate::world::turn::explore_on_entry(world, r, unit, mods, &sites, &mut events);
@@ -533,7 +550,8 @@ fn apply(
             for target in victims {
                 events.extend(crate::world::diplomacy_actions::declare_war(world, r, civ, target));
             }
-            crate::world::combat::nuclear_strike(world, r, unit, target).map_err(|_| NotAllowed)?;
+            let result = crate::world::combat::nuclear_strike(world, r, unit, target).map_err(|_| NotAllowed)?;
+            events.push(TurnEvent::NuclearStrike { unit, target, result });
         }
         Rebase { unit, to } => {
             target_tile(world, to)?;
@@ -550,7 +568,7 @@ fn apply(
             events.push(TurnEvent::Battle {
                 attacker_died: result.attacker_died,
                 defender_died: result.defender_died,
-                report: watch.map(|w| w.report(world)),
+                report: watch.map(|w| w.report(world, result.tags)),
             });
         }
         Paradrop { unit, to } => {
@@ -647,7 +665,8 @@ fn apply(
             {
                 return Err(NotAllowed);
             }
-            crate::world::combat::pillage(world, r, unit).ok_or(NotAllowed)?;
+            let pillaged = crate::world::combat::pillage(world, r, unit).ok_or(NotAllowed)?;
+            events.push(TurnEvent::Pillaged(pillaged));
         }
         SetProductionConversion { city, stat } => {
             if !crate::world::administration::can_convert_production(world, r, city, stat) {

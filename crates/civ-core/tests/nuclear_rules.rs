@@ -148,3 +148,25 @@ fn ai_selects_nuclear_mission_at_war_and_respects_friendly_collateral() {
     unit(&mut w, &r, 0, "Warrior", 13, 4);
     assert_eq!(world::nuclear::order(&w, &r, bomb), None);
 }
+/// An accepted strike reports what it did, after the wars it declared.
+#[test]
+fn a_nuclear_strike_is_reported() {
+    use world::commands::{execute, Command};
+    use world::turn::TurnEvent;
+    let (r, mut w, city) = fixture();
+    let bomb = unit(&mut w, &r, 0, "Atomic Bomb", 3, 4);
+    let victim = unit(&mut w, &r, 1, "Warrior", 12, 5);
+    let target = tile(&w, 12, 4);
+    let mut replay = w.clone();
+    let events = execute(&mut w, &r, CivId(0), Command::NuclearStrike { unit: bomb, target }).unwrap().events;
+    let Some((unit, at, result)) = events.iter().find_map(|e| match e {
+        TurnEvent::NuclearStrike { unit, target, result } => Some((unit, target, result)),
+        _ => None,
+    }) else {
+        panic!("{events:?}")
+    };
+    assert_eq!((*unit, *at), (bomb, target));
+    assert_eq!(*result, world::combat::nuclear_strike(&mut replay, &r, bomb, target).unwrap());
+    assert!(result.tiles_affected.contains(&target) && result.cities_damaged.contains(&city));
+    assert_eq!(result.units_destroyed.contains(&victim), w.units.get(victim).is_none());
+}

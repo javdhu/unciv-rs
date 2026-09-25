@@ -128,7 +128,37 @@ fn strength_breakdown_full(
     opponent: Option<crate::world::conditionals::Opponent>,
     ranged: bool,
 ) -> Option<(Fixed, ModifierStack)> {
+    strength_parts(world, r, unit_id, target_tile, defending, opponent, ranged).map(|b| (b.base, b.stack))
+}
+
+/// A strength, where each part of it came from, and the units that lent theirs.
+#[derive(Debug, Clone)]
+pub(crate) struct Breakdown {
+    pub base: Fixed,
+    pub stack: ModifierStack,
+    /// Friendly units beside the target that the flanking bonus counted.
+    pub flankers: Vec<Id<Unit>>,
+    /// The unit whose aura set the general's bonus, when it counted.
+    pub general: Option<Id<Unit>>,
+}
+
+impl Breakdown {
+    pub fn strength(&self) -> Fixed {
+        self.stack.evaluate(self.base)
+    }
+}
+
+fn strength_parts(
+    world: &World,
+    r: &Ruleset,
+    unit_id: Id<Unit>,
+    target_tile: Option<TileId>,
+    defending: bool,
+    opponent: Option<crate::world::conditionals::Opponent>,
+    ranged: bool,
+) -> Option<Breakdown> {
     let unit = world.units.get(unit_id)?;
+    let mut flankers = Vec::new();
     let definition = r.units.get(unit.base)?;
     let mut base = if ranged { definition.ranged_strength.unwrap_or(0) } else { definition.strength.unwrap_or(0) };
     let mut stack = ModifierStack::new();
@@ -220,7 +250,7 @@ fn strength_breakdown_full(
         }
 
         // Flanking bonus (+10% per other friendly military unit adjacent to target)
-        let flanking_units = world
+        flankers = world
             .grid
             .neighbours(target)
             .filter(|&n| n != unit.position)
@@ -228,7 +258,8 @@ fn strength_breakdown_full(
             .filter(|&other_id| {
                 world.units.get(other_id).is_some_and(|o| o.owner == unit.owner && o.is_military(r) && !o.is_ranged(r))
             })
-            .count() as i32;
+            .collect();
+        let flanking_units = flankers.len() as i32;
 
         if flanking_units > 0 {
             let context = GameContext::new(r)
@@ -306,22 +337,23 @@ fn strength_breakdown_full(
             _ => {}
         }
     }
-    let aura = world
+    // The strongest aura counts; the general is the unit that gave it.
+    let (general, aura) = world
         .units
         .iter()
         .filter(|(_, u)| u.owner == unit.owner)
-        .flat_map(|(_, source)| {
+        .flat_map(|(id, source)| {
             source
                 .all_uniques(r)
                 .filter(|u| u.unique_type() == Some(UniqueType::StrengthBonusInRadius) && applies(u, &context).holds())
-                .map(move |u| (source, u))
+                .map(move |u| (id, source, u))
         })
-        .filter(|(source, u)| {
+        .filter(|(_, source, u)| {
             u.params.len() >= 3
                 && world.grid.distance(source.position, unit.position) <= u.params[2].parse::<u32>().unwrap_or(0)
                 && crate::world::filters::unit_matches_in(world, r, unit, &u.params[1]).holds()
         })
-        .map(|(source, u)| {
+        .map(|(id, source, u)| {
             let double = source.all_uniques(r).any(|u| {
                 u.unique_type() == Some(UniqueType::GreatPerson) && u.params.first().is_some_and(|p| p == "War")
             }) && unit
@@ -331,10 +363,12 @@ fn strength_breakdown_full(
                     u.unique_type() == Some(UniqueType::GreatGeneralProvidesDoubleCombatBonus)
                         && applies(u, &context).holds()
                 });
-            u.params[0].parse::<i32>().unwrap_or(0) * if double { 2 } else { 1 }
+            (Some(id), u.params[0].parse::<i32>().unwrap_or(0) * if double { 2 } else { 1 })
         })
-        .max()
-        .unwrap_or(0);
+        // Like `max`, the last of equals wins.
+        .max_by_key(|(_, amount)| *amount)
+        .unwrap_or((None, 0));
+    let general = general.filter(|_| aura != 0);
     if aura != 0 {
         stack.add(Modifier::additive_percent(Fixed::whole(aura), Source::new(SourceKind::Other, "General aura")));
     }
@@ -360,7 +394,7 @@ fn strength_breakdown_full(
     }
     // Strength never drops below a token amount, or the ratio maths degenerates.
     stack.floor_at(Fixed::ONE);
-    Some((Fixed::whole(base), stack))
+    Some(Breakdown { base: Fixed::whole(base), stack, flankers, general })
 }
 
 /// A unit's strength, and where each part of it came from.
@@ -425,6 +459,18 @@ pub fn combat_breakdown(
     defending: bool,
     bonus: i32,
 ) -> Option<(Fixed, ModifierStack)> {
+    combat_parts(world, r, id, target, defending, bonus).map(|b| (b.base, b.stack))
+}
+
+/// [`combat_breakdown`], with the units that lent their strength.
+pub(crate) fn combat_parts(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    target: crate::world::air::Target,
+    defending: bool,
+    bonus: i32,
+) -> Option<Breakdown> {
     let unit = world.units.get(id)?;
     let (opponent, tile, enemy_ranged) = match target {
         crate::world::air::Target::Unit(other) => {
@@ -436,9 +482,9 @@ pub fn combat_breakdown(
         }
     };
     let ranged = unit.is_ranged(r) && (!defending || enemy_ranged);
-    let (base, mut stack) = strength_breakdown_full(world, r, id, Some(tile), defending, Some(opponent), ranged)?;
-    stack.add(Modifier::additive_percent(Fixed::whole(bonus), Source::new(SourceKind::Other, "Mission")));
-    Some((base, stack))
+    let mut parts = strength_parts(world, r, id, Some(tile), defending, Some(opponent), ranged)?;
+    parts.stack.add(Modifier::additive_percent(Fixed::whole(bonus), Source::new(SourceKind::Other, "Mission")));
+    Some(parts)
 }
 
 /// One side of a previewed attack.
@@ -556,8 +602,43 @@ pub fn preview_attack(
     Some(AttackPreview { ranged, capture, attacker, defender })
 }
 
-/// Who fought whom, from where, and what the blow cost each side. Presentation shows it to the two sides.
+/// What set each side's strength in a fight, and who stood by the attacker. Empty where no strength was
+/// reckoned: a capture, a withdrawal, a city's side.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BattleTags {
+    pub attacker_mods: Vec<Modifier>,
+    pub defender_mods: Vec<Modifier>,
+    /// Friendly units beside the target that the attacker's flanking bonus counted.
+    pub flankers: Vec<Id<Unit>>,
+    /// The unit whose aura counted toward the attacker's strength: a great general.
+    pub general: Option<Id<Unit>>,
+}
+
+impl BattleTags {
+    pub(crate) fn of(attacker: Option<&Breakdown>, defender: Option<&Breakdown>) -> BattleTags {
+        let mods = |side: Option<&Breakdown>| side.map(|b| b.stack.modifiers().to_vec()).unwrap_or_default();
+        BattleTags {
+            attacker_mods: mods(attacker),
+            defender_mods: mods(defender),
+            flankers: attacker.map(|b| b.flankers.clone()).unwrap_or_default(),
+            general: attacker.and_then(|b| b.general),
+        }
+    }
+}
+
+/// A civilian a melee attack took where it stood, `at`. It keeps its id; `becomes` is its new type, when
+/// it changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Capture {
+    pub unit: Id<Unit>,
+    pub at: TileId,
+    pub from_owner: crate::world::grid::CivId,
+    pub to_owner: crate::world::grid::CivId,
+    pub becomes: Option<Id<BaseUnit>>,
+}
+
+/// Who fought whom, from where, and what the blow cost each side. Presentation shows it to the two sides.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BattleReport {
     pub attacker: Id<Unit>,
     pub attacker_base: Id<BaseUnit>,
@@ -572,11 +653,12 @@ pub struct BattleReport {
     pub ranged: bool,
     pub damage_to_attacker: i32,
     pub damage_to_defender: i32,
+    pub tags: BattleTags,
 }
 
 /// Both sides as they stood before a blow. [`BattleWatch::report`] reads what changed, so every kind of
 /// attack (melee, ranged, air, on a city) reports alike.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct BattleWatch {
     report: BattleReport,
     attacker_health: i32,
@@ -609,12 +691,14 @@ impl BattleWatch {
             ranged: a.is_ranged(r) || a.is_air(r),
             damage_to_attacker: 0,
             damage_to_defender: 0,
+            tags: BattleTags::default(),
         };
         Some(BattleWatch { report, attacker_health: i32::from(a.health), defender_health: health })
     }
 
-    /// A side that is gone lost all of its health; a captured civilian lost none.
-    pub fn report(self, world: &World) -> BattleReport {
+    /// A side that is gone lost all of its health; a captured civilian lost none. `tags` are the fight's own,
+    /// from its result.
+    pub fn report(self, world: &World, tags: BattleTags) -> BattleReport {
         use crate::world::air::Target;
         let attacker = world.units.get(self.report.attacker).map_or(0, |u| i32::from(u.health));
         let defender = match self.report.target {
@@ -624,6 +708,7 @@ impl BattleWatch {
         BattleReport {
             damage_to_attacker: self.attacker_health - attacker,
             damage_to_defender: self.defender_health - defender,
+            tags,
             ..self.report
         }
     }
@@ -690,12 +775,15 @@ pub fn damage_modifier_precise(ratio: Precise, to_attacker: bool, randomness: Fi
     base * modifier
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CombatResult {
     pub damage_to_defender: i32,
     pub damage_to_attacker: i32,
     pub defender_died: bool,
     pub attacker_died: bool,
+    /// The civilian the attack took, if it took one.
+    pub captured: Option<Capture>,
+    pub tags: BattleTags,
 }
 
 /// Seed built from the state that produced the fight, so a replay of the same
@@ -738,15 +826,11 @@ pub fn resolve_attack(
     }
 
     if crate::world::military::withdraw(world, r, attacker, defender) {
-        return Ok(CombatResult {
-            damage_to_defender: 0,
-            damage_to_attacker: 0,
-            defender_died: false,
-            attacker_died: false,
-        });
+        return Ok(CombatResult::default());
     }
     if d_is_civilian {
         let uncapturable = world.units.get(defender).is_some_and(|u| u.has_unique(r, UniqueType::Uncapturable));
+        let mut captured = None;
         if uncapturable {
             world.remove_unit(defender);
         } else {
@@ -759,22 +843,21 @@ pub fn resolve_attack(
                     u.base = worker;
                 }
                 u.movement_left = Fixed::ZERO;
+                captured =
+                    Some(Capture { unit: defender, at: d_position, from_owner: d_owner, to_owner: a_owner, becomes: demoted_to });
             }
         }
         // Capturing a civilian costs the actual move, not a combat attack.
         crate::world::military::advance(world, r, attacker, d_position);
-        return Ok(CombatResult {
-            damage_to_defender: 0,
-            damage_to_attacker: 0,
-            defender_died: uncapturable,
-            attacker_died: false,
-        });
+        return Ok(CombatResult { defender_died: uncapturable, captured, ..CombatResult::default() });
     }
 
-    let att = combat_strength(world, r, attacker, crate::world::air::Target::Unit(defender), false)
+    let a_parts = combat_parts(world, r, attacker, crate::world::air::Target::Unit(defender), false, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
-    let def = combat_strength(world, r, defender, crate::world::air::Target::Unit(attacker), true)
+    let d_parts = combat_parts(world, r, defender, crate::world::air::Target::Unit(attacker), true, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
+    let (att, def) = (a_parts.strength(), d_parts.strength());
+    let tags = BattleTags::of(Some(&a_parts), Some(&d_parts));
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a_position, d_position).unit_interval();
     let to_defender =
@@ -824,17 +907,26 @@ pub fn resolve_attack(
         }
     }
 
-    Ok(CombatResult { damage_to_defender: dmg_d, damage_to_attacker: dmg_a, defender_died, attacker_died })
+    Ok(CombatResult {
+        damage_to_defender: dmg_d,
+        damage_to_attacker: dmg_a,
+        defender_died,
+        attacker_died,
+        captured: None,
+        tags,
+    })
 }
 
 /// What an attack on a city did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CityAttackResult {
     pub damage: i32,
     pub city_health: i32,
     /// The city changed hands. A city is never destroyed — it is taken.
     pub captured: bool,
     pub attacker_died: bool,
+    /// The attacker's side only: a city lists no modifiers.
+    pub tags: BattleTags,
 }
 
 /// Attack a city with a melee unit.
@@ -867,8 +959,10 @@ pub fn attack_city(
         return Err(CombatRejection::NotAdjacent);
     }
 
-    let att = combat_strength(world, r, attacker, crate::world::air::Target::City(city_id), false)
+    let a_parts = combat_parts(world, r, attacker, crate::world::air::Target::City(city_id), false, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
+    let att = a_parts.strength();
+    let tags = BattleTags::of(Some(&a_parts), None);
     let def = city_combat_strength(world, r, city_id, Some(attacker), false);
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a_tile, centre).unit_interval();
@@ -932,6 +1026,7 @@ pub fn attack_city(
         city_health: world.cities.get(city_id).map_or(0, |c| c.health),
         captured,
         attacker_died,
+        tags,
     })
 }
 
@@ -1027,10 +1122,12 @@ pub fn resolve_ranged_attack(
         return Err(CombatRejection::NotAtWar);
     }
 
-    let att = combat_strength(world, r, attacker, crate::world::air::Target::Unit(defender), false)
+    let a_parts = combat_parts(world, r, attacker, crate::world::air::Target::Unit(defender), false, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
-    let def = combat_strength(world, r, defender, crate::world::air::Target::Unit(attacker), true)
+    let d_parts = combat_parts(world, r, defender, crate::world::air::Target::Unit(attacker), true, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
+    let (att, def) = (a_parts.strength(), d_parts.strength());
+    let tags = BattleTags::of(Some(&a_parts), Some(&d_parts));
     let ratio = strength_ratio(att, def);
 
     let randomness = combat_seed(world, a.position, target_tile).unit_interval();
@@ -1067,7 +1164,7 @@ pub fn resolve_ranged_attack(
         crate::world::military::heal_on_kill(world, r, attacker);
     }
 
-    Ok(CombatResult { damage_to_defender: to_defender, damage_to_attacker: 0, defender_died, attacker_died: false })
+    Ok(CombatResult { damage_to_defender: to_defender, defender_died, tags, ..CombatResult::default() })
 }
 
 /// Execute a ranged attack on a city.
@@ -1107,8 +1204,10 @@ pub fn attack_city_ranged(
         return Err(CombatRejection::TargetBlockedByLOS);
     }
 
-    let att = combat_strength(world, r, attacker, crate::world::air::Target::City(city_id), false)
+    let a_parts = combat_parts(world, r, attacker, crate::world::air::Target::City(city_id), false, 0)
         .ok_or(CombatRejection::NoSuchUnit)?;
+    let att = a_parts.strength();
+    let tags = BattleTags::of(Some(&a_parts), None);
     let def = city_combat_strength(world, r, city_id, Some(attacker), false);
     let ratio = strength_ratio(att, def);
     let randomness = combat_seed(world, a.position, city.centre).unit_interval();
@@ -1132,6 +1231,7 @@ pub fn attack_city_ranged(
         city_health: world.cities.get(city_id).map_or(0, |c| c.health),
         captured: false,
         attacker_died: false,
+        tags,
     })
 }
 
@@ -1290,12 +1390,7 @@ pub fn city_bombard(
         u.health = (u.health as i32 - to_target).max(1) as u8;
     }
 
-    Ok(CombatResult {
-        damage_to_defender: to_target,
-        damage_to_attacker: 0,
-        defender_died: target_died,
-        attacker_died: false,
-    })
+    Ok(CombatResult { damage_to_defender: to_target, defender_died: target_died, ..CombatResult::default() })
 }
 
 /// Result of deploying a nuclear weapon.
@@ -2195,6 +2290,98 @@ mod military_tests {
         let captured_settler = w.units.get(settler).unwrap();
         assert_eq!(captured_settler.owner, CivId(0));
         assert_eq!(captured_settler.base, r.unit("Worker").unwrap(), "settler converted to worker");
+    }
+
+    /// The capture is a fact of the result: who was taken, where, from whom, and what it became.
+    #[test]
+    fn a_capture_names_the_civilian_and_what_it_becomes() {
+        let r = ruleset();
+        let mut w = world(&r);
+        let a_tile = w.grid.id_at(5, 5).unwrap();
+        let (worker_tile, settler_tile) =
+            (w.grid.neighbours(a_tile).next().unwrap(), w.grid.neighbours(a_tile).nth(1).unwrap());
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        let warrior = unit(&mut w, &r, "Warrior", CivId(0), a_tile);
+        let worker = unit(&mut w, &r, "Worker", CivId(1), worker_tile);
+        let settler = unit(&mut w, &r, "Settler", CivId(1), settler_tile);
+        let taken = |unit, at, becomes| Some(Capture { unit, at, from_owner: CivId(1), to_owner: CivId(0), becomes });
+        let res = resolve_attack(&mut w, &r, warrior, worker).unwrap();
+        assert_eq!(res.captured, taken(worker, worker_tile, None));
+        assert_eq!(res.tags, BattleTags::default(), "no strength was reckoned");
+        w.units.get_mut(warrior).unwrap().refresh(2);
+        let res = resolve_attack(&mut w, &r, warrior, settler).unwrap();
+        assert_eq!(res.captured, taken(settler, settler_tile, r.unit("Worker")));
+    }
+
+    /// The fight carries what set each side's strength, without changing it.
+    #[test]
+    fn a_fight_lists_each_sides_modifiers() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        let a_tile = w.grid.id_at(5, 5).unwrap();
+        let d_tile = w.grid.neighbours(a_tile).next().unwrap();
+        let a = unit(&mut w, &r, "Warrior", CivId(0), a_tile);
+        let d = unit(&mut w, &r, "Warrior", CivId(1), d_tile);
+        let defender = w.units.get_mut(d).unwrap();
+        (defender.fortified, defender.fortification_turns) = (true, 1);
+        let expected = (
+            combat_breakdown(&w, &r, a, crate::world::air::Target::Unit(d), false, 0).unwrap().1.modifiers().to_vec(),
+            combat_breakdown(&w, &r, d, crate::world::air::Target::Unit(a), true, 0).unwrap().1.modifiers().to_vec(),
+        );
+        let res = resolve_attack(&mut w, &r, a, d).unwrap();
+        assert!(res.tags.defender_mods.iter().any(|m| m.source.name == "Fortified" && m.amount == Fixed::whole(20)));
+        assert_eq!((res.tags.attacker_mods, res.tags.defender_mods), expected);
+    }
+
+    /// Flankers are the units the flanking bonus counted: beside the target, not the attacker itself.
+    #[test]
+    fn a_fight_names_its_flankers() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        let a_tile = w.grid.id_at(5, 5).unwrap();
+        let d_tile = w.grid.neighbours(a_tile).next().unwrap();
+        let beside: Vec<_> =
+            w.grid.neighbours(d_tile).filter(|t| *t != a_tile && w.grid.distance(*t, a_tile) > 1).take(2).collect();
+        let a = unit(&mut w, &r, "Warrior", CivId(0), a_tile);
+        let d = unit(&mut w, &r, "Warrior", CivId(1), d_tile);
+        let flankers: Vec<_> = beside.iter().map(|t| unit(&mut w, &r, "Spearman", CivId(0), *t)).collect();
+        // An archer beside the target does not flank.
+        let archer_tile = w.grid.neighbours(d_tile).find(|t| *t != a_tile && !beside.contains(t)).unwrap();
+        unit(&mut w, &r, "Archer", CivId(0), archer_tile);
+        let res = resolve_attack(&mut w, &r, a, d).unwrap();
+        let mut named = res.tags.flankers.clone();
+        named.sort();
+        let mut expected = flankers.clone();
+        expected.sort();
+        assert_eq!(named, expected);
+        assert!(res.tags.attacker_mods.iter().any(|m| m.source.name == "Flanking" && m.amount == Fixed::whole(20)));
+        assert_eq!(res.tags.general, None);
+    }
+
+    /// The general is named only when its aura counted, and it does not change the strength it lends.
+    #[test]
+    fn a_fight_names_the_general_whose_aura_counted() {
+        let r = ruleset();
+        let mut w = world(&r);
+        w.diplomacy.declare_war(CivId(0), CivId(1));
+        let a_tile = w.grid.id_at(5, 5).unwrap();
+        let d_tile = w.grid.neighbours(a_tile).next().unwrap();
+        let a = unit(&mut w, &r, "Warrior", CivId(0), a_tile);
+        let d = unit(&mut w, &r, "Warrior", CivId(1), d_tile);
+        let far = w.grid.id_at(11, 11).unwrap();
+        let general = unit(&mut w, &r, "Great General", CivId(0), far);
+        let target = crate::world::air::Target::Unit(d);
+        assert_eq!(combat_parts(&w, &r, a, target, false, 0).unwrap().general, None, "out of range");
+        let behind = w.grid.neighbours(a_tile).find(|t| w.grid.distance(*t, d_tile) == 2).unwrap();
+        w.units.get_mut(general).unwrap().position = behind;
+        let parts = combat_parts(&w, &r, a, target, false, 0).unwrap();
+        assert_eq!(parts.general, Some(general));
+        assert_eq!(parts.strength(), combat_strength(&w, &r, a, target, false).unwrap());
+        let res = resolve_attack(&mut w, &r, a, d).unwrap();
+        assert_eq!(res.tags.general, Some(general));
+        assert!(res.tags.attacker_mods.iter().any(|m| m.source.name == "General aura"));
     }
 
     #[test]

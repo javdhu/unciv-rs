@@ -293,12 +293,9 @@ pub fn automate_parts(world: &mut World, r: &Ruleset, civ: CivId) -> Vec<crate::
                             let unit = world.units.get_mut(id).unwrap();
                             unit.position = to;
                             unit.movement_left = Fixed::ZERO;
-                            events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                                unit: id,
-                                from,
-                                to,
-                                spent,
-                            }));
+                            events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent::plain(
+                                id, from, to, spent,
+                            )));
                         }
                     }
                 }

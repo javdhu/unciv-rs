@@ -587,7 +587,7 @@ fn attack_commands_report_who_fought_and_what_it_cost() {
         .events
         .iter()
         .find_map(|e| match e {
-            TurnEvent::Battle { report: Some(b), .. } => Some(*b),
+            TurnEvent::Battle { report: Some(b), .. } => Some(b.clone()),
             _ => None,
         })
         .expect("the attack reports its participants");
@@ -629,4 +629,91 @@ fn bombard_targets_and_previews_match_the_bombard() {
         let dealt = i32::from(before) - t.units.get(near).map_or(0, |u| i32::from(u.health));
         assert!((low..=high).contains(&dealt), "turn {turn}: {dealt} not in {low}..={high}");
     }
+}
+
+/// Seeded rounds until a Slinger withdraws from a Warrior, through `attack`, which returns the events.
+fn first_withdrawal(
+    mut attack: impl FnMut(&mut World, Id<Unit>, Id<Unit>) -> Vec<civ_core::world::turn::TurnEvent>,
+) -> (World, Id<Unit>, Id<Unit>, Vec<civ_core::world::turn::TurnEvent>) {
+    let (r, mut original) = fixture();
+    let a = unit(&mut original, &r, 0, "Warrior", 4, 4);
+    let d = unit(&mut original, &r, 1, "Slinger", 5, 4);
+    civ_core::world::turn::update_visibility_in(&mut original, &r);
+    for turn in 0..32 {
+        let mut w = original.clone();
+        w.turn = turn;
+        let events = attack(&mut w, a, d);
+        if w.units.get(d).is_some_and(|u| u.position != tile(&w, 5, 4)) {
+            return (w, a, d, events);
+        }
+    }
+    panic!("no seeded round withdrew");
+}
+
+/// A withdrawal is its own fact, just before the defender's zero-cost step, from a player's attack and
+/// from an AI's alike.
+#[test]
+fn a_withdrawal_is_reported_before_its_step_on_both_paths() {
+    use civ_core::world::commands::{execute, AttackTarget, Command};
+    use civ_core::world::turn::{apply_plan, plan_economy, TurnEvent, TurnModifiers};
+    let (r, _) = fixture();
+    let human = first_withdrawal(|w, a, d| {
+        execute(w, &r, CivId(0), Command::Attack { unit: a, target: AttackTarget::Unit(d) }).unwrap().events
+    });
+    let ai = first_withdrawal(|w, a, d| {
+        let mut plan = plan_economy(w, &r, CivId(0), civ_core::world::CityFocus::None, TurnModifiers::default());
+        plan.orders = vec![(a, ai::UnitOrder::Attack(d))];
+        apply_plan(w, &r, &plan, TurnModifiers::default())
+    });
+    for (w, a, d, events) in [human, ai] {
+        let (from, to) = (tile(&w, 5, 4), w.units.get(d).unwrap().position);
+        let at = events.iter().position(|e| matches!(e, TurnEvent::UnitWithdrew { .. })).expect("reported");
+        assert_eq!(events[at], TurnEvent::UnitWithdrew { unit: d, from, to, attacker: a });
+        assert!(
+            matches!(events[at + 1], TurnEvent::UnitMoved(m) if m.unit == d && m.from == from && m.to == to && m.spent == Fixed::ZERO),
+            "{events:?}"
+        );
+    }
+}
+
+/// An AI's capture is reported like a player's: after the battle, with what the Settler became.
+#[test]
+fn an_ai_capture_is_reported_after_its_battle() {
+    use civ_core::world::turn::{apply_plan, plan_economy, TurnEvent, TurnModifiers};
+    let (r, mut w) = fixture();
+    let a = unit(&mut w, &r, 0, "Warrior", 4, 4);
+    let settler = unit(&mut w, &r, 1, "Settler", 5, 4);
+    let mut plan = plan_economy(&w, &r, CivId(0), civ_core::world::CityFocus::None, TurnModifiers::default());
+    plan.orders = vec![(a, ai::UnitOrder::Attack(settler))];
+    let events = apply_plan(&mut w, &r, &plan, TurnModifiers::default());
+    let battle = events.iter().position(|e| matches!(e, TurnEvent::Battle { .. })).expect("a battle");
+    assert_eq!(
+        events[battle + 1],
+        TurnEvent::UnitCaptured {
+            unit: settler,
+            at: tile(&w, 5, 4),
+            from_owner: CivId(1),
+            to_owner: CivId(0),
+            by: a,
+            becomes: r.unit("Worker"),
+        }
+    );
+}
+
+/// Pillaging reports what the unit took and healed, where it stood.
+#[test]
+fn pillaging_is_reported() {
+    use civ_core::world::commands::{execute, Command};
+    use civ_core::world::turn::TurnEvent;
+    let (r, mut w) = fixture();
+    let id = unit(&mut w, &r, 0, "Warrior", 4, 4);
+    let pos = tile(&w, 4, 4);
+    w.grid.improvement[pos.0 as usize] = Some(r.improvements.id("Farm").unwrap());
+    w.grid.owner[pos.0 as usize] = Some(CivId(1));
+    w.units.get_mut(id).unwrap().health = 50;
+    let events = execute(&mut w, &r, CivId(0), Command::Pillage { unit: id }).unwrap().events;
+    let Some(TurnEvent::Pillaged(p)) = events.first() else { panic!("{events:?}") };
+    assert_eq!((p.unit, p.tile), (id, pos));
+    assert_eq!(i32::from(p.healed), i32::from(w.units.get(id).unwrap().health) - 50);
+    assert!(p.healed > 0);
 }

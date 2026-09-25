@@ -557,7 +557,7 @@ fn preview_side(s: &combat::PreviewSide) -> CombatSideView {
         modifiers: s
             .modifiers
             .iter()
-            .filter(|m| matches!(m.layer, Layer::Additive | Layer::Multiplicative) && m.amount != Fixed::ZERO)
+            .filter(|m| listed_modifier(m))
             .map(|m| ModifierLine { label: modifier_label(&m.source.name), percent: m.amount.round() as i32 })
             .collect(),
         health: s.health,
@@ -567,9 +567,14 @@ fn preview_side(s: &combat::PreviewSide) -> CombatSideView {
     }
 }
 
+/// A percentage that moved a strength. Floors, and a mission bonus of nothing, are not shown.
+pub(crate) fn listed_modifier(m: &civ_core::modifiers::Modifier) -> bool {
+    matches!(m.layer, Layer::Additive | Layer::Multiplicative) && m.amount != Fixed::ZERO
+}
+
 /// Engine sources are short phrases ("Flanking") or ability text with bracketed parameters
 /// ("+[50]% Strength vs [Mounted] units"). The percentage travels separately, so drop it here.
-fn modifier_label(name: &str) -> String {
+pub(crate) fn modifier_label(name: &str) -> String {
     let plain: String = name.chars().filter(|c| !matches!(c, '[' | ']')).collect();
     let plain = plain.trim_start_matches(|c: char| c == '+' || c == '-' || c.is_ascii_digit()).trim_start_matches('%').trim();
     match plain {

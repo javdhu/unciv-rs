@@ -343,6 +343,30 @@ pub enum TurnEvent {
         /// Participants and damage, where one unit attacked one target.
         report: Option<crate::world::combat::BattleReport>,
     },
+    /// A melee attack took a civilian. It keeps its id; `becomes` is its new type when that changed (a
+    /// Settler a civilisation takes is a Worker).
+    UnitCaptured {
+        unit: Id<Unit>,
+        at: TileId,
+        from_owner: CivId,
+        to_owner: CivId,
+        /// The attacker.
+        by: Id<Unit>,
+        becomes: Option<Id<crate::ruleset::BaseUnit>>,
+    },
+    /// A defender slipped away before a melee blow landed. Its zero-cost `UnitMoved` follows.
+    UnitWithdrew {
+        unit: Id<Unit>,
+        from: TileId,
+        to: TileId,
+        attacker: Id<Unit>,
+    },
+    Pillaged(crate::world::combat::PillageEvent),
+    NuclearStrike {
+        unit: Id<Unit>,
+        target: TileId,
+        result: crate::world::combat::NuclearStrikeResult,
+    },
     TileImproved {
         tile: crate::world::grid::TileId,
         improvement: Id<crate::ruleset::TileImprovement>,
@@ -1033,7 +1057,7 @@ fn apply_plan_inner(
         if matches!(order, UnitOrder::Attack(_) | UnitOrder::Assault(_)) {
             crate::world::military::set_up(world, r, *unit);
         }
-        let before = world.units.get(*unit).map(|u| (u.position, u.movement_left));
+        let before = world.units.get(*unit).map(|u| (u.position, u.movement_left, u.embarked));
         match order {
             UnitOrder::Rebase(_) | UnitOrder::AirSweep(_) | UnitOrder::Paradrop(_) | UnitOrder::NuclearStrike(_) => {
                 use crate::world::commands::Command;
@@ -1073,22 +1097,27 @@ fn apply_plan_inner(
                 if let Ok(result) = result {
                     if let (Some(from), Some(after)) = (defender_before, world.units.get(*target)) {
                         if from != after.position {
-                            events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                                unit: *target,
+                            // Only a withdrawal moves the defender.
+                            events.push(TurnEvent::UnitWithdrew { unit: *target, from, to: after.position, attacker: *unit });
+                            events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent::plain(
+                                *target,
                                 from,
-                                to: after.position,
-                                spent: Fixed::ZERO,
-                            }));
+                                after.position,
+                                Fixed::ZERO,
+                            )));
                             explore_on_entry(world, r, *target, mods, &wonder_sites, &mut events);
                         }
                     }
-                    if let (Some((from, movement)), Some(after)) = (before, world.units.get(*unit)) {
+                    if let (Some((from, movement, embarked)), Some(after)) = (before, world.units.get(*unit)) {
                         if from != after.position {
                             events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                                unit: *unit,
-                                from,
-                                to: after.position,
-                                spent: (movement - after.movement_left).max(Fixed::ZERO),
+                                embark: crate::world::movement::Embark::between(embarked, after.embarked),
+                                ..crate::world::movement::MoveEvent::plain(
+                                    *unit,
+                                    from,
+                                    after.position,
+                                    (movement - after.movement_left).max(Fixed::ZERO),
+                                )
                             }));
                             explore_on_entry(world, r, *unit, mods, &wonder_sites, &mut events);
                         }
@@ -1096,8 +1125,18 @@ fn apply_plan_inner(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: result.defender_died,
-                        report: watch.map(|w| w.report(world)),
+                        report: watch.map(|w| w.report(world, result.tags)),
                     });
+                    if let Some(capture) = result.captured {
+                        events.push(TurnEvent::UnitCaptured {
+                            unit: capture.unit,
+                            at: capture.at,
+                            from_owner: capture.from_owner,
+                            to_owner: capture.to_owner,
+                            by: *unit,
+                            becomes: capture.becomes,
+                        });
+                    }
                 }
             }
             UnitOrder::Assault(city) => {
@@ -1110,7 +1149,7 @@ fn apply_plan_inner(
                         events.push(TurnEvent::Battle {
                             attacker_died: result.attacker_died,
                             defender_died: result.defender_died,
-                            report: watch.map(|w| w.report(world)),
+                            report: watch.map(|w| w.report(world, result.tags)),
                         });
                     }
                     continue;
@@ -1124,18 +1163,18 @@ fn apply_plan_inner(
                     events.push(TurnEvent::Battle {
                         attacker_died: result.attacker_died,
                         defender_died: false,
-                        report: watch.map(|w| w.report(world)),
+                        report: watch.map(|w| w.report(world, result.tags)),
                     });
                     if result.captured {
                         events.push(TurnEvent::CityCaptured { city: *city, by: plan.civ });
-                        if let (Some((from, movement)), Some(after)) = (before, world.units.get(*unit)) {
+                        if let (Some((from, movement, _)), Some(after)) = (before, world.units.get(*unit)) {
                             if from != after.position {
-                                events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent {
-                                    unit: *unit,
+                                events.push(TurnEvent::UnitMoved(crate::world::movement::MoveEvent::plain(
+                                    *unit,
                                     from,
-                                    to: after.position,
-                                    spent: (movement - after.movement_left).max(Fixed::ZERO),
-                                }));
+                                    after.position,
+                                    (movement - after.movement_left).max(Fixed::ZERO),
+                                )));
                                 explore_on_entry(world, r, *unit, mods, &wonder_sites, &mut events);
                             }
                         }
