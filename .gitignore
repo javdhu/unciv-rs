@@ -3,6 +3,8 @@ node_modules/
 web/dist
 # the smoke run's shots and report (web/tools/smoke)
 web/.smoke/
+# frames, words, music and cuts from web/tools/film
+web/.film/
 target
 __pycache__/
 # output of `npm --prefix web run art -- bake`

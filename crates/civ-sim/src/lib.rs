@@ -74,6 +74,19 @@ impl Game {
         js(&player_view(&self.world, &self.rules, self.me))
     }
 
+    /// The local civ's view with every tile in sight: what a spectator or a
+    /// trailer camera sees. Built on a copy, so the match itself keeps its fog.
+    #[wasm_bindgen(js_name = spectatorView)]
+    pub fn spectator_view(&self) -> Result<JsValue, JsError> {
+        let mut world = self.world.clone();
+        let tiles: Vec<_> = world.grid.ids().collect();
+        for tile in tiles {
+            world.visibility.observe(self.me, tile);
+        }
+        civ_core::world::fog::capture_observations(&mut world, &self.rules);
+        js(&player_view(&world, &self.rules, self.me))
+    }
+
     /// Advance the world one turn and report what happened.
     #[wasm_bindgen(js_name = endTurn)]
     pub fn end_turn(&mut self) -> Result<JsValue, JsError> {
