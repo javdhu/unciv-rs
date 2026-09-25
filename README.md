@@ -1,65 +1,89 @@
 # civ.game
 
-A free, instant, browser-first Civ V-style 4X. A 3D miniature world generated entirely in code, with bots
-in every empty seat and historical leader encounters.
+A free, instant, browser-first strategy game in the manner of Civ V: a 3D miniature world generated entirely in
+code, bots in every empty seat, and private rooms to play with friends from one link. The tagline is "A world
+history in one evening".
 
 - Platform design: [docs/PLATFORM.md](docs/PLATFORM.md)
 - Code architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Accepted client contract: [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md)
-- Visual direction: [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md)
-- Procedural art plan and coverage: [docs/PROCEDURAL.md](docs/PROCEDURAL.md)
+- The interface (colour, marks, glass, the dial): [docs/BRAND.md](docs/BRAND.md)
+- The world's look: [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md)
+- Client contract: [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md)
+- What is done and what is not: [docs/PLAYABLE.md](docs/PLAYABLE.md) and [docs/GAPS.md](docs/GAPS.md)
+
+## What is here
+
+- `crates/civ-core`: the rules engine, map generation and AI. It plays the game's own rules, `base` (the whole
+  game, [docs/CONTENT.md](docs/CONTENT.md)) and `blitz` layered over it ([docs/BLITZ.md](docs/BLITZ.md)), from
+  `crates/civ-core/rules/`.
+- `crates/civ-sim`: the session every client plays through (commands, queries, receipts, player views, saves and
+  replay), its wire protocol with generated TypeScript types, and the Wasm build the browser runs.
+- `crates/civ-server`: the host for private multiplayer rooms (guest seats, SQLite, WebSocket, turn clocks).
+- `web/`: the client, Svelte 5 and three.js. The world (`web/src/world`) is drawn from procedural models
+  (`web/src/art`, [docs/PROCEDURAL.md](docs/PROCEDURAL.md)); the glass interface (`web/src/ui`) sits over it; the
+  music and sound are made in code (`web/src/audio`, [docs/SOUND.md](docs/SOUND.md)).
+
+The client plays solo games in a Worker that saves each change to IndexedDB before it answers, and room games over
+a WebSocket to civ-server. Both go through `web/src/state/session.ts`, the interface's one path to the match.
 
 ## Run it
 
-Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Node 20+. The rules engine is
-`crates/civ-core`.
+Needs Rust with the `wasm32-unknown-unknown` target, `wasm-pack` and Node 22.12 or newer.
 
 ```sh
-cargo test --workspace                # facade and local multiplayer host
-npm --prefix web install
-npm --prefix web run wasm              # civ-sim → web/src/engine/pkg, then refresh title rule tables
+npm --prefix web ci
+npm --prefix web run wasm              # civ-sim → web/src/engine/pkg, then the bundled rule tables
 npm --prefix web run dev               # http://localhost:5199
 ```
 
-`npm --prefix web run check` type-checks the client; `npm --prefix web run build` makes a production bundle.
-
-## State
-
-The 3D observer renders the map, units and growing cities. Every visual is generated in code by
-`web/src/art/`; imported-model work was archived on 2026-09-23 (see [the procedural plan](docs/PROCEDURAL.md)).
-Terrain and resources have their own recipes; units, improvements, natural wonders and cities use
-placeholders until their phases land. `npm --prefix web run art -- sheet` renders a contact sheet of the
-art entries, `/contact.html?filter=unit/` draws a labelled one with the game's renderer, and `/art-review.html`
-is a deterministic map study.
-Human commands, persistent player knowledge, save/replay,
-solo storage and private multiplayer rooms now exist below it; the UI has not yet been connected to
-that interface. The engine targets the bundled Gods & Kings rules and normal matches. Unciv editor/mod-only behavior and public-platform features are outside this engine work.
-
-Run the local multiplayer host in a second terminal:
+For rooms, run the local multiplayer host in a second terminal:
 
 ```sh
 cargo run -p civ-server
 ```
 
-It listens on `127.0.0.1:3001`; Vite proxies `/api` and WebSocket requests to it. Guest cookies own seats,
-invite codes locate rooms, and SQLite stores acknowledged transitions. Configuration and API details
-are in [the server README](crates/civ-server/README.md). Nothing is deployed by these commands.
+It listens on `127.0.0.1:3001`, and the dev server proxies `/api` and its WebSocket to it. Guest cookies own
+seats, invite links find rooms, and SQLite stores every acknowledged step. Configuration and the API are in
+[the server README](crates/civ-server/README.md). Deploying is in [docs/DEPLOY.md](docs/DEPLOY.md); nothing is
+deployed by these commands.
 
-For new gameplay controls, use `openSolo` or `openRemote` from `web/src/engine/session-transports.ts`.
-The production build also exports this non-UI API at `engine/session.js`, including its Worker and Wasm assets.
-The old `transport.ts` remains only for the observer UI.
+## Scripts
+
+From `web/`:
+
+| script | does |
+|---|---|
+| `npm run dev` | the dev server on port 5199 |
+| `npm run wasm` | builds civ-sim to `src/engine/pkg` with wasm-pack, then runs `rules` |
+| `npm run rules` | writes the bundled rule tables (`src/engine/generated/rule-tables.json`) the title and the civilopedia read before a game, and the art's list of needs (`content/art/needs.json`) |
+| `npm run check` | svelte-check over the client and its tools |
+| `npm test` | vitest: the engine adapters, the session, the view models and modes, the world, the art and the audio |
+| `npm run build` | the production bundle in `web/dist`, with the tool pages and the non-UI session API at `engine/session.js` |
+| `npm run smoke` | plays a fixed game in headless Chromium at desktop and phone sizes and shoots every scene ([web/tools/smoke/README.md](web/tools/smoke/README.md)) |
+| `npm run art -- sheet [filter]` | a contact sheet of the procedural art entries, without a browser |
+| `npm run dsp` | compiles the Faust instruments to `src/audio/dsp/gen` |
+
+The dev server also serves the tool pages: `/gallery.html` (every part of the interface in every state),
+`/art-review.html` (a fixed map study), `/wardrobe.html`, `/architecture.html`, `/contact.html?filter=unit/` (a
+labelled contact sheet drawn by the game's renderer) and `/sound-lab.html`.
+
+## Checks
 
 ```sh
-cargo run -p civ-sim --example export_protocol  # regenerate wire types and validation schemas
-python3 tools/check_protocol.py                 # detect protocol drift
-cargo test --workspace
-npm --prefix web run wasm
+cargo test --workspace --release
+python3 tools/check_protocol.py                  # the generated wire types match civ-sim
+cargo run -p civ-sim --example export_protocol   # regenerate them after a protocol change
 npm --prefix web run check
 npm --prefix web test
 npm --prefix web run build
+npm --prefix web run smoke                       # then look at the shots in web/.smoke
 ```
 
-The complete-match persistence gate runs three seeded bot matches, restores every 25 turns, and verifies command replay:
+CI (`.github/workflows/ci.yml`) runs the Rust tests, the determinism check, the protocol check, and the web
+client's tests, type check and build.
+
+The complete-match persistence gate plays three seeded bot matches, restores every 25 turns and checks that
+replaying the commands gives the same game:
 
 ```sh
 cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --nocapture
