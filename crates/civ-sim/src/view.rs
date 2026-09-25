@@ -1745,7 +1745,7 @@ pub fn replay_for(
         let Some((_, seen)) = step.seen.iter().find(|(civ, _)| *civ == me) else { continue };
         let Some((_, seen_units)) = step.seen_units.iter().find(|(civ, _)| *civ == me) else { continue };
         let sees = |t: civ_core::world::TileId| seen.get(t.0 as usize).copied().unwrap_or(false);
-        let seen_unit = |id| seen_units.contains(&id);
+        let seen_unit = |id| seen_units.iter().any(|u| u.unit == id);
         let known_tile = |t| sees(t) || holds(t);
         let known_city = |id| {
             [before, after].iter().any(|w| w.cities.get(id).is_some_and(|c| c.owner == me))
@@ -1754,9 +1754,9 @@ pub fn replay_for(
         let mut events = Vec::new();
         let mut units = Vec::new();
         let note = |units: &mut Vec<ReplayUnit>, id: Id<civ_core::world::Unit>| {
-            if let Some(u) = unit_of(id) {
+            if let Some(u) = seen_units.iter().find(|u| u.unit == id) {
                 let entry = ReplayUnit { unit: id.into(), owner: u.owner.0, base: u.base.index() };
-                if !units.contains(&entry) {
+                if !units.iter().any(|old| old.unit == entry.unit) {
                     units.push(entry);
                 }
             }
@@ -1862,7 +1862,7 @@ pub fn replay_for(
             Some(last) if last.civ == step.actor.0 => {
                 last.events.extend(events);
                 for u in units {
-                    if !last.units.contains(&u) {
+                    if !last.units.iter().any(|old| old.unit == u.unit) {
                         last.units.push(u);
                     }
                 }
@@ -3009,7 +3009,9 @@ mod tests {
     fn recorded_step(w: &World, me: CivId, actor: CivId, events: Vec<TurnEvent>, seen: Vec<(CivId, Vec<bool>)>) -> civ_core::world::ReplayStep {
         let tiles = &seen.iter().find(|(id, _)| *id == me).expect("viewer sight").1;
         let units = w.units.iter().filter_map(|(id, u)| {
-            (u.owner == me || tiles.get(u.position.0 as usize).copied().unwrap_or(false)).then_some(id)
+            (u.owner == me || tiles.get(u.position.0 as usize).copied().unwrap_or(false)).then_some(civ_core::world::turn::ReplayUnitState {
+                unit: id, owner: u.owner, base: u.base,
+            })
         }).collect();
         civ_core::world::ReplayStep { actor, events, seen, seen_units: vec![(me, units)] }
     }
@@ -3256,6 +3258,40 @@ mod tests {
     }
 
     #[test]
+    fn replay_unit_keeps_its_first_visible_owner_and_base_before_later_changes() {
+        use civ_core::stats::Fixed;
+        use civ_core::world::movement::MoveEvent;
+        let Motion { before, mut after, r, me, actor, .. } = motion_fixture();
+        let (unit, foreign) = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap();
+        let (at, base) = (foreign.position, foreign.base);
+        let next = before.grid.neighbours(at).next().unwrap();
+        let upgraded = r.unit("Swordsman").unwrap();
+        let mut between = before.clone();
+        between.units.get_mut(unit).unwrap().position = next;
+        after.units.get_mut(unit).unwrap().position = next;
+        after.units.get_mut(unit).unwrap().base = upgraded;
+        let steps = [
+            recorded_step(&before, me, actor,
+                vec![TurnEvent::UnitMoved(MoveEvent::plain(unit, at, next, Fixed::ONE))], sight(&before, me, &[at, next])),
+            recorded_step(&between, me, actor,
+                vec![TurnEvent::Upgraded { unit, at: next, from: base, to: upgraded }], sight(&between, me, &[next])),
+        ];
+        let replay = replay_for(&before, &after, &r, me, &steps);
+        assert_eq!(kinds(&replay[0].events), ["unitMoved", "upgraded"]);
+        assert_eq!(replay[0].units, vec![ReplayUnit { unit: unit.into(), owner: actor.0, base: base.index() }]);
+
+        let captor = CivId(99);
+        after.units.get_mut(unit).unwrap().owner = captor;
+        after.units.get_mut(unit).unwrap().base = base;
+        let capture = recorded_step(&between, me, captor,
+            vec![TurnEvent::UnitCaptured { unit, at: next, from_owner: actor, to_owner: captor, by: unit, becomes: None }],
+            sight(&between, me, &[next]));
+        let batches = replay_for(&before, &after, &r, me, &[steps[0].clone(), capture]);
+        assert_eq!(batches[0].units, vec![ReplayUnit { unit: unit.into(), owner: actor.0, base: base.index() }]);
+        assert_eq!(kinds(&batches[1].events), ["captured"]);
+    }
+
+    #[test]
     fn tile_sight_without_unit_detection_does_not_replay_invisible_or_never_seen_training() {
         let Motion { mut before, mut after, r, me, actor, .. } = motion_fixture();
         let (unit, foreign) = before.units.iter().find(|(_, u)| u.owner == actor && u.is_military(&r)).unwrap();
@@ -3275,7 +3311,7 @@ mod tests {
         assert!(civ_core::world::fog::can_see_unit(&after, &r, me, unit));
         let event = TurnEvent::Fortified { unit, at };
         let mut unseen_unit = recorded_step(&before, me, actor, vec![event.clone()], sight(&before, me, &[at]));
-        unseen_unit.seen_units[0].1.retain(|id| civ_core::world::fog::can_see_unit(&before, &r, me, *id));
+        unseen_unit.seen_units[0].1.retain(|u| civ_core::world::fog::can_see_unit(&before, &r, me, u.unit));
         assert!(replay_for(&before, &after, &r, me, &[unseen_unit]).is_empty(),
             "a visible tile does not reveal an undetected submarine");
         let unseen_tile = recorded_step(&before, me, actor, vec![event], sight(&before, me, &[]));

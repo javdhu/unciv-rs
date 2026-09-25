@@ -1661,7 +1661,15 @@ pub struct ReplayStep {
     pub seen: Vec<(CivId, Vec<bool>)>,
     /// Units each human could identify before the command. Tile sight alone
     /// cannot establish whether an invisible unit was detectable then.
-    pub seen_units: Vec<(CivId, Vec<Id<Unit>>)>,
+    pub seen_units: Vec<(CivId, Vec<ReplayUnitState>)>,
+}
+
+/// The identity and appearance a viewer could observe before one AI command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReplayUnitState {
+    pub unit: Id<Unit>,
+    pub owner: CivId,
+    pub base: Id<crate::ruleset::BaseUnit>,
 }
 
 /// [`finish_round`], also recording each AI command for replays.
@@ -1675,7 +1683,7 @@ pub fn finish_round_recorded(
     finish_round_inner(world, r, focus, mods, Some(replay))
 }
 
-fn human_sight(world: &World, r: &Ruleset) -> (Vec<(CivId, Vec<bool>)>, Vec<(CivId, Vec<Id<Unit>>)>) {
+fn human_sight(world: &World, r: &Ruleset) -> (Vec<(CivId, Vec<bool>)>, Vec<(CivId, Vec<ReplayUnitState>)>) {
     let viewers: Vec<_> = world.living_civs().filter(|id| world.civ(*id).is_some_and(|c| !c.is_ai)).collect();
     let seen = viewers
         .iter()
@@ -1687,7 +1695,11 @@ fn human_sight(world: &World, r: &Ruleset) -> (Vec<(CivId, Vec<bool>)>, Vec<(Civ
             let units = world
                 .units
                 .iter()
-                .filter_map(|(unit, _)| crate::world::fog::can_see_unit(world, r, *id, unit).then_some(unit))
+                .filter_map(|(unit, u)| {
+                    crate::world::fog::can_see_unit(world, r, *id, unit).then_some(ReplayUnitState {
+                        unit, owner: u.owner, base: u.base,
+                    })
+                })
                 .collect();
             (*id, units)
         })
