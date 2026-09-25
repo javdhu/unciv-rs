@@ -53,6 +53,9 @@ interface GameSession {
   query(request: QueryRequest): Promise<QueryReply>;
   subscribe(onUpdate: (update: GameUpdate) => void): () => void;
   close(): void;
+  // Remote sessions: 'reconnecting' once a retry is scheduled, 'live' when ready again; the stop code once.
+  onLink?(listener: (link: 'live' | 'reconnecting') => void): () => void;
+  onStop?(listener: (code: string) => void): () => void;
 }
 ```
 
