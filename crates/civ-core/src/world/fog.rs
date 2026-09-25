@@ -992,10 +992,12 @@ impl<T> CivTiles<T> {
         })
     }
 
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))] // save validation reads it
     pub(crate) fn keys(&self) -> impl Iterator<Item = (CivId, TileId)> + '_ {
         self.iter().map(|(k, _)| k)
     }
 
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))] // save validation reads it
     pub(crate) fn values(&self) -> impl Iterator<Item = &T> {
         self.iter().map(|(_, v)| v)
     }

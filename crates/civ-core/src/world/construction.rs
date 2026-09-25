@@ -364,11 +364,18 @@ fn can_construct_mode(
     }
     if let Construction::Unit(base) = what {
         let unit = crate::world::Unit::new(base, civ, city.centre, 0);
-        let h = crate::world::happiness::happiness(world, r, civ, None);
-        let context = ctx.with_happiness(h).for_unit_value(&unit);
+        // Happiness is a sum over the whole civ, and only a CannotBuildUnits rule reads it: it is worked out when
+        // one turns up (most civs have none), once. The AI asks this of every unit it could build, in every city.
+        let mut context = None;
         if r.global_uniques.iter().chain(owner.uniques.all()).any(|u| {
             u.unique_type() == Some(UniqueType::CannotBuildUnits)
-                && applies(u, &context).holds()
+                && applies(
+                    u,
+                    context.get_or_insert_with(|| {
+                        ctx.with_happiness(crate::world::happiness::happiness(world, r, civ, None)).for_unit_value(&unit)
+                    }),
+                )
+                .holds()
                 && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, &unit, f).holds())
         }) {
             return Err(Rejection::NotAvailable);

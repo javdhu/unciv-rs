@@ -536,13 +536,20 @@ impl TurnModifiers<'_> {
 
 pub fn plan_civ_turn(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, mods: TurnModifiers) -> TurnPlan {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
-    plan_civ(world, r, civ, focus, mods, true)
+    plan_civ(world, r, civ, focus, mods, true, false)
+}
+
+/// A round's plan for an AI civ whose army [`crate::world::tactics::Tactics`] moves: no orders are worked out
+/// for the units it takes, since `ai_commands` would drop them. The plan is otherwise `plan_civ_turn`'s.
+fn plan_civ_round(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, mods: TurnModifiers) -> TurnPlan {
+    let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
+    plan_civ(world, r, civ, focus, mods, true, !world.is_legacy_ai(civ))
 }
 
 /// Compute a round's income without choosing actions for the player.
 pub fn plan_economy(world: &World, r: &Ruleset, civ: CivId, focus: CityFocus, mods: TurnModifiers) -> TurnPlan {
     let mods = TurnModifiers { difficulty: mods.difficulty.or_else(|| world.game_difficulty(r)), ..mods };
-    plan_civ(world, r, civ, focus, mods, false)
+    plan_civ(world, r, civ, focus, mods, false, false)
 }
 
 fn plan_civ(
@@ -552,6 +559,7 @@ fn plan_civ(
     focus: CityFocus,
     mods: TurnModifiers,
     automated: bool,
+    army_to_tactics: bool,
 ) -> TurnPlan {
     let TurnModifiers { costs, science, policies, difficulty, .. } = mods;
     let mut plan = TurnPlan {
@@ -619,6 +627,9 @@ fn plan_civ(
         // Worked out on the first worker's turn and shared by the rest.
         let worker_jobs = std::cell::OnceCell::new();
         for unit in &c.units {
+            if army_to_tactics && crate::world::tactics::takes(world, r, *unit) {
+                continue;
+            }
             let scaling = crate::world::great_person_actions::Scaling { costs, science };
             let order = if world.units.get(*unit).is_some_and(|u| u.has_unique(r, UniqueType::AddInCapital)) {
                 None // Dedicated physical delivery before the endgame check.
@@ -1724,7 +1735,7 @@ fn finish_round_inner(
     let plans: Vec<_> = world
         .living_civs()
         .filter(|id| world.civ(*id).is_some_and(|c| c.is_ai))
-        .map(|id| plan_civ_turn(world, r, id, focus, mods))
+        .map(|id| plan_civ_round(world, r, id, focus, mods))
         .collect();
     let mut events = Vec::new();
     let mut run = |world: &mut World, civ: CivId, command| {
