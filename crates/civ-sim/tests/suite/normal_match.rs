@@ -291,7 +291,7 @@ fn complete_matches_save_and_replay() {
                     );
                 });
                 let restored = Session::restore(&snapshot).unwrap_or_else(|error| {
-                    let path = std::env::temp_dir().join("civ-failed-match.json");
+                    let path = std::env::temp_dir().join("civ-failed-match.save");
                     std::fs::write(&path, &snapshot).unwrap();
                     panic!(
                         "seed={seed} turn={} restore failed: {error:?}; snapshot={}",
@@ -434,9 +434,9 @@ fn a_blitz_save_never_loads_as_the_full_game() {
     let save = session.save().unwrap();
     assert!(Session::restore(&save).is_ok());
     // Relabel it as a full game: the content hash no longer matches.
-    let mut json: serde_json::Value = serde_json::from_str(&save).unwrap();
+    let mut json = Session::dump(&save).unwrap();
     json["settings"]["ruleset"] = serde_json::Value::Null;
-    assert!(Session::restore(&json.to_string()).is_err());
+    assert!(Session::restore(&Session::undump(&json).unwrap()).is_err());
     // And the world snapshot itself names Blitz's rules.
     let full = civ_sim::content::load().unwrap();
     let world = civ_core::save::encode(session.world(), session.rules()).unwrap();

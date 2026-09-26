@@ -247,7 +247,7 @@ pub struct Visibility {
     /// Civ-major: civ `c` occupies `[c*words, (c+1)*words)`.
     explored: Vec<u64>,
     visible: Vec<u64>,
-    /// A row a civ, iterated in (civ, tile) order so iteration is reproducible, and saved as entries.
+    /// A row a civ, iterated in (civ, tile) order so iteration is reproducible; saved in columns (`CivTiles`).
     memory: CivTiles<TileMemory>,
     tile_observations: CivTiles<TileObservation>,
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
@@ -835,6 +835,63 @@ mod tests {
         assert_ne!(open, viewable_tiles(&grid, &r, from, 1, false));
     }
 
+    #[cfg(feature = "save")]
+    #[test]
+    fn memories_save_in_columns_with_one_encoding() {
+        let r = Ruleset::from_sources(&crate::fingerprint::embedded_sources()).unwrap();
+        let (grass, forest) = (r.terrain("Grassland").unwrap(), r.terrain("Forest").unwrap());
+        let seen = |t: u16, turn: u32| TileObservation {
+            terrain: grass,
+            features: if t % 50 < 20 { vec![forest] } else { Vec::new() },
+            natural_wonder: None,
+            resource: None,
+            improvement: None,
+            improvement_pillaged: false,
+            road: RoadLevel::None,
+            road_pillaged: false,
+            river_edges: 0,
+            owner: (t > 40).then_some(OTHER),
+            observed_turn: turn,
+            placed: None,
+        };
+        let mut v = Visibility::new(200, 4);
+        for t in (0..60).chain([130, 199]) {
+            v.tile_observations.insert((CIV, TileId(t)), seen(t, 3 + u32::from(t) / 20));
+            v.memory.insert((CIV, TileId(t)), TileMemory { owner: (t > 40).then_some(OTHER), ..Default::default() });
+        }
+        // Civ 1 remembers nothing; civ 2 one tile.
+        v.tile_observations.insert((CivId(2), TileId(7)), seen(7, 9));
+        let bytes = postcard::to_allocvec(&v).unwrap();
+        assert_eq!(postcard::from_bytes::<Visibility>(&bytes).unwrap(), v);
+        let entries = postcard::to_allocvec(&(
+            v.tile_observations.iter().collect::<Vec<_>>(),
+            v.memory.iter().collect::<Vec<_>>(),
+        ))
+        .unwrap();
+        assert!(bytes.len() * 4 < entries.len(), "{} bytes against {} as entries", bytes.len(), entries.len());
+
+        let mut regrown = v.clone();
+        regrown.tile_observations.rows.resize_with(4, Vec::new);
+        regrown.tile_observations.rows[0].resize_with(200, || None);
+        assert_eq!(regrown, v);
+        assert_eq!(postcard::to_allocvec(&regrown).unwrap(), bytes, "however the rows grew");
+
+        let json = serde_json::to_value(&v).unwrap();
+        assert_eq!(json["tile_observations"][0][0], serde_json::json!([0, 0]), "JSON keeps the entry list");
+        assert_eq!(serde_json::from_value::<Visibility>(json).unwrap(), v);
+    }
+
+    #[cfg(feature = "save")]
+    #[test]
+    fn a_column_must_cover_its_tiles_exactly() {
+        assert_eq!(runs([1, 1, 2, 2, 2, 1].into_iter()), vec![(2, 1), (3, 2), (1, 1)]);
+        assert_eq!(expand(vec![(2, 'a'), (1, 'b')], 3).unwrap().collect::<String>(), "aab");
+        for (runs, len) in [(vec![(2, 'a')], 3), (vec![(2, 'a'), (2, 'b')], 3), (vec![(0, 'a'), (3, 'b')], 3)] {
+            assert!(expand(runs, len).is_err());
+        }
+        assert!(expand(vec![(u32::MAX, 'a')], 3).is_err());
+    }
+
     #[test]
     fn observing_explores_permanently() {
         let mut v = Visibility::new(10_240, 8);
@@ -984,9 +1041,10 @@ mod tests {
 }
 
 /// A value for each (civ, tile), kept densely, a row a civ. It reads and writes like the
-/// `BTreeMap<(CivId, TileId), T>` it replaced, iterates in the same (civ, tile) order, and saves as the same list of
-/// entries (`serialization::map_as_entries`). Fog reads and writes it for every civ and every tile it sees, on every
-/// step of every move, where the map's lookups were most of the cost.
+/// `BTreeMap<(CivId, TileId), T>` it replaced and iterates in the same (civ, tile) order; its JSON is that map's list
+/// of entries (`serialization::map_as_entries`), its binary snapshot a denser form of its own. Fog reads and writes
+/// it for every civ and every tile it sees, on every step of every move, where the map's lookups were most of the
+/// cost.
 #[derive(Debug, Clone)]
 pub(crate) struct CivTiles<T> {
     rows: Vec<Vec<Option<T>>>,
@@ -1061,10 +1119,31 @@ impl<T: PartialEq> PartialEq for CivTiles<T> {
     }
 }
 
+/// The two forms a `CivTiles` saves in. JSON (`save::to_json`) keeps the entry list. A binary snapshot keeps a row
+/// a civ, up to the last civ with any entry: the tiles it holds as a bitset, then its values field by field
+/// ([`Columns`]). The keys cost nothing, and a civ's memories of neighbouring tiles mostly agree a field at a time —
+/// the same terrain, the same owner, seen on the same turn — where whole values rarely do.
 #[cfg(feature = "serde")]
-impl<T: serde::Serialize> serde::Serialize for CivTiles<T> {
+impl<T: serde::Serialize + Columns> serde::Serialize for CivTiles<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeSeq;
+        if !serializer.is_human_readable() {
+            let civs = self.rows.iter().rposition(|row| row.iter().any(Option::is_some)).map_or(0, |c| c + 1);
+            let mut seq = serializer.serialize_seq(Some(civs))?;
+            for row in &self.rows[..civs] {
+                let end = row.iter().rposition(Option::is_some).map_or(0, |t| t + 1);
+                let mut tiles = vec![0u8; end.div_ceil(8)];
+                let mut values = Vec::new();
+                for (t, value) in row[..end].iter().enumerate() {
+                    if let Some(value) = value {
+                        tiles[t / 8] |= 1 << (t % 8);
+                        values.push(value);
+                    }
+                }
+                seq.serialize_element(&(tiles, T::store(&values)))?;
+            }
+            return seq.end();
+        }
         let mut seq = serializer.serialize_seq(Some(self.len))?;
         for (key, value) in self.iter() {
             seq.serialize_element(&(&key, value))?;
@@ -1074,15 +1153,114 @@ impl<T: serde::Serialize> serde::Serialize for CivTiles<T> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for CivTiles<T> {
+impl<'de, T: serde::Deserialize<'de> + Columns> serde::Deserialize<'de> for CivTiles<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let entries = Vec::<((CivId, TileId), T)>::deserialize(deserializer)?;
+        use serde::de::Error;
         let mut map = CivTiles::default();
+        if !deserializer.is_human_readable() {
+            let rows = Vec::<(Vec<u8>, T::Stored)>::deserialize(deserializer)?;
+            for (c, (tiles, stored)) in rows.into_iter().enumerate() {
+                let civ = u8::try_from(c).map_err(|_| D::Error::custom("too many civilizations in fog snapshot"))?;
+                if tiles.len() * 8 > usize::from(u16::MAX) + 1 {
+                    return Err(D::Error::custom("fog snapshot row exceeds the tile range"));
+                }
+                let keys: Vec<_> = (0..tiles.len() * 8).filter(|t| tiles[t / 8] & (1 << (t % 8)) != 0).collect();
+                let values = T::load(stored, keys.len()).map_err(D::Error::custom)?;
+                for (t, value) in keys.into_iter().zip(values) {
+                    map.insert((CivId(civ), TileId(t as u16)), value);
+                }
+            }
+            return Ok(map);
+        }
+        let entries = Vec::<((CivId, TileId), T)>::deserialize(deserializer)?;
         for (key, value) in entries {
             if map.insert(key, value).is_some() {
-                return Err(serde::de::Error::custom("duplicate snapshot map key"));
+                return Err(D::Error::custom("duplicate snapshot map key"));
             }
         }
         Ok(map)
     }
 }
+
+/// A type kept in `CivTiles`, as binary snapshots store it: each field a column of runs of equal values, in tile
+/// order.
+#[cfg(feature = "serde")]
+pub(crate) trait Columns: Sized {
+    type Stored: serde::Serialize + serde::de::DeserializeOwned;
+    fn store(values: &[&Self]) -> Self::Stored;
+    fn load(stored: Self::Stored, len: usize) -> Result<Vec<Self>, String>;
+}
+
+/// `(count, value)` runs.
+#[cfg(feature = "serde")]
+fn runs<T: PartialEq>(values: impl Iterator<Item = T>) -> Vec<(u32, T)> {
+    let mut out: Vec<(u32, T)> = Vec::new();
+    for value in values {
+        match out.last_mut() {
+            Some((n, last)) if *last == value => *n += 1,
+            _ => out.push((1, value)),
+        }
+    }
+    out
+}
+
+/// The `len` values the runs stand for; they must cover exactly that many.
+#[cfg(feature = "serde")]
+fn expand<T: Clone>(runs: Vec<(u32, T)>, len: usize) -> Result<std::vec::IntoIter<T>, String> {
+    let mut out = Vec::with_capacity(len);
+    for (n, value) in runs {
+        let n = n as usize;
+        if n == 0 || n > len - out.len() {
+            return Err("fog snapshot column does not match its tiles".into());
+        }
+        out.extend(std::iter::repeat_n(value, n));
+    }
+    if out.len() != len {
+        return Err("fog snapshot column does not match its tiles".into());
+    }
+    Ok(out.into_iter())
+}
+
+/// Implements [`Columns`]; the struct literal in `load` fails to compile if a field is left out.
+#[cfg(feature = "serde")]
+macro_rules! columns {
+    ($ty:ident as $stored:ident { $($field:ident: $t:ty),+ $(,)? }) => {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        pub(crate) struct $stored {
+            $($field: Vec<(u32, $t)>,)+
+        }
+        impl Columns for $ty {
+            type Stored = $stored;
+            fn store(values: &[&Self]) -> $stored {
+                $stored { $($field: runs(values.iter().map(|v| v.$field.clone())),)+ }
+            }
+            fn load(stored: $stored, len: usize) -> Result<Vec<Self>, String> {
+                $(let mut $field = expand(stored.$field, len)?;)+
+                Ok((0..len).map(|_| $ty { $($field: $field.next().unwrap(),)+ }).collect())
+            }
+        }
+    };
+}
+
+#[cfg(feature = "serde")]
+columns!(TileMemory as MemoryColumns {
+    improvement: Option<Id<TileImprovement>>,
+    resource: Option<Id<TileResource>>,
+    owner: Option<CivId>,
+});
+
+#[cfg(feature = "serde")]
+columns!(TileObservation as ObservationColumns {
+    terrain: Id<Terrain>,
+    features: Vec<Id<Terrain>>,
+    natural_wonder: Option<Id<Terrain>>,
+    resource: Option<Id<TileResource>>,
+    improvement: Option<Id<TileImprovement>>,
+    improvement_pillaged: bool,
+    road: RoadLevel,
+    road_pillaged: bool,
+    river_edges: u8,
+    owner: Option<CivId>,
+    observed_turn: u32,
+    placed: Option<crate::world::grid::Placed>,
+});

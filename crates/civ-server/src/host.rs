@@ -890,7 +890,7 @@ mod tests {
             Err(HostError::Internal)
         ));
         assert!(!host.update(&id, 0, lease.generation).await.unwrap().ready);
-        let stored: String = db
+        let stored: Vec<u8> = db
             .query_row("SELECT snapshot FROM matches WHERE id=?1", [&id], |r| {
                 r.get(0)
             })

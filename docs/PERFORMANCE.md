@@ -15,8 +15,9 @@ Phase 2 continues the graphics work from `b885ce6`.
   are still assembled per transition.
 - Game layout reads baked model measurements. Geometry generation stays in art workers; development
   tools can generate directly. `bun run art:measure` refreshes the committed metadata.
-- Core/session save format 4 embeds JSON directly and omits derived seat projections. Older saves
-  are rejected; no migration is provided.
+- Core/session save format 5 is binary: postcard, with fog memories as a tile bitset and run-length
+  columns per civ, and the session's history as JSON inside (ARCHITECTURE.md, Persistence and
+  networking). Derived seat projections are omitted. Older saves are rejected; no migration is provided.
 
 ## Rendering
 
@@ -46,6 +47,31 @@ The existing `civ-sim` `save_profile` example, on the same machine and release s
 
 These are one-run local samples, not FPS or general workload guarantees. Reproduce with
 `cargo run --release -p civ-sim --example save_profile` and the settings above.
+
+### Compact saves (format 5)
+
+The same example, and a late game with `--turns 150 --map medium --civs 6 --city-states 4` (every
+seat an AI). Best of three runs on a loaded machine; the worlds are identical in both formats.
+
+| Measurement | Format 4 (JSON) | Format 5 |
+|---|---:|---:|
+| Turn 12, save size | 344,637 bytes | 34,103 bytes |
+| Turn 12, session save | 1.70 ms | 0.18 ms |
+| Turn 12, session restore | 12.8 ms | 7.5 ms |
+| Turn 150, save size | 2,339,638 bytes | 242,014 bytes |
+| Turn 150, session save | 10.5 ms | 1.34 ms |
+| Turn 150, session restore | 24.4 ms | 10.4 ms |
+| Turn 150, browser checkpoint (`HostedGame.snapshot`, Wasm in Bun) | 10.0 ms | 1.9 ms |
+| Turn 150, browser resume (`HostedGame.restore`, Wasm in Bun) | 24.9 ms | 11.1 ms |
+
+Fog memories were 79% of the turn-150 save: 1,858,491 bytes as JSON entries, 170,914 as postcard
+entries, 53,841 as columns. Without them the rest of the world is still 476,182 bytes as JSON, twice the
+whole binary save, and postcard is 3–6× faster at both ends (the whole world: 0.6 ms to encode and
+1.7 ms to decode, against 4.0 and 5.2 ms for JSON); that decided binary over a compact JSON. Restore
+time is now mostly loading the rules and rebuilding each seat's view. The largest part left is the
+civs' unique indexes (87 KB at turn 150, much of it repeated between civs). The browser row is a
+similar game played through `HostedGame` with a human seat that only ends its turns (a
+2,154,514-byte save before, 239,660 after), built with the same settings.
 
 ### Art between visits
 

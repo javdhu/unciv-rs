@@ -317,7 +317,7 @@ async fn two_real_sockets_are_seat_authorized_fenced_and_share_one_round() {
         .query_row("SELECT token_hash FROM guests LIMIT 1", [], |r| r.get(0))
         .unwrap();
     assert_ne!(hash, token);
-    let stored: String = db
+    let stored: Vec<u8> = db
         .query_row("SELECT snapshot FROM matches", [], |r| r.get(0))
         .unwrap();
     let restored = civ_sim::session::Session::restore(&stored).unwrap();

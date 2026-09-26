@@ -211,7 +211,7 @@ Protocol 9 sends `delta` messages between snapshots. `base` must exactly match t
 `update.view.tiles`, `units`, `cities` and `civs` contain upserts, and `removed` lists deleted keys. Unit
 and city keys include both ID and generation. All other update fields are absolute. Deltas compare
 already-filtered seat views; they never diff the hidden world. A missing base requests full resync;
-stale revisions are ignored. Core and session save format 4 reject older saves and omit derived projections. JSON quantities have explicit units;
+stale revisions are ignored. Core and session save format 5 are binary (ARCHITECTURE.md, Persistence), reject older saves and omit derived projections. JSON quantities have explicit units;
 integers beyond JavaScript's exact range use strings. Protocol tags never depend on engine enum order.
 
 ## First playable room
@@ -255,7 +255,9 @@ match length or technical implementation.
 - `civ-sim::protocol`: Rust wire types and JSON schemas. `tools/check_protocol.py` verifies generated
   browser definitions; Ajv validates incoming network messages at runtime.
 - `HostedGame` and `session-worker.ts`: solo authority, staged writes and IndexedDB commit before
-  acknowledgment. Compare-and-swap prevents two tabs from overwriting the same save.
+  acknowledgment. `snapshot()`/`pendingSnapshot()` return the save as a `Uint8Array`, which `HostedGame.restore`
+  takes back; the worker stores it as is. A string save from before format 5 reads as no save.
+  Compare-and-swap prevents two tabs from overwriting the same save.
 - `SessionClient`: buffers the first view, orders revisions, serializes commands and writes a durable
   pending-command outbox. Opening the same session recovers old outcomes before accepting new input.
 - `civ-server`: private rooms, guest cookies, authenticated WebSocket seats, SQLite transactions,

@@ -11,12 +11,16 @@ use civ_core::world::construction::Construction;
 use civ_core::world::turn::TurnModifiers;
 use civ_core::world::{CivId, TileId, World};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-const SAVE_VERSION: u32 = 4;
+const SAVE_VERSION: u32 = 5;
+const SAVE_MAGIC: [u8; 4] = *b"CIVS";
 const MAX_RECORDS: usize = 100_000;
-const MAX_SAVE_BYTES: usize = 128 * 1024 * 1024;
+/// Full histories' JSON reaches about 50 MB at the record limits; the world
+/// adds at most `civ_core::save::MAX_SNAPSHOT_BYTES`.
+const MAX_SAVE_BYTES: usize = 80 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionError {
@@ -74,20 +78,27 @@ enum Input {
     Presence { seat: u8, connected: bool },
 }
 
+/// A save is binary: magic, version, engine and content identity and this
+/// history as JSON — its commands are protocol types, and JSON is theirs — then
+/// the world snapshot (`civ_core::save`) to the end. `Session::dump` shows it
+/// all as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Save {
-    version: u32,
-    engine: String,
-    content: String,
-    settings: Settings,
-    epoch: String,
-    original_seats: Vec<u8>,
-    world: Box<serde_json::value::RawValue>,
-    seats: Vec<Seat>,
-    records: Vec<RecordedCommand>,
-    inputs: Vec<Input>,
-    offers: crate::offers::Offers,
+struct History<'a> {
+    settings: Cow<'a, Settings>,
+    epoch: Cow<'a, str>,
+    original_seats: Cow<'a, [u8]>,
+    seats: Cow<'a, [Seat]>,
+    records: Cow<'a, [RecordedCommand]>,
+    inputs: Cow<'a, [Input]>,
+    offers: Cow<'a, crate::offers::Offers>,
+}
+
+fn seal(version: u32, engine: &str, content: &str, history: &str, world: &[u8]) -> Result<Vec<u8>, SessionError> {
+    let mut encoded = postcard::to_allocvec(&(SAVE_MAGIC, version, engine, content, history))
+        .map_err(|e| SessionError::InvalidSave(e.to_string()))?;
+    encoded.extend_from_slice(world);
+    Ok(encoded)
 }
 
 #[derive(Clone)]
@@ -749,40 +760,53 @@ impl Session {
         })
     }
 
-    pub fn save(&self) -> Result<String, SessionError> {
+    pub fn save(&self) -> Result<Vec<u8>, SessionError> {
+        let failed = |e: &dyn std::fmt::Display| SessionError::InvalidSave(e.to_string());
         let world =
             civ_core::save::encode_with_identity(&self.world, &self.rules, &self.ruleset_identity)
-                .map_err(|e| SessionError::InvalidSave(e.to_string()))?;
-        let encoded = serde_json::to_string(&Save {
-            version: SAVE_VERSION,
-            engine: content::ENGINE_VERSION.into(),
-            content: self.content_hash(),
-            settings: self.settings.clone(),
-            epoch: self.epoch.clone(),
-            original_seats: self.original_seats.clone(),
-            world: serde_json::value::RawValue::from_string(world)
-                .map_err(|e| SessionError::InvalidSave(e.to_string()))?,
-            seats: self.seats.clone(),
-            records: self.records.clone(),
-            inputs: self.inputs.clone(),
-            offers: self.offers.clone(),
+                .map_err(|e| failed(&e))?;
+        let history = serde_json::to_string(&History {
+            settings: Cow::Borrowed(&self.settings),
+            epoch: Cow::Borrowed(&self.epoch),
+            original_seats: Cow::Borrowed(&self.original_seats),
+            seats: Cow::Borrowed(&self.seats),
+            records: Cow::Borrowed(&self.records),
+            inputs: Cow::Borrowed(&self.inputs),
+            offers: Cow::Borrowed(&self.offers),
         })
-        .map_err(|e| SessionError::InvalidSave(e.to_string()))?;
+        .map_err(|e| failed(&e))?;
+        let encoded = seal(SAVE_VERSION, content::ENGINE_VERSION, &self.content_hash(), &history, &world)?;
         if encoded.len() > MAX_SAVE_BYTES {
             return Err(SessionError::Capacity);
         }
         Ok(encoded)
     }
-    pub fn restore(data: &str) -> Result<Self, SessionError> {
+
+    /// The header's engine and content identity, the history, and the world snapshot.
+    fn open_save(data: &[u8]) -> Result<(&str, &str, History<'static>, &[u8]), SessionError> {
         let invalid = |s: &str| SessionError::InvalidSave(s.into());
         if data.len() > MAX_SAVE_BYTES {
             return Err(invalid("save exceeds size limit"));
         }
-        let save: Save =
-            serde_json::from_str(data).map_err(|_| invalid("malformed session save"))?;
-        if save.version != SAVE_VERSION
-            || save.engine != content::ENGINE_VERSION
-            || content::hash_of(save.settings.ruleset_name()).ok().as_ref() != Some(&save.content)
+        let ((magic, version), rest) = postcard::take_from_bytes::<([u8; 4], u32)>(data)
+            .map_err(|_| invalid("malformed session save"))?;
+        if magic != SAVE_MAGIC {
+            return Err(invalid("malformed session save"));
+        }
+        if version != SAVE_VERSION {
+            return Err(invalid("incompatible session version or content"));
+        }
+        let ((engine, content, history), world) = postcard::take_from_bytes::<(&str, &str, &str)>(rest)
+            .map_err(|_| invalid("malformed session save"))?;
+        let history = serde_json::from_str(history).map_err(|_| invalid("malformed session save"))?;
+        Ok((engine, content, history, world))
+    }
+
+    pub fn restore(data: &[u8]) -> Result<Self, SessionError> {
+        let invalid = |s: &str| SessionError::InvalidSave(s.into());
+        let (engine, content, save, world) = Self::open_save(data)?;
+        if engine != content::ENGINE_VERSION
+            || content::hash_of(save.settings.ruleset_name()).ok().as_deref() != Some(content)
         {
             return Err(invalid("incompatible session version or content"));
         }
@@ -796,9 +820,9 @@ impl Session {
         let rules = Arc::new(
             content::load_ruleset(save.settings.ruleset_name()).map_err(SessionError::InvalidSave)?,
         );
-        let world =
-            civ_core::save::decode(save.world.get(), &rules).map_err(|e| invalid(&e.to_string()))?;
         let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
+        let world = civ_core::save::decode_with_identity(world, &rules, &ruleset_identity)
+            .map_err(|e| invalid(&e.to_string()))?;
         let expected: BTreeSet<_> = save.original_seats.iter().copied().collect();
         let actual: BTreeSet<_> = save.seats.iter().map(|s| s.civ).collect();
         if expected.is_empty()
@@ -815,7 +839,7 @@ impl Session {
             return Err(invalid("invalid session seats"));
         }
         let mut identities = BTreeSet::new();
-        for r in &save.records {
+        for r in save.records.iter() {
             if !actual.contains(&r.seat)
                 || r.receipt.command_id != r.request.command_id
                 || r.receipt.cursor.epoch != save.epoch
@@ -889,13 +913,13 @@ impl Session {
             world,
             rules,
             ruleset_identity,
-            settings: save.settings,
-            epoch: save.epoch,
-            original_seats: save.original_seats,
-            seats: save.seats,
-            records: save.records,
-            inputs: save.inputs,
-            offers: save.offers,
+            settings: save.settings.into_owned(),
+            epoch: save.epoch.into_owned(),
+            original_seats: save.original_seats.into_owned(),
+            seats: save.seats.into_owned(),
+            records: save.records.into_owned(),
+            inputs: save.inputs.into_owned(),
+            offers: save.offers.into_owned(),
             replay: Vec::new(),
             undo: BTreeMap::new(),
             version: 0,
@@ -918,6 +942,36 @@ impl Session {
             session.seats[index].projection = Some(Arc::new(projection));
         }
         Ok(session)
+    }
+
+    /// A save as JSON, to read or edit: its header, its history, and its world
+    /// as `civ_core::save::to_json` shows it. Nothing is validated.
+    pub fn dump(data: &[u8]) -> Result<serde_json::Value, SessionError> {
+        let failed = |e: &dyn std::fmt::Display| SessionError::InvalidSave(e.to_string());
+        let (engine, content, history, world) = Self::open_save(data)?;
+        let mut value = serde_json::to_value(&history).map_err(|e| failed(&e))?;
+        value["version"] = SAVE_VERSION.into();
+        value["engine"] = engine.into();
+        value["content"] = content.into();
+        value["world"] = civ_core::save::to_json(world).map_err(|e| failed(&e))?;
+        Ok(value)
+    }
+
+    /// The save `dump` showed, perhaps edited. `restore` validates it.
+    pub fn undump(value: &serde_json::Value) -> Result<Vec<u8>, SessionError> {
+        let failed = |e: &dyn std::fmt::Display| SessionError::InvalidSave(e.to_string());
+        let mut history = value.clone();
+        let fields = history.as_object_mut().ok_or_else(|| failed(&"a save is an object"))?;
+        let mut header = ["version", "engine", "content", "world"].map(|key| fields.remove(key).unwrap_or_default());
+        let version = header[0].as_u64().and_then(|v| u32::try_from(v).ok()).ok_or_else(|| failed(&"no version"))?;
+        let (engine, content) = (header[1].take(), header[2].take());
+        let (Some(engine), Some(content)) = (engine.as_str(), content.as_str()) else {
+            return Err(failed(&"no engine or content identity"));
+        };
+        let history: History = serde_json::from_value(history).map_err(|e| failed(&e))?;
+        let history = serde_json::to_string(&history).map_err(|e| failed(&e))?;
+        let world = civ_core::save::from_json(&header[3]).map_err(|e| failed(&e))?;
+        seal(version, engine, content, &history, &world)
     }
 
     /// Independent reconstruction from the initial seed and ordered commands/host inputs.

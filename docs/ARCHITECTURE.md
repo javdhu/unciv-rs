@@ -97,9 +97,13 @@ unchanged entity objects and requests a full resync if it missed the base revisi
 Native saves include complete arena generations/free-slot order, world/knowledge, versions and content
 identity. Session saves add settings, epoch, turn access, receipts and ordered player/host inputs. Replay
 reconstructs the game from its initial settings and those inputs; deterministic AI decisions remain
-reconstructable under the pinned engine. Presentation events are not the authoritative save format. Core and session format 4 embed the world
-as a JSON object, omit derived seat projections, and reject older snapshots. Typed projections are rebuilt
-on restore. Staged worlds share their large stores through copy-on-write ownership; mutating a store
+reconstructable under the pinned engine. Presentation events are not the authoritative save format. Core and session format 5
+are binary and reject older snapshots. A core snapshot is a header (magic, version, ruleset identity, FNV-1a
+checksum) and the world in postcard; fog memories are stored a row a civ, a tile bitset and each field as runs
+of equal values. A session save is its own header, then settings, seats, receipts, inputs and offers as JSON (the
+protocol's own form), then the core snapshot. Saves are deterministic: the same session saves the same bytes.
+`Session::dump`/`undump` (`examples/save_dump.rs`) show a save as JSON and pack it back. Derived seat
+projections are omitted and rebuilt on restore. Staged worlds share their large stores through copy-on-write ownership; mutating a store
 detaches it without changing the live transaction or undo snapshot.
 
 Visibility caches line-of-sight results by their complete local terrain and topology inputs. Visibility
@@ -111,7 +115,7 @@ controller changes and round deadlines are persisted. Commands and clock decisio
 The local server owns its SQLite database exclusively; multi-process distributed hosting is deferred.
 
 Browser pending requests are saved before sending. Reopening a session retries them in order with the
-original IDs. Solo uses the same semantics, with an IndexedDB comparison against the previous snapshot
+original IDs. Solo uses the same semantics: its snapshot is a `Uint8Array` in IndexedDB, with an IndexedDB comparison against the previous snapshot
 so a stale second tab cannot overwrite progress. Network failure means an unknown outcome; a receipt
 must be recovered before dependent commands proceed. Remote sessions reconnect with bounded backoff,
 hydrate a fresh view, and recover the outbox before queued commands resume. Fenced tabs stop permanently.

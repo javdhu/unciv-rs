@@ -30,7 +30,7 @@ impl HostedGame {
             prepared: None,
         })
     }
-    pub fn restore(snapshot: &str) -> Result<HostedGame, JsError> {
+    pub fn restore(snapshot: &[u8]) -> Result<HostedGame, JsError> {
         let session =
             session::Session::restore(snapshot).map_err(|e| JsError::new(&e.to_string()))?;
         Ok(Self {
@@ -85,7 +85,7 @@ impl HostedGame {
         Ok(reply)
     }
     #[wasm_bindgen(js_name = pendingSnapshot)]
-    pub fn pending_snapshot(&self) -> Result<String, JsError> {
+    pub fn pending_snapshot(&self) -> Result<Vec<u8>, JsError> {
         self.prepared
             .as_ref()
             .ok_or_else(|| JsError::new("no staged command"))?
@@ -104,7 +104,7 @@ impl HostedGame {
     pub fn discard(&mut self) {
         self.prepared = None;
     }
-    pub fn snapshot(&self) -> Result<String, JsError> {
+    pub fn snapshot(&self) -> Result<Vec<u8>, JsError> {
         self.session
             .save()
             .map_err(|e| JsError::new(&e.to_string()))

@@ -13,11 +13,13 @@ crate-type = ["rlib", "cdylib"]
 [features]
 # Off by default: the rules core must stay dependency-free and wasm-portable.
 serde = ["dep:serde"]
-save = ["serde", "dep:serde_json"]
+save = ["serde", "dep:serde_json", "dep:postcard"]
 
 [dependencies]
 serde = { version = "1", optional = true, features = ["derive", "rc"] }
-serde_json = { version = "1", optional = true, features = ["raw_value"] }
+serde_json = { version = "1", optional = true }
+# Snapshots' binary form: a stable, documented wire format (MIT OR Apache-2.0).
+postcard = { version = "1.1", optional = true, default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 serde_json = "1"

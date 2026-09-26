@@ -61,7 +61,7 @@ impl Store {
                 guest TEXT NOT NULL REFERENCES guests(id), PRIMARY KEY(room_id,seat), UNIQUE(room_id,guest));
              CREATE TABLE IF NOT EXISTS matches(
                 id TEXT PRIMARY KEY, room_id TEXT UNIQUE NOT NULL REFERENCES rooms(id),
-                snapshot TEXT NOT NULL, metadata TEXT NOT NULL);
+                snapshot BLOB NOT NULL, metadata TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS receipts(
                 match_id TEXT NOT NULL REFERENCES matches(id), seat INTEGER NOT NULL,
                 epoch TEXT NOT NULL, command_id TEXT NOT NULL, receipt TEXT NOT NULL,
@@ -277,7 +277,7 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
-    pub fn matches(&self) -> Result<Vec<(String, String, String, String)>, HostError> {
+    pub fn matches(&self) -> Result<Vec<(String, String, Vec<u8>, String)>, HostError> {
         let db = self.lock()?;
         let mut stmt =
             db.prepare("SELECT id,room_id,snapshot,metadata FROM matches ORDER BY id")?;

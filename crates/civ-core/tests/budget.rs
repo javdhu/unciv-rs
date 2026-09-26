@@ -135,7 +135,7 @@ fn what_a_game_weighs() {
     {
         let snapshot = civ_core::save::encode(&w, &r).expect("mid-game world can be saved");
         println!(
-            "COMPLETE ENCODED SNAPSHOT {} UTF-8 bytes (~{} KiB), not heap bytes",
+            "COMPLETE ENCODED SNAPSHOT {} bytes (~{} KiB), not heap bytes",
             snapshot.len(),
             snapshot.len() / 1024
         );

@@ -268,10 +268,11 @@ fn complete_content_and_host_settings_are_checked_before_play() {
     ] {
         assert!(Session::new(settings, "e".into(), vec![0]).is_err());
     }
-    assert!(Session::restore("{}").is_err());
-    let mut save: serde_json::Value = serde_json::from_str(&s.save().unwrap()).unwrap();
+    assert!(Session::restore(b"{}").is_err());
+    let mut save = Session::dump(&s.save().unwrap()).unwrap();
+    assert!(Session::restore(&Session::undump(&save).unwrap()).is_ok());
     save["version"] = 999.into();
-    assert!(Session::restore(&save.to_string()).is_err());
+    assert!(Session::restore(&Session::undump(&save).unwrap()).is_err());
 }
 
 #[test]
@@ -2365,12 +2366,18 @@ fn a_room_sees_every_seats_readiness_and_connection() {
 fn saves_embed_world_and_omit_derived_projections() {
     let session = Session::new(Settings::default(), "save-shape".into(), vec![0]).unwrap();
     let saved = session.save().unwrap();
-    let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    assert!(value["world"].is_object());
+    assert_eq!(session.save().unwrap(), saved, "the same session saves the same bytes");
+    let value = Session::dump(&saved).unwrap();
+    assert!(value["world"]["world"].is_object());
     assert!(value["seats"][0].get("projection").is_none());
+    assert_eq!(Session::undump(&value).unwrap(), saved, "the JSON shows all of it");
     let restored = Session::restore(&saved).unwrap();
     assert_eq!(session.world(), restored.world());
+    assert_eq!(restored.save().unwrap(), saved);
     restored.verify_replay().unwrap();
+    for end in [0, 3, 4, saved.len() / 2, saved.len() - 1] {
+        assert!(Session::restore(&saved[..end]).is_err());
+    }
 }
 
 #[test]

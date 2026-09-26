@@ -1,24 +1,30 @@
 //! Versioned complete-world snapshots. Requires the optional `save` feature;
 //! default rules builds remain free of runtime dependencies.
 //!
-//! JSON maps with structured keys are encoded as ordered entry arrays. Arenas
-//! preserve vacant generations and their reuse order. The checksum detects
-//! accidental corruption; it is not a signature or an authenticity guarantee.
+//! A snapshot is binary: a header — magic, format version, ruleset identity,
+//! checksum — then the world in postcard, a compact serde format with a
+//! stable specification. Fog memories take a denser form there
+//! (`world::fog::CivTiles`). `to_json` shows a snapshot as JSON for reading
+//! and editing, with maps that have structured keys as ordered entry arrays.
+//! Arenas preserve vacant generations and their reuse order. The checksum
+//! detects accidental corruption; it is not a signature or an authenticity
+//! guarantee.
 
 use crate::arena::{Id, Registry};
 use crate::ruleset::Ruleset;
 use crate::world::grid::CivId;
 use crate::world::world::World;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const FORMAT_VERSION: u32 = 4;
-pub const MAX_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
+pub const FORMAT_VERSION: u32 = 5;
+/// A late-game world on a large map is about 1 MB.
+pub const MAX_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
+const MAGIC: [u8; 4] = *b"CIVW";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SaveError {
     TooLarge,
-    InvalidJson(String),
+    Malformed(String),
     UnsupportedVersion(u32),
     RulesetMismatch,
     ChecksumMismatch,
@@ -29,7 +35,7 @@ impl std::fmt::Display for SaveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TooLarge => write!(f, "snapshot exceeds the size limit"),
-            Self::InvalidJson(e) => write!(f, "invalid snapshot JSON: {e}"),
+            Self::Malformed(e) => write!(f, "malformed snapshot: {e}"),
             Self::UnsupportedVersion(v) => write!(f, "unsupported snapshot version {v}"),
             Self::RulesetMismatch => write!(f, "snapshot uses a different ruleset"),
             Self::ChecksumMismatch => write!(f, "snapshot checksum does not match"),
@@ -39,18 +45,12 @@ impl std::fmt::Display for SaveError {
 }
 impl std::error::Error for SaveError {}
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope {
-    version: u32,
-    ruleset: String,
-    checksum: String,
-    world: Box<serde_json::value::RawValue>,
+fn malformed(e: impl std::fmt::Display) -> SaveError {
+    SaveError::Malformed(e.to_string())
 }
 
-fn hash(bytes: &[u8]) -> String {
-    let value = bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3));
-    format!("{value:016x}")
+fn hash(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
 }
 
 /// Identity includes every loaded, derived rule in registry order, including
@@ -115,7 +115,7 @@ pub fn ruleset_identity(r: &Ruleset) -> String {
     if let Some(name) = &r.default_difficulty_name {
         write!(&mut input, "\ndefault difficulty {name}").unwrap();
     }
-    hash(input.as_bytes())
+    format!("{:016x}", hash(input.as_bytes()))
 }
 
 /// Precomputed identity for an immutable ruleset used by repeated snapshots.
@@ -128,40 +128,87 @@ impl RulesetIdentity {
     }
 }
 
-pub fn encode(world: &World, ruleset: &Ruleset) -> Result<String, SaveError> {
+pub fn encode(world: &World, ruleset: &Ruleset) -> Result<Vec<u8>, SaveError> {
     encode_with_identity(world, ruleset, &RulesetIdentity::new(ruleset))
 }
 
 /// The identity must have been made from `ruleset`, which must remain immutable.
-pub fn encode_with_identity(world: &World, ruleset: &Ruleset, identity: &RulesetIdentity) -> Result<String, SaveError> {
+pub fn encode_with_identity(world: &World, ruleset: &Ruleset, identity: &RulesetIdentity) -> Result<Vec<u8>, SaveError> {
     validate(world, ruleset)?;
-    let value = serde_json::value::to_raw_value(world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
-    let envelope =
-        Envelope { version: FORMAT_VERSION, ruleset: identity.0.clone(), checksum: hash(value.get().as_bytes()), world: value };
-    let text = serde_json::to_string(&envelope).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
-    if text.len() > MAX_SNAPSHOT_BYTES {
+    let body = postcard::to_allocvec(world).map_err(malformed)?;
+    let bytes = seal(FORMAT_VERSION, &identity.0, &body)?;
+    if bytes.len() > MAX_SNAPSHOT_BYTES {
         return Err(SaveError::TooLarge);
     }
-    Ok(text)
+    Ok(bytes)
 }
 
-pub fn decode(text: &str, ruleset: &Ruleset) -> Result<World, SaveError> {
-    if text.len() > MAX_SNAPSHOT_BYTES {
+fn seal(version: u32, ruleset: &str, body: &[u8]) -> Result<Vec<u8>, SaveError> {
+    let mut bytes = postcard::to_allocvec(&(MAGIC, version, ruleset, hash(body))).map_err(malformed)?;
+    bytes.extend_from_slice(body);
+    Ok(bytes)
+}
+
+/// The header's version, ruleset identity and checksum, and the world's bytes.
+fn open(bytes: &[u8]) -> Result<(u32, &str, u64, &[u8]), SaveError> {
+    if bytes.len() > MAX_SNAPSHOT_BYTES {
         return Err(SaveError::TooLarge);
     }
-    let envelope: Envelope = serde_json::from_str(text).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
-    if envelope.version != FORMAT_VERSION {
-        return Err(SaveError::UnsupportedVersion(envelope.version));
+    let ((magic, version), rest) = postcard::take_from_bytes::<([u8; 4], u32)>(bytes).map_err(malformed)?;
+    if magic != MAGIC {
+        return Err(malformed("not a world snapshot"));
     }
-    if envelope.ruleset != ruleset_identity(ruleset) {
+    let ((ruleset, checksum), body) = postcard::take_from_bytes::<(&str, u64)>(rest).map_err(malformed)?;
+    Ok((version, ruleset, checksum, body))
+}
+
+pub fn decode(bytes: &[u8], ruleset: &Ruleset) -> Result<World, SaveError> {
+    decode_with_identity(bytes, ruleset, &RulesetIdentity::new(ruleset))
+}
+
+/// The identity must have been made from `ruleset`, which must remain immutable.
+pub fn decode_with_identity(bytes: &[u8], ruleset: &Ruleset, identity: &RulesetIdentity) -> Result<World, SaveError> {
+    let (version, saved, checksum, body) = open(bytes)?;
+    if version != FORMAT_VERSION {
+        return Err(SaveError::UnsupportedVersion(version));
+    }
+    if saved != identity.0 {
         return Err(SaveError::RulesetMismatch);
     }
-    if envelope.checksum != hash(envelope.world.get().as_bytes()) {
+    if checksum != hash(body) {
         return Err(SaveError::ChecksumMismatch);
     }
-    let world = serde_json::from_str(envelope.world.get()).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
+    let world = postcard::from_bytes(body).map_err(malformed)?;
     validate(&world, ruleset)?;
     Ok(world)
+}
+
+/// A snapshot as JSON — `version`, `ruleset`, `checksum` and `world` — to read
+/// or edit. The checksum must hold; the world is not validated.
+pub fn to_json(bytes: &[u8]) -> Result<serde_json::Value, SaveError> {
+    let (version, ruleset, checksum, body) = open(bytes)?;
+    if version != FORMAT_VERSION {
+        return Err(SaveError::UnsupportedVersion(version));
+    }
+    if checksum != hash(body) {
+        return Err(SaveError::ChecksumMismatch);
+    }
+    let world: World = postcard::from_bytes(body).map_err(malformed)?;
+    Ok(serde_json::json!({
+        "version": version,
+        "ruleset": ruleset,
+        "checksum": format!("{checksum:016x}"),
+        "world": serde_json::to_value(&world).map_err(malformed)?,
+    }))
+}
+
+/// The snapshot `to_json` showed, perhaps edited. The checksum is recomputed
+/// and nothing is validated: `decode` does that.
+pub fn from_json(value: &serde_json::Value) -> Result<Vec<u8>, SaveError> {
+    let version = value["version"].as_u64().and_then(|v| u32::try_from(v).ok()).ok_or_else(|| malformed("no version"))?;
+    let ruleset = value["ruleset"].as_str().ok_or_else(|| malformed("no ruleset"))?;
+    let world: World = serde_json::from_value(value["world"].clone()).map_err(malformed)?;
+    seal(version, ruleset, &postcard::to_allocvec(&world).map_err(malformed)?)
 }
 
 fn rule<T>(registry: &Registry<T>, id: Id<T>, field: &str) -> Result<(), SaveError> {
@@ -749,11 +796,12 @@ mod tests {
         (r, world, vacant)
     }
 
-    fn mutate(text: &str, change: impl FnOnce(&mut serde_json::Value)) -> String {
-        let mut value: serde_json::Value = serde_json::from_str(text).unwrap();
+    /// Decode the snapshot with its world edited as JSON. An edit that no
+    /// longer reads as a world is refused before it could be saved.
+    fn mutate(bytes: &[u8], r: &Ruleset, change: impl FnOnce(&mut serde_json::Value)) -> Result<World, SaveError> {
+        let mut value = to_json(bytes).unwrap();
         change(&mut value["world"]);
-        value["checksum"] = hash(&serde_json::to_vec(&value["world"]).unwrap()).into();
-        serde_json::to_string(&value).unwrap()
+        decode(&from_json(&value)?, r)
     }
 
     #[test]
@@ -772,10 +820,11 @@ mod tests {
         assert_eq!(restored, world);
         assert_eq!(serde_json::to_string(&world).unwrap(), serde_json::to_string(&restored).unwrap());
         assert_eq!(world.civ(CivId(0)).unwrap().uniques, restored.civ(CivId(0)).unwrap().uniques);
+        assert_eq!(from_json(&to_json(&text).unwrap()).unwrap(), text, "JSON is a faithful view");
     }
 
     #[test]
-    fn city_management_round_trips_and_older_saves_load_without_it() {
+    fn city_management_round_trips() {
         let (r, mut world, _) = populated();
         let id = world.civ(CivId(0)).unwrap().cities[0];
         let city = world.cities.get_mut(id).unwrap();
@@ -786,26 +835,6 @@ mod tests {
         city.capture_pending = true;
         let text = encode(&world, &r).unwrap();
         assert_eq!(decode(&text, &r).unwrap(), world);
-
-        // Saves from before city management carry none of it.
-        fn strip(v: &mut serde_json::Value) {
-            match v {
-                serde_json::Value::Object(map) => {
-                    if map.contains_key("locked_tiles") {
-                        for key in ["focus", "locked_tiles", "capture_pending"] {
-                            map.remove(key);
-                        }
-                    }
-                    map.values_mut().for_each(strip);
-                }
-                serde_json::Value::Array(items) => items.iter_mut().for_each(strip),
-                _ => {}
-            }
-        }
-        let older = decode(&mutate(&text, strip), &r).unwrap();
-        let c = older.cities.get(id).unwrap();
-        assert_eq!(c.focus, crate::world::assignment::CityFocus::None);
-        assert!(c.locked_tiles.is_empty() && !c.capture_pending);
 
         // A pin is always a worked tile.
         world.cities.get_mut(id).unwrap().worked.clear();
@@ -818,12 +847,6 @@ mod tests {
         world.civ_mut(CivId(0)).unwrap().era_starts = vec![0, 5, 9];
         let text = encode(&world, &r).unwrap();
         assert_eq!(decode(&text, &r).unwrap().civ(CivId(0)).unwrap().era_starts, vec![0, 5, 9]);
-        let older = mutate(&text, |w| {
-            for civ in w["civs"].as_array_mut().unwrap() {
-                civ.as_object_mut().unwrap().remove("era_starts");
-            }
-        });
-        assert!(decode(&older, &r).unwrap().civ(CivId(0)).unwrap().era_starts.is_empty());
         world.civ_mut(CivId(0)).unwrap().era_starts = vec![5, 0];
         assert!(encode(&world, &r).is_err());
         world.civ_mut(CivId(0)).unwrap().era_starts = vec![0, world.turn + 1];
@@ -859,11 +882,13 @@ mod tests {
         for end in [0, 1, text.len() / 2, text.len() - 1] {
             assert!(decode(&text[..end], &r).is_err());
         }
-        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
-        value["world"]["turn"] = 13.into();
-        assert_eq!(decode(&serde_json::to_string(&value).unwrap(), &r), Err(SaveError::ChecksumMismatch));
+        let mut flipped = text.clone();
+        *flipped.last_mut().unwrap() ^= 1;
+        assert_eq!(decode(&flipped, &r), Err(SaveError::ChecksumMismatch));
+        let mut value = to_json(&text).unwrap();
         value["version"] = 999.into();
-        assert_eq!(decode(&serde_json::to_string(&value).unwrap(), &r), Err(SaveError::UnsupportedVersion(999)));
+        assert_eq!(decode(&from_json(&value).unwrap(), &r), Err(SaveError::UnsupportedVersion(999)));
+        assert!(matches!(decode(b"{\"version\":4}", &r), Err(SaveError::Malformed(_))), "JSON saves are refused");
         let mut other = r.clone();
         let base = other.unit("Warrior").unwrap();
         other.units.get_mut(base).unwrap().movement += 1;
@@ -875,19 +900,20 @@ mod tests {
         let (r, world, _) = populated();
         let text = encode(&world, &r).unwrap();
         let cases = [
-            mutate(&text, |w| w["units"]["free"] = serde_json::json!([1, 1])),
-            mutate(&text, |w| w["units"]["len"] = 99.into()),
-            mutate(&text, |w| w["grid"]["width"] = 0.into()),
-            mutate(&text, |w| w["grid"]["owner"] = serde_json::json!([])),
-            mutate(&text, |w| w["grid"]["terrain"][0] = serde_json::json!([999999, 1])),
-            mutate(&text, |w| w["civs"][0]["cities"] = serde_json::json!([])),
-            mutate(&text, |w| w["civs"][0]["units"][0] = serde_json::json!([0, 1])),
-            mutate(&text, |w| w["civs"][0]["nation"] = serde_json::json!([0, 0])),
-            mutate(&text, |w| w["civs"][0]["nation"] = serde_json::json!([0, 2])),
-            mutate(&text, |w| w["civs"][0]["id"] = 7.into()),
+            mutate(&text, &r, |w| w["units"]["free"] = serde_json::json!([1, 1])),
+            mutate(&text, &r, |w| w["units"]["len"] = 99.into()),
+            mutate(&text, &r, |w| w["grid"]["width"] = 0.into()),
+            mutate(&text, &r, |w| w["grid"]["owner"] = serde_json::json!([])),
+            mutate(&text, &r, |w| w["grid"]["terrain"][0] = serde_json::json!([999999, 1])),
+            mutate(&text, &r, |w| w["civs"][0]["cities"] = serde_json::json!([])),
+            mutate(&text, &r, |w| w["civs"][0]["units"][0] = serde_json::json!([0, 1])),
+            mutate(&text, &r, |w| w["civs"][0]["nation"] = serde_json::json!([0, 0])),
+            mutate(&text, &r, |w| w["civs"][0]["nation"] = serde_json::json!([0, 2])),
+            mutate(&text, &r, |w| w["civs"][0]["id"] = 7.into()),
+            mutate(&text, &r, |w| w["visibility"]["tile_observations"][0][0] = serde_json::json!([0, 9999])),
         ];
         for case in cases {
-            assert!(decode(&case, &r).is_err());
+            assert!(case.is_err());
         }
     }
 
@@ -895,11 +921,11 @@ mod tests {
     fn tuple_map_duplicate_keys_are_rejected_instead_of_overwritten() {
         let (r, world, _) = populated();
         let text = encode(&world, &r).unwrap();
-        let duplicated = mutate(&text, |w| {
+        let duplicated = mutate(&text, &r, |w| {
             let map = w["diplomacy"]["pacts"].as_array_mut().unwrap();
             map.push(map[0].clone());
         });
-        assert!(decode(&duplicated, &r).is_err());
+        assert!(duplicated.is_err());
     }
 
     #[test]
@@ -930,11 +956,11 @@ mod tests {
         }
 
         for malformed in [
-            mutate(&text, |w| w["victory_turn"] = serde_json::Value::Null),
-            mutate(&text, |w| w["winner"] = serde_json::Value::Null),
-            mutate(&text, |w| w["victory_turn"] = 13.into()),
+            mutate(&text, &r, |w| w["victory_turn"] = serde_json::Value::Null),
+            mutate(&text, &r, |w| w["winner"] = serde_json::Value::Null),
+            mutate(&text, &r, |w| w["victory_turn"] = 13.into()),
         ] {
-            assert!(matches!(decode(&malformed, &r), Err(SaveError::InvalidWorld(_))));
+            assert!(matches!(malformed, Err(SaveError::InvalidWorld(_))));
         }
         world.victory_turn = None;
         assert!(matches!(encode(&world, &r), Err(SaveError::InvalidWorld(_))));
