@@ -20,7 +20,12 @@ impl Technology {
     }
 
     pub fn era(&self, ruleset: &Ruleset) -> Option<Id<Era>> {
-        ruleset.eras.id(self.era_name(ruleset)?)
+        let column = self.column?;
+        match ruleset.column_eras.get(column.index() as usize) {
+            Some(&era) => era,
+            // a ruleset assembled by hand, without the derive pass
+            None => ruleset.eras.id(self.era_name(ruleset)?),
+        }
     }
 }
 

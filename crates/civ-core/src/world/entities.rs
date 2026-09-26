@@ -294,7 +294,7 @@ impl Unit {
     }
 
     pub fn movement_type<'a>(&self, r: &'a Ruleset) -> Option<&'a str> {
-        r.units.get(self.base).and_then(|b| r.unit_types.by_name(&b.unit_type)).map(|ut| ut.movement_type.as_str())
+        r.unit_type_of(self.base).map(|ut| ut.movement_type.as_str())
     }
 
     pub fn is_water_unit(&self, r: &Ruleset) -> bool {
@@ -315,7 +315,7 @@ impl Unit {
         let base = r.units.get(self.base);
         base.into_iter()
             .flat_map(|b| &b.uniques)
-            .chain(base.and_then(|b| r.unit_types.by_name(&b.unit_type)).into_iter().flat_map(|t| &t.uniques))
+            .chain(r.unit_type_of(self.base).into_iter().flat_map(|t| &t.uniques))
             .chain(self.promotions.iter().filter_map(|id| r.promotions.get(*id)).flat_map(|p| &p.uniques))
             .chain(
                 base.into_iter()

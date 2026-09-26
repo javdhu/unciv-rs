@@ -72,6 +72,12 @@ pub struct Ruleset {
     /// production penalties are conditional uniques here, not code — so a
     /// ruleset that does not load this file has an empire that cannot suffer.
     pub global_uniques: Vec<crate::Unique>,
+    /// Each tech column's era, by index, resolved from its name at load: the
+    /// era of a civ is asked of every tech it knows.
+    pub(crate) column_eras: Vec<Option<Id<Era>>>,
+    /// Each unit's type, by index, resolved from its name at load: a unit's
+    /// uniques and movement type are asked for on every step it considers.
+    pub(crate) unit_types_of: Vec<Option<Id<UnitType>>>,
     /// Which ruleset this is, to the uniques compiled against it (`crate::params`).
     pub(crate) stamp: crate::params::Stamp,
     /// `defaultDifficulty` from `ModOptions.json` (civ.game). Absent, the
@@ -383,6 +389,8 @@ impl Ruleset {
                 .sum();
         }
         self.terrain_sight = self.terrains.ids().map(|id| self.terrains.get(id).map_or((0, false), terrain_sight_of)).collect();
+        self.column_eras = self.tech_columns.values().map(|c| self.eras.id(&c.era)).collect();
+        self.unit_types_of = self.units.values().map(|u| self.unit_types.id(&u.unit_type)).collect();
 
         // Every unique's parameters, read once against the finished ruleset.
         self.stamp = crate::params::Stamp::fresh();
@@ -395,6 +403,15 @@ impl Ruleset {
             Some(&sight) => sight,
             // a ruleset assembled by hand, without the derive pass
             None => self.terrains.get(id).map_or((0, false), terrain_sight_of),
+        }
+    }
+
+    /// A unit's type, by the name its definition gives.
+    pub fn unit_type_of(&self, unit: Id<BaseUnit>) -> Option<&UnitType> {
+        match self.unit_types_of.get(unit.index() as usize) {
+            Some(&id) => id.and_then(|id| self.unit_types.get(id)),
+            // a ruleset assembled by hand, without the derive pass
+            None => self.units.get(unit).and_then(|u| self.unit_types.by_name(&u.unit_type)),
         }
     }
 

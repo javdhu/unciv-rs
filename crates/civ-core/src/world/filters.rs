@@ -142,11 +142,11 @@ impl UnitWord {
 
 /// Categories derived from a unit's own numbers, as Unciv derives them
 /// (`BaseUnit.kt:500`).
-fn category(r: &Ruleset, base: &BaseUnit, term: &Term) -> Verdict {
+fn category(r: &Ruleset, id: Id<BaseUnit>, base: &BaseUnit, term: &Term) -> Verdict {
     let ranged = base.ranged_strength.unwrap_or(0) > 0;
     let melee = !ranged && base.strength.unwrap_or(0) > 0;
     let military = ranged || melee;
-    let unit_type = || r.unit_types.by_name(&base.unit_type);
+    let unit_type = || r.unit_type_of(id);
     let movement = || unit_type().map(|t| t.movement_type.as_str());
 
     if let Some(era) = term.pre_era {
@@ -208,7 +208,7 @@ fn unit_term(r: &Ruleset, base: &BaseUnit, unit: &Unit, term: &Term) -> Verdict 
         UnitWord::Wounded => yes(unit.is_hurt()),
         UnitWord::Embarked => yes(unit.embarked),
         UnitWord::Barbarian | UnitWord::CityState => Verdict::Unknown, // needs civ kind
-        _ => category(r, base, term),
+        _ => category(r, unit.base, base, term),
     }
 }
 
@@ -248,7 +248,7 @@ pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdi
 /// [`base_unit_matches`], compiled.
 pub fn matches_base_unit(r: &Ruleset, base: Id<BaseUnit>, filter: &Filter) -> Verdict {
     let Some(b) = r.units.get(base) else { return Verdict::Unknown };
-    filter.test(&|term| category(r, b, term))
+    filter.test(&|term| category(r, base, b, term))
 }
 
 /// The words the building filter knows.
