@@ -28,16 +28,100 @@ use std::collections::{BTreeMap, BinaryHeap};
 /// A city centre always costs one to enter, whatever it was built on.
 const CITY_CENTRE_COST: Fixed = Fixed::ONE;
 
-type CityCentres = BTreeMap<TileId, CivId>;
-
-fn city_centres(world: &World) -> CityCentres {
-    world.cities.iter().map(|(_, city)| (city.centre, city.owner)).collect()
+/// What a search reads at every step and cannot change while it runs, gathered once: where the cities and units
+/// stand, and the searching unit's rules as they are asked about. It borrows the world and the unit, so neither can
+/// change underneath it, and it answers only for that world and unit (compared by address).
+struct Search<'a> {
+    world: &'a World,
+    unit: &'a Unit,
+    centres: BTreeMap<TileId, CivId>,
+    /// Every unit by the tile it stands on, then in arena order.
+    standing: Vec<(TileId, &'a Unit)>,
+    answers: std::cell::RefCell<Vec<(Ask, bool)>>,
 }
 
-fn city_owner(world: &World, centres: Option<&CityCentres>, tile: TileId) -> Option<CivId> {
-    match centres {
-        Some(centres) => centres.get(&tile).copied(),
+/// A question about the searching unit whose answer holds for the whole search.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ask {
+    Unit(UniqueType),
+    Civ(UniqueType),
+    Land,
+    Water,
+}
+
+impl<'a> Search<'a> {
+    fn new(world: &'a World, unit: &'a Unit) -> Self {
+        let mut standing: Vec<_> = world.units.iter().map(|(_, u)| (u.position, u)).collect();
+        standing.sort_by_key(|(tile, _)| *tile);
+        let centres = world.cities.iter().map(|(_, city)| (city.centre, city.owner)).collect();
+        Search { world, unit, centres, standing, answers: Default::default() }
+    }
+
+    fn answer(&self, ask: Ask, work_out: impl FnOnce() -> bool) -> bool {
+        if let Some(&(_, yes)) = self.answers.borrow().iter().find(|(a, _)| *a == ask) {
+            return yes;
+        }
+        let yes = work_out();
+        self.answers.borrow_mut().push((ask, yes));
+        yes
+    }
+}
+
+/// The search, if it is this world's.
+fn in_world<'s, 'a>(search: Option<&'s Search<'a>>, world: &World) -> Option<&'s Search<'a>> {
+    search.filter(|s| std::ptr::eq(s.world, world))
+}
+
+/// The search, if it is this unit's in this world.
+fn for_unit<'s, 'a>(search: Option<&'s Search<'a>>, world: &World, unit: &Unit) -> Option<&'s Search<'a>> {
+    in_world(search, world).filter(|s| std::ptr::eq(s.unit, unit))
+}
+
+fn city_owner(world: &World, search: Option<&Search>, tile: TileId) -> Option<CivId> {
+    match in_world(search, world) {
+        Some(s) => s.centres.get(&tile).copied(),
         None => world.cities.iter().find(|(_, city)| city.centre == tile).map(|(_, city)| city.owner),
+    }
+}
+
+/// Whether any unit standing on `tile` passes `test`.
+fn any_unit_on(world: &World, search: Option<&Search>, tile: TileId, mut test: impl FnMut(&Unit) -> bool) -> bool {
+    match in_world(search, world) {
+        Some(s) => {
+            let first = s.standing.partition_point(|(t, _)| *t < tile);
+            s.standing[first..].iter().take_while(|(t, _)| *t == tile).any(|(_, u)| test(u))
+        }
+        None => world.units.iter().any(|(_, u)| u.position == tile && test(u)),
+    }
+}
+
+/// `unit.has_unique`, worked out once a search.
+fn unit_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType, search: Option<&Search>) -> bool {
+    match for_unit(search, world, unit) {
+        Some(s) => s.answer(Ask::Unit(kind), || unit.has_unique(r, kind)),
+        None => unit.has_unique(r, kind),
+    }
+}
+
+/// [`civ_has`], worked out once a search.
+fn civ_has_in(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType, search: Option<&Search>) -> bool {
+    match for_unit(search, world, unit) {
+        Some(s) => s.answer(Ask::Civ(kind), || civ_has(world, r, unit, kind)),
+        None => civ_has(world, r, unit, kind),
+    }
+}
+
+fn is_land(world: &World, r: &Ruleset, unit: &Unit, search: Option<&Search>) -> bool {
+    match for_unit(search, world, unit) {
+        Some(s) => s.answer(Ask::Land, || unit.is_land_unit(r)),
+        None => unit.is_land_unit(r),
+    }
+}
+
+fn is_water(world: &World, r: &Ruleset, unit: &Unit, search: Option<&Search>) -> bool {
+    match for_unit(search, world, unit) {
+        Some(s) => s.answer(Ask::Water, || unit.is_water_unit(r)),
+        None => unit.is_water_unit(r),
     }
 }
 
@@ -75,6 +159,25 @@ fn active_uniques<'a>(
         .filter(move |u| crate::world::conditionals::applies(u, &ctx).holds())
 }
 
+/// [`active_uniques`] of one kind. The kind is checked first, so conditionals are evaluated only for those.
+fn active_uniques_of<'a>(
+    world: &'a World,
+    r: &'a Ruleset,
+    unit: &'a Unit,
+    tile: TileId,
+    kind: UniqueType,
+) -> impl Iterator<Item = &'a crate::Unique> {
+    let ctx = crate::world::conditionals::GameContext::new(r)
+        .with_world(world)
+        .for_civ(unit.owner)
+        .for_unit_value(unit)
+        .on_tile(tile);
+    unit.all_uniques(r)
+        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
+        .filter(move |u| u.unique_type() == Some(kind))
+        .filter(move |u| crate::world::conditionals::applies(u, &ctx).holds())
+}
+
 fn civ_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType) -> bool {
     let ctx = crate::world::conditionals::GameContext::new(r)
         .with_world(world)
@@ -90,23 +193,22 @@ fn civ_has(world: &World, r: &Ruleset, unit: &Unit, kind: UniqueType) -> bool {
     })
 }
 
-fn unit_terrain_passable(world: &World, r: &Ruleset, unit: &Unit, tile: TileId) -> bool {
-    if is_passable(&world.grid, r, tile) || unit.has_unique(r, UniqueType::CanPassImpassable) {
+fn unit_terrain_passable(world: &World, r: &Ruleset, unit: &Unit, tile: TileId, search: Option<&Search>) -> bool {
+    if is_passable(&world.grid, r, tile) || unit_has(world, r, unit, UniqueType::CanPassImpassable, search) {
         return true;
     }
-    if unit.has_unique(r, UniqueType::CanEnterIceTiles)
+    if unit_has(world, r, unit, UniqueType::CanEnterIceTiles, search)
         && world.grid.features[tile.0 as usize].iter().any(|id| r.terrains[*id].name == "Ice")
     {
         return true;
     }
-    if !unit.is_land_unit(r) {
+    if !is_land(world, r, unit, search) {
         return false;
     }
     let Some(civ) = world.civ(unit.owner) else {
         return false;
     };
-    active_uniques(world, r, unit, tile)
-        .filter(|u| u.unique_type() == Some(UniqueType::LandUnitsCrossTerrainAfterUnitGained))
+    active_uniques_of(world, r, unit, tile, UniqueType::LandUnitsCrossTerrainAfterUnitGained)
         .any(|u| {
             let (Some(terrain), Some(filter)) = (u.params.first(), u.params.get(1)) else {
                 return false;
@@ -191,29 +293,27 @@ pub fn is_movement_affected_by_zoc(world: &World, r: &Ruleset, unit: &Unit, from
 }
 
 fn is_movement_affected_by_zoc_with_centres(
-    world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, centres: Option<&CityCentres>,
+    world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, search: Option<&Search>,
 ) -> bool {
-    if unit.has_unique(r, UniqueType::IgnoresZOC) {
+    if unit_has(world, r, unit, UniqueType::IgnoresZOC, search) {
         return false;
     }
     for n in world.grid.neighbours(from) {
         if world.grid.distance(n, to) != 1 {
             continue;
         }
-        if let Some(owner) = city_owner(world, centres, n) {
+        if let Some(owner) = city_owner(world, search, n) {
             if world.diplomacy.at_war(unit.owner, owner) {
                 return true;
             }
         }
-        for (_, other) in world.units.iter() {
-            if other.position == n
-                && other.owner != unit.owner
+        if any_unit_on(world, search, n, |other| {
+            other.owner != unit.owner
                 && other.is_military(r)
                 && world.diplomacy.at_war(unit.owner, other.owner)
-                && (other.is_water_unit(r) || (unit.is_land_unit(r) && !other.embarked))
-            {
-                return true;
-            }
+                && (other.is_water_unit(r) || (is_land(world, r, unit, search) && !other.embarked))
+        }) {
+            return true;
         }
     }
     false
@@ -221,23 +321,18 @@ fn is_movement_affected_by_zoc_with_centres(
 
 /// Whether `tile` is occupied such that `unit` cannot land (end turn) on it under 1UPT rules.
 pub fn is_tile_occupied_for(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -> bool {
+    is_tile_occupied_in(world, r, tile, unit, None)
+}
+
+fn is_tile_occupied_in(world: &World, r: &Ruleset, tile: TileId, unit: &Unit, search: Option<&Search>) -> bool {
     if unit.is_air(r) {
         return crate::world::air::base_for(world, r, unit, tile, None).is_none();
     }
     let is_civ = unit.is_civilian(r);
-    for (_, other) in world.units.iter() {
-        if other.position != tile {
-            continue;
-        }
-        if other.owner != unit.owner {
-            return true;
-        }
-        if other.is_air(r) {
-            continue;
-        }
-        if is_civ == other.is_civilian(r) {
-            return true;
-        }
+    if any_unit_on(world, search, tile, |other| {
+        other.owner != unit.owner || (!other.is_air(r) && is_civ == other.is_civilian(r))
+    }) {
+        return true;
     }
     for (_, city) in world.cities.iter() {
         if city.centre == tile && city.owner != unit.owner {
@@ -291,9 +386,13 @@ pub fn is_friendly_territory(world: &World, civ: CivId, tile: TileId) -> bool {
 
 /// Whether `unit` can path through `tile`.
 pub fn may_unit_enter_territory(world: &World, r: &Ruleset, unit: &Unit, owner: CivId) -> bool {
+    may_unit_enter_territory_in(world, r, unit, owner, None)
+}
+
+fn may_unit_enter_territory_in(world: &World, r: &Ruleset, unit: &Unit, owner: CivId, search: Option<&Search>) -> bool {
     may_enter_territory(world, unit.owner, owner)
-        || unit.has_unique(r, UniqueType::CanEnterForeignTiles)
-        || unit.has_unique(r, UniqueType::CanEnterForeignTilesButLosesReligiousStrength)
+        || unit_has(world, r, unit, UniqueType::CanEnterForeignTiles, search)
+        || unit_has(world, r, unit, UniqueType::CanEnterForeignTilesButLosesReligiousStrength, search)
 }
 
 /// Whether this unit may pass through a tile, including its border privileges.
@@ -302,19 +401,17 @@ pub fn can_pass_through(world: &World, r: &Ruleset, tile: TileId, unit: &Unit) -
 }
 
 fn can_pass_through_with_centres(
-    world: &World, r: &Ruleset, tile: TileId, unit: &Unit, centres: Option<&CityCentres>,
+    world: &World, r: &Ruleset, tile: TileId, unit: &Unit, search: Option<&Search>,
 ) -> bool {
     if let Some(owner) = world.grid.owner[tile.0 as usize] {
-        if !may_unit_enter_territory(world, r, unit, owner) {
+        if !may_unit_enter_territory_in(world, r, unit, owner, search) {
             return false;
         }
     }
-    for (_, other) in world.units.iter() {
-        if other.position == tile && other.owner != unit.owner && world.diplomacy.at_war(unit.owner, other.owner) {
-            return false;
-        }
+    if any_unit_on(world, search, tile, |other| other.owner != unit.owner && world.diplomacy.at_war(unit.owner, other.owner)) {
+        return false;
     }
-    if let Some(owner) = city_owner(world, centres, tile) {
+    if let Some(owner) = city_owner(world, search, tile) {
         if owner != unit.owner && world.diplomacy.at_war(unit.owner, owner) {
             return false;
         }
@@ -355,10 +452,10 @@ fn step_cost_for_unit_with_centres(
     to: TileId,
     budget: Fixed,
     consider_zoc: bool,
-    centres: Option<&CityCentres>,
+    search: Option<&Search>,
 ) -> Option<Fixed> {
     let _ = budget;
-    step_cost_parts(world, r, unit, from, to, consider_zoc, centres).map(|(cost, _)| cost)
+    step_cost_parts(world, r, unit, from, to, consider_zoc, search).map(|(cost, _)| cost)
 }
 
 /// [`step_cost_for_unit`], and whether a zone of control set it: such a step costs all the movement left.
@@ -373,31 +470,33 @@ fn step_cost_parts(
     from: TileId,
     to: TileId,
     consider_zoc: bool,
-    centres: Option<&CityCentres>,
+    search: Option<&Search>,
 ) -> Option<(Fixed, bool)> {
-    if !can_traverse_with_borders(world, r, unit, from, to, true, centres) {
+    if !can_traverse_with_borders(world, r, unit, from, to, true, search) {
         return None;
     }
     let from_water = world.grid.is_water(r, from);
     let to_water = world.grid.is_water(r, to);
-    if unit.is_land_unit(r) && from_water != to_water && !unit.has_unique(r, UniqueType::CanMoveOnWater) {
+    if is_land(world, r, unit, search)
+        && from_water != to_water
+        && !unit_has(world, r, unit, UniqueType::CanMoveOnWater, search)
+    {
         let kind = if from_water { UniqueType::ReducedDisembarkCost } else { UniqueType::ReducedEmbarkCost };
-        let cost = active_uniques(world, r, unit, to)
-            .filter(|u| u.unique_type() == Some(kind))
+        let cost = active_uniques_of(world, r, unit, to, kind)
             .filter_map(|u| u.params.first().and_then(|n| Fixed::parse(n)))
             .min()
             .unwrap_or(Fixed::whole(100));
         return Some((cost, false));
     }
-    if consider_zoc && is_movement_affected_by_zoc_with_centres(world, r, unit, from, to, centres) {
+    if consider_zoc && is_movement_affected_by_zoc_with_centres(world, r, unit, from, to, search) {
         return Some((Fixed::whole(100), true));
     }
-    open_step_cost(world, r, unit, from, to, centres).map(|cost| (cost, false))
+    open_step_cost(world, r, unit, from, to, search).map(|cost| (cost, false))
 }
 
 /// A step that neither crosses the shore nor meets a zone of control: roads, rivers, terrain and walls.
-fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, centres: Option<&CityCentres>) -> Option<Fixed> {
-    if unit.has_unique(r, UniqueType::AllTilesCost1Move) {
+fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: TileId, search: Option<&Search>) -> Option<Fixed> {
+    if unit_has(world, r, unit, UniqueType::AllTilesCost1Move, search) {
         return Some(Fixed::ONE);
     }
     let extra = world.grid.owner[to.0 as usize]
@@ -422,12 +521,12 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
         if placed != RoadLevel::None {
             return placed;
         }
-        let forest = civ_has(world, r, unit, UniqueType::ForestsAndJunglesAreRoads)
+        let forest = civ_has_in(world, r, unit, UniqueType::ForestsAndJunglesAreRoads, search)
             && is_friendly_territory(world, unit.owner, tile)
             && world.grid.features[tile.0 as usize]
                 .iter()
                 .any(|f| matches!(r.terrains[*f].name.as_str(), "Forest" | "Jungle"));
-        if forest || city_owner(world, centres, tile).is_some() {
+        if forest || city_owner(world, search, tile).is_some() {
             RoadLevel::Road
         } else {
             RoadLevel::None
@@ -441,23 +540,23 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
     }
     if a >= RoadLevel::Road
         && b >= RoadLevel::Road
-        && (!river || civ_has(world, r, unit, UniqueType::RoadsConnectAcrossRivers))
+        && (!river || civ_has_in(world, r, unit, UniqueType::RoadsConnectAcrossRivers, search))
     {
         return Some(
-            if civ_has(world, r, unit, UniqueType::RoadMovementSpeed) {
+            if civ_has_in(world, r, unit, UniqueType::RoadMovementSpeed, search) {
                 Fixed::from_fraction(1, 3)
             } else {
                 Fixed::from_fraction(1, 2)
             } + extra,
         );
     }
-    if unit.has_unique(r, UniqueType::IgnoresTerrainCost) {
+    if unit_has(world, r, unit, UniqueType::IgnoresTerrainCost, search) {
         return Some(Fixed::ONE + extra);
     }
     if river {
         return Some(Fixed::whole(100));
     }
-    let terrain = if city_owner(world, centres, to).is_some() {
+    let terrain = if city_owner(world, search, to).is_some() {
         CITY_CENTRE_COST
     } else {
         Fixed::whole(r.terrains[world.grid.terrains(to).last()?].movement_cost.unwrap_or(1))
@@ -468,7 +567,7 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
         .for_unit_value(unit)
         .on_tile(to);
     let double = |features_only| {
-        active_uniques(world, r, unit, to).filter(|u| u.unique_type() == Some(UniqueType::DoubleMovementOnTerrain)).any(
+        active_uniques_of(world, r, unit, to, UniqueType::DoubleMovementOnTerrain).any(
             |u| {
                 u.params.first().is_some_and(|f| {
                     if features_only {
@@ -483,12 +582,12 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
     if double(true) {
         return Some(terrain * Fixed::from_fraction(1, 2) + extra);
     }
-    if unit.has_unique(r, UniqueType::RoughTerrainPenalty)
+    if unit_has(world, r, unit, UniqueType::RoughTerrainPenalty, search)
         && crate::world::conditionals::tile_matches(&ctx, to, "Rough terrain").holds()
     {
         return Some(Fixed::whole(100));
     }
-    if civ_has(world, r, unit, UniqueType::IgnoreHillMovementCost)
+    if civ_has_in(world, r, unit, UniqueType::IgnoreHillMovementCost, search)
         && crate::world::conditionals::tile_matches(&ctx, to, "Hill").holds()
     {
         return Some(Fixed::ONE + extra);
@@ -518,7 +617,7 @@ fn search_for_unit(
         return best;
     }
 
-    let centres = city_centres(world);
+    let search = Search::new(world, unit);
     let mut frontier = BinaryHeap::from([Reverse((Fixed::ZERO, from))]);
 
     while let Some(Reverse((cost_here, tile))) = frontier.pop() {
@@ -527,11 +626,11 @@ fn search_for_unit(
         }
 
         for next in world.grid.neighbours(tile) {
-            if !can_pass_through_with_centres(world, r, next, unit, Some(&centres)) {
+            if !can_pass_through_with_centres(world, r, next, unit, Some(&search)) {
                 continue;
             }
 
-            let Some(step) = step_cost_for_unit_with_centres(world, r, unit, tile, next, budget - cost_here, true, Some(&centres)) else {
+            let Some(step) = step_cost_for_unit_with_centres(world, r, unit, tile, next, budget - cost_here, true, Some(&search)) else {
                 continue;
             };
 
@@ -550,16 +649,20 @@ fn search_for_unit(
         }
     }
 
-    best.retain(|&tile, _| tile == from || !is_tile_occupied_for(world, r, tile, unit));
+    best.retain(|&tile, _| tile == from || !is_tile_occupied_in(world, r, tile, unit, Some(&search)));
     best
 }
 
 /// Whether this unit's civ lets land units take to the water (`Optics`, or
 /// the unit's own unique).
 pub(crate) fn can_embark(world: &World, r: &Ruleset, unit: &Unit) -> bool {
-    !unit.has_unique(r, UniqueType::CannotEmbark)
-        && (unit.has_unique(r, UniqueType::LandUnitEmbarkation)
-            || civ_has(world, r, unit, UniqueType::LandUnitEmbarkation))
+    can_embark_in(world, r, unit, None)
+}
+
+fn can_embark_in(world: &World, r: &Ruleset, unit: &Unit, search: Option<&Search>) -> bool {
+    !unit_has(world, r, unit, UniqueType::CannotEmbark, search)
+        && (unit_has(world, r, unit, UniqueType::LandUnitEmbarkation, search)
+            || civ_has_in(world, r, unit, UniqueType::LandUnitEmbarkation, search))
 }
 
 /// Whether `unit` could ever step from `from` to the adjacent `to` — the
@@ -578,38 +681,36 @@ fn can_traverse_with_borders(
     from: TileId,
     to: TileId,
     respect_borders: bool,
-    centres: Option<&CityCentres>,
+    search: Option<&Search>,
 ) -> bool {
     let _ = from;
-    if !world.grid.contains(to) || !unit_terrain_passable(world, r, unit, to) {
+    if !world.grid.contains(to) || !unit_terrain_passable(world, r, unit, to, search) {
         return false;
     }
     if let Some(owner) = world.grid.owner[to.0 as usize] {
-        if respect_borders && !may_unit_enter_territory(world, r, unit, owner) {
+        if respect_borders && !may_unit_enter_territory_in(world, r, unit, owner, search) {
             return false;
         }
     }
     let water = world.grid.is_water(r, to);
     // Ships enter land only at a city or through a canal (world::placement).
-    if unit.is_water_unit(r) && !water && !world.grid.is_canal(to) && city_owner(world, centres, to).is_none()
+    if is_water(world, r, unit, search) && !water && !world.grid.is_canal(to) && city_owner(world, search, to).is_none()
     {
         return false;
     }
-    let floating = unit.has_unique(r, UniqueType::CanMoveOnWater);
-    if unit.is_land_unit(r) && water && !floating && !can_embark(world, r, unit) {
+    let floating = unit_has(world, r, unit, UniqueType::CanMoveOnWater, search);
+    let land = is_land(world, r, unit, search);
+    if land && water && !floating && !can_embark_in(world, r, unit, search) {
         return false;
     }
     if r.terrains[world.grid.terrain[to.0 as usize]].name == "Ocean" {
-        let ocean_allowed = active_uniques(world, r, unit, to).any(|u| {
-            u.unique_type() == Some(UniqueType::UnitsMayEnterOcean)
-                && u.params.first().is_some_and(|f| {
-                    f == "Embarked" && unit.is_land_unit(r) && !floating
-                        || crate::world::filters::unit_matches(r, unit, f).holds()
-                })
+        let ocean_allowed = active_uniques_of(world, r, unit, to, UniqueType::UnitsMayEnterOcean).any(|u| {
+            u.params.first().is_some_and(|f| {
+                f == "Embarked" && land && !floating || crate::world::filters::unit_matches(r, unit, f).holds()
+            })
         });
         if !ocean_allowed
-            && (active_uniques(world, r, unit, to).any(|u| u.unique_type() == Some(UniqueType::CannotEnterOcean))
-                || unit.is_land_unit(r) && !floating)
+            && (active_uniques_of(world, r, unit, to, UniqueType::CannotEnterOcean).next().is_some() || land && !floating)
         {
             return false;
         }
@@ -622,7 +723,7 @@ fn can_traverse_with_borders(
 /// search answers "how far is it from here" for every tile the unit could
 /// reach this turn.
 pub fn distances_to(world: &World, r: &Ruleset, unit: &Unit, target: TileId, radius: u32) -> BTreeMap<TileId, u32> {
-    let centres = city_centres(world);
+    let search = Search::new(world, unit);
     let mut dist: BTreeMap<TileId, u32> = BTreeMap::new();
     dist.insert(target, 0);
     let mut frontier = vec![target];
@@ -636,7 +737,7 @@ pub fn distances_to(world: &World, r: &Ruleset, unit: &Unit, target: TileId, rad
                     continue;
                 }
                 // Could the unit step *from* there *to* here?
-                if can_traverse_with_borders(world, r, unit, from, tile, true, Some(&centres)) {
+                if can_traverse_with_borders(world, r, unit, from, tile, true, Some(&search)) {
                     dist.insert(from, steps);
                     next.push(from);
                 }
@@ -876,7 +977,7 @@ pub fn move_unit_with(
     if budget <= Fixed::ZERO {
         return Err(MoveRejection::NoMovement);
     }
-    if !unit_terrain_passable(world, r, unit, to) {
+    if !unit_terrain_passable(world, r, unit, to, None) {
         return Err(MoveRejection::Impassable);
     }
 
