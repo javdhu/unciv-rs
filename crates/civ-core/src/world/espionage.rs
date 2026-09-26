@@ -294,7 +294,16 @@ pub fn efficiency(world: &World, r: &Ruleset, civ: CivId, city_id: Id<City>) -> 
 
 /// Established spies observe the city and its immediate neighbours.
 pub fn update_visibility(world: &mut World) {
-    let seen: Vec<_> = world
+    for (civ, centre) in watched_cities(world) {
+        for tile in world.grid.within(centre, 1) {
+            world.visibility.observe(civ, tile);
+        }
+    }
+}
+
+/// The centre of every city an established spy watches, with the spy's civ.
+pub(crate) fn watched_cities(world: &World) -> Vec<(CivId, crate::world::grid::TileId)> {
+    world
         .civs
         .iter()
         .filter(|c| c.is_alive())
@@ -305,12 +314,7 @@ pub fn update_visibility(world: &mut World) {
                 .filter(|s| s.is_established())
                 .filter_map(|s| world.cities.get(s.station?).map(|city| (c.id, city.centre)))
         })
-        .collect();
-    for (civ, centre) in seen {
-        for tile in world.grid.within(centre, 1) {
-            world.visibility.observe(civ, tile);
-        }
-    }
+        .collect()
 }
 
 /// Queue one coup; the live turn boundary resolves its chance and consequences.

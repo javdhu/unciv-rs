@@ -1574,22 +1574,27 @@ fn detect_first_contact_impl(world: &mut World, rules: Option<&Ruleset>) -> Vec<
 /// Live-game vision uses each unit's sight rules and the civilization's
 /// territory and border ring. The rules-free wrapper remains for fixtures.
 pub fn update_visibility_in(world: &mut World, r: &Ruleset) {
-    let seen: Vec<_> =
-        world.units.iter().map(|(id, u)| (u.owner, crate::world::fog::unit_visible_tiles(world, r, id))).collect();
-    for civ in world.civ_ids().collect::<Vec<_>>() {
-        world.visibility.clear_visible(civ);
+    // Every source is gathered apart and the live masks written only if they change: a step that changes nobody's
+    // sight leaves a store the staged world shares alone.
+    let mut seen = world.visibility.seen();
+    let lines = crate::world::fog::Sightlines::sweep(&world.grid, r);
+    for (id, u) in world.units.iter() {
+        crate::world::fog::with_unit_sight(world, r, id, &lines, |tiles| {
+            for &tile in tiles {
+                seen.observe(u.owner, tile);
+            }
+        });
     }
-    for (civ, tiles) in seen {
-        for tile in tiles {
-            world.visibility.observe(civ, tile);
+    for (civ, centre) in crate::world::espionage::watched_cities(world) {
+        for tile in world.grid.within(centre, 1) {
+            seen.observe(civ, tile);
         }
     }
-    crate::world::espionage::update_visibility(world);
     for tile in world.grid.ids() {
         if let Some(owner) = world.grid.owner[tile.0 as usize] {
-            world.visibility.observe(owner, tile);
+            seen.observe(owner, tile);
             for next in world.grid.neighbours(tile) {
-                world.visibility.observe(owner, next);
+                seen.observe(owner, next);
             }
         }
     }
@@ -1601,9 +1606,13 @@ pub fn update_visibility_in(world: &mut World, r: &Ruleset) {
         };
         if let Some(ally) = ally {
             for tile in &city.tiles {
-                world.visibility.observe(ally, *tile);
+                seen.observe(ally, *tile);
             }
         }
+    }
+    let civs: Vec<CivId> = world.civ_ids().collect();
+    if world.visibility.sight_changes(&civs, &seen) {
+        world.visibility.replace_sight(&civs, &seen);
     }
 }
 

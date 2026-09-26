@@ -28,44 +28,160 @@ use crate::ruleset::{Nation, Ruleset, Terrain, TileImprovement, TileResource};
 use crate::stats::Fixed;
 use crate::world::city::City;
 use crate::world::entities::Unit;
+use crate::shared::Shared;
 use crate::world::world::World;
 use std::collections::BTreeMap;
 
-/// Sight is a pure function of local elevations, blocking terrain and map topology.
-/// Key the complete inputs (not a hash or a world's address): caches cannot leak
-/// across games, edits, promotions or rulesets. Bounded per simulation thread.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct SightKey {
+/// Sight is a pure function of map topology and the elevations and blocking terrain one ring beyond its range. The
+/// cache keeps a whole map of those inputs, each tile's `(height, height with blocking)`, beside the answers worked
+/// out from it, which sit in the slot of the tile seen from. A sweep ([`Sightlines::sweep`]) compares the whole map
+/// with the grid once and drops every answer if one tile differs; a lone lookup compares its own reach. Either way
+/// an answer is reused only while every input it came from still matches (not a hash, not a world's address), so
+/// it cannot leak across games, edits or rulesets. Bounded per simulation thread.
+#[derive(Default)]
+struct SightCache {
     map: (u16, u16, bool),
-    from: TileId,
+    heights: Vec<(i32, i32)>,
+    /// Bumped whenever the map above is replaced, so a sweep can tell that another grid used the cache meanwhile.
+    generation: u64,
+    slots: Vec<Vec<Sightline>>,
+    entries: usize,
+}
+struct Sightline {
     range: u32,
     attack: bool,
-    terrain: Vec<(TileId, i32, i32)>,
+    visible: Vec<TileId>,
 }
 thread_local! {
-    static SIGHT: std::cell::RefCell<BTreeMap<SightKey, Vec<TileId>>> = const { std::cell::RefCell::new(BTreeMap::new()) };
+    static SIGHT: std::cell::RefCell<SightCache> = std::cell::RefCell::new(SightCache::default());
+}
+const SIGHTLINES: usize = 4096;
+
+fn sight_heights(grid: &super::TileGrid, r: &Ruleset, tile: TileId) -> (i32, i32) {
+    let (mut height, mut blocks) = (0, false);
+    for id in grid.terrains(tile) {
+        let (h, b) = r.terrain_sight(id);
+        height += h;
+        blocks |= b;
+    }
+    (height, height + i32::from(blocks))
+}
+
+impl SightCache {
+    /// Make the cached map this grid's, dropping every answer if anything on it differs.
+    fn sync(&mut self, grid: &super::TileGrid, r: &Ruleset) {
+        let map = (grid.width(), grid.height(), grid.wraps_x());
+        let same = self.map == map
+            && self.heights.len() == grid.len()
+            && grid.ids().zip(&self.heights).all(|(tile, &h)| sight_heights(grid, r, tile) == h);
+        if !same {
+            self.map = map;
+            self.heights = grid.ids().map(|tile| sight_heights(grid, r, tile)).collect();
+            self.generation += 1;
+            self.slots.iter_mut().for_each(Vec::clear);
+            self.entries = 0;
+        }
+    }
+
+    /// The cached answer, worked out against the cached map if there is none yet. Callers have checked that the
+    /// map holds for every tile the answer reads.
+    fn with<T>(&mut self, grid: &super::TileGrid, from: TileId, range: u32, attack: bool, f: impl FnOnce(&[TileId]) -> T) -> T {
+        let slot = from.0 as usize;
+        if self.slots.len() <= slot {
+            self.slots.resize_with(grid.len().max(slot + 1), Vec::new);
+        }
+        if let Some(i) = self.slots[slot].iter().position(|e| e.range == range && e.attack == attack) {
+            return f(&self.slots[slot][i].visible);
+        }
+        if self.entries >= SIGHTLINES {
+            self.slots.iter_mut().for_each(Vec::clear);
+            self.entries = 0;
+        }
+        let heights = &self.heights;
+        let visible = sightline(grid, from, range, attack, |tile| heights[tile.0 as usize]);
+        self.entries += 1;
+        self.slots[slot].push(Sightline { range, attack, visible });
+        f(&self.slots[slot].last().expect("just pushed").visible)
+    }
+}
+
+/// Line-of-sight lookups against one grid.
+pub(crate) struct Sightlines<'g> {
+    grid: &'g super::TileGrid,
+    r: &'g Ruleset,
+    /// The cache generation this sweep synced, or `None` for lone lookups.
+    synced: Option<std::cell::Cell<u64>>,
+}
+
+impl<'g> Sightlines<'g> {
+    /// Each lookup checks the terrain it reads: for a few lookups.
+    pub(crate) fn lone(grid: &'g super::TileGrid, r: &'g Ruleset) -> Self {
+        Sightlines { grid, r, synced: None }
+    }
+
+    /// The whole map is checked once, up front: for looking from many tiles. The grid is borrowed, so it cannot
+    /// change underneath.
+    pub(crate) fn sweep(grid: &'g super::TileGrid, r: &'g Ruleset) -> Self {
+        let generation = SIGHT.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            cache.sync(grid, r);
+            cache.generation
+        });
+        Sightlines { grid, r, synced: Some(std::cell::Cell::new(generation)) }
+    }
+
+    /// [`viewable_tiles`], lent rather than copied.
+    pub(crate) fn with<T>(&self, from: TileId, range: u32, attack: bool, f: impl FnOnce(&[TileId]) -> T) -> T {
+        let (grid, r) = (self.grid, self.r);
+        SIGHT.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let holds = match &self.synced {
+                Some(synced) => {
+                    if cache.generation != synced.get() {
+                        cache.sync(grid, r);
+                        synced.set(cache.generation);
+                    }
+                    true
+                }
+                None => {
+                    cache.map == (grid.width(), grid.height(), grid.wraps_x())
+                        && cache.heights.len() == grid.len()
+                        && grid
+                            .within(from, range.saturating_add(1))
+                            .into_iter()
+                            .all(|tile| sight_heights(grid, r, tile) == cache.heights[tile.0 as usize])
+                }
+            };
+            if holds {
+                cache.with(grid, from, range, attack, f)
+            } else {
+                drop(cache);
+                f(&sightline(grid, from, range, attack, |tile| sight_heights(grid, r, tile)))
+            }
+        })
+    }
 }
 
 /// Kotlin's elevation-based visibility, including tall terrain one ring beyond
 /// sight. Paths are evaluated by rings so same-distance tiles cannot relay sight.
 pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: u32, attack: bool) -> Vec<TileId> {
-    let heights = |tile: TileId| {
-        let (mut height, mut blocks) = (0, false);
-        for id in grid.terrains(tile) {
-            let (h, b) = r.terrain_sight(id);
-            height += h;
-            blocks |= b;
-        }
-        (height, height + i32::from(blocks))
-    };
+    Sightlines::lone(grid, r).with(from, range, attack, <[TileId]>::to_vec)
+}
+
+/// The uncached answer, given each tile's `(height, height with blocking)`.
+fn sightline(
+    grid: &super::TileGrid,
+    from: TileId,
+    range: u32,
+    attack: bool,
+    heights: impl Fn(TileId) -> (i32, i32),
+) -> Vec<TileId> {
     let source = heights(from).0;
     let reach = range.saturating_add(1);
     // `within` gives the reach in ascending id order, so a tile's slot is found by a binary search; each slot holds
     // the highest ground seen on the way to that tile, once its ring is done
     let tiles = grid.within(from, reach);
-    let terrain: Vec<_> = tiles.iter().map(|&tile| { let (height, blocks) = heights(tile); (tile, height, blocks) }).collect();
-    let key = SightKey { map: (grid.width(), grid.height(), grid.wraps_x()), from, range, attack, terrain };
-    if let Some(cached) = SIGHT.with(|cache| cache.borrow().get(&key).cloned()) { return cached; }
+    let terrain: Vec<_> = tiles.iter().map(|&tile| heights(tile)).collect();
     let slot = |tile: TileId| tiles.binary_search(&tile).ok();
     let distance: Vec<u32> = tiles.iter().map(|&t| grid.distance(from, t)).collect();
     let mut highest: Vec<Option<i32>> = vec![None; tiles.len()];
@@ -80,7 +196,7 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
             if distance[i] != d {
                 continue;
             }
-            let (_, unit_height, tile_height) = key.terrain[i];
+            let (unit_height, tile_height) = terrain[i];
             if d == reach && (attack || tile_height <= source) {
                 continue;
             }
@@ -95,35 +211,57 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
         }
     }
     visible.sort();
-    SIGHT.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= 512 { cache.clear(); }
-        cache.insert(key, visible.clone());
-    });
     visible
 }
 
 pub fn unit_visible_tiles(world: &World, r: &Ruleset, id: Id<Unit>) -> Vec<TileId> {
+    with_unit_sight(world, r, id, &Sightlines::lone(&world.grid, r), <[TileId]>::to_vec)
+}
+
+/// [`unit_visible_tiles`], lent rather than copied.
+pub(crate) fn with_unit_sight<T>(
+    world: &World,
+    r: &Ruleset,
+    id: Id<Unit>,
+    lines: &Sightlines,
+    f: impl FnOnce(&[TileId]) -> T,
+) -> T {
     use crate::world::conditionals::{applies, GameContext};
     use crate::UniqueType;
-    let Some(unit) = world.units.get(id) else { return Vec::new() };
+    let Some(unit) = world.units.get(id) else { return f(&[]) };
     let ctx = GameContext::new(r).with_world(world).for_civ(unit.owner).for_unit(id).on_tile(unit.position);
-    if unit.all_uniques(r).any(|u| u.unique_type() == Some(UniqueType::NoSight) && applies(u, &ctx).holds()) {
-        return vec![unit.position];
+    // One walk over the unit's own uniques (it looks its type and promotions up by name) finds all three kinds.
+    let (mut blind, mut sight, mut over) = (Vec::new(), Vec::new(), Vec::new());
+    for u in unit.all_uniques(r) {
+        match u.unique_type() {
+            Some(UniqueType::NoSight) => blind.push(u),
+            Some(UniqueType::Sight) => sight.push(u),
+            Some(UniqueType::CanSeeOverObstacles) => over.push(u),
+            _ => {}
+        }
     }
-    let sight: i32 = unit
-        .all_uniques(r)
-        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.all()))
-        .chain(world.grid.terrains(unit.position).filter_map(|id| r.terrains.get(id)).flat_map(|t| &t.uniques))
-        .filter(|u| u.unique_type() == Some(UniqueType::Sight) && applies(u, &ctx).holds())
+    if blind.into_iter().any(|u| applies(u, &ctx).holds()) {
+        return f(&[unit.position]);
+    }
+    let sight: i32 = sight
+        .into_iter()
+        .chain(world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.matching(UniqueType::Sight)))
+        .chain(
+            world
+                .grid
+                .terrains(unit.position)
+                .filter_map(|id| r.terrains.get(id))
+                .flat_map(|t| &t.uniques)
+                .filter(|u| u.unique_type() == Some(UniqueType::Sight)),
+        )
+        .filter(|u| applies(u, &ctx).holds())
         .filter_map(|u| u.params.first()?.parse::<i32>().ok())
         .sum();
     let range = (2 + sight).max(1) as u32;
-    if unit.all_uniques(r).any(|u| u.unique_type() == Some(UniqueType::CanSeeOverObstacles) && applies(u, &ctx).holds())
-    {
-        world.grid.within(unit.position, range)
+    if over.into_iter().any(|u| applies(u, &ctx).holds()) {
+        f(&world.grid.within(unit.position, range))
     } else {
-        viewable_tiles(&world.grid, r, unit.position, range, false)
+        lines.with(unit.position, range, false, f)
     }
 }
 
@@ -250,10 +388,11 @@ pub struct Visibility {
     /// A row a civ, iterated in (civ, tile) order so iteration is reproducible; saved in columns (`CivTiles`).
     memory: CivTiles<TileMemory>,
     tile_observations: CivTiles<TileObservation>,
-    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
-    city_observations: BTreeMap<(CivId, TileId), CityObservation>,
-    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::map_as_entries"))]
-    civ_observations: BTreeMap<(CivId, CivId), CivObservation>,
+    /// Shared, like the rows above, so that copying the masks for a staged world does not copy the records.
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::shared_map_as_entries"))]
+    city_observations: Shared<BTreeMap<(CivId, TileId), CityObservation>>,
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::shared_map_as_entries"))]
+    civ_observations: Shared<BTreeMap<(CivId, CivId), CivObservation>>,
 }
 
 impl Visibility {
@@ -266,8 +405,8 @@ impl Visibility {
             visible: vec![0; words * civs],
             memory: CivTiles::default(),
             tile_observations: CivTiles::default(),
-            city_observations: BTreeMap::new(),
-            civ_observations: BTreeMap::new(),
+            city_observations: Default::default(),
+            civ_observations: Default::default(),
         }
     }
 
@@ -323,6 +462,40 @@ impl Visibility {
         let base = civ.0 as usize * self.words;
         if let Some(slice) = self.visible.get_mut(base..base + self.words) {
             slice.fill(0);
+        }
+    }
+
+    /// Empty masks shaped like these, for a recomputation of live sight to gather into.
+    pub(crate) fn seen(&self) -> Seen {
+        Seen { tiles: self.tiles, words: self.words, bits: vec![0; self.visible.len()] }
+    }
+
+    /// The masks `clear_visible` on each of `civs` and then `observe` of everything in `seen` would leave.
+    fn with_sight<'a>(&'a self, civs: &[CivId], seen: &'a Seen) -> impl Iterator<Item = (usize, u64, u64)> + 'a {
+        let mut cleared = vec![false; self.visible.len() / self.words.max(1)];
+        for civ in civs {
+            if let Some(c) = cleared.get_mut(civ.0 as usize) {
+                *c = true;
+            }
+        }
+        seen.bits.iter().enumerate().map(move |(w, &bits)| {
+            let visible = if cleared[w / self.words] { 0 } else { self.visible[w] };
+            (w, visible | bits, self.explored[w] | bits)
+        })
+    }
+
+    /// Whether replacing `civs`' live sight with `seen` changes anything. Checked first, so that a step which
+    /// changes nobody's sight does not copy a store a staged world shares.
+    pub(crate) fn sight_changes(&self, civs: &[CivId], seen: &Seen) -> bool {
+        self.with_sight(civs, seen).any(|(w, visible, explored)| visible != self.visible[w] || explored != self.explored[w])
+    }
+
+    /// Clear `civs`' live sight and observe everything in `seen`.
+    pub(crate) fn replace_sight(&mut self, civs: &[CivId], seen: &Seen) {
+        let masks: Vec<_> = self.with_sight(civs, seen).collect();
+        for (w, visible, explored) in masks {
+            self.visible[w] = visible;
+            self.explored[w] = explored;
         }
     }
 
@@ -436,6 +609,26 @@ impl Visibility {
     }
 }
 
+/// Live sight being recomputed: [`Visibility::observe`] into masks of the same shape, which replace the live ones
+/// only if they differ.
+pub(crate) struct Seen {
+    tiles: usize,
+    words: usize,
+    bits: Vec<u64>,
+}
+
+impl Seen {
+    pub(crate) fn observe(&mut self, civ: CivId, tile: TileId) {
+        let bit = tile.0 as usize;
+        if bit >= self.tiles {
+            return;
+        }
+        if let Some(x) = self.bits.get_mut(civ.0 as usize * self.words + bit / 64) {
+            *x |= 1u64 << (bit % 64);
+        }
+    }
+}
+
 /// An embassy reveals its host's capital and surrounding map once. It
 /// records a historical city observation without granting live unit sight.
 pub fn reveal_city_site(world: &mut World, r: &Ruleset, viewer: CivId, city: Id<City>) {
@@ -505,28 +698,101 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
     let mut centres: Vec<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
     centres.sort_unstable();
     for viewer in viewers {
-        for tile in world.grid.ids() {
-            let visible = world.visibility.can_see(viewer, tile);
-            let first_map = world.visibility.has_explored(viewer, tile)
-                && !world.visibility.tile_observations.contains_key(&(viewer, tile));
-            if !visible && !first_map {
+        // Every record depends on its own entry and the world alone, so they can all be worked out before any is
+        // written. Only records that differ are, and a capture that learns nothing leaves a store the staged world
+        // shares alone (fog runs after every step of every move).
+        let learned = observations(world, r, viewer, &centres);
+        if !learned.is_empty() {
+            learned.record(&mut world.visibility, viewer);
+        }
+    }
+}
+
+/// What one capture changes in one viewer's records.
+#[derive(Default)]
+struct Learned {
+    tiles: Vec<(TileId, TileObservation)>,
+    memories: Vec<(TileId, TileMemory)>,
+    gone: Vec<(CivId, TileId)>,
+    cities: Vec<CityObservation>,
+    civs: Vec<CivObservation>,
+}
+
+impl Learned {
+    fn is_empty(&self) -> bool {
+        self.tiles.is_empty()
+            && self.memories.is_empty()
+            && self.gone.is_empty()
+            && self.cities.is_empty()
+            && self.civs.is_empty()
+    }
+
+    fn record(self, visibility: &mut Visibility, viewer: CivId) {
+        for (tile, seen) in self.tiles {
+            visibility.tile_observations.insert((viewer, tile), seen);
+        }
+        for (tile, what) in self.memories {
+            visibility.remember(viewer, tile, what);
+        }
+        for key in self.gone {
+            visibility.city_observations.remove(&key);
+        }
+        for seen in self.cities {
+            visibility.city_observations.insert((viewer, seen.centre), seen);
+        }
+        for seen in self.civs {
+            visibility.civ_observations.insert((viewer, seen.id), seen);
+        }
+    }
+}
+
+fn observations(world: &World, r: &Ruleset, viewer: CivId, centres: &[TileId]) -> Learned {
+    let mut learned = Learned::default();
+    observe_tiles(world, viewer, &mut learned);
+    let visible_tiles = world.visibility.visible_tiles(viewer);
+    observe_cities(world, viewer, centres, &visible_tiles, &mut learned);
+    observe_civs(world, r, viewer, &visible_tiles, &mut learned);
+    learned
+}
+
+fn observe_tiles(world: &World, viewer: CivId, learned: &mut Learned) {
+    let v = &*world.visibility;
+    // Only a tile seen now or explored without a record can need one: walk the set bits of the two masks, and the
+    // placed buildings (in tile order too) alongside them.
+    let base = viewer.0 as usize * v.words;
+    let mut standing = world.grid.placed.iter().peekable();
+    for w in 0..v.words {
+        let (visible_bits, explored_bits) =
+            (v.visible.get(base + w).copied().unwrap_or(0), v.explored.get(base + w).copied().unwrap_or(0));
+        let mut bits = visible_bits | explored_bits;
+        while bits != 0 {
+            let b = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            let i = w * 64 + b;
+            if i >= v.tiles {
+                break;
+            }
+            let tile = TileId(i as u16);
+            let visible = visible_bits & (1 << b) != 0;
+            let recorded = v.tile_observations.get(&(viewer, tile));
+            if !visible && recorded.is_some() {
                 continue;
             }
-            let i = tile.0 as usize;
-            let prior = world.visibility.recalls(viewer, tile);
+            while standing.next_if(|(at, _)| **at < tile).is_some() {}
+            let prior = v.recalls(viewer, tile);
             let placed = if visible {
-                world.grid.placed.get(&tile).copied()
+                standing.peek().filter(|(at, _)| **at == tile).map(|(_, p)| **p)
             } else {
-                world.visibility.tile_observations.get(&(viewer, tile)).and_then(|o| o.placed)
+                recorded.and_then(|o| o.placed)
             };
             let improvement = if visible { world.grid.improvement[i] } else { prior.and_then(|m| m.improvement) };
             let improvement_pillaged = visible && world.grid.improvement_pillaged[i];
             let road = if visible { world.grid.road[i] } else { RoadLevel::None };
             let road_pillaged = visible && world.grid.road_pillaged[i];
             let owner = if visible { world.grid.owner[i] } else { None };
-            // A tile seen as it was already remembered needs no new record (fog runs after every step of every
-            // move). Every field is named, so a field added to the record must be added here too.
-            let unchanged = world.visibility.tile_observations.get(&(viewer, tile)).is_some_and(|o| {
+            // A tile seen as it was already remembered needs no new record. Every field is named, so a field added
+            // to the record must be added here too.
+            let unchanged = recorded.is_some_and(|o| {
                 let TileObservation {
                     placed: was_placed,
                     terrain,
@@ -555,100 +821,125 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
                     && *observed_turn == world.turn
             });
             if !unchanged {
-                let seen = TileObservation {
-                    placed,
-                    terrain: world.grid.terrain[i],
-                    features: world.grid.features[i].clone(),
-                    natural_wonder: world.grid.natural_wonder[i],
-                    resource: world.grid.resource[i],
-                    improvement,
-                    improvement_pillaged,
-                    road,
-                    road_pillaged,
-                    river_edges: world.grid.river_edges[i],
-                    owner,
-                    observed_turn: world.turn,
-                };
-                world.visibility.tile_observations.insert((viewer, tile), seen);
-            }
-            if visible {
-                world.visibility.remember(
-                    viewer,
+                learned.tiles.push((
                     tile,
-                    TileMemory {
-                        improvement: world.grid.improvement[i],
+                    TileObservation {
+                        placed,
+                        terrain: world.grid.terrain[i],
+                        features: world.grid.features[i].clone(),
+                        natural_wonder: world.grid.natural_wonder[i],
                         resource: world.grid.resource[i],
-                        owner: world.grid.owner[i],
-                    },
-                );
-            }
-        }
-        // Seeing empty ground clears a remembered city. Losing sight does not.
-        let visible_tiles = world.visibility.visible_tiles(viewer);
-        let gone: Vec<_> = world
-            .visibility
-            .city_observations
-            .range((viewer, TileId(0))..=(viewer, TileId(u16::MAX)))
-            .map(|(key, _)| *key)
-            .filter(|(_, tile)| visible_tiles.binary_search(tile).is_ok() && centres.binary_search(tile).is_err())
-            .collect();
-        for key in gone {
-            world.visibility.city_observations.remove(&key);
-        }
-        for (id, city) in world.cities.iter() {
-            if city.owner != viewer && !world.visibility.can_see(viewer, city.centre) {
-                continue;
-            }
-            let mut tiles = world
-                .visibility
-                .city_observations
-                .get(&(viewer, city.centre))
-                .map(|c| c.tiles.clone())
-                .unwrap_or_default();
-            tiles.retain(|t| !world.visibility.can_see(viewer, *t) || city.tiles.contains(t));
-            tiles.extend(
-                city.tiles.iter().copied().filter(|t| city.owner == viewer || world.visibility.can_see(viewer, *t)),
-            );
-            tiles.sort();
-            tiles.dedup();
-            world.visibility.city_observations.insert(
-                (viewer, city.centre),
-                CityObservation {
-                    id,
-                    name: city.name.clone(),
-                    owner: city.owner,
-                    centre: city.centre,
-                    population: city.population,
-                    tiles,
-                    observed_turn: world.turn,
-                },
-            );
-        }
-        // the civs this viewer sees a city or a tile of, gathered once; seeing a unit is the costly test, left last
-        let mut shown: Vec<CivId> = visible_tiles.iter().filter_map(|t| world.grid.owner[t.0 as usize]).collect();
-        shown.extend(world.cities.iter().filter(|(_, c)| world.visibility.can_see(viewer, c.centre)).map(|(_, c)| c.owner));
-        shown.sort_unstable();
-        shown.dedup();
-        for civ in &world.civs {
-            let observed = civ.id == viewer
-                || shown.binary_search(&civ.id).is_ok()
-                || world.units.iter().any(|(id, u)| u.owner == civ.id && can_see_unit(world, r, viewer, id));
-            let first_contact = world.diplomacy.have_met(viewer, civ.id)
-                && !world.visibility.civ_observations.contains_key(&(viewer, civ.id));
-            if observed || first_contact {
-                world.visibility.civ_observations.insert(
-                    (viewer, civ.id),
-                    CivObservation {
-                        id: civ.id,
-                        nation: civ.nation,
-                        city_state: civ.is_city_state(),
-                        barbarian: civ.is_barbarian,
-                        // Contact establishes existence; defeat later needs observation
-                        // or a separately authorized public notification.
-                        alive: if observed { civ.is_alive() } else { true },
+                        improvement,
+                        improvement_pillaged,
+                        road,
+                        road_pillaged,
+                        river_edges: world.grid.river_edges[i],
+                        owner,
                         observed_turn: world.turn,
                     },
-                );
+                ));
+            }
+            if visible {
+                let what = TileMemory {
+                    improvement: world.grid.improvement[i],
+                    resource: world.grid.resource[i],
+                    owner: world.grid.owner[i],
+                };
+                if prior != Some(&what) {
+                    learned.memories.push((tile, what));
+                }
+            }
+        }
+    }
+}
+
+fn observe_cities(world: &World, viewer: CivId, centres: &[TileId], visible_tiles: &[TileId], learned: &mut Learned) {
+    let v = &*world.visibility;
+    // Seeing empty ground clears a remembered city. Losing sight does not.
+    learned.gone = v
+        .city_observations
+        .range((viewer, TileId(0))..=(viewer, TileId(u16::MAX)))
+        .map(|(key, _)| *key)
+        .filter(|(_, tile)| visible_tiles.binary_search(tile).is_ok() && centres.binary_search(tile).is_err())
+        .collect();
+    for (id, city) in world.cities.iter() {
+        if city.owner != viewer && !v.can_see(viewer, city.centre) {
+            continue;
+        }
+        let previous = v.city_observations.get(&(viewer, city.centre));
+        // The tiles are what was recorded, less those now seen outside the city, plus those of it seen now.
+        let keep = |t: &TileId| !v.can_see(viewer, *t) || city.tiles.contains(t);
+        let add = |t: &&TileId| city.owner == viewer || v.can_see(viewer, **t);
+        let unchanged = previous.is_some_and(|c| {
+            let CityObservation { id: was_id, name, owner, centre, population, tiles, observed_turn } = c;
+            // Sorted and deduplicated already, keeping every tile and adding none it lacks: the same tiles again.
+            *was_id == id
+                && *name == city.name
+                && *owner == city.owner
+                && *centre == city.centre
+                && *population == city.population
+                && *observed_turn == world.turn
+                && tiles.windows(2).all(|w| w[0] < w[1])
+                && tiles.iter().all(keep)
+                && city.tiles.iter().filter(add).all(|t| tiles.binary_search(t).is_ok())
+        });
+        if !unchanged {
+            let mut tiles = previous.map(|c| c.tiles.clone()).unwrap_or_default();
+            tiles.retain(keep);
+            tiles.extend(city.tiles.iter().filter(add).copied());
+            tiles.sort();
+            tiles.dedup();
+            learned.cities.push(CityObservation {
+                id,
+                name: city.name.clone(),
+                owner: city.owner,
+                centre: city.centre,
+                population: city.population,
+                tiles,
+                observed_turn: world.turn,
+            });
+        }
+    }
+}
+
+fn observe_civs(world: &World, r: &Ruleset, viewer: CivId, visible_tiles: &[TileId], learned: &mut Learned) {
+    let v = &*world.visibility;
+    // the civs this viewer sees a city or a tile of, gathered once; seeing a unit is the costly test, left last
+    let mut shown: Vec<CivId> = visible_tiles.iter().filter_map(|t| world.grid.owner[t.0 as usize]).collect();
+    shown.extend(world.cities.iter().filter(|(_, c)| v.can_see(viewer, c.centre)).map(|(_, c)| c.owner));
+    shown.sort_unstable();
+    shown.dedup();
+    // the rest, by whether a unit of theirs is seen: one pass over the units
+    let mut sighted = vec![false; world.civs.len()];
+    for (id, u) in world.units.iter() {
+        let owner = u.owner.0 as usize;
+        if sighted.get(owner) == Some(&false)
+            && u.owner != viewer
+            && shown.binary_search(&u.owner).is_err()
+            && can_see_unit(world, r, viewer, id)
+        {
+            sighted[owner] = true;
+        }
+    }
+    for civ in &world.civs {
+        let observed = civ.id == viewer
+            || shown.binary_search(&civ.id).is_ok()
+            || sighted.get(civ.id.0 as usize) == Some(&true);
+        let previous = v.civ_observations.get(&(viewer, civ.id));
+        let first_contact = world.diplomacy.have_met(viewer, civ.id) && previous.is_none();
+        if observed || first_contact {
+            let seen = CivObservation {
+                id: civ.id,
+                nation: civ.nation,
+                city_state: civ.is_city_state(),
+                barbarian: civ.is_barbarian,
+                // Contact establishes existence; defeat later needs observation
+                // or a separately authorized public notification.
+                alive: if observed { civ.is_alive() } else { true },
+                observed_turn: world.turn,
+            };
+            if previous != Some(&seen) {
+                learned.civs.push(seen);
             }
         }
     }
@@ -1047,7 +1338,8 @@ mod tests {
 /// cost.
 #[derive(Debug, Clone)]
 pub(crate) struct CivTiles<T> {
-    rows: Vec<Vec<Option<T>>>,
+    /// Shared row by row, so a staged world that records one civ's view copies that civ's row alone.
+    rows: Vec<Shared<Vec<Option<T>>>>,
     len: usize,
 }
 
@@ -1060,30 +1352,6 @@ impl<T> Default for CivTiles<T> {
 impl<T> CivTiles<T> {
     pub(crate) fn get(&self, &(civ, tile): &(CivId, TileId)) -> Option<&T> {
         self.rows.get(civ.0 as usize)?.get(tile.0 as usize)?.as_ref()
-    }
-
-    pub(crate) fn get_mut(&mut self, &(civ, tile): &(CivId, TileId)) -> Option<&mut T> {
-        self.rows.get_mut(civ.0 as usize)?.get_mut(tile.0 as usize)?.as_mut()
-    }
-
-    pub(crate) fn contains_key(&self, key: &(CivId, TileId)) -> bool {
-        self.get(key).is_some()
-    }
-
-    pub(crate) fn insert(&mut self, (civ, tile): (CivId, TileId), value: T) -> Option<T> {
-        let (c, t) = (civ.0 as usize, tile.0 as usize);
-        if self.rows.len() <= c {
-            self.rows.resize_with(c + 1, Vec::new);
-        }
-        let row = &mut self.rows[c];
-        if row.len() <= t {
-            row.resize_with(t + 1, || None);
-        }
-        let old = row[t].replace(value);
-        if old.is_none() {
-            self.len += 1;
-        }
-        old
     }
 
     /// Every entry, in (civ, tile) order.
@@ -1109,6 +1377,28 @@ impl<T> CivTiles<T> {
             .get(civ.0 as usize)
             .into_iter()
             .flat_map(|row| row.iter().enumerate().filter_map(|(t, v)| v.as_ref().map(|v| (TileId(t as u16), v))))
+    }
+}
+
+impl<T: Clone> CivTiles<T> {
+    pub(crate) fn get_mut(&mut self, &(civ, tile): &(CivId, TileId)) -> Option<&mut T> {
+        self.rows.get_mut(civ.0 as usize)?.get_mut(tile.0 as usize)?.as_mut()
+    }
+
+    pub(crate) fn insert(&mut self, (civ, tile): (CivId, TileId), value: T) -> Option<T> {
+        let (c, t) = (civ.0 as usize, tile.0 as usize);
+        if self.rows.len() <= c {
+            self.rows.resize_with(c + 1, Shared::default);
+        }
+        let row = &mut *self.rows[c];
+        if row.len() <= t {
+            row.resize_with(t + 1, || None);
+        }
+        let old = row[t].replace(value);
+        if old.is_none() {
+            self.len += 1;
+        }
+        old
     }
 }
 
@@ -1153,7 +1443,7 @@ impl<T: serde::Serialize + Columns> serde::Serialize for CivTiles<T> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de, T: serde::Deserialize<'de> + Columns> serde::Deserialize<'de> for CivTiles<T> {
+impl<'de, T: serde::Deserialize<'de> + Columns + Clone> serde::Deserialize<'de> for CivTiles<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error;
         let mut map = CivTiles::default();

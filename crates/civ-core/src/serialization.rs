@@ -35,6 +35,31 @@ impl<'de> Deserialize<'de> for UniqueType {
     }
 }
 
+/// [`map_as_entries`] for a map held in a [`crate::shared::Shared`].
+pub mod shared_map_as_entries {
+    use crate::shared::Shared;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S, K, V>(map: &Shared<BTreeMap<K, V>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        K: Serialize,
+        V: Serialize,
+    {
+        super::map_as_entries::serialize(map, serializer)
+    }
+
+    pub fn deserialize<'de, D, K, V>(deserializer: D) -> Result<Shared<BTreeMap<K, V>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+    {
+        super::map_as_entries::deserialize(deserializer).map(Shared::from)
+    }
+}
+
 pub mod map_as_entries {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::BTreeMap;
