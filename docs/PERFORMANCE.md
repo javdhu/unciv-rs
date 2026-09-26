@@ -11,8 +11,8 @@ Phase 2 continues the graphics work from `b885ce6`.
 - Protocol 9 sends deltas between filtered player views. Welcome/resync remain full snapshots;
   unchanged browser entities retain their references.
 - Staged world copies share large stores until mutation. Transaction and undo isolation remain intact.
-- Line-of-sight results are cached by exact local inputs. Visibility masks and full player projections
-  are still assembled per transition.
+- Line-of-sight results are cached by exact inputs (see AI turns below). Full player projections are
+  still assembled per transition.
 - Game layout reads baked model measurements. Geometry generation stays in art workers; development
   tools can generate directly. `bun run art:measure` refreshes the committed metadata.
 - Core/session save format 5 is binary: postcard, with fog memories as a tile bitset and run-length
@@ -33,6 +33,32 @@ Checked in the title scene against the old ground textures, in one page: the tex
 byte for byte, and the frame differs by at most 1/255 on 78 of 3.1 million pixels, shader compiler rounding (a
 null edit to the old shader moved 1,320 pixels by up to 6/255). Median frame 44.7 → 40.1 ms, interleaved, on a
 heavily loaded machine: read it as no regression. Draw calls and program count are unchanged.
+
+## AI turns
+
+An AI game on a medium map with 8 civs (seed 21, whole game, `sample`) spent 32% of engine time in
+construction checks (every city asking about every unit and building, each ask summing the civ's happiness),
+28% in sight (every step of every move recomputed every unit's sight and rewrote every civ's records), 9% copying
+stores a staged world shared, and about 20% in pathfinding. Now, with no change to any game:
+
+- Construction checks share one happiness and resource stock per civ (`construction::CivChecks`).
+- A search gathers city centres, units by tile and its unit's rules once (`movement::Search`), not at every step.
+- Line of sight is cached against a whole map of terrain heights, checked once per sweep; each unit's rules are
+  walked once. Live masks and observation records are worked out first and written only where they change,
+  records are shared per civ, and a capture skips explored tiles already on record. Needless writes after every
+  action (alliances, resource stocks, contact) no longer copy shared stores.
+- `world::fog::audit` (feature `sight-audit`) recomputes sight and records plainly beside every update and capture;
+  civ-sim's `sight_audit` test plays a game under it, and an ignored one plays eight whole games (about 785,000
+  audited steps covering embarkation, promotions, city-state alliances, spies and the Great Lighthouse).
+
+`balance` engine time, back to back against a build of `1b94b3e`, outputs identical once `engineMs` is dropped:
+
+| Run | Before | After |
+|---|---:|---:|
+| `--map small --civs 4 --city-states 2 --seeds 1..=12 --threads 6` | 172.5 ms/turn | 63.5 ms/turn |
+| `--map medium --civs 8 --city-states 4 --seeds 20..=27 --threads 6` | 494.4 ms/turn | 144.0 ms/turn |
+
+Session saves at turns 30 to 120 of two games are byte-identical to the base's.
 
 ## Measurements
 

@@ -106,8 +106,11 @@ protocol's own form), then the core snapshot. Saves are deterministic: the same 
 projections are omitted and rebuilt on restore. Staged worlds share their large stores through copy-on-write ownership; mutating a store
 detaches it without changing the live transaction or undo snapshot.
 
-Visibility caches line-of-sight results by their complete local terrain and topology inputs. Visibility
-masks and player projections are still assembled for each transition; this is not a mutation journal.
+Visibility caches line-of-sight results against a whole map of terrain heights, checked once per sweep, so an
+answer is reused only while every input it came from still matches. Live masks and observation records are still
+worked out in full for each transition, but written only where they change, and the records are shared per civ;
+this is not a mutation journal. `world::fog::audit` (feature `sight-audit`, on in civ-sim's tests) recomputes both
+plainly beside every update and capture and must agree.
 
 Remote guests hold an opaque HttpOnly cookie; only its hash is stored. Invite codes cannot reclaim a
 seat. Reconnect issues a new connection generation and fences the previous socket. Disconnect grace,
