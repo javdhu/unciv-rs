@@ -4,7 +4,7 @@
 
 use civ_core::{Unique, UniqueKind};
 use std::collections::BTreeMap;
-mod common;
+use crate::common;
 use common::{read_json, ruleset_files};
 
 const JSONS: &str = "rules";

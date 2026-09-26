@@ -8,7 +8,7 @@ use civ_core::world::grid::{CivId, TileGrid};
 use civ_core::world::luminaries::candidates;
 use civ_core::world::world::World;
 
-mod common;
+use crate::common;
 
 /// Religious founders never appear as units; legendary figures and a ruler
 /// the old lists misfiled are gone.

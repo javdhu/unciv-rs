@@ -10,7 +10,7 @@ fn rules() -> Ruleset {
         .collect();
     sources.push((
         "Nations.json".into(),
-        include_str!("../../civ-core/tests/data/rebuild/Nations.json").into(),
+        include_str!("../../../civ-core/tests/data/rebuild/Nations.json").into(),
     ));
     Ruleset::from_sources(&sources).unwrap()
 }
@@ -158,7 +158,7 @@ fn a_launch_build_deals_only_the_first_waves_nations() {
             .iter()
             .map(|(f, t)| (f.to_string(), t.to_string()))
             .collect();
-        let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json").replace(
+        let nations = include_str!("../../../civ-core/tests/data/rebuild/Nations.json").replace(
             r#""region": "Europe","#,
             r#""region": "Europe", "wave": 2,"#,
         );
@@ -211,7 +211,7 @@ fn rule_tables_carry_what_we_know_for_leaders_and_wonders() {
         .iter()
         .map(|(f, t)| (f.to_string(), t.to_string()))
         .collect();
-    let nations = include_str!("../../civ-core/tests/data/rebuild/Nations.json")
+    let nations = include_str!("../../../civ-core/tests/data/rebuild/Nations.json")
         .replace(
             r#""voice": "Italian","#,
             r#""voice": "Italian", "whatWeKnow": "Attested: his Meditations.","#,

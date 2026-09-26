@@ -4,7 +4,7 @@
 //! icon is a missing texture waiting to happen. `civ_core::icons` holds the
 //! resolution chains; this asserts they cover the real data completely.
 
-mod common;
+use crate::common;
 use civ_core::generated::assets::Sprite;
 use civ_core::icons;
 use common::read_json;

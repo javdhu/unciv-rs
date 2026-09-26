@@ -9,7 +9,7 @@ use civ_core::world::influence;
 use civ_core::world::victory::{self, parse_milestone, Milestone};
 use civ_core::world::world::World;
 
-mod common;
+use crate::common;
 
 const A: CivId = CivId(0);
 const B: CivId = CivId(1);

@@ -176,11 +176,11 @@ fn base_faiths_arise_and_are_adopted_in_a_full_game() {
     let mut sources = renamed_sources();
     sources.push((
         "Religions.json".into(),
-        include_str!("../../civ-core/rules/base/Religions.json").into(),
+        include_str!("../../../civ-core/rules/base/Religions.json").into(),
     ));
     sources.push((
         "Beliefs.json".into(),
-        include_str!("../../civ-core/rules/base/Beliefs.json").into(),
+        include_str!("../../../civ-core/rules/base/Beliefs.json").into(),
     ));
     let play = || {
         let rules = Ruleset::from_sources(&sources).unwrap();

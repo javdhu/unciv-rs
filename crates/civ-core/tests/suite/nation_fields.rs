@@ -12,7 +12,7 @@ use civ_core::world::turn::{advance_turn, TurnEvent, TurnModifiers};
 use civ_core::world::world::World;
 use civ_core::UniqueType;
 
-mod common;
+use crate::common;
 
 fn rules() -> Ruleset {
     common::rebuild_rules(&["Nations.json"])

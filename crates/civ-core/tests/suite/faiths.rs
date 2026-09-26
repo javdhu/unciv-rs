@@ -21,7 +21,7 @@ use civ_core::world::turn::{advance_turn, TurnEvent, TurnModifiers};
 use civ_core::world::world::World;
 use civ_core::UniqueType;
 
-mod common;
+use crate::common;
 
 const INDIA: CivId = CivId(0);
 const ROME: CivId = CivId(1);

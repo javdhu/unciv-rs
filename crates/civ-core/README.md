@@ -180,7 +180,7 @@ one that needed an era number could not be written at all.
 
 ## The ruleset loads
 
-`tests/ruleset_load.rs` reads the shipped files for real:
+`tests/suite/ruleset_load.rs` reads the shipped files for real:
 
 | | Gods & Kings |
 |---|---|
@@ -433,7 +433,7 @@ Partly used prophets cannot also construct a Holy Site.
 
 The existing deterministic prophet-cost threshold is retained; this does not
 implement Unciv's probabilistic prophet-birth timing or global religion cap.
-The funded scenario in `tests/religion_turns.rs` verifies the whole path from
+The funded scenario in `tests/suite/religion_turns.rs` verifies the whole path from
 stored faith to founding, enhancement, purchase and a missionary reaching a
 distant city. It checks reachability without depending on the economic AI
 earning enough faith in an ordinary short game.
@@ -521,11 +521,11 @@ wrong. This reads Unciv's own answers instead.
 ```
 cd ../Unciv
 ./gradlew :tests:test --tests '*DifferentialDump*'      # writes the reference
-cd civ-core-rs && cargo test --test differential
+cd civ-core-rs && cargo test --test suite differential::
 ```
 
 `tests/src/com/unciv/testing/DifferentialDump.kt` runs inside Unciv and dumps
-what its own engine computes; `tests/differential.rs` compares value by value
+what its own engine computes; `tests/suite/differential.rs` compares value by value
 and reports *every* disagreement, not the first. Without the dump the tests skip
 loudly, so the suite still runs on a machine with no JDK.
 
