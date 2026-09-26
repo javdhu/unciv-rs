@@ -47,6 +47,13 @@ The existing `civ-sim` `save_profile` example, on the same machine and release s
 These are one-run local samples, not FPS or general workload guarantees. Reproduce with
 `cargo run --release -p civ-sim --example save_profile` and the settings above.
 
+### Art between visits
+
+An IndexedDB cache of finished parts (kept on branch `perf/art-cache`) was measured against production builds
+in headless Chrome: the title's 402 parts drained in 434–447 ms on a second visit instead of 481–559, no faster
+under a 4× CPU throttle, where the main thread building the scene is the cost, and it stored 24 MB (up to
+128 MB) per player. Not worth the disk; not merged.
+
 ### The client after deltas
 
 The architecture review proposed one id-indexed client model in place of the stores and layers that each walk
