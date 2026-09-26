@@ -14,14 +14,22 @@
 //! stays *unknown* rather than quietly becoming false. The reasoning is the
 //! same as in [`conditionals`](crate::world::conditionals): a rule that fails to
 //! fire because its filter is unimplemented should be countable, not invisible.
+//!
+//! The language is parsed once, into a [`Filter`] of [`Term`]s
+//! ([`crate::params`]): a unique's parameters are compiled at ruleset load, and
+//! the functions here that take a `&str` compile it on the spot. Each term
+//! arrives already classified — [`UnitWord`], [`BuildingWord`], [`CityWord`] —
+//! and with its names resolved, so matching reads the object and the world and
+//! nothing else.
 
 use crate::arena::Id;
+use crate::params::{Filter, Term};
 use crate::ruleset::{BaseUnit, Ruleset};
 use crate::world::conditionals::Verdict;
 use crate::world::entities::Unit;
 
 /// Split `{A} {B}` into its parts, or `None` if this is not a conjunction.
-fn conjunction(filter: &str) -> Option<Vec<&str>> {
+pub(crate) fn conjunction(filter: &str) -> Option<Vec<&str>> {
     let trimmed = filter.trim();
     if !trimmed.starts_with('{') {
         return None;
@@ -53,7 +61,7 @@ fn conjunction(filter: &str) -> Option<Vec<&str>> {
 ///
 /// Unknown wins over true and loses to false: a conjunction with one false term
 /// is definitely false, but one with an unknown term and no false one cannot be
-/// decided.
+/// decided. [`Filter::test`] is the same reading, compiled.
 pub fn multi_filter(filter: &str, test: &impl Fn(&str) -> Verdict) -> Verdict {
     let filter = filter.trim();
 
@@ -80,18 +88,69 @@ pub fn multi_filter(filter: &str, test: &impl Fn(&str) -> Verdict) -> Verdict {
     test(filter)
 }
 
+fn yes(b: bool) -> Verdict {
+    if b {
+        Verdict::True
+    } else {
+        Verdict::False
+    }
+}
+
+/// The words the unit filters know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitWord {
+    All,
+    Ranged,
+    Melee,
+    Military,
+    Civilian,
+    Land,
+    Water,
+    Air,
+    GreatPerson,
+    NonAir,
+    Wounded,
+    Embarked,
+    Barbarian,
+    CityState,
+    CityStates,
+    Other,
+}
+
+impl UnitWord {
+    pub(crate) fn of(term: &str) -> UnitWord {
+        match term {
+            "all" | "All" => UnitWord::All,
+            "Ranged" => UnitWord::Ranged,
+            "Melee" => UnitWord::Melee,
+            "Military" => UnitWord::Military,
+            "Civilian" => UnitWord::Civilian,
+            "Land" => UnitWord::Land,
+            "Water" => UnitWord::Water,
+            "Air" => UnitWord::Air,
+            "Great Person" | "Luminary" => UnitWord::GreatPerson,
+            "non-air" => UnitWord::NonAir,
+            "Wounded" | "wounded" | "wounded units" => UnitWord::Wounded,
+            "Embarked" | "embarked" => UnitWord::Embarked,
+            "Barbarian" | "barbarians" => UnitWord::Barbarian,
+            "City-State" => UnitWord::CityState,
+            "City-States" => UnitWord::CityStates,
+            _ => UnitWord::Other,
+        }
+    }
+}
+
 /// Categories derived from a unit's own numbers, as Unciv derives them
 /// (`BaseUnit.kt:500`).
-fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
+fn category(r: &Ruleset, base: &BaseUnit, term: &Term) -> Verdict {
     let ranged = base.ranged_strength.unwrap_or(0) > 0;
     let melee = !ranged && base.strength.unwrap_or(0) > 0;
     let military = ranged || melee;
-    let movement = r.unit_types.by_name(&base.unit_type).map(|t| t.movement_type.as_str());
+    let unit_type = || r.unit_types.by_name(&base.unit_type);
+    let movement = || unit_type().map(|t| t.movement_type.as_str());
 
-    let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
-
-    if let Some(era_name) = term.strip_prefix("pre-[").and_then(|s| s.strip_suffix(']')) {
-        return r.eras.by_name(era_name).map_or(Verdict::Unknown, |era| {
+    if let Some(era) = term.pre_era {
+        return era.and_then(|id| r.eras.get(id)).map_or(Verdict::Unknown, |era| {
             yes(base
                 .required_tech
                 .as_deref()
@@ -102,37 +161,38 @@ fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
                 < era.era_number)
         });
     }
-    match term {
-        "all" | "All" => Verdict::True,
-        "Ranged" => yes(ranged),
-        "Melee" => yes(melee),
-        "Military" => yes(military),
-        "Civilian" => yes(!military),
-        "Land" => movement.map_or(Verdict::Unknown, |m| yes(m == "Land")),
-        "Water" => movement.map_or(Verdict::Unknown, |m| yes(m == "Water")),
-        "Air" => movement.map_or(Verdict::Unknown, |m| yes(m == "Air")),
-        "Great Person" | "Luminary" => {
+    match term.unit {
+        UnitWord::All => Verdict::True,
+        UnitWord::Ranged => yes(ranged),
+        UnitWord::Melee => yes(melee),
+        UnitWord::Military => yes(military),
+        UnitWord::Civilian => yes(!military),
+        UnitWord::Land => movement().map_or(Verdict::Unknown, |m| yes(m == "Land")),
+        UnitWord::Water => movement().map_or(Verdict::Unknown, |m| yes(m == "Water")),
+        UnitWord::Air => movement().map_or(Verdict::Unknown, |m| yes(m == "Air")),
+        UnitWord::GreatPerson => {
             yes(base.uniques.iter().any(|u| u.unique_type() == Some(crate::UniqueType::GreatPerson)))
         }
-        "non-air" => movement.map_or(Verdict::Unknown, |m| yes(m != "Air")),
+        UnitWord::NonAir => movement().map_or(Verdict::Unknown, |m| yes(m != "Air")),
         _ => {
+            let text = &*term.text;
             if base
                 .uniques
                 .iter()
-                .chain(r.unit_types.by_name(&base.unit_type).into_iter().flat_map(|t| &t.uniques))
-                .any(|u| u.kind == crate::unique::UniqueKind::Tag && u.text == term)
+                .chain(unit_type().into_iter().flat_map(|t| &t.uniques))
+                .any(|u| u.kind == crate::unique::UniqueKind::Tag && u.text == text)
             {
                 return Verdict::True;
             }
-            if term == base.name || term == base.unit_type {
+            if text == base.name || text == base.unit_type {
                 return Verdict::True;
             }
-            if base.replaces.as_deref() == Some(term) {
+            if base.replaces.as_deref() == Some(text) {
                 return Verdict::True;
             }
             // A term naming a unit type or unit this ruleset has is a definite
             // no; anything else is beyond this function.
-            if r.unit_types.id(term).is_some() || r.units.id(term).is_some() {
+            if term.names.unit_type.is_some() || term.names.unit.is_some() {
                 Verdict::False
             } else {
                 Verdict::Unknown
@@ -141,46 +201,90 @@ fn category(r: &Ruleset, base: &BaseUnit, term: &str) -> Verdict {
     }
 }
 
+/// A unit's own state, then its type.
+fn unit_term(r: &Ruleset, base: &BaseUnit, unit: &Unit, term: &Term) -> Verdict {
+    match term.unit {
+        // Stateful terms, which a bare BaseUnit cannot answer.
+        UnitWord::Wounded => yes(unit.is_hurt()),
+        UnitWord::Embarked => yes(unit.embarked),
+        UnitWord::Barbarian | UnitWord::CityState => Verdict::Unknown, // needs civ kind
+        _ => category(r, base, term),
+    }
+}
+
 /// Does a unit match a filter, given its state as well as its type?
 pub fn unit_matches(r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
+    matches_unit(r, unit, &Filter::compile(r, filter))
+}
+
+/// [`unit_matches`], compiled.
+pub fn matches_unit(r: &Ruleset, unit: &Unit, filter: &Filter) -> Verdict {
     let Some(base) = r.units.get(unit.base) else { return Verdict::Unknown };
-    multi_filter(filter, &|term| match term {
-        // Stateful terms, which a bare BaseUnit cannot answer.
-        "Wounded" | "wounded" | "wounded units" => {
-            if unit.is_hurt() {
-                Verdict::True
-            } else {
-                Verdict::False
-            }
-        }
-        "Embarked" | "embarked" => {
-            if unit.embarked {
-                Verdict::True
-            } else {
-                Verdict::False
-            }
-        }
-        "Barbarian" | "barbarians" | "City-State" => Verdict::Unknown, // needs civ kind
-        _ => category(r, base, term),
-    })
+    filter.test(&|term| unit_term(r, base, unit, term))
 }
 
 /// Live unit filters can also identify the owner's kind and granted promotions.
 pub fn unit_matches_in(world: &crate::world::World, r: &Ruleset, unit: &Unit, filter: &str) -> Verdict {
-    let yes = |value| if value { Verdict::True } else { Verdict::False };
-    multi_filter(filter, &|term| match term {
-        "Barbarian" | "barbarians" => yes(world.civ(unit.owner).is_some_and(|c| c.is_barbarian)),
-        "City-State" | "City-States" => yes(world.civ(unit.owner).is_some_and(|c| c.is_city_state())),
-        _ if r.promotions.id(term).is_some_and(|id| unit.promotions.contains(&id)) => Verdict::True,
-        _ => unit_matches(r, unit, term),
+    matches_unit_in(world, r, unit, &Filter::compile(r, filter))
+}
+
+/// [`unit_matches_in`], compiled.
+pub fn matches_unit_in(world: &crate::world::World, r: &Ruleset, unit: &Unit, filter: &Filter) -> Verdict {
+    let base = r.units.get(unit.base);
+    filter.test(&|term| match term.unit {
+        UnitWord::Barbarian => yes(world.civ(unit.owner).is_some_and(|c| c.is_barbarian)),
+        UnitWord::CityState | UnitWord::CityStates => yes(world.civ(unit.owner).is_some_and(|c| c.is_city_state())),
+        _ if term.names.promotion.is_some_and(|id| unit.promotions.contains(&id)) => Verdict::True,
+        _ => base.map_or(Verdict::Unknown, |base| unit_term(r, base, unit, term)),
     })
 }
 
 /// The type-only form, for questions about a unit that does not exist yet —
 /// what a city may build, what a promotion could apply to.
 pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdict {
+    matches_base_unit(r, base, &Filter::compile(r, filter))
+}
+
+/// [`base_unit_matches`], compiled.
+pub fn matches_base_unit(r: &Ruleset, base: Id<BaseUnit>, filter: &Filter) -> Verdict {
     let Some(b) = r.units.get(base) else { return Verdict::Unknown };
-    multi_filter(filter, &|term| category(r, b, term))
+    filter.test(&|term| category(r, b, term))
+}
+
+/// The words the building filter knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildingWord {
+    All,
+    Wonder,
+    WorldWonder,
+    NationalWonder,
+    Food,
+    Production,
+    Gold,
+    Science,
+    Culture,
+    Happiness,
+    Faith,
+    Other,
+}
+
+impl BuildingWord {
+    pub(crate) fn of(term: &str) -> BuildingWord {
+        match term {
+            "All" | "all" | "Building" | "Buildings" => BuildingWord::All,
+            "Wonder" | "Wonders" => BuildingWord::Wonder,
+            "World Wonder" | "World Wonders" => BuildingWord::WorldWonder,
+            "National Wonder" | "National Wonders" => BuildingWord::NationalWonder,
+            "Food" => BuildingWord::Food,
+            "Production" => BuildingWord::Production,
+            "Gold" => BuildingWord::Gold,
+            "Science" => BuildingWord::Science,
+            "Culture" => BuildingWord::Culture,
+            "Happiness" => BuildingWord::Happiness,
+            "Faith" => BuildingWord::Faith,
+            _ => BuildingWord::Other,
+        }
+    }
 }
 
 /// Does a building type match a building filter?
@@ -190,33 +294,94 @@ pub fn base_unit_matches(r: &Ruleset, base: Id<BaseUnit>, filter: &str) -> Verdi
 /// building's name either, is [`Verdict::Unknown`]: a stat category like
 /// "Culture" needs knowing what the building yields, which this does not ask.
 pub fn building_matches(r: &Ruleset, id: Id<crate::ruleset::Building>, filter: &str) -> Verdict {
+    matches_building(r, id, &Filter::compile(r, filter))
+}
+
+/// [`building_matches`], compiled.
+pub fn matches_building(r: &Ruleset, id: Id<crate::ruleset::Building>, filter: &Filter) -> Verdict {
     let Some(b) = r.buildings.get(id) else { return Verdict::Unknown };
-    let yes = |v: bool| if v { Verdict::True } else { Verdict::False };
     let world_wonder = b.is_wonder == Some(true);
     let national_wonder = b.is_national_wonder == Some(true);
-    multi_filter(filter, &|term| match term {
-        "All" | "all" | "Building" | "Buildings" => Verdict::True,
-        "Wonder" | "Wonders" => yes(world_wonder || national_wonder),
-        "World Wonder" | "World Wonders" => yes(world_wonder),
-        "National Wonder" | "National Wonders" => yes(national_wonder),
-        "Food" => yes(b.food.unwrap_or(0) > 0),
-        "Production" => yes(b.production.unwrap_or(0) > 0),
-        "Gold" => yes(b.gold.unwrap_or(0) > 0),
-        "Science" => yes(b.science.unwrap_or(0) > 0),
-        "Culture" => yes(b.culture.unwrap_or(0) > 0),
-        "Happiness" => yes(b.happiness.unwrap_or(0) > 0),
-        "Faith" => yes(b.faith.unwrap_or(0) > 0),
-        t if r.eras.by_name(t).is_some() => yes(b
+    filter.test(&|term| match term.building {
+        BuildingWord::All => Verdict::True,
+        BuildingWord::Wonder => yes(world_wonder || national_wonder),
+        BuildingWord::WorldWonder => yes(world_wonder),
+        BuildingWord::NationalWonder => yes(national_wonder),
+        BuildingWord::Food => yes(b.food.unwrap_or(0) > 0),
+        BuildingWord::Production => yes(b.production.unwrap_or(0) > 0),
+        BuildingWord::Gold => yes(b.gold.unwrap_or(0) > 0),
+        BuildingWord::Science => yes(b.science.unwrap_or(0) > 0),
+        BuildingWord::Culture => yes(b.culture.unwrap_or(0) > 0),
+        BuildingWord::Happiness => yes(b.happiness.unwrap_or(0) > 0),
+        BuildingWord::Faith => yes(b.faith.unwrap_or(0) > 0),
+        BuildingWord::Other if term.names.era.is_some() => yes(b
             .required_tech
             .as_deref()
             .and_then(|t| r.technologies.by_name(t))
             .and_then(|t| t.era(r))
             .and_then(|id| r.eras.get(id))
-            .is_some_and(|e| e.name == t)),
-        t if t == b.name || b.replaces.as_deref() == Some(t) => Verdict::True,
-        t if r.buildings.id(t).is_some() => Verdict::False,
-        _ => Verdict::Unknown,
+            .is_some_and(|e| *e.name == *term.text)),
+        BuildingWord::Other if *term.text == b.name || b.replaces.as_deref() == Some(&*term.text) => Verdict::True,
+        BuildingWord::Other if term.names.building.is_some() => Verdict::False,
+        BuildingWord::Other => Verdict::Unknown,
     })
+}
+
+/// The words the city filter knows, after its `in `/`all ` prefixes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CityWord {
+    All,
+    Coastal,
+    Capital,
+    NonOccupied,
+    Garrisoned,
+    WorldWonder,
+    Holy,
+    Connected,
+    MajorReligion,
+    Puppeted,
+    Annexed,
+    Resisting,
+    Razing,
+    This,
+    Other,
+    Yours,
+    Foreign,
+    CityState,
+    Unknown,
+}
+
+impl CityWord {
+    pub(crate) fn of(filter: &str) -> CityWord {
+        let f = filter.trim();
+        let f = f.strip_prefix("in ").unwrap_or(f);
+        let f = if f.starts_with("all cities ") || f == "all coastal cities" || f == "all non-occupied cities" {
+            f.strip_prefix("all ").unwrap_or(f)
+        } else {
+            f
+        };
+        match f {
+            "all cities" | "All" | "in all cities" | "cities following this religion" => CityWord::All,
+            "coastal cities" | "Coastal" => CityWord::Coastal,
+            "capital" => CityWord::Capital,
+            "non-occupied cities" => CityWord::NonOccupied,
+            "cities with a garrison" => CityWord::Garrisoned,
+            "cities with a world wonder" => CityWord::WorldWonder,
+            "Holy cities" | "Holy" => CityWord::Holy,
+            "cities connected to the capital" | "cities connected to capital" => CityWord::Connected,
+            "cities in which the majority religion is a major religion" => CityWord::MajorReligion,
+            "puppeted cities" | "Puppeted" => CityWord::Puppeted,
+            "annexed cities" | "Annexed" => CityWord::Annexed,
+            "resisting cities" | "Resisting" => CityWord::Resisting,
+            "cities being razed" | "Razing" => CityWord::Razing,
+            "this city" => CityWord::This,
+            "other cities" => CityWord::Other,
+            "your cities" | "cities" => CityWord::Yours,
+            "foreign cities" | "enemy cities" => CityWord::Foreign,
+            "City-State cities" | "City-State" => CityWord::CityState,
+            _ => CityWord::Unknown,
+        }
+    }
 }
 
 /// Does a city match a city filter?
@@ -227,7 +392,8 @@ pub fn building_matches(r: &Ruleset, id: Id<crate::ruleset::Building>, filter: &
 /// understand withholds its bonus and stays countable.
 ///
 /// `subject` is the city being asked about; `origin` is the city the effect
-/// comes from, which is what "this city" means.
+/// comes from, which is what "this city" means. One term: callers wanting the
+/// full language use [`matches_city`].
 pub fn city_matches(
     world: &crate::world::world::World,
     r: &Ruleset,
@@ -235,70 +401,83 @@ pub fn city_matches(
     origin: Option<&crate::world::city::City>,
     filter: &str,
 ) -> Verdict {
-    let yes = |b: bool| if b { Verdict::True } else { Verdict::False };
-    let f = filter.trim();
-    let f = f.strip_prefix("in ").unwrap_or(f);
-    let f = if f.starts_with("all cities ") || f == "all coastal cities" || f == "all non-occupied cities" {
-        f.strip_prefix("all ").unwrap_or(f)
-    } else {
-        f
-    };
-    let _ = r;
-    match f {
-        "all cities" | "All" | "in all cities" | "cities following this religion" => Verdict::True,
-        "coastal cities" | "Coastal" => yes(subject.coastal),
-        "capital" => yes(world
+    city_word(world, r, subject, origin, CityWord::of(filter))
+}
+
+/// A whole city filter, compiled: [`city_matches`] for each term.
+pub fn matches_city(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    subject: &crate::world::city::City,
+    origin: Option<&crate::world::city::City>,
+    filter: &Filter,
+) -> Verdict {
+    filter.test(&|term| city_word(world, r, subject, origin, term.city))
+}
+
+/// [`city_matches`] for an already classified term.
+pub fn city_word(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    subject: &crate::world::city::City,
+    origin: Option<&crate::world::city::City>,
+    word: CityWord,
+) -> Verdict {
+    match word {
+        CityWord::All => Verdict::True,
+        CityWord::Coastal => yes(subject.coastal),
+        CityWord::Capital => yes(world
             .civ(subject.owner)
             .and_then(|c| c.cities.first())
             .and_then(|id| world.cities.get(*id))
             .is_some_and(|c| c.centre == subject.centre)),
-        "non-occupied cities" => yes(subject.founder == subject.owner
+        CityWord::NonOccupied => yes(subject.founder == subject.owner
             || subject.puppet
             || subject.uniques.has(crate::UniqueType::RemovesAnnexUnhappiness)),
-        "cities with a garrison" => yes(world
+        CityWord::Garrisoned => yes(world
             .units
             .iter()
             .any(|(_, u)| u.owner == subject.owner && u.position == subject.centre && !u.is_civilian(r))),
-        "cities with a world wonder" => {
+        CityWord::WorldWonder => {
             yes(subject.built.iter().any(|id| r.buildings.get(*id).is_some_and(|b| b.is_wonder == Some(true))))
         }
-        "Holy cities" | "Holy" => yes(subject.faith.holy_city_of.is_some()),
-        "cities connected to the capital" | "cities connected to capital" => yes(world
+        CityWord::Holy => yes(subject.faith.holy_city_of.is_some()),
+        CityWord::Connected => yes(world
             .cities
             .iter()
             .find(|(_, c)| c.centre == subject.centre)
             .is_some_and(|(id, _)| crate::world::connections::find(world, r, subject.owner).has_trade_route(id))),
-        "cities in which the majority religion is a major religion" => yes(subject
+        CityWord::MajorReligion => yes(subject
             .faith
             .majority(subject.population)
             .is_some_and(|creed| crate::world::religion::religion_exists(world, creed))),
         // What a conquest made of it (`City.matchesFilter`).
-        "puppeted cities" | "Puppeted" => yes(subject.puppet),
-        "annexed cities" | "Annexed" => yes(subject.founder != subject.owner && !subject.puppet),
-        "resisting cities" | "Resisting" => yes(subject.resistance > 0),
-        "cities being razed" | "Razing" => yes(subject.razing),
-        "this city" => match origin {
+        CityWord::Puppeted => yes(subject.puppet),
+        CityWord::Annexed => yes(subject.founder != subject.owner && !subject.puppet),
+        CityWord::Resisting => yes(subject.resistance > 0),
+        CityWord::Razing => yes(subject.razing),
+        CityWord::This => match origin {
             // Two cities are the same city when they stand on the same tile —
             // names are not unique and ids are not in hand here.
             Some(o) => yes(o.centre == subject.centre),
             None => Verdict::Unknown,
         },
-        "other cities" => match origin {
+        CityWord::Other => match origin {
             Some(o) => yes(o.centre != subject.centre),
             None => Verdict::Unknown,
         },
-        "your cities" | "cities" => match origin {
+        CityWord::Yours => match origin {
             Some(o) => yes(o.owner == subject.owner),
             None => Verdict::Unknown,
         },
-        "foreign cities" | "enemy cities" => match origin {
+        CityWord::Foreign => match origin {
             Some(o) => yes(o.owner != subject.owner),
             None => Verdict::Unknown,
         },
         // City-states are not modelled yet. Saying "no" would quietly hand out
         // a bonus that should be withheld and hide the gap.
-        "City-State cities" | "City-State" => yes(world.civ(subject.owner).is_some_and(|c| c.is_city_state())),
-        _ => Verdict::Unknown,
+        CityWord::CityState => yes(world.civ(subject.owner).is_some_and(|c| c.is_city_state())),
+        CityWord::Unknown => Verdict::Unknown,
     }
 }
 

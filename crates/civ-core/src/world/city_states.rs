@@ -432,8 +432,7 @@ pub(crate) fn bonus_uniques_with_modifiers(
                 for &(stat, multiplier) in &multipliers {
                     stats[stat] = stats[stat] * multiplier;
                 }
-                unique.text = unique.text.replacen(&format!("[{}]", unique.params[0]), &format!("[{stats}]"), 1);
-                unique.params[0] = stats.to_string();
+                unique.set_param(0, stats.to_string());
             }
             out.push(unique);
         }

@@ -72,6 +72,8 @@ pub struct Ruleset {
     /// production penalties are conditional uniques here, not code — so a
     /// ruleset that does not load this file has an empire that cannot suffer.
     pub global_uniques: Vec<crate::Unique>,
+    /// Which ruleset this is, to the uniques compiled against it (`crate::params`).
+    pub(crate) stamp: crate::params::Stamp,
     /// `defaultDifficulty` from `ModOptions.json` (civ.game). Absent, the
     /// middle difficulty is the default: see [`Ruleset::default_difficulty`].
     pub default_difficulty_name: Option<String>,
@@ -381,6 +383,10 @@ impl Ruleset {
                 .sum();
         }
         self.terrain_sight = self.terrains.ids().map(|id| self.terrains.get(id).map_or((0, false), terrain_sight_of)).collect();
+
+        // Every unique's parameters, read once against the finished ruleset.
+        self.stamp = crate::params::Stamp::fresh();
+        crate::params::warm(self);
     }
 
     /// A terrain's line-of-sight elevation, and whether it blocks sight at the same elevation.

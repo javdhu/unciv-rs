@@ -16,15 +16,43 @@ pub enum UniqueKind {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Unique {
     pub kind: UniqueKind,
     /// Base text with all `<conditionals>` removed.
     pub text: String,
-    /// Contents of each top-level `[...]`, nesting preserved verbatim.
+    /// Contents of each top-level `[...]`, nesting preserved verbatim. Read
+    /// through [`Unique::compiled`] where it matters; change one with
+    /// [`Unique::set_param`], which forgets what was compiled from it.
     pub params: Vec<String>,
     /// `<...>` modifiers, themselves parsed as uniques.
     pub conditionals: Vec<Unique>,
+    /// The params, compiled on first use (`crate::params`).
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub(crate) compiled: crate::params::Cell,
+}
+
+// What was compiled is derived from the text, so it is no part of identity.
+impl PartialEq for Unique {
+    fn eq(&self, other: &Unique) -> bool {
+        self.kind == other.kind
+            && self.text == other.text
+            && self.params == other.params
+            && self.conditionals == other.conditionals
+    }
+}
+
+impl Eq for Unique {}
+
+impl std::fmt::Debug for Unique {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Unique")
+            .field("kind", &self.kind)
+            .field("text", &self.text)
+            .field("params", &self.params)
+            .field("conditionals", &self.conditionals)
+            .finish()
+    }
 }
 
 fn lookup() -> &'static HashMap<&'static str, UniqueType> {
@@ -122,7 +150,16 @@ impl Unique {
             text: base,
             params,
             conditionals: mods.iter().map(|m| Unique::parse(m)).collect(),
+            compiled: Default::default(),
         }
+    }
+
+    /// Replace one parameter, in the text as well, and drop anything compiled
+    /// from the old one.
+    pub fn set_param(&mut self, i: usize, value: String) {
+        self.text = self.text.replacen(&format!("[{}]", self.params[i]), &format!("[{value}]"), 1);
+        self.params[i] = value;
+        self.compiled = Default::default();
     }
 
     pub fn unique_type(&self) -> Option<UniqueType> {

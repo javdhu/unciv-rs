@@ -11,6 +11,7 @@ pub mod icons;
 pub mod json;
 pub mod modifiers;
 pub mod names;
+pub mod params;
 pub mod rng;
 pub mod ruleset;
 #[cfg(feature = "save")]

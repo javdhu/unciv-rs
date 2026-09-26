@@ -1,6 +1,7 @@
 //! civ-sim's integration tests, one binary: each file is compiled and linked once, not once per file.
 
 mod base_rules;
+mod compiled_filters;
 mod leaders;
 mod normal_match;
 mod player_events;

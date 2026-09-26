@@ -67,10 +67,8 @@ fn requirements(r: &Ruleset, unit: Id<BaseUnit>, context: Option<&GameContext<'_
             && context.is_none_or(|ctx| applies(unique, ctx) != Verdict::False)
         {
             // "Consumes [amount] [resource]" — the resource is the second slot.
-            if let (Some(amount), Some(id)) = (
-                unique.params.first().and_then(|n| n.parse::<i32>().ok()),
-                unique.params.get(1).and_then(|n| r.resources.id(n)),
-            ) {
+            let params = unique.compiled(r);
+            if let (Some(amount), Some(id)) = (params.i32(0), params.term(1).and_then(|t| t.names.resource)) {
                 if amount > 0 {
                     adjust(&mut out, id, i64::from(amount));
                 }
@@ -110,7 +108,7 @@ pub fn available_stock(world: &World, r: &Ruleset, civ: CivId) -> ResourceStock 
         .into_iter()
         .flat_map(|c| c.uniques.matching(UniqueType::CityStateResources))
         .filter(|u| applies(u, &ctx) == Verdict::True)
-        .filter_map(|u| u.params.first()?.parse::<i64>().ok())
+        .filter_map(|u| u.compiled(r).i64(0))
         .sum();
     // Allies provide their positive domestic supplies once. Raw supplier stock
     // excludes diplomacy, so this cannot recurse through allied resource sharing.
@@ -193,8 +191,8 @@ pub(crate) fn can_supply_unit_from(
     if definition.uniques.iter().any(|unique| {
         unique.unique_type() == Some(UniqueType::ConsumesResources)
             && applies(unique, &ctx) != Verdict::False
-            && (unique.params.first().and_then(|n| n.parse::<i32>().ok()).is_none_or(|n| n <= 0)
-                || unique.params.get(1).and_then(|name| r.resources.id(name)).is_none())
+            && (unique.compiled(r).i32(0).is_none_or(|n| n <= 0)
+                || unique.compiled(r).term(1).and_then(|t| t.names.resource).is_none())
     }) {
         return false;
     }
@@ -271,8 +269,14 @@ pub fn provides_resource(
 }
 
 pub fn resource_matches(r: &Ruleset, id: Id<TileResource>, filter: &str) -> bool {
+    matches_resource(r, id, &crate::params::Filter::compile(r, filter))
+}
+
+/// [`resource_matches`], compiled.
+pub fn matches_resource(r: &Ruleset, id: Id<TileResource>, filter: &crate::params::Filter) -> bool {
     let Some(res) = r.resources.get(id) else { return false };
-    crate::world::filters::multi_filter(filter, &|f| {
+    filter.test(&|term| {
+        let f = &*term.text;
         if f == "All"
             || f == "all"
             || f == res.name
@@ -303,9 +307,8 @@ pub fn building_requirements(
         .iter()
         .filter(|u| u.unique_type() == Some(UniqueType::ConsumesResources) && applies(u, &ctx) == Verdict::True)
     {
-        if let (Some(amount), Some(res)) =
-            (u.params.first().and_then(|p| p.parse::<i64>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
-        {
+        let params = u.compiled(r);
+        if let (Some(amount), Some(res)) = (params.i64(0), params.term(1).and_then(|t| t.names.resource)) {
             adjust(&mut out, res, amount.max(0));
         }
     }
@@ -357,10 +360,8 @@ pub fn recompute_stock(
             let mut ctx = GameContext::new(r).with_world(world).for_civ(civ_id).on_tile(tile);
             ctx.city = city;
             for u in imp.uniques.iter().filter(|u| applies(u, &ctx) == Verdict::True) {
-                if let (Some(amount), Some(res)) = (
-                    u.params.first().and_then(|p| p.parse::<i32>().ok()),
-                    u.params.get(1).and_then(|p| r.resources.id(p)),
-                ) {
+                let params = u.compiled(r);
+                if let (Some(amount), Some(res)) = (params.i32(0), params.term(1).and_then(|t| t.names.resource)) {
                     match u.unique_type() {
                         Some(UniqueType::ProvidesResources) => {
                             *produced.entry((city, res)).or_default() += amount.max(0)
@@ -374,9 +375,8 @@ pub fn recompute_stock(
     }
     let ctx = GameContext::new(r).with_world(world).for_civ(civ_id);
     for u in civ.uniques.matching(UniqueType::ProvidesResources).filter(|u| applies(u, &ctx) == Verdict::True) {
-        if let (Some(amount), Some(res)) =
-            (u.params.first().and_then(|p| p.parse::<i32>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
-        {
+        let params = u.compiled(r);
+        if let (Some(amount), Some(res)) = (params.i32(0), params.term(1).and_then(|t| t.names.resource)) {
             *produced.entry((None, res)).or_default() += amount.max(0);
         }
     }
@@ -388,9 +388,8 @@ pub fn recompute_stock(
             .matching(UniqueType::ProvidesResources)
             .filter(|u| u.is_local() && applies(u, &ctx) == Verdict::True)
         {
-            if let (Some(amount), Some(res)) =
-                (u.params.first().and_then(|p| p.parse::<i32>().ok()), u.params.get(1).and_then(|p| r.resources.id(p)))
-            {
+            let params = u.compiled(r);
+            if let (Some(amount), Some(res)) = (params.i32(0), params.term(1).and_then(|t| t.names.resource)) {
                 *produced.entry((Some(*city), res)).or_default() += amount.max(0);
             }
         }
@@ -412,9 +411,9 @@ pub fn recompute_stock(
             .filter(|u| {
                 u.unique_type() == Some(UniqueType::PercentResourceProduction)
                     && applies(u, &ctx) == Verdict::True
-                    && u.params.get(1).is_some_and(|f| resource_matches(r, res, f))
+                    && u.compiled(r).filter(1).is_some_and(|f| matches_resource(r, res, f))
             })
-            .filter_map(|u| u.params.first()?.parse::<i64>().ok())
+            .filter_map(|u| u.compiled(r).i64(0))
             .sum();
         adjust(&mut stock, res, (i64::from(amount) * (100 + percent) / 100).max(0));
     }
