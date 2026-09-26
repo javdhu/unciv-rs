@@ -200,7 +200,9 @@ pub fn can(world: &World, r: &Ruleset, unit: Id<Unit>, action: Action, s: Scalin
             hurry_amount(world, r, city, s.costs)?;
         }
         Action::TradeMission => {
-            let owner = world.grid.owner[u.position.0 as usize];
+            // Another civ's city-state: one trading on its own land would
+            // earn influence over itself (`tile.owningCity?.civ != unit.civ`).
+            let owner = world.grid.owner[u.position.0 as usize].filter(|o| *o != civ);
             let cs = owner.filter(|o| world.civ(*o).is_some_and(|c| c.is_city_state()));
             let cs = cs.ok_or(ActionRejection::NotACityState)?;
             if world.diplomacy.at_war(civ, cs) {
@@ -441,6 +443,18 @@ mod tests {
         assert_eq!(out, Outcome::TradeMission { city_state: CivId(1), gold: 350, influence: 30 });
         assert_eq!(w.civ(CivId(0)).unwrap().gold, gold_before + 350);
         assert_eq!(w.diplomacy.influence(CivId(1), CivId(0)), Fixed::whole(30));
+    }
+
+    #[test]
+    fn a_city_state_cannot_trade_with_itself() {
+        let r = ruleset();
+        let (mut w, _) = world(&r);
+        let there = w.grid.id_at(13, 5).unwrap();
+        let m = person(&mut w, &r, "Great Merchant", there);
+        w.units.get_mut(m).unwrap().owner = CivId(1);
+        assert_eq!(can(&w, &r, m, Action::TradeMission, Scaling::default()), Err(ActionRejection::NotACityState));
+        assert!(perform(&mut w, &r, m, Action::TradeMission, Scaling::default()).is_err());
+        assert_eq!(w.diplomacy.influencers(CivId(1)), Vec::new());
     }
 
     #[test]
