@@ -50,9 +50,10 @@ pub enum GreatPersonEvent {
 /// Points a civ's cities generate this turn, by kind.
 ///
 /// From buildings' `greatPersonPoints`, and from the specialists at work.
+/// City-states earn none: they don't get great people (`TurnManager.endTurn`).
 pub fn points_per_turn(world: &World, r: &Ruleset, civ: CivId) -> BTreeMap<String, i32> {
     let mut out: BTreeMap<String, i32> = BTreeMap::new();
-    let Some(c) = world.civ(civ) else { return out };
+    let Some(c) = world.civ(civ).filter(|c| c.is_major()) else { return out };
     for id in &c.cities {
         let Some(city) = world.cities.get(*id) else { continue };
         let mut base: BTreeMap<String, i32> = BTreeMap::new();
@@ -409,5 +410,10 @@ mod tests {
         let points = points_per_turn(&w, &r, CivId(0));
         println!("{}: {:?}", b.name, points);
         assert!(!points.is_empty());
+
+        w.civ_mut(CivId(0)).unwrap().city_state_type = r.city_state_types.ids().next();
+        assert!(points_per_turn(&w, &r, CivId(0)).is_empty(), "city-states don't get great people");
+        assert!(process_turn(&mut w, &r, CivId(0), Fixed::ONE).is_empty());
+        assert!(w.civ(CivId(0)).unwrap().great_people.points.is_empty());
     }
 }

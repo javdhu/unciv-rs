@@ -77,10 +77,10 @@ fingerprints match (`0x3b7e53530a3e8b62`); Linux containers were not checked. Th
 resync, saves, exact partial/full terrain mesh equality, block-boundary dressing, overlapping terrain
 updates, and baked bounds. Desktop and phone smoke scenes exercise starting, founding a city and turns.
 
-The separately ignored `complete_matches_save_and_replay` gate fails on both the baseline and phase 2:
-seed 1, turn 150, `diplomacy references an invalid civilization pair`. The captured world contains
-self-influence `(5, 5)`. This pre-existing simulation defect is outside the performance changes; the
-long-match save/replay gate is not green.
+The separately ignored `complete_matches_save_and_replay` gate failed on both the baseline and phase 2:
+seed 1, turn 150, `diplomacy references an invalid civilization pair`, from self-influence `(5, 5)`.
+City-states earned great person points, and a city-state's Magnate traded on its own land. Both are
+fixed at the source; the gate passes.
 
 ## Client leftovers
 
