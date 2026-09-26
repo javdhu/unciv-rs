@@ -66,7 +66,8 @@ web/src/engine/
   session-transports.ts openSolo (the Worker) and openRemote (a room's WebSocket, remote-session.ts)
   rules.ts         the bundled rule tables, for the title and the civilopedia before a game opens
   protocol.ts      the renderer's view contract, a subset of the wire view
-  worker.ts, transport.ts   the original observer adapter, used only by art-review.ts
+  worker.ts, transport.ts   the original observer adapter: all-bot matches for spectate.ts (the landing page),
+                   cinematic.ts and art-review.ts; the session path has no seatless or see-all game
 ```
 
 The engine is the workspace crate `crates/civ-core`. Its default build has no runtime dependencies;

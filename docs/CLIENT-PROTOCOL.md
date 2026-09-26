@@ -395,8 +395,9 @@ Also additive; the protocol version stays 4. Every new field is optional in Type
 - **Restore.** `Session::restore` recomputes each seat's published projection instead of refusing a save whose
   stored projection differs, so saves written before a view gains a field still open.
 
-The original `Game`/`worker.ts`/`transport.ts` path now serves only the art review page. Human controls use
-`openSolo`/`openRemote` in `session-transports.ts`.
+The original `Game`/`worker.ts`/`transport.ts` path now serves only matches no one plays: the spectator landing page,
+the cinematic page and the art review. `HostedGame` always seats a human at 0 and has no see-all view, so those pages
+stay on it until the engine offers both. Human controls use `openSolo`/`openRemote` in `session-transports.ts`.
 `openRemote` returns one `RemoteSession` across replacement sockets. Transient failures retry up to
 eight times, using exponential backoff from a 250 ms ceiling up to 10 seconds, with 50–100% jitter.
 The retry budget resets after 30 seconds of stable connection. Each replacement socket receives a

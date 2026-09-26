@@ -86,6 +86,10 @@ long-match save/replay gate is not green.
   conductor rests with the suspended audio context and resumes where it stopped (while shown it keeps time even
   when silent, for the clock's ticks). The lobby keeps reading while hidden: the reads are its presence (the host
   sees a member away after three missed ones) and how it learns the match opened.
+- The observer engine path (`engine/worker.ts`, `transport.ts`) stays: it runs the all-bot matches of the spectator
+  landing page, the cinematic page and art review (`?turns`). `HostedGame` always seats a human at 0 and has no
+  see-all view, so moving them onto the session path would leave the watched civ standing still; that needs an
+  engine change first.
 
 | Measurement | Before | After |
 |---|---:|---:|
