@@ -769,14 +769,14 @@ fn observations(world: &World, r: &Ruleset, viewer: CivId, centres: &[TileId]) -
 
 fn observe_tiles(world: &World, viewer: CivId, learned: &mut Learned) {
     let v = &*world.visibility;
-    // Only a tile seen now or explored without a record can need one: walk the set bits of the two masks, and the
-    // placed buildings (in tile order too) alongside them.
+    // Only a tile seen now or explored without a record can need one: walk those bits of the masks, and the placed
+    // buildings (in tile order too) alongside them.
     let base = viewer.0 as usize * v.words;
     let mut standing = world.grid.placed.iter().peekable();
     for w in 0..v.words {
         let (visible_bits, explored_bits) =
             (v.visible.get(base + w).copied().unwrap_or(0), v.explored.get(base + w).copied().unwrap_or(0));
-        let mut bits = visible_bits | explored_bits;
+        let mut bits = visible_bits | (explored_bits & !v.tile_observations.present(viewer, w));
         while bits != 0 {
             let b = bits.trailing_zeros() as usize;
             bits &= bits - 1;
@@ -916,27 +916,23 @@ fn observe_cities(world: &World, viewer: CivId, centres: &[TileId], visible_tile
 
 fn observe_civs(world: &World, r: &Ruleset, viewer: CivId, visible_tiles: &[TileId], learned: &mut Learned) {
     let v = &*world.visibility;
-    // the civs this viewer sees a city or a tile of, gathered once; seeing a unit is the costly test, left last
-    let mut shown: Vec<CivId> = visible_tiles.iter().filter_map(|t| world.grid.owner[t.0 as usize]).collect();
-    shown.extend(world.cities.iter().filter(|(_, c)| v.can_see(viewer, c.centre)).map(|(_, c)| c.owner));
-    shown.sort_unstable();
-    shown.dedup();
-    // the rest, by whether a unit of theirs is seen: one pass over the units
-    let mut sighted = vec![false; world.civs.len()];
+    // the civs this viewer sees a city or a tile of, gathered once; then the rest, by whether a unit of theirs is
+    // seen, the costly test, in one pass over the units
+    let mut shown = vec![false; world.civs.len()];
+    let mut show = |civ: CivId| {
+        if let Some(seen) = shown.get_mut(civ.0 as usize) {
+            *seen = true;
+        }
+    };
+    visible_tiles.iter().filter_map(|t| world.grid.owner[t.0 as usize]).for_each(&mut show);
+    world.cities.iter().filter(|(_, c)| v.can_see(viewer, c.centre)).for_each(|(_, c)| show(c.owner));
     for (id, u) in world.units.iter() {
-        let owner = u.owner.0 as usize;
-        if sighted.get(owner) == Some(&false)
-            && u.owner != viewer
-            && shown.binary_search(&u.owner).is_err()
-            && can_see_unit(world, r, viewer, id)
-        {
-            sighted[owner] = true;
+        if shown.get(u.owner.0 as usize) == Some(&false) && u.owner != viewer && can_see_unit(world, r, viewer, id) {
+            shown[u.owner.0 as usize] = true;
         }
     }
     for civ in &world.civs {
-        let observed = civ.id == viewer
-            || shown.binary_search(&civ.id).is_ok()
-            || sighted.get(civ.id.0 as usize) == Some(&true);
+        let observed = civ.id == viewer || shown.get(civ.id.0 as usize) == Some(&true);
         let previous = v.civ_observations.get(&(viewer, civ.id));
         let first_contact = world.diplomacy.have_met(viewer, civ.id) && previous.is_none();
         if observed || first_contact {
@@ -1352,18 +1348,25 @@ mod tests {
 pub(crate) struct CivTiles<T> {
     /// Shared row by row, so a staged world that records one civ's view copies that civ's row alone.
     rows: Vec<Shared<Vec<Option<T>>>>,
+    /// Which slots of each row hold an entry, 64 tiles to a word. Entries are only ever added, by `insert`.
+    present: Vec<Vec<u64>>,
     len: usize,
 }
 
 impl<T> Default for CivTiles<T> {
     fn default() -> Self {
-        CivTiles { rows: Vec::new(), len: 0 }
+        CivTiles { rows: Vec::new(), present: Vec::new(), len: 0 }
     }
 }
 
 impl<T> CivTiles<T> {
     pub(crate) fn get(&self, &(civ, tile): &(CivId, TileId)) -> Option<&T> {
         self.rows.get(civ.0 as usize)?.get(tile.0 as usize)?.as_ref()
+    }
+
+    /// Which of tiles `64 * word ..` this civ has an entry for, as bits.
+    pub(crate) fn present(&self, civ: CivId, word: usize) -> u64 {
+        self.present.get(civ.0 as usize).and_then(|row| row.get(word)).copied().unwrap_or(0)
     }
 
     /// Every entry, in (civ, tile) order.
@@ -1409,6 +1412,14 @@ impl<T: Clone> CivTiles<T> {
         let old = row[t].replace(value);
         if old.is_none() {
             self.len += 1;
+            if self.present.len() <= c {
+                self.present.resize_with(c + 1, Vec::new);
+            }
+            let words = &mut self.present[c];
+            if words.len() <= t / 64 {
+                words.resize(t / 64 + 1, 0);
+            }
+            words[t / 64] |= 1 << (t % 64);
         }
         old
     }
