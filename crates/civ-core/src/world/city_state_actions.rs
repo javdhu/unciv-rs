@@ -155,8 +155,9 @@ pub fn unique_luxury(world: &World, cs: CivId) -> Option<Id<TileResource>> {
 pub fn sync_alliances(world: &mut World) {
     for cs in city_states::city_states(world) {
         let ally = city_states::ally_of(world, cs);
-        let data = &mut world.civ_mut(cs).unwrap().city_state;
-        if data.tracked_ally != ally {
+        // Checked before writing: this runs after every action, and a write copies every civ a staged world shares.
+        if world.civ(cs).unwrap().city_state.tracked_ally != ally {
+            let data = &mut world.civ_mut(cs).unwrap().city_state;
             data.tracked_ally = ally;
             data.allied_turns = 0;
         }

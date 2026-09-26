@@ -145,8 +145,11 @@ pub fn available_stock(world: &World, r: &Ruleset, civ: CivId) -> ResourceStock 
 pub fn refresh_stocks(world: &mut World, r: &Ruleset) {
     let stocks: Vec<_> = world.civ_ids().map(|civ| (civ, available_stock(world, r, civ))).collect();
     for (civ, stock) in stocks {
-        if let Some(c) = world.civ_mut(civ) {
-            c.resources = stock;
+        // Written only when it moved: this runs after every action, and a write copies every civ a staged world shares.
+        if world.civ(civ).is_some_and(|c| c.resources != stock) {
+            if let Some(c) = world.civ_mut(civ) {
+                c.resources = stock;
+            }
         }
     }
 }

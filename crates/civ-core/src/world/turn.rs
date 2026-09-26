@@ -1551,6 +1551,10 @@ fn detect_first_contact_impl(world: &mut World, rules: Option<&Ruleset>) -> Vec<
 
     let mut events = Vec::new();
     for (a, b) in meetings {
+        // Asked first: `meet` takes the store mutably, and a staged world would copy it for every pair that has met.
+        if world.diplomacy.have_met(a, b) {
+            continue;
+        }
         let contact = [(a, b), (b, a)].into_iter().find(|(cs, major)| {
             world.civ(*cs).is_some_and(|c| c.is_city_state()) && world.civ(*major).is_some_and(|c| c.is_major())
         });
