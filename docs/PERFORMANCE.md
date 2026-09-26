@@ -32,6 +32,22 @@ The existing `civ-sim` `save_profile` example, on the same machine and release s
 These are one-run local samples, not FPS or general workload guarantees. Reproduce with
 `cargo run --release -p civ-sim --example save_profile` and the settings above.
 
+### The client after deltas
+
+The architecture review proposed one id-indexed client model in place of the stores and layers that each walk
+the view. Measured on 70e0f13 in a solo game (Chrome's long-animation-frame entries while founding a city and
+playing turns with a roaming unit): the session listeners take about 2 ms per update, and no frame blocked during
+turns, AI turns included; founding a city blocked one frame for 94 ms, mostly the first draw of the new town. With
+unchanged entities keeping their identity and the land rebuilt per block, the model would save a few
+milliseconds per update, so it is not built. Revisit it if a profile shows the stores again.
+
+## CI
+
+A job whose inputs (sources, lockfile, toolchain, workflow) match a tree that already passed skips its work, and
+the browser engine is cached by the same inputs: a client-only push takes about 2 minutes (the web shards), one
+that changes Rust about 7 (engine tests 6 minutes with each crate's integration tests one binary, down from 9;
+the browser engine build 4). The determinism check runs as its own job beside them.
+
 ## Validation and known limitation
 
 The Rust workspace (1,125 tests) and browser suite (4,579 tests) pass. Native and Wasm
