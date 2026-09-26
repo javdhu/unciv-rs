@@ -90,11 +90,15 @@ long-match save/replay gate is not green.
   landing page, the cinematic page and art review (`?turns`). `HostedGame` always seats a human at 0 and has no
   see-all view, so moving them onto the session path would leave the watched civ standing still; that needs an
   engine change first.
+- Art workers finish their parts (`art/finish.ts`): the float slot and contact-shade attributes and the bounding
+  sphere, the latter step for step as three.js computes it. The main thread only wraps the buffers. A test checks
+  every catalogue entry, near and far, is bit-identical to the old main-thread path.
 
 | Measurement | Before | After |
 |---|---:|---:|
 | History, record + keep, turns 350–400 of a 60×38 map | 0.85–1.07 ms/turn | 0.05–0.12 ms/turn |
 | Hidden tab, Blitz clock + conductor timer wakeups | 1/s each (browser-throttled 4/s and 25/s) | none until due |
+| Main-thread finishing, 1,890 catalogue parts (all variants, detail 0 and 2) | 33.5–35.6 ms | 2.0–3.8 ms |
 
 Local samples (bun, M4 Pro, storage in memory, so real `localStorage` writes widen the gap). History:
 `bun <scratch>/bench-history.ts` beside `web/src/state/`, comparing the base commit's `history.ts` with this one.
