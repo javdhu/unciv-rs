@@ -39,10 +39,10 @@ crates/civ-sim/src/
   offers.rs        immutable human consent, private offer projection and expiry
   queries.rs       advisory options from owned state and public rules
   city_states.rs   what a major is told about a city-state
-  hosted.rs        Wasm staging/commit adapter for the solo Worker
+  hosted.rs        Wasm staging/commit adapter for the solo Worker, and for watched matches
   view.rs          persistent player knowledge and typed presentation projection
   rules.rs         public static content tables
-  lib.rs           exports and the original observer Game API
+  lib.rs           exports and the bundled rule tables
 crates/civ-server/src/
   host.rs          per-match executor, connection generations, deadlines and controllers
   store.rs         SQLite identity, rooms, authoritative snapshots and receipt transactions
@@ -66,8 +66,8 @@ web/src/engine/
   session-transports.ts openSolo (the Worker) and openRemote (a room's WebSocket, remote-session.ts)
   rules.ts         the bundled rule tables, for the title and the civilopedia before a game opens
   protocol.ts      the renderer's view contract, a subset of the wire view
-  worker.ts, transport.ts   the original observer adapter: all-bot matches for spectate.ts (the landing page),
-                   cinematic.ts and art-review.ts; the session path has no seatless or see-all game
+  watch.ts, watch-worker.ts matches no one plays (`HostedGame.watch`), for spectate.ts (the landing page),
+                   cinematic.ts and art-review.ts: seat 0's updates as deltas, one round per `step`
 ```
 
 The engine is the workspace crate `crates/civ-core`. Its default build has no runtime dependencies;

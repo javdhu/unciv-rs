@@ -145,10 +145,15 @@ fixed at the source; the gate passes.
   conductor rests with the suspended audio context and resumes where it stopped (while shown it keeps time even
   when silent, for the clock's ticks). The lobby keeps reading while hidden: the reads are its presence (the host
   sees a member away after three missed ones) and how it learns the match opened.
-- The observer engine path (`engine/worker.ts`, `transport.ts`) stays: it runs the all-bot matches of the spectator
-  landing page, the cinematic page and art review (`?turns`). `HostedGame` always seats a human at 0 and has no
-  see-all view, so moving them onto the session path would leave the watched civ standing still; that needs an
-  engine change first.
+- One engine path. The all-bot matches of the spectator landing page, the cinematic page and art review (`?turns`)
+  are watched sessions (`HostedGame.watch`, `engine/watch.ts`), and the observer `Game`, `worker.ts` and
+  `transport.ts` are gone. Their views and turn reports are identical to the old path's, turn for turn, to the
+  end of a match (a bun script against both engine builds). A turn costs within 3% of what it did (the delta is
+  the extra): 58 ms over the landing page's first 80 turns, 306 ms before and 316 ms after over a whole match.
+  The landing page's main-thread cost per update was never the transport: its fogged view is small (68 KB at turn
+  35, 0.2 ms to clone; the delta is 42 KB) and the worker's message handler with what follows it took a median
+  27 ms before and 29 ms after (long-animation-frame entries 32–61 ms before, 24–59 after). That is the world
+  redrawing.
 - Art workers finish their parts (`art/finish.ts`): the float slot and contact-shade attributes and the bounding
   sphere, the latter step for step as three.js computes it. The main thread only wraps the buffers. A test checks
   every catalogue entry, near and far, is bit-identical to the old main-thread path.

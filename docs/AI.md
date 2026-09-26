@@ -90,5 +90,5 @@ or the floors are tuned.
   `TRACE_UNITS=1` adds its units. That is how the ship army and the stalled sieges were found.
 - Every level keeps determinism and "planning never touches the world".
 - The live tactics run in `finish_round` (the game and the balance runner). `advance_turn`, the
-  all-AI test driver behind the determinism fingerprint, still plans the old way until the legacy AI
-  is removed.
+  all-AI driver behind the determinism fingerprint and the watched matches (the landing page, the
+  cinematic page, art review), still plans the old way until the legacy AI is removed.
