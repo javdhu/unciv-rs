@@ -2798,14 +2798,21 @@ pub fn report_for(
     }
 }
 
-/// Trusted simulation callers receive the supported reports from every seat.
-/// The raw core log remains internal; debug strings are never wire payloads.
-pub fn advance(w: &mut World, r: &Ruleset) -> TurnReport {
+/// One all-AI turn by `advance_turn`, returning the world as it stood before
+/// it, for reports, and the raw events.
+pub(crate) fn advance_seen(w: &mut World, r: &Ruleset) -> (World, Vec<TurnEvent>) {
     capture_observations(w, r);
     let before = w.clone();
     let mods = TurnModifiers::for_world(w, r);
     let events = advance_turn(w, r, CityFocus::None, mods);
     capture_observations(w, r);
+    (before, events)
+}
+
+/// Trusted simulation callers receive the supported reports from every seat.
+/// The raw core log remains internal; debug strings are never wire payloads.
+pub fn advance(w: &mut World, r: &Ruleset) -> TurnReport {
+    let (before, events) = advance_seen(w, r);
     let mut reports = Vec::new();
     for me in w.civ_ids() {
         reports.extend(report_for(&before, w, r, me, &events).events);
@@ -2817,12 +2824,20 @@ pub fn advance(w: &mut World, r: &Ruleset) -> TurnReport {
 }
 
 pub fn advance_for(w: &mut World, r: &Ruleset, me: CivId) -> TurnReport {
-    capture_observations(w, r);
-    let before = w.clone();
-    let mods = TurnModifiers::for_world(w, r);
-    let events = advance_turn(w, r, CityFocus::None, mods);
-    capture_observations(w, r);
+    let (before, events) = advance_seen(w, r);
     report_for(&before, w, r, me, &events)
+}
+
+/// `me`'s view with every tile in sight: what a spectator or a trailer camera
+/// sees. Built on a copy, so the match itself keeps its fog.
+pub(crate) fn see_all_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
+    let mut world = w.clone();
+    let tiles: Vec<_> = world.grid.ids().collect();
+    for tile in tiles {
+        world.visibility.observe(me, tile);
+    }
+    capture_observations(&mut world, r);
+    player_view(&world, r, me)
 }
 
 pub fn reachable(w: &World, r: &Ruleset, me: CivId, index: u32, generation: u32) -> Vec<Reach> {

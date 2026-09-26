@@ -124,6 +124,17 @@ pub struct Session {
     version: u64,
     /// Why the command being staged, an undo, was refused; read into its receipt.
     undo_refused: Option<UndoRefusal>,
+    /// How a match no one plays is watched ([`Session::watch`]); `None` for
+    /// every played match. Not saved: a watched match never is.
+    watch: Option<Sight>,
+}
+
+/// What the watcher of a match no one plays sees: seat 0's own view, fog and
+/// all, or every tile in sight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sight {
+    Seat,
+    All,
 }
 
 #[derive(Clone)]
@@ -166,7 +177,6 @@ impl Session {
         }
         let (mut world, rules, _) =
             crate::setup::new_game_for(&settings, &humans).map_err(SessionError::InvalidSettings)?;
-        let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let seats: Vec<_> = unique
             .into_iter()
             .map(|civ| {
@@ -182,13 +192,47 @@ impl Session {
                 }
             })
             .collect();
+        Self::start(world, rules, settings, epoch, humans, seats, None)
+    }
+
+    /// A match no one plays, for the pages that watch bots: every civilization
+    /// is a bot, and seat 0 is only watched. It takes no commands; its rounds
+    /// close by [`Session::stage_round`]. It is never saved.
+    pub fn watch(settings: Settings, epoch: String, sight: Sight) -> Result<Self, SessionError> {
+        if !valid_identifier(&epoch) {
+            return Err(SessionError::InvalidSettings("invalid match epoch".into()));
+        }
+        let (world, rules, watched) =
+            crate::setup::new_game(&settings).map_err(SessionError::InvalidSettings)?;
+        let seat = Seat {
+            civ: watched.0,
+            human: false,
+            ready: false,
+            next_human: None,
+            revision: 0,
+            projection: None,
+            connected: None,
+        };
+        Self::start(world, rules, settings, epoch, Vec::new(), vec![seat], Some(sight))
+    }
+
+    fn start(
+        world: World,
+        rules: Ruleset,
+        settings: Settings,
+        epoch: String,
+        original_seats: Vec<u8>,
+        seats: Vec<Seat>,
+        watch: Option<Sight>,
+    ) -> Result<Self, SessionError> {
+        let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let mut session = Self {
             world,
             rules: Arc::new(rules),
             ruleset_identity,
             settings,
             epoch,
-            original_seats: humans,
+            original_seats,
             seats,
             records: Vec::new(),
             inputs: Vec::new(),
@@ -197,6 +241,7 @@ impl Session {
             undo: BTreeMap::new(),
             version: 0,
             undo_refused: None,
+            watch,
         };
         session.refresh(&[], None)?;
         Ok(session)
@@ -253,13 +298,20 @@ impl Session {
             controlled: s.human,
             pending_control: s.next_human,
             deadline_ms: None,
-            view: player_view(&self.world, &self.rules, CivId(seat)),
+            view: self.view_of(seat),
             offers: self.offers.visible(seat),
             events: Vec::new(),
             replay: None,
             undo: Some(self.undo_state(seat)),
             seats: self.seat_statuses(),
         })
+    }
+    /// What `seat` is shown: its own knowledge, or everything to a watcher who sees all.
+    fn view_of(&self, seat: u8) -> crate::view::PlayerView {
+        match self.watch {
+            Some(Sight::All) => crate::view::see_all_view(&self.world, &self.rules, CivId(seat)),
+            _ => player_view(&self.world, &self.rules, CivId(seat)),
+        }
     }
     /// Whether `seat` may take its last command back now. A room's other
     /// seats acting since is left for the undo itself to find: announcing it
@@ -329,7 +381,7 @@ impl Session {
                 reach: reachable(&self.world, &self.rules, CivId(seat), unit.id, unit.gen),
             },
             Query::View => QueryResult::View {
-                view: Box::new(player_view(&self.world, &self.rules, CivId(seat))),
+                view: Box::new(self.view_of(seat)),
             },
             Query::CombatPreview { unit, target } => QueryResult::CombatPreview {
                 preview: crate::queries::combat_preview(&self.world, &self.rules, CivId(seat), unit, &target),
@@ -668,6 +720,23 @@ impl Session {
         let updates = next.refresh(&events, Some(&self.world))?;
         Ok(Some(HostTransition { next, updates }))
     }
+    /// Close a watched match's round. No one plays it, so there is no one to
+    /// wait for: every civilization's turn is `advance_turn`'s, as the pages
+    /// that watch bots have always played it (docs/AI.md: it plans the old
+    /// way). Nothing happens once the match is won.
+    pub fn stage_round(&self) -> Result<Option<HostTransition>, SessionError> {
+        if self.watch.is_none() {
+            return Err(SessionError::InvalidSettings("only a watched match closes its own rounds".into()));
+        }
+        if self.finished() {
+            return Ok(None);
+        }
+        let mut next = self.clone();
+        next.version += 1;
+        let (before, events) = crate::view::advance_seen(&mut next.world, &next.rules);
+        let updates = next.refresh(&events, Some(&before))?;
+        Ok(Some(HostTransition { next, updates }))
+    }
     /// Request a controller change for the next boundary; it cannot spend actions in this turn.
     pub fn stage_controller(&self, seat: u8, human: bool) -> Result<HostTransition, SessionError> {
         self.seat(seat)?;
@@ -693,7 +762,7 @@ impl Session {
         let mut updates = Vec::new();
         for index in 0..self.seats.len() {
             let seat = self.seats[index].civ;
-            let view = player_view(&self.world, &self.rules, CivId(seat));
+            let view = self.view_of(seat);
             let offers = self.offers.visible(seat);
             let undo = self.undo_state(seat);
             let statuses = self.seat_statuses();
@@ -762,6 +831,9 @@ impl Session {
 
     pub fn save(&self) -> Result<Vec<u8>, SessionError> {
         let failed = |e: &dyn std::fmt::Display| SessionError::InvalidSave(e.to_string());
+        if self.watch.is_some() {
+            return Err(failed(&"a watched match is not saved"));
+        }
         let world =
             civ_core::save::encode_with_identity(&self.world, &self.rules, &self.ruleset_identity)
                 .map_err(|e| failed(&e))?;
@@ -924,6 +996,7 @@ impl Session {
             undo: BTreeMap::new(),
             version: 0,
             undo_refused: None,
+            watch: None,
         };
         // Projections are derived state, omitted from saves. Rebuild them from
         // the validated world before comparing or sending the next update.

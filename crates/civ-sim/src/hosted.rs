@@ -30,6 +30,20 @@ impl HostedGame {
             prepared: None,
         })
     }
+    /// A match no one plays (`Session::watch`), watched from seat 0: through
+    /// its eyes, or with every tile in sight.
+    pub fn watch(settings: JsValue, epoch: String, see_all: bool) -> Result<HostedGame, JsError> {
+        console_error_panic_hook::set_once();
+        let settings =
+            serde_wasm_bindgen::from_value(settings).map_err(|e| JsError::new(&e.to_string()))?;
+        let sight = if see_all { session::Sight::All } else { session::Sight::Seat };
+        let session = session::Session::watch(settings, epoch, sight)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(Self {
+            session,
+            prepared: None,
+        })
+    }
     pub fn restore(snapshot: &[u8]) -> Result<HostedGame, JsError> {
         let session =
             session::Session::restore(snapshot).map_err(|e| JsError::new(&e.to_string()))?;
@@ -83,6 +97,29 @@ impl HostedGame {
         })?;
         self.prepared = Some(transition);
         Ok(reply)
+    }
+    /// Close a watched match's round. Nothing is persisted, so it is applied
+    /// at once; the watcher's updates, encoded against its last view.
+    pub fn step(&mut self) -> Result<JsValue, JsError> {
+        if self.prepared.is_some() {
+            return Err(JsError::new("commit or discard the pending command first"));
+        }
+        let Some(transition) = self
+            .session
+            .stage_round()
+            .map_err(|e| JsError::new(&e.to_string()))?
+        else {
+            return js(&Vec::<protocol::ServerMessage>::new());
+        };
+        let updates = transition
+            .updates
+            .into_iter()
+            .filter(|(seat, _)| *seat == 0)
+            .map(|(_, u)| self.session.update_message(0, u))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        self.session = transition.next;
+        js(&updates)
     }
     #[wasm_bindgen(js_name = pendingSnapshot)]
     pub fn pending_snapshot(&self) -> Result<Vec<u8>, JsError> {
