@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-const SAVE_VERSION: u32 = 3;
+const SAVE_VERSION: u32 = 4;
 const MAX_RECORDS: usize = 100_000;
 const MAX_SAVE_BYTES: usize = 128 * 1024 * 1024;
 
@@ -45,12 +45,17 @@ struct Seat {
     ready: bool,
     next_human: Option<bool>,
     revision: u64,
-    projection: String,
+    #[serde(skip)]
+    projection: Option<Arc<Projection>>,
     /// Whether the host holds a live connection for this seat, as it last
     /// said (`stage_presence`); unknown in solo play. Absent from older saves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     connected: Option<bool>,
 }
+
+// Derived seat knowledge is shared by staged sessions and never persisted. It is
+// rebuilt from the validated world on restore.
+type Projection = (crate::view::PlayerView, bool, bool, Option<bool>, Vec<DiplomaticOffer>, Option<Vec<SeatStatusView>>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RecordedCommand {
@@ -78,7 +83,7 @@ struct Save {
     settings: Settings,
     epoch: String,
     original_seats: Vec<u8>,
-    world: String,
+    world: Box<serde_json::value::RawValue>,
     seats: Vec<Seat>,
     records: Vec<RecordedCommand>,
     inputs: Vec<Input>,
@@ -161,7 +166,7 @@ impl Session {
                     ready: false,
                     next_human: None,
                     revision: 0,
-                    projection: String::new(),
+                    projection: None,
                     connected: None,
                 }
             })
@@ -681,15 +686,14 @@ impl Session {
             let offers = self.offers.visible(seat);
             let undo = self.undo_state(seat);
             let statuses = self.seat_statuses();
-            let projection = serde_json::to_string(&(
-                &view,
+            let projection = (
+                view.clone(),
                 self.seats[index].ready,
                 self.seats[index].human,
                 self.seats[index].next_human,
-                &offers,
-                &statuses,
-            ))
-            .expect("finite player view");
+                offers.clone(),
+                statuses.clone(),
+            );
             // Undo availability rides along with the update but does not make
             // one: it is not saved (a restored session has nothing to take
             // back), and only a command that changes nothing moves it alone.
@@ -699,12 +703,12 @@ impl Session {
             let replay = before
                 .map(|w| crate::view::replay_for(w, &self.world, &self.rules, CivId(seat), &self.replay))
                 .unwrap_or_default();
-            if self.seats[index].projection == projection && visible_events.is_empty() && replay.is_empty() {
+            if self.seats[index].projection.as_deref() == Some(&projection) && visible_events.is_empty() && replay.is_empty() {
                 continue;
             }
             let s = &mut self.seats[index];
             s.revision = s.revision.checked_add(1).ok_or(SessionError::Capacity)?;
-            s.projection = projection;
+            s.projection = Some(Arc::new(projection));
             let revision = s.revision;
             let events = visible_events
                 .into_iter()
@@ -736,6 +740,15 @@ impl Session {
         Ok(updates)
     }
 
+    /// Encode against this seat's last published projection without rebuilding it.
+    pub fn update_message(&self, seat: u8, update: GameUpdate) -> Result<ServerMessage, SessionError> {
+        let previous = self.seat(seat)?;
+        Ok(match previous.projection.as_deref() {
+            Some(projection) => crate::delta::message(&self.cursor(seat)?, &projection.0, update),
+            None => ServerMessage::Update { update },
+        })
+    }
+
     pub fn save(&self) -> Result<String, SessionError> {
         let world =
             civ_core::save::encode_with_identity(&self.world, &self.rules, &self.ruleset_identity)
@@ -747,7 +760,8 @@ impl Session {
             settings: self.settings.clone(),
             epoch: self.epoch.clone(),
             original_seats: self.original_seats.clone(),
-            world,
+            world: serde_json::value::RawValue::from_string(world)
+                .map_err(|e| SessionError::InvalidSave(e.to_string()))?,
             seats: self.seats.clone(),
             records: self.records.clone(),
             inputs: self.inputs.clone(),
@@ -783,7 +797,7 @@ impl Session {
             content::load_ruleset(save.settings.ruleset_name()).map_err(SessionError::InvalidSave)?,
         );
         let world =
-            civ_core::save::decode(&save.world, &rules).map_err(|e| invalid(&e.to_string()))?;
+            civ_core::save::decode(save.world.get(), &rules).map_err(|e| invalid(&e.to_string()))?;
         let ruleset_identity = civ_core::save::RulesetIdentity::new(&rules);
         let expected: BTreeSet<_> = save.original_seats.iter().copied().collect();
         let actual: BTreeSet<_> = save.seats.iter().map(|s| s.civ).collect();
@@ -887,24 +901,21 @@ impl Session {
             version: 0,
             undo_refused: None,
         };
-        // The saved projection only decides when a seat is sent a new
-        // update. A save made before the view gained fields holds an older
-        // shape of the same knowledge, so it is derived again from the
-        // validated world rather than trusted or refused.
+        // Projections are derived state, omitted from saves. Rebuild them from
+        // the validated world before comparing or sending the next update.
         let statuses = session.seat_statuses();
         for index in 0..session.seats.len() {
             let s = &session.seats[index];
             let view = player_view(&session.world, &session.rules, CivId(s.civ));
-            let projection = serde_json::to_string(&(
-                &view,
+            let projection = (
+                view.clone(),
                 s.ready,
                 s.human,
                 s.next_human,
                 session.offers.visible(s.civ),
-                &statuses,
-            ))
-            .map_err(|_| invalid("invalid projection"))?;
-            session.seats[index].projection = projection;
+                statuses.clone(),
+            );
+            session.seats[index].projection = Some(Arc::new(projection));
         }
         Ok(session)
     }

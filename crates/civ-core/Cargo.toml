@@ -16,8 +16,8 @@ serde = ["dep:serde"]
 save = ["serde", "dep:serde_json"]
 
 [dependencies]
-serde = { version = "1", optional = true, features = ["derive"] }
-serde_json = { version = "1", optional = true }
+serde = { version = "1", optional = true, features = ["derive", "rc"] }
+serde_json = { version = "1", optional = true, features = ["raw_value"] }
 
 [dev-dependencies]
 serde_json = "1"

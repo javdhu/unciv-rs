@@ -12,7 +12,7 @@ use crate::world::world::World;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 pub const MAX_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +45,7 @@ struct Envelope {
     version: u32,
     ruleset: String,
     checksum: String,
-    world: serde_json::Value,
+    world: Box<serde_json::value::RawValue>,
 }
 
 fn hash(bytes: &[u8]) -> String {
@@ -135,10 +135,9 @@ pub fn encode(world: &World, ruleset: &Ruleset) -> Result<String, SaveError> {
 /// The identity must have been made from `ruleset`, which must remain immutable.
 pub fn encode_with_identity(world: &World, ruleset: &Ruleset, identity: &RulesetIdentity) -> Result<String, SaveError> {
     validate(world, ruleset)?;
-    let value = serde_json::to_value(world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
-    let bytes = serde_json::to_vec(&value).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
+    let value = serde_json::value::to_raw_value(world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     let envelope =
-        Envelope { version: FORMAT_VERSION, ruleset: identity.0.clone(), checksum: hash(&bytes), world: value };
+        Envelope { version: FORMAT_VERSION, ruleset: identity.0.clone(), checksum: hash(value.get().as_bytes()), world: value };
     let text = serde_json::to_string(&envelope).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     if text.len() > MAX_SNAPSHOT_BYTES {
         return Err(SaveError::TooLarge);
@@ -157,11 +156,10 @@ pub fn decode(text: &str, ruleset: &Ruleset) -> Result<World, SaveError> {
     if envelope.ruleset != ruleset_identity(ruleset) {
         return Err(SaveError::RulesetMismatch);
     }
-    let bytes = serde_json::to_vec(&envelope.world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
-    if envelope.checksum != hash(&bytes) {
+    if envelope.checksum != hash(envelope.world.get().as_bytes()) {
         return Err(SaveError::ChecksumMismatch);
     }
-    let world = serde_json::from_value(envelope.world).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
+    let world = serde_json::from_str(envelope.world.get()).map_err(|e| SaveError::InvalidJson(e.to_string()))?;
     validate(&world, ruleset)?;
     Ok(world)
 }

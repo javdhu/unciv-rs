@@ -258,7 +258,7 @@ fn global_contests_start_together_only_with_enough_participants_and_scale_durati
     assert!(civ_core::world::quests::tick_with_speed(&mut w, &r, Fixed::whole(2)).is_empty());
     let c = CivId(3);
     w.civs.push(Civilization::new(c, r.nations.id("Greece").unwrap(), false));
-    w.visibility = civ_core::world::fog::Visibility::new(w.grid.len(), 4);
+    w.visibility = civ_core::world::fog::Visibility::new(w.grid.len(), 4).into();
     w.found_city_in(&r, City::found("Athens", c, TileId(286)));
     w.diplomacy.meet(CS, c);
     let events = civ_core::world::quests::tick_with_speed(&mut w, &r, Fixed::whole(2));

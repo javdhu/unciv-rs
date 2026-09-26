@@ -31,6 +31,21 @@ use crate::world::entities::Unit;
 use crate::world::world::World;
 use std::collections::BTreeMap;
 
+/// Sight is a pure function of local elevations, blocking terrain and map topology.
+/// Key the complete inputs (not a hash or a world's address): caches cannot leak
+/// across games, edits, promotions or rulesets. Bounded per simulation thread.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SightKey {
+    map: (u16, u16, bool),
+    from: TileId,
+    range: u32,
+    attack: bool,
+    terrain: Vec<(TileId, i32, i32)>,
+}
+thread_local! {
+    static SIGHT: std::cell::RefCell<BTreeMap<SightKey, Vec<TileId>>> = const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
 /// Kotlin's elevation-based visibility, including tall terrain one ring beyond
 /// sight. Paths are evaluated by rings so same-distance tiles cannot relay sight.
 pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: u32, attack: bool) -> Vec<TileId> {
@@ -48,6 +63,9 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
     // `within` gives the reach in ascending id order, so a tile's slot is found by a binary search; each slot holds
     // the highest ground seen on the way to that tile, once its ring is done
     let tiles = grid.within(from, reach);
+    let terrain: Vec<_> = tiles.iter().map(|&tile| { let (height, blocks) = heights(tile); (tile, height, blocks) }).collect();
+    let key = SightKey { map: (grid.width(), grid.height(), grid.wraps_x()), from, range, attack, terrain };
+    if let Some(cached) = SIGHT.with(|cache| cache.borrow().get(&key).cloned()) { return cached; }
     let slot = |tile: TileId| tiles.binary_search(&tile).ok();
     let distance: Vec<u32> = tiles.iter().map(|&t| grid.distance(from, t)).collect();
     let mut highest: Vec<Option<i32>> = vec![None; tiles.len()];
@@ -62,7 +80,7 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
             if distance[i] != d {
                 continue;
             }
-            let (unit_height, tile_height) = heights(tile);
+            let (_, unit_height, tile_height) = key.terrain[i];
             if d == reach && (attack || tile_height <= source) {
                 continue;
             }
@@ -77,6 +95,11 @@ pub fn viewable_tiles(grid: &super::TileGrid, r: &Ruleset, from: TileId, range: 
         }
     }
     visible.sort();
+    SIGHT.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 512 { cache.clear(); }
+        cache.insert(key, visible.clone());
+    });
     visible
 }
 
@@ -791,6 +814,26 @@ mod tests {
 
     const CIV: CivId = CivId(0);
     const OTHER: CivId = CivId(1);
+
+    #[test]
+    fn sight_cache_tracks_terrain_edits_and_distinct_maps() {
+        let r = Ruleset::from_sources(&crate::fingerprint::embedded_sources()).unwrap();
+        let grass = r.terrain("Grassland").unwrap();
+        let mut grid = super::super::TileGrid::new(9, 7, grass);
+        let from = grid.id_at(3, 3).unwrap();
+        let open = viewable_tiles(&grid, &r, from, 3, false);
+        for tile in grid.within(from, 1) {
+            if tile != from { grid.terrain[tile.0 as usize] = r.terrain("Mountain").unwrap(); }
+        }
+        let blocked = viewable_tiles(&grid, &r, from, 3, false);
+        assert_ne!(open, blocked);
+        let other = super::super::TileGrid::new(9, 7, grass);
+        assert_eq!(open, viewable_tiles(&other, &r, from, 3, false));
+        assert_eq!(blocked, viewable_tiles(&grid, &r, from, 3, false));
+        grid.terrain.fill(grass);
+        assert_eq!(open, viewable_tiles(&grid, &r, from, 3, false));
+        assert_ne!(open, viewable_tiles(&grid, &r, from, 1, false));
+    }
 
     #[test]
     fn observing_explores_permanently() {

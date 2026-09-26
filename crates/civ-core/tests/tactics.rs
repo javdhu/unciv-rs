@@ -96,7 +96,8 @@ fn a_city_bombards_an_enemy_in_range() {
     let (r, mut w) = fixture();
     let city = w.found_city_in(&r, City::found("Home", CivId(0), tile(&w, 4, 4)));
     let theirs = unit(&mut w, &r, 1, "Warrior", 6, 4);
-    w.visibility.observe(CivId(0), tile(&w, 6, 4));
+    let visible = tile(&w, 6, 4);
+    w.visibility.observe(CivId(0), visible);
     let issued = run(&mut w, &r);
     assert!(issued.contains(&Command::Bombard { city, target: theirs }), "{issued:?}");
 }

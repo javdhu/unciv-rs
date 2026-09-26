@@ -517,6 +517,7 @@ async fn socket_loop(mut socket: WebSocket, host: Arc<Host>, id: String, guest: 
         mut fence,
     } = lease;
     let mut sent_revision = update.cursor.revision.parse::<u64>().unwrap_or(0);
+    let mut previous = update.clone();
     if !send(
         &mut socket,
         ServerMessage::Welcome {
@@ -595,14 +596,20 @@ async fn socket_loop(mut socket: WebSocket, host: Arc<Host>, id: String, guest: 
                 continue;
             }
         };
-        if let Some(message) = message {
-            if let ServerMessage::Update { update } = &message {
+        if let Some(mut message) = message {
+            if let ServerMessage::Update { update } = message {
                 let revision = update.cursor.revision.parse::<u64>().unwrap_or(0);
                 // A resync can overtake already queued updates. Never roll the client back or replay their events.
                 if revision < sent_revision || (revision == sent_revision && !forced_snapshot) {
                     continue;
                 }
                 sent_revision = revision;
+                message = if forced_snapshot {
+                    ServerMessage::Update { update: update.clone() }
+                } else {
+                    civ_sim::delta::message(&previous.cursor, &previous.view, update.clone())
+                };
+                previous = update;
             }
             if !send_sink(&mut sink, message).await {
                 break;

@@ -17,6 +17,7 @@ pub mod ruleset;
 pub mod save;
 #[cfg(feature = "serde")]
 pub mod serialization;
+pub mod shared;
 pub mod stats;
 mod unique;
 mod unique_type;

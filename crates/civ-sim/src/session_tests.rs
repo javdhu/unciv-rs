@@ -2360,3 +2360,41 @@ fn a_room_sees_every_seats_readiness_and_connection() {
     // Solo play has no room to show.
     assert!(solo().current_update(0).unwrap().seats.is_none());
 }
+
+#[test]
+fn saves_embed_world_and_omit_derived_projections() {
+    let session = Session::new(Settings::default(), "save-shape".into(), vec![0]).unwrap();
+    let saved = session.save().unwrap();
+    let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(value["world"].is_object());
+    assert!(value["seats"][0].get("projection").is_none());
+    let restored = Session::restore(&saved).unwrap();
+    assert_eq!(session.world(), restored.world());
+    restored.verify_replay().unwrap();
+}
+
+#[test]
+fn deltas_reconstruct_each_seats_view_across_commands_and_rounds() {
+    use std::collections::BTreeMap;
+    fn merge<T, K: Ord>(old: Vec<T>, upserts: Vec<T>, removed: Vec<K>, key: impl Fn(&T) -> K) -> Vec<T> {
+        let mut all: BTreeMap<K, T> = old.into_iter().map(|v| (key(&v), v)).collect();
+        for k in removed { all.remove(&k); }
+        for v in upserts { all.insert(key(&v), v); }
+        all.into_values().collect()
+    }
+    let mut session = Session::new(Settings::default(), "deltas".into(), vec![0, 1]).unwrap();
+    for _ in 0..8 {
+        let transition = session.stage_timeout(session.turn()).unwrap().unwrap();
+        for (seat, update) in &transition.updates {
+            let old = session.current_update(*seat).unwrap();
+            let ServerMessage::Delta { base, update: mut delta, removed } = session.update_message(*seat, update.clone()).unwrap() else { panic!("expected delta") };
+            assert_eq!(base, old.cursor);
+            delta.view.tiles = merge(old.view.tiles, delta.view.tiles, removed.tiles, |t| t.id);
+            delta.view.units = merge(old.view.units, delta.view.units, removed.units, |u| (u.id, u.gen));
+            delta.view.cities = merge(old.view.cities, delta.view.cities, removed.cities, |c| (c.id, c.gen));
+            delta.view.civs = merge(old.view.civs, delta.view.civs, removed.civs, |c| c.id);
+            assert_eq!(delta.view, update.view);
+        }
+        session = transition.next;
+    }
+}

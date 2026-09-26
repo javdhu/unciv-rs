@@ -3,7 +3,7 @@ use crate::view::{EventView, PlayerView, Reach};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -666,6 +666,16 @@ pub enum ClientMessage {
     Resync,
 }
 
+/// Removed entity keys. A delta's view contains upserts for these four collections;
+/// all other view fields are absolute. Generations distinguish reused arena slots.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct ViewRemovals {
+    pub tiles: Vec<u16>,
+    pub units: Vec<(u32, u32)>,
+    pub cities: Vec<(u32, u32)>,
+    pub civs: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ServerMessage {
@@ -687,6 +697,11 @@ pub enum ServerMessage {
     },
     Update {
         update: GameUpdate,
+    },
+    Delta {
+        base: ViewCursor,
+        update: GameUpdate,
+        removed: ViewRemovals,
     },
     Error {
         code: String,

@@ -6,6 +6,7 @@
 //! This is what mutates.
 
 use crate::arena::{Arena, Id};
+use crate::shared::Shared;
 use crate::world::city::City;
 use crate::world::entities::{Civilization, Unit};
 use crate::world::fog::Visibility;
@@ -14,16 +15,16 @@ use crate::world::grid::{CivId, TileGrid, TileId};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct World {
-    pub grid: TileGrid,
-    pub visibility: Visibility,
-    pub cities: Arena<City>,
-    pub units: Arena<Unit>,
+    pub grid: Shared<TileGrid>,
+    pub visibility: Shared<Visibility>,
+    pub cities: Shared<Arena<City>>,
+    pub units: Shared<Arena<Unit>>,
     /// Indexed by [`CivId`]; civs are fixed at game start and never removed, so
     /// a defeated one stays in place with `defeated` set.
-    pub civs: Vec<Civilization>,
+    pub civs: Shared<Vec<Civilization>>,
     /// Relations between civs. Symmetric facts live here once, rather than
     /// twice inside each civ where they could disagree.
-    pub diplomacy: crate::world::diplomacy::Diplomacy,
+    pub diplomacy: Shared<crate::world::diplomacy::Diplomacy>,
     pub turn: u32,
     /// Match difficulty. None uses the bundled Prince default.
     pub difficulty: Option<Id<crate::ruleset::Difficulty>>,
@@ -59,11 +60,11 @@ impl World {
     pub fn new(grid: TileGrid, civs: Vec<Civilization>) -> World {
         let tiles = grid.len();
         World {
-            visibility: Visibility::new(tiles, civs.len()),
-            grid,
-            cities: Arena::new(),
-            units: Arena::new(),
-            civs,
+            visibility: Visibility::new(tiles, civs.len()).into(),
+            grid: grid.into(),
+            cities: Arena::new().into(),
+            units: Arena::new().into(),
+            civs: civs.into(),
             diplomacy: Default::default(),
             turn: 0,
             difficulty: None,

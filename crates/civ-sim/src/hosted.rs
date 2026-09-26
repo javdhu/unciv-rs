@@ -13,7 +13,7 @@ pub struct HostedGame {
 #[serde(rename_all = "camelCase")]
 struct PreparedReply {
     receipt: protocol::CommandReceipt,
-    updates: Vec<protocol::GameUpdate>,
+    updates: Vec<protocol::ServerMessage>,
 }
 
 #[wasm_bindgen]
@@ -77,8 +77,9 @@ impl HostedGame {
                 .updates
                 .iter()
                 .filter(|(seat, _)| *seat == 0)
-                .map(|(_, u)| u.clone())
-                .collect(),
+                .map(|(_, u)| self.session.update_message(0, u.clone()))
+                .collect::<Result<_, _>>()
+                .map_err(|e| JsError::new(&e.to_string()))?,
         })?;
         self.prepared = Some(transition);
         Ok(reply)

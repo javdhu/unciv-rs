@@ -201,15 +201,17 @@ inputs. Pin versions for active matches. Restore the same epoch, turn access and
 after restart. Presentation events are a separately projected output, not sufficient replay inputs.
 Solo uses the same save/action semantics with a different storage implementation.
 
-Start with full views; static rules tables travel once with a content hash. Keep camera and selection
+Welcome and resync send full views; static rules tables travel once with a content hash. Keep camera and selection
 local. WebSocket lacks automatic application backpressure: bound queues and replace obsolete pending
 snapshots with a current resync snapshot for slow clients. Reset obsolete presentation playback, but
 keep command results recoverable. Publish only permitted knowledge changes, not a pulse for every
 hidden action.
 
-Measure encoded bytes, serialization, update frequency and rendering before adding patches or binary
-encoding. Later patches diff already-projected views, use explicit upserts/removals and a base revision,
-and fall back to full resync. Do not diff the world then redact. JSON quantities have explicit units;
+Protocol 9 sends `delta` messages between snapshots. `base` must exactly match the client cursor;
+`update.view.tiles`, `units`, `cities` and `civs` contain upserts, and `removed` lists deleted keys. Unit
+and city keys include both ID and generation. All other update fields are absolute. Deltas compare
+already-filtered seat views; they never diff the hidden world. A missing base requests full resync;
+stale revisions are ignored. Core and session save format 4 reject older saves and omit derived projections. JSON quantities have explicit units;
 integers beyond JavaScript's exact range use strings. Protocol tags never depend on engine enum order.
 
 ## First playable room

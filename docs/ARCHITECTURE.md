@@ -33,7 +33,8 @@ the original receipt before current-turn eligibility is checked. Reused IDs with
 crates/civ-sim/src/
   content.rs       the embedded rules (base, and blitz layered over it), identity and engine version
   setup.rs         bounded settings, seeded map and initial civilizations
-  protocol.rs      versioned commands, queries, receipts and full-view updates
+  protocol.rs      versioned commands, queries, receipts, snapshots and deltas
+  delta.rs         upserts/removals between already seat-filtered views
   session.rs       staged transitions, access, receipt history, save/restore and replay
   offers.rs        immutable human consent, private offer projection and expiry
   queries.rs       advisory options from owned state and public rules
@@ -86,15 +87,22 @@ client plays back before the new view. Tests compare views and previews across h
 changes. These protections do not establish complete rule parity or a finished combat presentation API.
 
 Only updates replace client game state. Receipts settle pending input and name a view cursor. The
-client buffers its current view for late subscriptions and ignores old revisions. Full views are used
-initially; patches and binary encoding require measurements first.
+client buffers its current view for late subscriptions and ignores old revisions. Welcome and resync carry
+full views; later messages carry entity upserts/removals against an exact base cursor. The client retains
+unchanged entity objects and requests a full resync if it missed the base revision.
 
 ## Persistence and networking
 
 Native saves include complete arena generations/free-slot order, world/knowledge, versions and content
 identity. Session saves add settings, epoch, turn access, receipts and ordered player/host inputs. Replay
 reconstructs the game from its initial settings and those inputs; deterministic AI decisions remain
-reconstructable under the pinned engine. Presentation events are not the authoritative save format.
+reconstructable under the pinned engine. Presentation events are not the authoritative save format. Core and session format 4 embed the world
+as a JSON object, omit derived seat projections, and reject older snapshots. Typed projections are rebuilt
+on restore. Staged worlds share their large stores through copy-on-write ownership; mutating a store
+detaches it without changing the live transaction or undo snapshot.
+
+Visibility caches line-of-sight results by their complete local terrain and topology inputs. Visibility
+masks and player projections are still assembled for each transition; this is not a mutation journal.
 
 Remote guests hold an opaque HttpOnly cookie; only its hash is stored. Invite codes cannot reclaim a
 seat. Reconnect issues a new connection generation and fences the previous socket. Disconnect grace,

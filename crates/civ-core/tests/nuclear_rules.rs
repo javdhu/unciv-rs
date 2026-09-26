@@ -119,7 +119,7 @@ fn rejected_launch_is_atomic_for_self_target_unknown_victim_and_active_truce() {
     let before = w.clone();
     assert!(execute(&mut w, &r, CivId(0), Command::NuclearStrike { unit: bomb, target }).is_err());
     assert_eq!(w, before);
-    let mut unknown = World::new(w.grid.clone(), w.civs.clone());
+    let mut unknown = World::new((*w.grid).clone(), w.civs.to_vec());
     unknown.units = w.units.clone();
     unknown.cities = w.cities.clone();
     unknown.visibility = w.visibility.clone();

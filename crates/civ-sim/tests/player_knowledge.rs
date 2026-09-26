@@ -260,7 +260,7 @@ fn automated_units_decide_the_same_whatever_the_fog_hides() {
         w.units.get_mut(explorer).unwrap().automation = Some(Automation::Explore);
         // Know only the ring around our own units and city, so the fog starts
         // inside the units' reach.
-        w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len());
+        w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len()).into();
         let mine: Vec<TileId> = w
             .units
             .iter()

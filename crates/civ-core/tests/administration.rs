@@ -89,7 +89,7 @@ fn conquered_capital_relocates_and_liberation_revives_without_second_damage() {
     // A third party liberates the occupied original city after the founder
     // has lost its last city. No second plunder, burn, or population loss.
     w.civs.push(Civilization::new(CivId(2), r.nations.id("Egypt").unwrap(), false));
-    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len());
+    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len()).into();
     w.found_city_in(&r, City::found("Third", CivId(2), w.grid.id_at(6, 1).unwrap()));
     conquest::conquer(&mut w, &r, second, CivId(0)).unwrap();
     w.resolve_defeats();
@@ -121,7 +121,7 @@ fn unit_gifts_and_protection_obey_city_state_restrictions() {
     let mut minor = Civilization::new(cs, nation, true);
     minor.city_state_type = r.city_state_types.id(r.nations[nation].city_state_type.as_deref().unwrap());
     w.civs.push(minor);
-    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len());
+    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len()).into();
     let city = w.found_city_in(&r, City::found("Minor", cs, w.grid.id_at(9, 4).unwrap()));
     w.diplomacy.meet(CivId(0), cs);
     execute(&mut w, &r, CivId(0), Command::PledgeProtection { target: cs }).unwrap();
@@ -207,7 +207,7 @@ fn city_state_allies_join_war_and_peace_without_losing_influence() {
     let mut state = Civilization::new(cs, nation, true);
     state.city_state_type = r.city_state_types.ids().next();
     w.civs.push(state);
-    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len());
+    w.visibility = civ_core::world::Visibility::new(w.grid.len(), w.civs.len()).into();
     w.found_city_in(&r, City::found("Ally", cs, w.grid.id_at(8, 1).unwrap()));
     w.diplomacy.meet(CivId(0), CivId(1));
     w.diplomacy.meet(CivId(0), cs);

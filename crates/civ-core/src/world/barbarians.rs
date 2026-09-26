@@ -832,7 +832,7 @@ mod tests {
     fn replenishment_respects_live_camps_ghosts_resources_and_capitals() {
         use crate::world::City;
         let r = ruleset();
-        let mut w = World::new(TileGrid::new(40, 20, r.terrain("Grassland").unwrap()), world(&r).civs);
+        let mut w = World::new(TileGrid::new(40, 20, r.terrain("Grassland").unwrap()), world(&r).civs.to_vec());
         let centre = TileId(45);
         w.found_city_in(&r, City::found("Capital", CivId(0), centre));
         w.turn = 0;
