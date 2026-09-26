@@ -18,6 +18,21 @@ Phase 2 continues the graphics work from `b885ce6`.
 - Core/session save format 4 embeds JSON directly and omits derived seat projections. Older saves
   are rejected; no migration is provided.
 
+## Rendering
+
+- The ground's per-tile data is two textures (`COLOURS` in sRGB, `DATA` linear, several texels a tile) instead of
+  nine. The shared art material with painted ground slots, wind and the veil binds 10 texture units instead of 16;
+  the land 9 instead of 14, the sea 6 instead of 9.
+- The ground, sea, wind and veil shader patches chain through one helper (`world/patch.ts`). Program cache keys carry
+  the material's own key and each patch's name; the compiled programs are the same.
+- The unit layer reads the frame's view from `ViewCull` instead of taking its own. City banners, counters, resource
+  icons and yield chips share one keyed label pool; crowds and troupes share one slot pool (`world/slots.ts`).
+
+Checked in the title scene against the old ground textures, in one page: the texels read back from the GPU match
+byte for byte, and the frame differs by at most 1/255 on 78 of 3.1 million pixels, shader compiler rounding (a
+null edit to the old shader moved 1,320 pixels by up to 6/255). Median frame 44.7 → 40.1 ms, interleaved, on a
+heavily loaded machine: read it as no regression. Draw calls and program count are unchanged.
+
 ## Measurements
 
 The existing `civ-sim` `save_profile` example, on the same machine and release settings
