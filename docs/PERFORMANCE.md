@@ -74,3 +74,17 @@ The separately ignored `complete_matches_save_and_replay` gate fails on both the
 seed 1, turn 150, `diplomacy references an invalid civilization pair`. The captured world contains
 self-influence `(5, 5)`. This pre-existing simulation defect is outside the performance changes; the
 long-match save/replay gate is not green.
+
+## Client leftovers
+
+- The end screen's history (`state/history.ts`) records a turn from the owners as of its last entry, cached per
+  history, instead of replaying the whole border log. It is kept in chunks: a turn rewrites only the open chunk
+  (at most 33 turns) and older turns are sealed once under keys of their own. A history kept whole reads as one
+  open chunk and is sealed at its next turn.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| History, record + keep, turns 350–400 of a 60×38 map | 0.85–1.07 ms/turn | 0.05–0.12 ms/turn |
+
+Local samples (bun, M4 Pro, storage in memory, so real `localStorage` writes widen the gap). History:
+`bun <scratch>/bench-history.ts` beside `web/src/state/`, comparing the base commit's `history.ts` with this one.
