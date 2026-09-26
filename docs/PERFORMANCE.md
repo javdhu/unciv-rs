@@ -81,10 +81,16 @@ long-match save/replay gate is not green.
   history, instead of replaying the whole border log. It is kept in chunks: a turn rewrites only the open chunk
   (at most 33 turns) and older turns are sealed once under keys of their own. A history kept whole reads as one
   open chunk and is sealed at its next turn.
+- A hidden tab idles. The Blitz clock ticks four times a second only while the page shows; hidden, it wakes when a
+  count runs out or the match moves, so the turn still ends on time, and it counts from timestamps. The music's
+  conductor rests with the suspended audio context and resumes where it stopped (while shown it keeps time even
+  when silent, for the clock's ticks). The lobby keeps reading while hidden: the reads are its presence (the host
+  sees a member away after three missed ones) and how it learns the match opened.
 
 | Measurement | Before | After |
 |---|---:|---:|
 | History, record + keep, turns 350–400 of a 60×38 map | 0.85–1.07 ms/turn | 0.05–0.12 ms/turn |
+| Hidden tab, Blitz clock + conductor timer wakeups | 1/s each (browser-throttled 4/s and 25/s) | none until due |
 
 Local samples (bun, M4 Pro, storage in memory, so real `localStorage` writes widen the gap). History:
 `bun <scratch>/bench-history.ts` beside `web/src/state/`, comparing the base commit's `history.ts` with this one.
