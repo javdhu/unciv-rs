@@ -2,8 +2,12 @@
 
 Phase 2 continues the graphics work from `b885ce6`.
 
-- Terrain dressing retains unchanged 8×8 blocks. Local foundations resample nearby ground;
-  relief, river and explored-topology changes still rebuild the continuous surface.
+- Terrain dressing retains unchanged 8×8 blocks. The land surface is stored a block at a time and
+  `Land.grow` resamples only faces within three rings of a changed tile (frontier, foundation, river,
+  ridge, cliff), from a sample two rings wider; other blocks keep their shape and GPU positions and
+  normals. On an 80×52 map with 2,841 tiles known, a scout's step costs 16.5 ms instead of a 650 ms
+  full mesh, keeping 309 of 329 blocks (`world/test/land.test.ts` checks every face bit for bit
+  against a full mesh while the frontier grows).
 - Protocol 9 sends deltas between filtered player views. Welcome/resync remain full snapshots;
   unchanged browser entities retain their references.
 - Staged world copies share large stores until mutation. Transaction and undo isolation remain intact.
