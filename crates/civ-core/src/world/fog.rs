@@ -1170,7 +1170,7 @@ mod tests {
         assert!(bytes.len() * 4 < entries.len(), "{} bytes against {} as entries", bytes.len(), entries.len());
 
         let mut regrown = v.clone();
-        regrown.tile_observations.rows.resize_with(4, Vec::new);
+        regrown.tile_observations.rows.resize_with(4, Default::default);
         regrown.tile_observations.rows[0].resize_with(200, || None);
         assert_eq!(regrown, v);
         assert_eq!(postcard::to_allocvec(&regrown).unwrap(), bytes, "however the rows grew");
