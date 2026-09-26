@@ -166,3 +166,43 @@ fixed at the source; the gate passes.
 
 Local samples (bun, M4 Pro, storage in memory, so real `localStorage` writes widen the gap). History:
 `bun <scratch>/bench-history.ts` beside `web/src/state/`, comparing the base commit's `history.ts` with this one.
+
+## Rules compiled at load
+
+Unique parameters used to be read from text on every question: numbers parsed, `[+2 Food]` split,
+filters like `{Military} {Water}` or `non-[Land]` broken up and each term looked up in every registry
+it might name — for every building, tile and unit, each time the AI priced a construction.
+
+- `civ_core::params`: each unique carries its parameters compiled — typed numbers, yields and stats,
+  and a `Filter` of `Term`s classified against each matcher's vocabulary (`UnitWord`, `BuildingWord`,
+  `CityWord`, `TileWord`) with their names resolved to ids. A ruleset compiles its own uniques at load;
+  a unique read from a save or built at runtime compiles on first use. Clones share the result. Each
+  compile remembers the ruleset's `Stamp`, so a unique asked about another ruleset compiles afresh.
+- The matchers (`filters::matches_*`, `conditionals::matches_tile*`, `resources::matches_resource`) take
+  a compiled `Filter`; the `&str` forms compile on the spot, so there is one reading of the language.
+  `conditionals::evaluate` and the unique call sites on the yield, resource, combat, movement, purchase
+  and placement paths read compiled parameters.
+- Tech column eras and each unit's type are resolved to ids in `Ruleset::derive`.
+- Contract: the ruleset is immutable once loaded. An entry added to a registry afterwards is not seen
+  by uniques already compiled; edit a unique's parameters with `Unique::set_param`.
+
+`crates/civ-sim/tests/suite/compiled_filters.rs` keeps the old string matchers as an oracle and
+compares them with the compiled ones over every parameter string in base and blitz (about 400) against
+every building, unit type, resource, unit, city and tile of an AI game at turn 70: about 3 million
+answers per ruleset, all equal. It also checks every typed accessor against the parse it replaced.
+
+Measured against main's balance runner (`5d5f340`, built at `opt-level = 3` without LTO), with this
+branch built the same way and run concurrently on the same loaded machine (engine time only; ruleset
+load gains about 1–2 ms for the compile):
+
+| Run | Before | After |
+|---|---:|---:|
+| `--map medium --civs 8 --city-states 4 --seeds 21..=21 --threads 1` | 65.3 ms/turn | 55.6 ms/turn |
+| `--map medium --civs 8 --city-states 4 --seeds 20..=27 --threads 3` | 89.8 ms/turn | 79.2 ms/turn |
+| `--map small --civs 4 --city-states 2 --seeds 1..=12 --threads 3` | 30.4 ms/turn | 26.8 ms/turn |
+| `--ruleset blitz --map small --civs 4 --city-states 2 --seeds 1..=12 --threads 3` | 9.83 ms/turn | 9.49 ms/turn |
+
+The small game of seed 3 retires 15% fewer instructions (88.3 G to 74.9 G, `/usr/bin/time -l`).
+Build settings move this as much: the same main at the repository's `opt-level = "s"`, without LTO,
+retires 24% more. Every game is identical to main's with `engineMs` removed, including the small-map
+reference set, and Session saves are byte-identical at turns 30–120.
