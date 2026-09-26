@@ -49,7 +49,9 @@ fn city_bonus(world: &World, r: &Ruleset, id: Id<Unit>, city_id: Id<City>, city:
         uniques
             .into_iter()
             .filter(|u| {
-                u.params.first().is_some_and(|filter| crate::world::filters::unit_matches(r, unit, filter).holds())
+                u.compiled(r)
+                    .filter(0)
+                    .is_some_and(|filter| crate::world::filters::matches_unit(r, unit, filter).holds())
             })
             .map(|u| amount(u, 1))
             .sum(),

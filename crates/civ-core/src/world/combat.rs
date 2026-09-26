@@ -351,7 +351,9 @@ fn strength_parts(
         .filter(|(_, source, u)| {
             u.params.len() >= 3
                 && world.grid.distance(source.position, unit.position) <= u.params[2].parse::<u32>().unwrap_or(0)
-                && crate::world::filters::unit_matches_in(world, r, unit, &u.params[1]).holds()
+                && u.compiled(r)
+                    .filter(1)
+                    .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, unit, f).holds())
         })
         .map(|(id, source, u)| {
             let double = source.all_uniques(r).any(|u| {
@@ -383,8 +385,12 @@ fn strength_parts(
             u.unique_type() == Some(UniqueType::StrengthForAdjacentEnemies)
                 && u.params.len() >= 3
                 && applies(u, &context).holds()
-                && crate::world::filters::unit_matches_in(world, r, unit, &u.params[1]).holds()
-                && crate::world::conditionals::tile_matches(&context, unit.position, &u.params[2]).holds()
+                && u.compiled(r)
+                    .filter(1)
+                    .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, unit, f).holds())
+                && u.compiled(r)
+                    .filter(2)
+                    .is_some_and(|f| crate::world::conditionals::matches_tile(&context, unit.position, f).holds())
         })
         .filter_map(|u| u.params[0].parse::<i32>().ok())
         .min()

@@ -69,13 +69,14 @@ pub fn may_attack(world: &World, r: &Ruleset, id: Id<Unit>, target: crate::world
         match rule.unique_type() {
             Some(UniqueType::CannotAttack) => return false,
             Some(UniqueType::CanOnlyAttackUnits) => {
-                let allowed = rule.params.first().is_some_and(|filter| {
+                let compiled = rule.compiled(r);
+                let allowed = rule.params.first().zip(compiled.filter(0)).is_some_and(|(filter, compiled)| {
                     if let Some(other) = opponent {
-                        crate::world::filters::unit_matches_in(
+                        crate::world::filters::matches_unit_in(
                             world,
                             r,
                             world.units.get(other).expect("target"),
-                            filter,
+                            compiled,
                         )
                         .holds()
                     } else {
@@ -88,9 +89,9 @@ pub fn may_attack(world: &World, r: &Ruleset, id: Id<Unit>, target: crate::world
             }
             Some(UniqueType::CanOnlyAttackTiles)
                 if !rule
-                    .params
-                    .first()
-                    .is_some_and(|filter| crate::world::conditionals::tile_matches(&context, tile, filter).holds()) =>
+                    .compiled(r)
+                    .filter(0)
+                    .is_some_and(|filter| crate::world::conditionals::matches_tile(&context, tile, filter).holds()) =>
             {
                 return false
             }
@@ -183,7 +184,10 @@ pub fn initialize_promotions(world: &World, r: &Ruleset, unit: &mut Unit) {
     for rule in world.civ(unit.owner).into_iter().flat_map(|c| c.uniques.matching(UniqueType::UnitsGainPromotion)) {
         if rule.params.len() < 2
             || !applies(rule, &context).holds()
-            || !crate::world::filters::unit_matches_in(world, r, &initial, &rule.params[0]).holds()
+            || !rule
+                .compiled(r)
+                .filter(0)
+                .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, &initial, f).holds())
         {
             continue;
         }
@@ -212,7 +216,7 @@ pub fn train(world: &World, r: &Ruleset, city: Id<City>, unit: &mut Unit) {
         }
         match rule.unique_type() {
             Some(UniqueType::UnitStartingExperience) if rule.params.len() >= 3 => {
-                if crate::world::filters::unit_matches(r, unit, &rule.params[0]).holds()
+                if rule.compiled(r).filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, unit, f).holds())
                     && crate::world::filters::city_matches(world, r, c, Some(c), &rule.params[2]).holds()
                 {
                     unit.xp = (i32::from(unit.xp) + number(rule, 1)).clamp(0, i32::from(u16::MAX)) as u16;
@@ -225,7 +229,11 @@ pub fn train(world: &World, r: &Ruleset, city: Id<City>, unit: &mut Unit) {
                         .unit_types
                         .iter()
                         .any(|kind| r.units.get(unit.base).is_some_and(|base| base.unit_type == *kind));
-                if (relevant || crate::world::filters::unit_matches(r, unit, &rule.params[0]).holds())
+                if (relevant
+                    || rule
+                        .compiled(r)
+                        .filter(0)
+                        .is_some_and(|f| crate::world::filters::matches_unit(r, unit, f).holds()))
                     && crate::world::filters::city_matches(world, r, c, Some(c), &rule.params[1]).holds()
                 {
                     unit.promotions.insert(promotion);
@@ -371,7 +379,10 @@ pub fn captures_kill(
     let applicable = uniques(world, r, attacker).any(|rule| {
         rule.unique_type() == Some(UniqueType::KillUnitCapture)
             && applies(rule, &context).holds()
-            && rule.params.first().is_some_and(|f| crate::world::filters::unit_matches_in(world, r, d, f).holds())
+            && rule
+                .compiled(r)
+                .filter(0)
+                .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, d, f).holds())
     });
     let mut rng = random(world, attacker, defender, 2);
     let recruited_gold: Option<i32> = (!a.is_ranged(r))
@@ -380,7 +391,11 @@ pub fn captures_kill(
             for rule in
                 uniques(world, r, attacker).filter(|u| u.unique_type() == Some(UniqueType::GainFromDefeatingUnit))
             {
-                if rule.params.first().is_none_or(|f| !crate::world::filters::unit_matches_in(world, r, d, f).holds()) {
+                if rule
+                    .compiled(r)
+                    .filter(0)
+                    .is_none_or(|f| !crate::world::filters::matches_unit_in(world, r, d, f).holds())
+                {
                     continue;
                 }
                 if rule.conditionals.iter().all(|condition| {
@@ -446,7 +461,9 @@ pub fn adjacent_promotions(
         .filter(|u| {
             u.unique_type() == Some(UniqueType::TerrainGrantsPromotion)
                 && applies(u, &context).holds()
-                && u.params.get(2).is_some_and(|f| crate::world::filters::unit_matches_in(world, r, unit, f).holds())
+                && u.compiled(r)
+                    .filter(2)
+                    .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, unit, f).holds())
         })
         .filter_map(|u| r.promotions.id(u.params.first()?))
         .collect()
@@ -674,7 +691,12 @@ fn kill_reward<'a>(
     }
     let mut reward = crate::stats::Stats::ZERO;
     for rule in rules.iter() {
-        if rule.params.len() < 4 || !crate::world::filters::unit_matches_in(world, r, enemy, &rule.params[1]).holds() {
+        if rule.params.len() < 4
+            || !rule
+                .compiled(r)
+                .filter(1)
+                .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, enemy, f).holds())
+        {
             continue;
         }
         let source = if rule.params[2] == "Cost" {
@@ -714,10 +736,11 @@ pub fn plunder_damage(
     }) {
         let matched = match target {
             crate::world::air::Target::City(_) => matches!(rule.params[1].as_str(), "All" | "City"),
-            crate::world::air::Target::Unit(id) => world
-                .units
-                .get(id)
-                .is_some_and(|u| crate::world::filters::unit_matches_in(world, r, u, &rule.params[1]).holds()),
+            crate::world::air::Target::Unit(id) => world.units.get(id).is_some_and(|u| {
+                rule.compiled(r)
+                    .filter(1)
+                    .is_some_and(|f| crate::world::filters::matches_unit_in(world, r, u, f).holds())
+            }),
         };
         if matched {
             if let Some(stat) = crate::stats::Stat::parse(&rule.params[2]) {

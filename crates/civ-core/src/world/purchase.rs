@@ -28,7 +28,7 @@ use crate::world::city::City;
 use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::world::construction::{production_cost_in, Construction, CostModifiers, Rejection};
 use crate::world::entities::Unit;
-use crate::world::filters::{base_unit_matches, building_matches, city_matches};
+use crate::world::filters::{city_matches, matches_base_unit, matches_building};
 use crate::world::world::World;
 
 /// Why something could not be bought.
@@ -103,11 +103,12 @@ impl<'a> Shop<'a> {
         city_matches(self.world, self.r, self.city, Some(self.city), filter) == Verdict::True
     }
 
-    fn item_is(&self, what: Construction, filter: &str) -> bool {
-        match what {
-            Construction::Unit(id) => base_unit_matches(self.r, id, filter) == Verdict::True,
-            Construction::Building(id) => building_matches(self.r, id, filter) == Verdict::True,
-        }
+    /// Does parameter `i` of `u`, an item filter, match this item?
+    fn item_is(&self, what: Construction, u: &Unique, i: usize) -> bool {
+        u.compiled(self.r).filter(i).is_some_and(|filter| match what {
+            Construction::Unit(id) => matches_base_unit(self.r, id, filter) == Verdict::True,
+            Construction::Building(id) => matches_building(self.r, id, filter) == Verdict::True,
+        })
     }
 
     /// Speed's multiplier for a stat (`statCostModifiers`).
@@ -140,7 +141,7 @@ impl<'a> Shop<'a> {
         // May buy [item] for [n] [stat] [cityFilter] at an increasing price ([step])
         for u in self.uniques(pick(UniqueType::BuyUnitsIncreasingCost, UniqueType::BuyBuildingsIncreasingCost)) {
             let p = &u.params;
-            if p.len() >= 5 && p[2] == name && self.item_is(what, &p[0]) && self.city_is(&p[3]) {
+            if p.len() >= 5 && p[2] == name && self.item_is(what, u, 0) && self.city_is(&p[3]) {
                 let (base, step) = (p[1].parse::<i64>().unwrap_or(0), p[4].parse::<i64>().unwrap_or(0));
                 let bought = self.bought_before(what);
                 // `(base + step / 2f * (n² + n)).toInt()`
@@ -151,7 +152,7 @@ impl<'a> Shop<'a> {
         // May buy [item] with [stat] for [n] times their normal Production cost
         for u in self.uniques(pick(UniqueType::BuyUnitsByProductionCost, UniqueType::BuyBuildingsByProductionCost)) {
             let p = &u.params;
-            if p.len() >= 3 && p[1] == name && self.item_is(what, &p[0]) {
+            if p.len() >= 3 && p[1] == name && self.item_is(what, u, 0) {
                 if let (Some(cost), Ok(times)) = (self.production_cost(what), p[2].parse::<i64>()) {
                     out.push(Precise::from_ratio(cost * times, 1));
                 }
@@ -159,14 +160,14 @@ impl<'a> Shop<'a> {
         }
         // May buy [item] with [stat] [cityFilter]
         if self.uniques(pick(UniqueType::BuyUnitsWithStat, UniqueType::BuyBuildingsWithStat)).any(|u| {
-            u.params.len() >= 3 && u.params[1] == name && self.item_is(what, &u.params[0]) && self.city_is(&u.params[2])
+            u.params.len() >= 3 && u.params[1] == name && self.item_is(what, u, 0) && self.city_is(&u.params[2])
         }) {
             out.push(self.era_price(stat));
         }
         // May buy [item] for [n] [stat] [cityFilter]
         for u in self.uniques(pick(UniqueType::BuyUnitsForAmountStat, UniqueType::BuyBuildingsForAmountStat)) {
             let p = &u.params;
-            if p.len() >= 4 && p[2] == name && self.item_is(what, &p[0]) && self.city_is(&p[3]) {
+            if p.len() >= 4 && p[2] == name && self.item_is(what, u, 0) && self.city_is(&p[3]) {
                 out.push(Precise::from_ratio(p[1].parse::<i64>().unwrap_or(0), 1) * self.speed(stat));
             }
         }
@@ -253,7 +254,7 @@ impl<'a> Shop<'a> {
         };
         for u in self.uniques(specific) {
             let p = &u.params;
-            if p.len() >= 3 && p[0] == name && self.item_is(what, &p[1]) {
+            if p.len() >= 3 && p[0] == name && self.item_is(what, u, 1) {
                 if let Some(f) = pct(&p[2]) {
                     cost = cost * f;
                 }
@@ -330,14 +331,15 @@ pub fn bearing(r: &Ruleset, unique: &Unique, what: Construction, stat: Stat) -> 
         return Bearing::Unrelated;
     }
     let p = &unique.params;
+    let compiled = unique.compiled(r);
     // `p[at]` is this stat, `p[item]` matches this item, as `Shop` asks.
     let names = |len: usize, at: usize, item: usize| {
         p.len() >= len
             && p[at] == stat.name()
-            && match what {
-                U(id) => base_unit_matches(r, id, &p[item]) == Verdict::True,
-                B(id) => building_matches(r, id, &p[item]) == Verdict::True,
-            }
+            && compiled.filter(item).is_some_and(|f| match what {
+                U(id) => matches_base_unit(r, id, f) == Verdict::True,
+                B(id) => matches_building(r, id, f) == Verdict::True,
+            })
     };
     match (unique.unique_type(), what) {
         (Some(T::BuyUnitsIncreasingCost), U(_)) | (Some(T::BuyBuildingsIncreasingCost), B(_)) if names(5, 2, 0) => {
@@ -480,10 +482,7 @@ pub fn purchase_with_science(
         let shop = Shop::open(world, r, city, m).ok_or(PurchaseRejection::NoSuchCity)?;
         let (units, buildings) = (UniqueType::BuyUnitsIncreasingCost, UniqueType::BuyBuildingsIncreasingCost);
         let rises = shop.uniques(units).chain(shop.uniques(buildings)).any(|u| {
-            u.params.len() >= 4
-                && u.params[2] == stat.name()
-                && shop.item_is(what, &u.params[0])
-                && shop.city_is(&u.params[3])
+            u.params.len() >= 4 && u.params[2] == stat.name() && shop.item_is(what, u, 0) && shop.city_is(&u.params[3])
         });
         rises
     };

@@ -24,9 +24,10 @@
 //! anything.
 
 use crate::arena::Id;
+use crate::params::Filter;
 use crate::ruleset::{Building, Ruleset};
 use crate::world::city::City;
-use crate::world::conditionals::{tile_matches_in, Verdict};
+use crate::world::conditionals::{matches_tile_in, Verdict};
 use crate::world::grid::{Placed, TileId};
 use crate::world::world::World;
 use crate::UniqueType;
@@ -70,7 +71,9 @@ pub fn is_canal(r: &Ruleset, building: Id<Building>) -> bool {
 
 /// Whether `building` may stand on `tile` of `city`.
 pub fn site_allowed(world: &World, r: &Ruleset, city: Id<City>, building: Id<Building>, tile: TileId) -> bool {
-    let (Some(c), Some(rule)) = (world.cities.get(city), rule(r, building)) else { return false };
+    let (Some(c), Some(b), Some(_)) = (world.cities.get(city), r.buildings.get(building), rule(r, building)) else {
+        return false;
+    };
     let grid = &world.grid;
     let i = tile.0 as usize;
     if !grid.contains(tile)
@@ -84,9 +87,13 @@ pub fn site_allowed(world: &World, r: &Ruleset, city: Id<City>, building: Id<Bui
     {
         return false;
     }
-    let holds = |t: TileId, filter: &str| tile_matches_in(grid, r, t, filter, Some(c.owner)) == Verdict::True;
-    (rule.on.is_empty() || rule.on.iter().any(|f| holds(tile, f)))
-        && rule.next_to.iter().all(|f| grid.neighbours(tile).any(|n| holds(n, f)))
+    let holds = |t: TileId, filter: &Filter| matches_tile_in(grid, r, t, filter, Some(c.owner)) == Verdict::True;
+    // The rule's filters, compiled: each is the first parameter of its unique.
+    let stands = |kind| b.uniques.iter().filter(move |u| u.unique_type() == Some(kind) && !u.params.is_empty());
+    (stands(UniqueType::StandsOnTile).next().is_none()
+        || stands(UniqueType::StandsOnTile).any(|u| u.compiled(r).filter(0).is_some_and(|f| holds(tile, f))))
+        && stands(UniqueType::StandsNextToTile)
+            .all(|u| u.compiled(r).filter(0).is_some_and(|f| grid.neighbours(tile).any(|n| holds(n, f))))
 }
 
 /// Every tile `building` may stand on in `city`, in tile order.

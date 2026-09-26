@@ -9,7 +9,7 @@ use crate::rng::Rng;
 use crate::ruleset::Ruleset;
 use crate::stats::{Fixed, Precise};
 use crate::world::combat::{self, CombatRejection, CombatResult};
-use crate::world::conditionals::{applies, tile_matches, CombatRole, GameContext, Opponent};
+use crate::world::conditionals::{applies, matches_tile, CombatRole, GameContext, Opponent};
 use crate::world::{City, CivId, TileId, Unit, World};
 use crate::{Unique, UniqueType};
 
@@ -147,7 +147,7 @@ pub fn can_carry(world: &World, r: &Ruleset, carrier: Id<Unit>, passenger: &Unit
     let rules = matching(world, r, carrier, UniqueType::CarryAirUnits, &ctx, false);
     if !rules
         .iter()
-        .any(|u| u.params.get(1).is_some_and(|f| crate::world::filters::unit_matches(r, passenger, f).holds()))
+        .any(|u| u.compiled(r).filter(1).is_some_and(|f| crate::world::filters::matches_unit(r, passenger, f).holds()))
     {
         return false;
     }
@@ -158,7 +158,7 @@ pub fn can_carry(world: &World, r: &Ruleset, carrier: Id<Unit>, passenger: &Unit
     if uniques(world, r, passenger, false).any(|u| {
         u.unique_type() == Some(UniqueType::CannotBeCarriedBy)
             && applies(u, &passenger_ctx).holds()
-            && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, ship, f).holds())
+            && u.compiled(r).filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, ship, f).holds())
     }) {
         return false;
     }
@@ -331,14 +331,14 @@ pub fn can_strike(world: &World, r: &Ruleset, id: Id<Unit>, target: Target) -> R
         return Err(AirRejection::NotAllowed);
     }
     for unique in matching(world, r, id, UniqueType::CanOnlyAttackTiles, &ctx, false) {
-        if !unique.params.first().is_some_and(|f| tile_matches(&ctx, tile, f).holds()) {
+        if !unique.compiled(r).filter(0).is_some_and(|f| matches_tile(&ctx, tile, f).holds()) {
             return Err(AirRejection::NotAllowed);
         }
     }
     for unique in matching(world, r, id, UniqueType::CanOnlyAttackUnits, &ctx, false) {
         let allowed = match target {
-            Target::Unit(other) => unique.params.first().is_some_and(|f| {
-                crate::world::filters::unit_matches(r, world.units.get(other).expect("validated"), f).holds()
+            Target::Unit(other) => unique.compiled(r).filter(0).is_some_and(|f| {
+                crate::world::filters::matches_unit(r, world.units.get(other).expect("validated"), f).holds()
             }),
             Target::City(_) => unique.params.first().is_some_and(|f| matches!(f.as_str(), "All" | "City")),
         };
@@ -477,7 +477,7 @@ fn interceptor_among(
                 false,
             )
             .iter()
-            .any(|u| u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, a, f).holds()))
+            .any(|u| u.compiled(r).filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, a, f).holds()))
     });
     candidates
         .min_by_key(|(id, u)| {
@@ -792,7 +792,7 @@ pub fn can_paradrop(world: &World, r: &Ruleset, id: Id<Unit>, to: TileId) -> Res
     let ctx = context(world, r, id);
     let allowed = matching(world, r, id, UniqueType::MayParadrop, &ctx, false).into_iter().any(|u| {
         world.grid.distance(unit.position, to) <= number(u, 1).max(0) as u32
-            && u.params.first().is_some_and(|filter| tile_matches(&ctx, to, filter).holds())
+            && u.compiled(r).filter(0).is_some_and(|filter| matches_tile(&ctx, to, filter).holds())
     });
     if !allowed {
         return Err(AirRejection::NotAllowed);

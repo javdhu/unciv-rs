@@ -12,7 +12,7 @@
 
 use crate::arena::Id;
 use crate::ruleset::{Ruleset, TileImprovement};
-use crate::world::conditionals::{tile_matches_in, GameContext, Verdict};
+use crate::world::conditionals::{matches_tile_in, GameContext, Verdict};
 use crate::world::grid::{CivId, TileId};
 use crate::world::world::World;
 
@@ -177,13 +177,15 @@ pub fn can_build(
         if !crate::world::conditionals::applies(u, &ctx).holds() {
             continue;
         }
-        let matches = u.params.first().is_some_and(|f| tile_matches_in(&world.grid, r, tile, f, Some(civ)).holds());
+        let filter = u.compiled(r);
+        let filter = filter.filter(0);
+        let matches = filter.is_some_and(|f| matches_tile_in(&world.grid, r, tile, f, Some(civ)).holds());
         match u.unique_type() {
             Some(U::CannotBuildOnTile) if matches => return Err(ImprovementRejection::WrongTerrain),
             Some(U::CanOnlyBeBuiltOnTile) if !matches => return Err(ImprovementRejection::WrongTerrain),
             Some(U::MustBeNextTo)
-                if !u.params.first().is_some_and(|f| {
-                    world.grid.neighbours(tile).any(|t| tile_matches_in(&world.grid, r, t, f, Some(civ)).holds())
+                if !filter.is_some_and(|f| {
+                    world.grid.neighbours(tile).any(|t| matches_tile_in(&world.grid, r, t, f, Some(civ)).holds())
                 }) =>
             {
                 return Err(ImprovementRejection::WrongTerrain)
@@ -252,7 +254,10 @@ pub fn can_work(world: &World, r: &Ruleset, unit: Id<crate::world::Unit>, improv
             && match unique.unique_type() {
                 Some(U::BuildImprovements) => unique.params.first().is_some_and(|f| {
                     improvement_matches(r, improvement, f)
-                        || tile_matches_in(&world.grid, r, u.position, f, Some(u.owner)).holds()
+                        || unique
+                            .compiled(r)
+                            .filter(0)
+                            .is_some_and(|f| matches_tile_in(&world.grid, r, u.position, f, Some(u.owner)).holds())
                 }),
                 Some(U::CreateWaterImprovements) => {
                     world.grid.is_water(r, u.position)
@@ -474,21 +479,22 @@ pub fn conditional_yields(world: &World, r: &Ruleset, civ: CivId, tile: TileId) 
         if !crate::world::conditionals::applies(u, &ctx).holds() {
             continue;
         }
+        let params = u.compiled(r);
         let multiplier = match u.unique_type() {
             Some(U::Stats) => 1,
             Some(U::ImprovementStatsOnTile) => {
-                i32::from(u.params.get(1).is_some_and(|f| tile_matches_in(&world.grid, r, tile, f, Some(civ)).holds()))
+                i32::from(params.filter(1).is_some_and(|f| matches_tile_in(&world.grid, r, tile, f, Some(civ)).holds()))
             }
-            Some(U::ImprovementStatsForAdjacencies) => u.params.get(1).map_or(0, |f| {
+            Some(U::ImprovementStatsForAdjacencies) => params.filter(1).map_or(0, |f| {
                 world
                     .grid
                     .neighbours(tile)
-                    .filter(|t| tile_matches_in(&world.grid, r, *t, f, Some(civ)).holds())
+                    .filter(|t| matches_tile_in(&world.grid, r, *t, f, Some(civ)).holds())
                     .count() as i32
             }),
             _ => 0,
         };
-        if let Some(stats) = u.params.first().and_then(|p| Stats::parse(p)) {
+        if let Some(stats) = params.stats(0) {
             for stat in crate::stats::Stat::ALL {
                 out[stat] += stats[stat] * crate::stats::Fixed::whole(multiplier);
             }

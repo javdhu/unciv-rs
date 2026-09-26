@@ -210,12 +210,13 @@ fn unit_terrain_passable(world: &World, r: &Ruleset, unit: &Unit, tile: TileId, 
     };
     active_uniques_of(world, r, unit, tile, UniqueType::LandUnitsCrossTerrainAfterUnitGained)
         .any(|u| {
-            let (Some(terrain), Some(filter)) = (u.params.first(), u.params.get(1)) else {
+            let params = u.compiled(r);
+            let (Some(terrain), Some(filter)) = (u.params.first(), params.filter(1)) else {
                 return false;
             };
             world.grid.terrains(tile).any(|id| r.terrains[id].name == *terrain)
                 && civ.units_gained.iter().any(|base| {
-                    crate::world::filters::unit_matches(r, &Unit::new(*base, unit.owner, tile, 0), filter).holds()
+                    crate::world::filters::matches_unit(r, &Unit::new(*base, unit.owner, tile, 0), filter).holds()
                 })
         })
 }
@@ -234,7 +235,7 @@ pub fn max_movement(world: &World, r: &Ruleset, unit: &Unit) -> i32 {
     for (_, other) in world.units.iter().filter(|(_, u)| u.owner == unit.owner && u.position == unit.position) {
         if active_uniques(world, r, other, other.position).any(|u| {
             u.unique_type() == Some(UniqueType::TransferMovement)
-                && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, unit, f).holds())
+                && u.compiled(r).filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, unit, f).holds())
         }) {
             maximum = maximum.max(own(other));
         }
@@ -512,8 +513,14 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
                 .uniques
                 .matching(UniqueType::EnemyUnitsSpendExtraMovement)
                 .filter(|u| crate::world::conditionals::applies(u, &ctx).holds())
-                .filter(|u| u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, unit, f).holds()))
-                .filter_map(|u| u.params.get(1).and_then(|n| Fixed::parse(n)))
+                .filter_map(|u| {
+                    let params = u.compiled(r);
+                    if params.filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, unit, f).holds()) {
+                        params.fixed(1)
+                    } else {
+                        None
+                    }
+                })
                 .fold(Fixed::ZERO, |a, b| a + b)
         });
     let road = |tile| {
@@ -573,7 +580,9 @@ fn open_step_cost(world: &World, r: &Ruleset, unit: &Unit, from: TileId, to: Til
                     if features_only {
                         world.grid.features[to.0 as usize].iter().any(|id| r.terrains[*id].name == *f)
                     } else {
-                        crate::world::conditionals::tile_matches(&ctx, to, f).holds()
+                        u.compiled(r)
+                            .filter(0)
+                            .is_some_and(|f| crate::world::conditionals::matches_tile(&ctx, to, f).holds())
                     }
                 })
             },
@@ -706,7 +715,10 @@ fn can_traverse_with_borders(
     if r.terrains[world.grid.terrain[to.0 as usize]].name == "Ocean" {
         let ocean_allowed = active_uniques_of(world, r, unit, to, UniqueType::UnitsMayEnterOcean).any(|u| {
             u.params.first().is_some_and(|f| {
-                f == "Embarked" && land && !floating || crate::world::filters::unit_matches(r, unit, f).holds()
+                f == "Embarked" && land && !floating
+                    || u.compiled(r)
+                        .filter(0)
+                        .is_some_and(|f| crate::world::filters::matches_unit(r, unit, f).holds())
             })
         });
         if !ocean_allowed

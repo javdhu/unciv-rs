@@ -395,7 +395,7 @@ fn can_construct_mode(checks: &CivChecks, city: &City, what: Construction, purch
             u.unique_type() == Some(UniqueType::CannotBuildUnits)
                 && applies(u, context.get_or_insert_with(|| ctx.with_happiness(checks.happiness()).for_unit_value(&unit)))
                 .holds()
-                && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, &unit, f).holds())
+                && u.compiled(r).filter(0).is_some_and(|f| crate::world::filters::matches_unit(r, &unit, f).holds())
         }) {
             return Err(Rejection::NotAvailable);
         }
@@ -438,11 +438,12 @@ fn can_construct_mode(checks: &CivChecks, city: &City, what: Construction, purch
                 }
             }
             Some(UniqueType::MustHaveOwnedWithinTiles) if active == Verdict::True => {
-                let radius = unique.params.get(1).and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+                let params = unique.compiled(r);
+                let radius = params.u32(1).unwrap_or(0);
                 if !world.grid.within(city.centre, radius).into_iter().any(|tile| {
                     world.grid.owner[tile.0 as usize] == Some(civ)
-                        && unique.params.first().is_some_and(|filter| {
-                            crate::world::conditionals::tile_matches_in(&world.grid, r, tile, filter, Some(civ))
+                        && params.filter(0).is_some_and(|filter| {
+                            crate::world::conditionals::matches_tile_in(&world.grid, r, tile, filter, Some(civ))
                                 == Verdict::True
                         })
                 }) {
@@ -452,14 +453,15 @@ fn can_construct_mode(checks: &CivChecks, city: &City, what: Construction, purch
             Some(
                 UniqueType::MustBeOn | UniqueType::MustNotBeOn | UniqueType::MustBeNextTo | UniqueType::MustNotBeNextTo,
             ) if active == Verdict::True => {
-                let Some(filter) = unique.params.first() else { return Err(Rejection::TerrainRequirement) };
+                let params = unique.compiled(r);
+                let Some(filter) = params.filter(0) else { return Err(Rejection::TerrainRequirement) };
                 let matches = |tile| {
-                    crate::world::conditionals::tile_matches_in(&world.grid, r, tile, filter, Some(civ))
+                    crate::world::conditionals::matches_tile_in(&world.grid, r, tile, filter, Some(civ))
                         == Verdict::True
                 };
                 let on = matches(city.centre);
                 let adjacent = world.grid.neighbours(city.centre).any(matches)
-                    || (matches!(filter.as_str(), "Fresh water" | "Fresh Water")
+                    || (matches!(unique.params[0].as_str(), "Fresh water" | "Fresh Water")
                         && world.grid.is_fresh_water(r, city.centre));
                 let holds = match unique.unique_type().unwrap() {
                     UniqueType::MustBeOn => on,

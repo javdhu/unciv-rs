@@ -346,10 +346,8 @@ fn city_yield_parts(
     for u in city.uniques.all().filter(|_| legacy_uniques) {
         match u.unique_type() {
             Some(UniqueType::StatsPerPopulation) => {
-                let (Some(stats), Some(per)) = (
-                    u.params.first().and_then(|p| Stats::parse(p)),
-                    u.params.get(1).and_then(|p| p.parse::<i32>().ok()),
-                ) else {
+                let params = u.compiled(r);
+                let (Some(stats), Some(per)) = (params.stats(0), params.i32(1)) else {
                     continue;
                 };
                 if per <= 0 {
@@ -365,8 +363,8 @@ fn city_yield_parts(
                 }
             }
             Some(UniqueType::StatsFromTiles) => {
-                let (Some(stats), Some(filter)) = (u.params.first().and_then(|p| Stats::parse(p)), u.params.get(1))
-                else {
+                let params = u.compiled(r);
+                let (Some(stats), Some(filter)) = (params.stats(0), params.filter(1)) else {
                     continue;
                 };
                 let matching = city
@@ -374,7 +372,7 @@ fn city_yield_parts(
                     .iter()
                     .chain(std::iter::once(&city.centre))
                     .filter(|t| {
-                        crate::world::conditionals::tile_matches_in(grid, r, **t, filter, Some(city.owner))
+                        crate::world::conditionals::matches_tile_in(grid, r, **t, filter, Some(city.owner))
                             == crate::world::conditionals::Verdict::True
                     })
                     .count() as i32;
@@ -469,8 +467,7 @@ pub fn city_yield_with_happiness(
                     && crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True
             })
         {
-            rate = rate
-                * Fixed::from_fraction(100 + u.params.get(1).and_then(|p| p.parse::<i64>().ok()).unwrap_or(0), 100);
+            rate = rate * Fixed::from_fraction(100 + u.compiled(r).i64(1).unwrap_or(0), 100);
         }
     }
     let golden_tiles = golden_age.then(|| {
@@ -487,9 +484,23 @@ pub fn city_yield_with_happiness(
 }
 
 fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
-    use crate::world::conditionals::{applies, tile_matches, GameContext, Verdict};
-    let modifiers: Vec<_> = crate::world::religion::city_uniques(world, r, city)
-        .into_iter()
+    use crate::world::conditionals::{applies, matches_tile, GameContext, Verdict};
+    // Improvement filters: the improvement's name, "All", "Improvement", or a tag it carries.
+    let on_improvement = |imp: &crate::ruleset::TileImprovement, filter: &crate::params::Filter| {
+        filter.test(&|term| {
+            let f = &*term.text;
+            if f == imp.name || f == "All" || f == "Improvement" || imp.uniques.iter().any(|u| u.text == f) {
+                Verdict::True
+            } else {
+                Verdict::False
+            }
+        }) == Verdict::True
+    };
+    // The same for every tile, so gathered once.
+    let uniques = crate::world::religion::city_uniques(world, r, city);
+    let modifiers: Vec<_> = uniques
+        .iter()
+        .copied()
         .filter(|u| {
             matches!(u.unique_type(), Some(UniqueType::AllStatsPercentFromObject | UniqueType::StatPercentFromObject))
         })
@@ -512,39 +523,33 @@ fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: 
         let mut improved: Stats =
             breakdown.iter().filter(|(source, _)| source.kind == SourceKind::Improvement).map(|(_, s)| *s).sum();
         improved += crate::world::improvements::conditional_yields(world, r, city.owner, tile);
-        for flat in crate::world::religion::city_uniques(world, r, city) {
+        for &flat in &uniques {
             if applies(flat, &context) != Verdict::True {
                 continue;
             }
+            let params = flat.compiled(r);
+            // The city filter is read here as one term, not as the filter language.
+            let city_matches = |i: usize| {
+                params.term(i).is_some_and(|term| {
+                    crate::world::filters::city_word(world, r, city, Some(city), term.city) == Verdict::True
+                })
+            };
             let valid = match flat.unique_type() {
                 Some(UniqueType::StatsFromObject) => true,
-                Some(UniqueType::StatsFromTiles) => flat.params.get(2).is_some_and(|f| {
-                    crate::world::filters::city_matches(world, r, city, Some(city), f) == Verdict::True
-                }),
+                Some(UniqueType::StatsFromTiles) => city_matches(2),
                 Some(UniqueType::StatsFromTilesWithout) => {
-                    flat.params.get(3).is_some_and(|f| {
-                        crate::world::filters::city_matches(world, r, city, Some(city), f) == Verdict::True
-                    }) && flat.params.get(2).is_some_and(|f| tile_matches(&context, tile, f) == Verdict::False)
+                    city_matches(3)
+                        && params.filter(2).is_some_and(|f| matches_tile(&context, tile, f) == Verdict::False)
                 }
                 _ => false,
             };
             if !valid {
                 continue;
             }
-            if let (Some(filter), Some(stats)) = (flat.params.get(1), flat.params.first().and_then(|p| Stats::parse(p)))
-            {
-                if improvement.is_some_and(|imp| {
-                    crate::world::filters::multi_filter(filter, &|f| {
-                        if f == imp.name || f == "All" || f == "Improvement" || imp.uniques.iter().any(|u| u.text == f)
-                        {
-                            Verdict::True
-                        } else {
-                            Verdict::False
-                        }
-                    }) == Verdict::True
-                }) {
+            if let (Some(filter), Some(stats)) = (params.filter(1), params.stats(0)) {
+                if improvement.is_some_and(|imp| on_improvement(imp, filter)) {
                     improved += stats;
-                } else if tile_matches(&context, tile, filter) == Verdict::True {
+                } else if matches_tile(&context, tile, filter) == Verdict::True {
                     terrain += stats;
                 }
             }
@@ -565,31 +570,18 @@ fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: 
                 continue;
             }
             let all = u.unique_type() == Some(UniqueType::AllStatsPercentFromObject);
-            let Some(filter) = u.params.get(if all { 1 } else { 2 }) else { continue };
-            let on_improvement = improvement.is_some_and(|imp| {
-                crate::world::filters::multi_filter(filter, &|f| {
-                    if f == imp.name || f == "All" || f == "Improvement" || imp.uniques.iter().any(|u| u.text == f) {
-                        Verdict::True
-                    } else {
-                        Verdict::False
-                    }
-                }) == Verdict::True
-            });
-            let affected = if on_improvement {
+            let params = u.compiled(r);
+            let Some(filter) = params.filter(if all { 1 } else { 2 }) else { continue };
+            let affected = if improvement.is_some_and(|imp| on_improvement(imp, filter)) {
                 improved
-            } else if tile_matches(&context, tile, filter) == Verdict::True {
+            } else if matches_tile(&context, tile, filter) == Verdict::True {
                 terrain
             } else {
                 continue;
             };
-            let pct = u
-                .params
-                .first()
-                .and_then(|p| p.parse::<i64>().ok())
-                .map(|p| Fixed::from_fraction(p, 100))
-                .unwrap_or_default();
+            let pct = params.i64(0).map(|p| Fixed::from_fraction(p, 100)).unwrap_or_default();
             for stat in Stat::ALL {
-                if all || u.params.get(1).and_then(|s| Stat::parse(s)) == Some(stat) {
+                if all || params.stat(1) == Some(stat) {
                     bonus[stat] += affected[stat] * pct;
                 }
             }

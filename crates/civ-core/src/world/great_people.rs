@@ -98,9 +98,9 @@ pub fn points_per_turn(world: &World, r: &Ruleset, civ: CivId) -> BTreeMap<Strin
                 .filter(|u| {
                     u.unique_type() == Some(UniqueType::GreatPersonEarnedFaster)
                         && applies(u, &ctx) == Verdict::True
-                        && u.params
-                            .first()
-                            .is_some_and(|f| crate::world::filters::base_unit_matches(r, unit, f) == Verdict::True)
+                        && u.compiled(r)
+                            .filter(0)
+                            .is_some_and(|f| crate::world::filters::matches_base_unit(r, unit, f) == Verdict::True)
                 })
                 .filter_map(|u| u.params.get(1)?.parse::<i32>().ok())
                 .sum();
@@ -155,9 +155,9 @@ pub fn on_combat_xp(world: &mut World, r: &Ruleset, unit: Id<Unit>, amount: u16,
             let percent: i32 = bonuses
                 .iter()
                 .filter(|u| {
-                    u.params
-                        .first()
-                        .is_some_and(|f| crate::world::filters::base_unit_matches(r, id, f) == Verdict::True)
+                    u.compiled(r)
+                        .filter(0)
+                        .is_some_and(|f| crate::world::filters::matches_base_unit(r, id, f) == Verdict::True)
                 })
                 .filter_map(|u| u.params.get(1)?.parse::<i32>().ok())
                 .sum();

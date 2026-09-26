@@ -1,4 +1,5 @@
 //! Ruleset contributions evaluated with the city and its actual religion.
+use crate::params::Filter;
 use crate::ruleset::Ruleset;
 use crate::stats::{Fixed, Stat, Stats};
 use crate::world::conditionals::{applies, GameContext, Verdict};
@@ -13,20 +14,19 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
     let mut flat = Stats::ZERO;
     let mut percent = Stats::ZERO;
     let tiles = crate::world::city::yield_tiles(&world.grid, r, city);
-    let city_matches = |f: &str| {
-        crate::world::filters::multi_filter(f, &|term| {
-            crate::world::filters::city_matches(world, r, city, Some(city), term)
-        }) == Verdict::True
-    };
+    let city_matches = |f: &Filter| crate::world::filters::matches_city(world, r, city, Some(city), f) == Verdict::True;
     for u in crate::world::religion::city_uniques(world, r, city).into_iter().chain(r.global_uniques.iter()) {
         if applies(u, &ctx) != Verdict::True {
             continue;
         }
-        let p = |i: usize| u.params.get(i).map(String::as_str);
-        let stats = p(0).and_then(Stats::parse).unwrap_or_default();
-        let int = |i: usize| p(i).and_then(|p| p.parse::<i32>().ok()).unwrap_or(0);
+        let params = u.compiled(r);
+        let p = |i: usize| params.filter(i);
+        let stats = params.stats(0).unwrap_or_default();
+        let int = |i: usize| params.i32(i).unwrap_or(0);
         let tile_matches =
-            |tile, filter: &str| crate::world::conditionals::tile_matches(&ctx, tile, filter) == Verdict::True;
+            |tile, filter: &Filter| crate::world::conditionals::matches_tile(&ctx, tile, filter) == Verdict::True;
+        let building_matches =
+            |b, filter: &Filter| crate::world::filters::matches_building(r, b, filter) == Verdict::True;
         let count = match u.unique_type() {
             Some(UniqueType::Stats) if city.uniques.all().any(|local| std::ptr::eq(local, u)) => 1,
             Some(UniqueType::StatsPerCity) if p(1).is_some_and(city_matches) => 1,
@@ -44,23 +44,17 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
                 })
                 .count()
                 as i32,
-            Some(UniqueType::StatsFromBuildings) => city
-                .built
-                .iter()
-                .filter(|&&b| p(1).is_some_and(|f| crate::world::filters::building_matches(r, b, f) == Verdict::True))
-                .count() as i32,
+            Some(UniqueType::StatsFromBuildings) => {
+                city.built.iter().filter(|&&b| p(1).is_some_and(|f| building_matches(b, f))).count() as i32
+            }
             Some(UniqueType::StatsFromObject) => {
-                let Some(f) = p(1) else { continue };
-                let buildings = city
-                    .built
-                    .iter()
-                    .filter(|&&b| crate::world::filters::building_matches(r, b, f) == Verdict::True)
-                    .count();
+                let (Some(f), Some(name)) = (p(1), u.params.get(1).map(String::as_str)) else { continue };
+                let buildings = city.built.iter().filter(|&&b| building_matches(b, f)).count();
                 let worked = tiles.iter().filter(|&&tile| tile_matches(tile, f)).count();
                 let specialists = city
                     .specialists
                     .iter()
-                    .filter(|(id, _)| r.specialists.name_of(**id) == Some(f) || f == "Specialist")
+                    .filter(|(id, _)| r.specialists.name_of(**id) == Some(name) || name == "Specialist")
                     .map(|(_, n)| *n as usize)
                     .sum::<usize>();
                 (buildings + worked + specialists) as i32
@@ -73,39 +67,31 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
         let value = Fixed::whole(int(0));
         match u.unique_type() {
             Some(UniqueType::StatPercentFromObject) => {
-                if let (Some(stat), Some(filter)) = (p(1).and_then(Stat::parse), p(2)) {
-                    let count = city
-                        .built
-                        .iter()
-                        .filter(|b| crate::world::filters::building_matches(r, **b, filter) == Verdict::True)
-                        .count();
+                if let (Some(stat), Some(filter)) = (params.stat(1), p(2)) {
+                    let count = city.built.iter().filter(|b| building_matches(**b, filter)).count();
                     percent[stat] += value * Fixed::whole(count as i32);
                 }
             }
             Some(UniqueType::AllStatsPercentFromObject) => {
                 if let Some(filter) = p(1) {
-                    let count = city
-                        .built
-                        .iter()
-                        .filter(|b| crate::world::filters::building_matches(r, **b, filter) == Verdict::True)
-                        .count();
+                    let count = city.built.iter().filter(|b| building_matches(**b, filter)).count();
                     for stat in Stat::ALL {
                         percent[stat] += value * Fixed::whole(count as i32);
                     }
                 }
             }
             Some(UniqueType::StatPercentBonus) => {
-                if let Some(stat) = p(1).and_then(Stat::parse) {
+                if let Some(stat) = params.stat(1) {
                     percent[stat] += value;
                 }
             }
             Some(UniqueType::StatPercentBonusCities) if p(2).is_some_and(city_matches) => {
-                if let Some(stat) = p(1).and_then(Stat::parse) {
+                if let Some(stat) = params.stat(1) {
                     percent[stat] += value;
                 }
             }
             Some(UniqueType::StatPercentFromReligionFollowers) => {
-                if let Some(stat) = p(1).and_then(Stat::parse) {
+                if let Some(stat) = params.stat(1) {
                     let followers = city.faith.majority_followers(city.population);
                     percent[stat] += Fixed::whole((int(0) * followers as i32).min(int(2)));
                 }
@@ -124,12 +110,12 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
                             .get(*b)
                             .is_some_and(|b| b.is_wonder == Some(true) || b.is_national_wonder == Some(true));
                         (u.unique_type() != Some(UniqueType::PercentProductionWonders) || wonder)
-                            && p(1).is_some_and(|f| crate::world::filters::building_matches(r, *b, f) == Verdict::True)
+                            && p(1).is_some_and(|f| building_matches(*b, f))
                     }
                     Some(crate::world::construction::Construction::Unit(b))
                         if u.unique_type() == Some(UniqueType::PercentProductionUnits) =>
                     {
-                        p(1).is_some_and(|f| crate::world::filters::base_unit_matches(r, *b, f) == Verdict::True)
+                        p(1).is_some_and(|f| crate::world::filters::matches_base_unit(r, *b, f) == Verdict::True)
                     }
                     _ => false,
                 };
@@ -304,7 +290,9 @@ pub fn maintenance(world: &World, r: &Ruleset, city: &City) -> i32 {
         for u in &uniques {
             if u.unique_type() == Some(UniqueType::BuildingMaintenance)
                 && applies(u, &ctx) == Verdict::True
-                && u.params.get(1).is_some_and(|f| crate::world::filters::building_matches(r, *id, f) == Verdict::True)
+                && u.compiled(r)
+                    .filter(1)
+                    .is_some_and(|f| crate::world::filters::matches_building(r, *id, f) == Verdict::True)
                 && u.params.get(2).is_some_and(|f| {
                     crate::world::filters::city_matches(world, r, city, Some(city), f) == Verdict::True
                 })

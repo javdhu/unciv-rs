@@ -107,7 +107,7 @@ fn tile_yield_breakdown_with_resource(
         if !stats.is_zero() {
             out.push((Source::new(SourceKind::Improvement, imp.name.clone()), stats));
         }
-        if let Some(minimum) = minimum_from_improvement(imp) {
+        if let Some(minimum) = minimum_from_improvement(r, imp) {
             if let Some(gap) = missing_from_minimum(out.iter().map(|(_, stats)| *stats).sum(), minimum) {
                 out.push((Source::new(SourceKind::Improvement, "minimum tile yield"), gap));
             }
@@ -129,13 +129,12 @@ pub const CITY_CENTRE_MINIMUM: Stats = Stats {
     happiness: Fixed::ZERO,
 };
 
-fn minimum_from_improvement(improvement: &crate::ruleset::TileImprovement) -> Option<Stats> {
+fn minimum_from_improvement(r: &Ruleset, improvement: &crate::ruleset::TileImprovement) -> Option<Stats> {
     improvement
         .uniques
         .iter()
         .find(|u| u.unique_type() == Some(UniqueType::EnsureMinimumStats) && u.conditionals.is_empty())
-        .and_then(|u| u.params.first())
-        .and_then(|p| Stats::parse(p))
+        .and_then(|u| u.compiled(r).stats(0))
 }
 
 /// The bundled city-center improvement declares the floor; retain the source
@@ -144,7 +143,7 @@ pub fn city_centre_minimum(r: &Ruleset) -> Stats {
     r.improvements
         .id("City center")
         .and_then(|id| r.improvements.get(id))
-        .and_then(minimum_from_improvement)
+        .and_then(|improvement| minimum_from_improvement(r, improvement))
         .unwrap_or(CITY_CENTRE_MINIMUM)
 }
 

@@ -122,7 +122,10 @@ pub fn gift_unit(world: &mut World, r: &Ruleset, unit: Id<Unit>) -> Option<crate
             .find(|unique| {
                 unique.unique_type() == Some(UniqueType::GainInfluenceWithUnitGiftToCityState)
                     && applies(unique, &ctx).holds()
-                    && unique.params.get(1).is_some_and(|f| crate::world::filters::unit_matches(r, u, f).holds())
+                    && unique
+                        .compiled(r)
+                        .filter(1)
+                        .is_some_and(|f| crate::world::filters::matches_unit(r, u, f).holds())
             })
             .and_then(|u| u.params.first().and_then(|p| Fixed::parse(p)));
         if u.is_civilian(r) && bonus.is_none() {

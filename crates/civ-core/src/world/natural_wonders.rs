@@ -12,7 +12,7 @@ use crate::arena::Id;
 use crate::rng::Rng;
 use crate::ruleset::{Ruleset, Terrain};
 use crate::stats::{Fixed, Stats};
-use crate::world::conditionals::{applies, tile_matches_in, GameContext, Verdict};
+use crate::world::conditionals::{applies, matches_tile_in, GameContext, Verdict};
 use crate::world::grid::{CivId, TileGrid, TileId};
 use crate::world::world::World;
 use crate::{Unique, UniqueType};
@@ -226,8 +226,9 @@ fn clear_tile(grid: &mut TileGrid, tile: TileId) {
 
 fn conversion_applies(grid: &TileGrid, r: &Ruleset, tile: TileId, u: &Unique) -> bool {
     u.conditionals.iter().all(|c| {
-        let Some(filter) = c.params.first() else { return false };
-        let matched = tile_matches_in(grid, r, tile, filter, None);
+        let params = c.compiled(r);
+        let Some(filter) = params.filter(0) else { return false };
+        let matched = matches_tile_in(grid, r, tile, filter, None);
         match c.unique_type() {
             Some(UniqueType::ConditionalInTiles) => matched == Verdict::True,
             Some(UniqueType::ConditionalInTilesNot) => matched == Verdict::False,
@@ -423,6 +424,7 @@ pub fn known_stats(world: &World, r: &Ruleset, civ: CivId) -> Stats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::conditionals::tile_matches_in;
     use crate::world::entities::{Civilization, Unit};
     use crate::world::happiness::happiness;
     use crate::world::mapgen::{generate, MapParameters};

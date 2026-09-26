@@ -302,9 +302,9 @@ pub fn can_see_unit(world: &World, r: &Ruleset, viewer: CivId, id: Id<Unit>) -> 
             rule.unique_type() == Some(UniqueType::CanSeeInvisibleUnits)
                 && applies(rule, &ctx).holds()
                 && rule
-                    .params
-                    .first()
-                    .is_some_and(|filter| crate::world::filters::unit_matches(r, unit, filter).holds())
+                    .compiled(r)
+                    .filter(0)
+                    .is_some_and(|filter| crate::world::filters::matches_unit(r, unit, filter).holds())
         }) && unit_visible_tiles(world, r, detector).contains(&unit.position)
     })
 }
