@@ -334,7 +334,7 @@ pub fn can_construct_in(
     city: &City,
     what: Construction,
 ) -> Result<(), Rejection> {
-    can_construct_mode(world, r, civ, city, what, false)
+    can_construct_mode(&CivChecks::new(world, r, civ), city, what, false)
 }
 
 pub fn can_purchase_in(
@@ -344,17 +344,41 @@ pub fn can_purchase_in(
     city: &City,
     what: Construction,
 ) -> Result<(), Rejection> {
-    can_construct_mode(world, r, civ, city, what, true)
+    can_construct_mode(&CivChecks::new(world, r, civ), city, what, true)
 }
 
-fn can_construct_mode(
-    world: &World,
-    r: &Ruleset,
+/// The civ-wide sums a construction check reads, each worked out at most once. It borrows the world, so nothing can
+/// change underneath them while it is held. The AI asks about every unit and building, in every city: happiness
+/// alone is every city's yields, and was once most of an AI turn.
+pub struct CivChecks<'w> {
+    world: &'w World,
+    r: &'w Ruleset,
     civ: crate::world::grid::CivId,
-    city: &City,
-    what: Construction,
-    purchase: bool,
-) -> Result<(), Rejection> {
+    happiness: std::cell::OnceCell<i32>,
+    stock: std::cell::OnceCell<crate::world::resources::ResourceStock>,
+}
+
+impl<'w> CivChecks<'w> {
+    pub fn new(world: &'w World, r: &'w Ruleset, civ: crate::world::grid::CivId) -> Self {
+        CivChecks { world, r, civ, happiness: Default::default(), stock: Default::default() }
+    }
+
+    fn happiness(&self) -> i32 {
+        *self.happiness.get_or_init(|| crate::world::happiness::happiness(self.world, self.r, self.civ, None))
+    }
+
+    fn stock(&self) -> &crate::world::resources::ResourceStock {
+        self.stock.get_or_init(|| crate::world::resources::available_stock(self.world, self.r, self.civ))
+    }
+
+    /// [`can_construct_in`] for this civ.
+    pub fn can_construct(&self, city: &City, what: Construction) -> Result<(), Rejection> {
+        can_construct_mode(self, city, what, false)
+    }
+}
+
+fn can_construct_mode(checks: &CivChecks, city: &City, what: Construction, purchase: bool) -> Result<(), Rejection> {
+    let (world, r, civ) = (checks.world, checks.r, checks.civ);
     let owner = world.civ(civ).ok_or(Rejection::Unknown)?;
     can_construct_impl(r, owner, city, what, false, purchase)?;
     let id = world.cities.iter().find(|(_, c)| c.centre == city.centre).map(|(id, _)| id);
@@ -365,16 +389,11 @@ fn can_construct_mode(
     if let Construction::Unit(base) = what {
         let unit = crate::world::Unit::new(base, civ, city.centre, 0);
         // Happiness is a sum over the whole civ, and only a CannotBuildUnits rule reads it: it is worked out when
-        // one turns up (most civs have none), once. The AI asks this of every unit it could build, in every city.
+        // one turns up (most civs have none), once per [`CivChecks`].
         let mut context = None;
         if r.global_uniques.iter().chain(owner.uniques.all()).any(|u| {
             u.unique_type() == Some(UniqueType::CannotBuildUnits)
-                && applies(
-                    u,
-                    context.get_or_insert_with(|| {
-                        ctx.with_happiness(crate::world::happiness::happiness(world, r, civ, None)).for_unit_value(&unit)
-                    }),
-                )
+                && applies(u, context.get_or_insert_with(|| ctx.with_happiness(checks.happiness()).for_unit_value(&unit)))
                 .holds()
                 && u.params.first().is_some_and(|f| crate::world::filters::unit_matches(r, &unit, f).holds())
         }) {
@@ -468,7 +487,7 @@ fn can_construct_mode(
         let building = &r.buildings[base];
         let required = crate::world::resources::building_requirements(world, r, city, base);
         if !required.is_empty() {
-            let stock = crate::world::resources::available_stock(world, r, civ);
+            let stock = checks.stock();
             if required.into_iter().any(|(res, n)| stock.get(&res).copied().unwrap_or(0) < n) {
                 return Err(Rejection::MissingResources);
             }
@@ -511,7 +530,7 @@ fn can_construct_mode(
             }
         }
         Construction::Unit(base) => {
-            if !crate::world::resources::can_supply_unit(world, r, civ, base, None) {
+            if !crate::world::resources::can_supply_unit_from(world, r, civ, base, None, || checks.stock().clone()) {
                 return Err(Rejection::MissingResources);
             }
         }

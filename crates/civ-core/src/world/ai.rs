@@ -136,13 +136,14 @@ fn choose_construction_among(
     let current_output = crate::world::city::city_yield_in(world, r, city, golden);
     let production = current_output.production.floor().max(0) as i32;
     let city_id = world.cities.iter().find(|(_, c)| c.owner == civ && c.centre == city.centre).map(|(id, _)| id);
+    let checks = crate::world::construction::CivChecks::new(world, r, civ);
 
     // Once this city can finish the last outstanding milestone within the
     // existing build horizon, winning outranks marginal infrastructure yields.
     let winning = if production > 0 {
         wins_the_game.iter().filter_map(|&building| {
         let what=Construction::Building(building);
-        crate::world::construction::can_construct_in(world,r,civ,city,what).ok()?;
+        checks.can_construct(city,what).ok()?;
         let cost=city_id.map_or_else(||production_cost(r,what,m),|id|production_cost_in(world,r,id,what,m))?;
         let remaining=cost.saturating_sub(city.production_for(what)).max(0);
         if (remaining+production-1)/production>VICTORY_BUILD_HORIZON {return None;}
@@ -165,7 +166,7 @@ fn choose_construction_among(
     available(r, civ_ref, city)
         .into_iter()
         .filter(|what| units || matches!(what, Construction::Building(_)))
-        .filter(|what| crate::world::construction::can_construct_in(world, r, civ, city, *what).is_ok())
+        .filter(|what| checks.can_construct(city, *what).is_ok())
         .filter_map(|what| {
             let cost =
                 city_id.map_or_else(|| production_cost(r, what, m), |id| production_cost_in(world, r, id, what, m))?;
@@ -1527,6 +1528,7 @@ pub fn target_military(world: &World, r: &Ruleset, civ: CivId) -> usize {
 
 pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
     let Some(c) = world.civ(civ) else { return false };
+    let checks = crate::world::construction::CivChecks::new(world, r, civ);
     // Size the force in current soldiers' strength, not a count in which an
     // ancient scout permanently substitutes for a modern infantry unit.
     // Legality matters: unavailable iron/oil must not create an unreachable
@@ -1542,7 +1544,7 @@ pub fn wants_military(world: &World, r: &Ruleset, civ: CivId) -> bool {
                 .iter()
                 .filter_map(|id| {
                     let city = world.cities.get(*id)?;
-                    crate::world::construction::can_construct_in(world, r, civ, city, what).ok()?;
+                    checks.can_construct(city, what).ok()?;
                     production_cost_in(world, r, *id, what, crate::world::turn::TurnModifiers::for_world(world, r).costs)
                 })
                 .min()?;

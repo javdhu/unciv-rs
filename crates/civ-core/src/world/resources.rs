@@ -160,6 +160,18 @@ pub fn can_supply_unit(
     base: Id<BaseUnit>,
     replacing: Option<Id<Unit>>,
 ) -> bool {
+    can_supply_unit_from(world, r, civ, base, replacing, || available_stock(world, r, civ))
+}
+
+/// [`can_supply_unit`] against the civ's [`available_stock`], worked out by the caller.
+pub(crate) fn can_supply_unit_from(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    base: Id<BaseUnit>,
+    replacing: Option<Id<Unit>>,
+    available: impl FnOnce() -> ResourceStock,
+) -> bool {
     let (Some(owner), Some(definition)) = (world.civ(civ), r.units.get(base)) else { return false };
     if replacing.is_some_and(|id| world.units.get(id).is_none_or(|u| u.owner != civ)) {
         return false;
@@ -187,7 +199,7 @@ pub fn can_supply_unit(
     if needed.is_empty() {
         return true;
     }
-    let mut stock = available_stock(world, r, civ);
+    let mut stock = available();
     if let Some(old) = replacing {
         for (resource, amount) in fielded_requirements(world, r, old) {
             adjust(&mut stock, resource, i64::from(amount));
