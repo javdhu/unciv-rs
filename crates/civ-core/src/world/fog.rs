@@ -32,6 +32,9 @@ use crate::shared::Shared;
 use crate::world::world::World;
 use std::collections::BTreeMap;
 
+#[cfg(any(test, feature = "sight-audit"))]
+pub mod audit;
+
 /// Sight is a pure function of map topology and the elevations and blocking terrain one ring beyond its range. The
 /// cache keeps a whole map of those inputs, each tile's `(height, height with blocking)`, beside the answers worked
 /// out from it, which sit in the slot of the tile seen from. A sweep ([`Sightlines::sweep`]) compares the whole map
@@ -133,6 +136,11 @@ impl<'g> Sightlines<'g> {
     /// [`viewable_tiles`], lent rather than copied.
     pub(crate) fn with<T>(&self, from: TileId, range: u32, attack: bool, f: impl FnOnce(&[TileId]) -> T) -> T {
         let (grid, r) = (self.grid, self.r);
+        #[cfg(any(test, feature = "sight-audit"))]
+        let f = |tiles: &[TileId]| {
+            audit::check_sightline(tiles, || sightline(grid, from, range, attack, |t| sight_heights(grid, r, t)));
+            f(tiles)
+        };
         SIGHT.with(|cache| {
             let mut cache = cache.borrow_mut();
             let holds = match &self.synced {
@@ -694,6 +702,8 @@ pub fn remember_improvement(world: &mut World, r: &Ruleset, viewer: CivId, tile:
 /// this during movement as well as at the end of a round: an end-only scan
 /// cannot reconstruct a city seen briefly while a scout passed it.
 pub fn capture_observations(world: &mut World, r: &Ruleset) {
+    #[cfg(any(test, feature = "sight-audit"))]
+    let expected = audit::expect(world, r, audit::capture_observations);
     let viewers: Vec<_> = world.civ_ids().collect();
     let mut centres: Vec<TileId> = world.cities.iter().map(|(_, c)| c.centre).collect();
     centres.sort_unstable();
@@ -706,6 +716,8 @@ pub fn capture_observations(world: &mut World, r: &Ruleset) {
             learned.record(&mut world.visibility, viewer);
         }
     }
+    #[cfg(any(test, feature = "sight-audit"))]
+    audit::check(expected, world, "capture_observations");
 }
 
 /// What one capture changes in one viewer's records.

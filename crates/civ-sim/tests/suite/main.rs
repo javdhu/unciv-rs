@@ -8,6 +8,7 @@ mod player_knowledge;
 mod protocol_rebuild;
 mod query_options;
 mod renamed_content;
+mod sight_audit;
 mod slices;
 mod smoke;
 

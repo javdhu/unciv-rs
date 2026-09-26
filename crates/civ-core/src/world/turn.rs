@@ -1574,6 +1574,8 @@ fn detect_first_contact_impl(world: &mut World, rules: Option<&Ruleset>) -> Vec<
 /// Live-game vision uses each unit's sight rules and the civilization's
 /// territory and border ring. The rules-free wrapper remains for fixtures.
 pub fn update_visibility_in(world: &mut World, r: &Ruleset) {
+    #[cfg(any(test, feature = "sight-audit"))]
+    let expected = crate::world::fog::audit::expect(world, r, crate::world::fog::audit::update_visibility);
     // Every source is gathered apart and the live masks written only if they change: a step that changes nobody's
     // sight leaves a store the staged world shares alone.
     let mut seen = world.visibility.seen();
@@ -1614,6 +1616,8 @@ pub fn update_visibility_in(world: &mut World, r: &Ruleset) {
     if world.visibility.sight_changes(&civs, &seen) {
         world.visibility.replace_sight(&civs, &seen);
     }
+    #[cfg(any(test, feature = "sight-audit"))]
+    crate::world::fog::audit::check(expected, world, "update_visibility_in");
 }
 
 /// Recompute what each civ can see. Exploration is permanent, sight is not.

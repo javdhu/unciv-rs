@@ -21,6 +21,10 @@ wasm-bindgen = "=0.2.126"
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
 
+[dev-dependencies]
+# Tests audit live sight against its plain recomputation (`civ_core::world::fog::audit`).
+civ-core = { path = "../civ-core", features = ["save", "sight-audit"] }
+
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
 [package.metadata.wasm-pack.profile.release]
