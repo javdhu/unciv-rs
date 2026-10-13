@@ -56,6 +56,26 @@ impl Link {
         link
     }
 
+    /// Play a match against bots in-process, on seat 0. The host stages each command and answers with its
+    /// receipt and the updates it caused; finishing the turn closes the round.
+    pub fn play(settings: Settings) -> Link {
+        let link = Link {
+            up: Arc::new(ConcurrentQueue::unbounded()),
+            down: Arc::new(ConcurrentQueue::unbounded()),
+            host: Arc::new(OnceLock::new()),
+        };
+        let (up, down, host) = (link.up.clone(), link.down.clone(), link.host.clone());
+        thread::spawn("host", move || {
+            let _ = host.set(std::thread::current());
+            let reason = match play(settings, &up, &down) {
+                Ok(()) => "finished".to_string(),
+                Err(e) => e,
+            };
+            let _ = down.push(Down::Stopped(reason));
+        });
+        link
+    }
+
     pub fn send(&self, message: Up) {
         let _ = self.up.push(message);
         if let Some(host) = self.host.get() {
@@ -132,6 +152,52 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
             },
             // A watched match takes no commands.
             Up::Client(ClientMessage::Command { .. }) => send(ServerMessage::Error { code: "watching".into() }),
+        }
+    }
+}
+
+fn play(settings: Settings, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Down>) -> Result<(), String> {
+    let epoch = format!("play-{}", settings.seed);
+    let mut session = Session::new(settings, epoch, vec![0]).map_err(|e| e.to_string())?;
+    let send = |message| {
+        let _ = down.push(Down::Message(message));
+    };
+    let welcome = |session: &Session| -> Result<ServerMessage, String> {
+        Ok(ServerMessage::Welcome {
+            version: PROTOCOL_VERSION,
+            content_hash: session.content_hash(),
+            update: session.current_update(0).map_err(|e| e.to_string())?,
+        })
+    };
+    send(welcome(&session)?);
+    loop {
+        let Ok(message) = up.pop() else {
+            std::thread::park();
+            continue;
+        };
+        match message {
+            Up::Client(ClientMessage::Command { request_id, command }) => match session.stage_command(0, command) {
+                Ok(transition) => {
+                    send(ServerMessage::Receipt { request_id, receipt: transition.receipt.clone() });
+                    for (seat, update) in transition.updates {
+                        if seat == 0 {
+                            send(session.update_message(0, update).map_err(|e| e.to_string())?);
+                        }
+                    }
+                    session = transition.next;
+                }
+                Err(e) => send(ServerMessage::Error { code: e.to_string() }),
+            },
+            Up::Client(ClientMessage::Query { request_id, query }) => match session.query(0, query) {
+                Ok(reply) => send(ServerMessage::QueryReply { request_id, reply }),
+                Err(_) => send(ServerMessage::Error { code: "query".into() }),
+            },
+            Up::Client(ClientMessage::Resync) => send(ServerMessage::Update {
+                update: session.current_update(0).map_err(|e| e.to_string())?,
+            }),
+            Up::Client(ClientMessage::Hello { .. }) => send(welcome(&session)?),
+            // A played match's rounds close when its seat finishes; it has no other eyes.
+            Up::Advance | Up::Watch(_) => {}
         }
     }
 }
