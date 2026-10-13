@@ -10,6 +10,7 @@ pub mod hex;
 mod inspect;
 pub mod link;
 mod map;
+pub mod notes;
 pub mod net;
 mod paint;
 mod pieces;
