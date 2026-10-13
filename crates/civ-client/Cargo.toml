@@ -34,7 +34,7 @@ web-sys = { version = "0.3", features = [
     "Window", "Location", "WebSocket", "MessageEvent", "CloseEvent", "Event", "Request", "RequestInit",
     "RequestCredentials", "Response", "Headers", "Performance", "History", "EventTarget",
     "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbTransaction", "IdbTransactionMode",
-    "IdbObjectStore",
+    "IdbObjectStore", "Storage",
 ] }
 # PNG encoding for review shots posted from the page; the same version Bevy uses.
 image = { version = "0.25", default-features = false, features = ["png"] }

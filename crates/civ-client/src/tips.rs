@@ -126,3 +126,8 @@ mod tests {
         }
     }
 }
+
+/// A civ-wide stat's sources for its tooltip, largest first, once the view carries them.
+pub fn breakdown_lines(_v: &civ_sim::PlayerView, _stat: &str) -> Vec<String> {
+    Vec::new()
+}

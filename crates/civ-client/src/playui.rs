@@ -152,6 +152,13 @@ pub(crate) fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color
     )
 }
 
+/// Where a civ-wide number comes from, as lines for its tooltip: the view's breakdown by source when the
+/// server sends one (`economy.breakdown`), else nothing.
+fn breakdown(v: &civ_sim::PlayerView, stat: &str) -> String {
+    let lines = crate::tips::breakdown_lines(v, stat);
+    if lines.is_empty() { String::new() } else { format!("\n\n{}", lines.join("\n")) }
+}
+
 /// A tracker line: the whole width, opening its screen.
 fn tracker_row(font: &UiFont, order: Order, label: String) -> impl Bundle {
     styled(
@@ -334,6 +341,23 @@ fn faith_line(own: &civ_sim::CityStateView, rules: &Rules) -> Option<String> {
     Some(line)
 }
 
+/// What a unit action does, for its button's tooltip.
+fn action_tip(kind: UnitActionKind) -> &'static str {
+    match kind {
+        UnitActionKind::Fortify => "Dig in: stronger in defence, and it heals. It stays until you move it (F)",
+        UnitActionKind::Skip => "Leave it this turn; End turn stops asking about it (Space)",
+        UnitActionKind::FoundCity => "Found a city here; the settler is used up (B)",
+        UnitActionKind::Automate => "Let it work on its own: workers improve tiles nearby",
+        UnitActionKind::Explore => "Let it explore on its own",
+        UnitActionKind::Disband => "Disband it for good",
+        UnitActionKind::Pillage => "Wreck the improvement under it, for gold and health",
+        UnitActionKind::SetUp => "Set up a siege unit, so it can fire this turn",
+        UnitActionKind::Gift => "Give it to the city-state whose land it stands in, for influence",
+        UnitActionKind::AssembleSpaceshipPart => "Add this part to your spaceship in the capital",
+        _ => "",
+    }
+}
+
 /// Why a great person's ability cannot be used here, in a few words.
 fn refusal(why: civ_sim::queries::GreatPersonRefusal) -> &'static str {
     use civ_sim::queries::GreatPersonRefusal as R;
@@ -395,11 +419,16 @@ fn top_bar(
         let e2 = &v.economy;
         let mood = if e2.happiness < 0 { URGENT } else { TEXT };
         commands.entity(e).with_children(|r| {
-            r.spawn(text(&font, format!("Gold {treasury} ({})", signed(e2.gold)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Science {}", signed(e2.science)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Culture {}", signed(e2.culture)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Faith {} ({})", v.knowledge.faith, signed(e2.faith)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Happiness {}", e2.happiness), 13.0, mood));
+            for (label, colour, stat, about) in [
+                (format!("Gold {treasury} ({})", signed(e2.gold)), TEXT, "gold", "Gold in the treasury, and the change each turn. It buys units, buildings and tiles, and pays upkeep."),
+                (format!("Science {}", signed(e2.science)), TEXT, "science", "Science each turn, put into the technology being researched."),
+                (format!("Culture {}", signed(e2.culture)), TEXT, "culture", "Culture each turn: it gathers toward the next social policy, and grows your borders."),
+                (format!("Faith {} ({})", v.knowledge.faith, signed(e2.faith)), TEXT, "faith", "Faith stored, and its change each turn. It buys missionaries, sages and, later, great people."),
+                (format!("Happiness {}", e2.happiness), mood, "happiness", "Your people's mood. Below zero, cities grow slowly and fight worse; far below, they rebel."),
+            ] {
+                let tip = format!("{about}{}", breakdown(v, stat));
+                r.spawn((text(&font, label, 13.0, colour), Node { padding: UiRect::vertical(Val::Px(6.0)), ..default() }, crate::tips::Tip(tip)));
+            }
         });
     }
     if let Ok((e, children)) = tracker.single() {
@@ -426,8 +455,8 @@ fn top_bar(
             (_, cost) => format!("Next policy · culture {culture} of {cost} · {} turns", turns(cost, culture, v.economy.culture)),
         };
         commands.entity(e).with_children(|t| {
-            t.spawn(tracker_row(&font, Order::Research, research));
-            t.spawn(tracker_row(&font, Order::Policies, policy));
+            t.spawn((tracker_row(&font, Order::Research, research), crate::tips::Tip::new("Click for the tech tree (T)")));
+            t.spawn((tracker_row(&font, Order::Policies, policy), crate::tips::Tip::new("Click for the social policies (P)")));
         });
     }
     if let Ok((e, children)) = right.single() {
@@ -435,10 +464,13 @@ fn top_bar(
         commands.entity(e).with_children(|r| {
             r.spawn(text(&font, format!("Turn {} · {}", v.turn, year(v.year)), 14.0, TEXT));
             let undo = view.update().and_then(|u| u.undo.as_ref()).is_none_or(|u| u.available);
-            r.spawn(button(&font, Order::Undo, "Undo", undo));
+            r.spawn((button(&font, Order::Undo, "Undo", undo), crate::tips::Tip::new("Take back your last order this turn (Ctrl or Cmd Z)")));
             // A room's match is left from its own panel (`roomui.rs`); a solo one is lost on leaving.
             if !room {
-                r.spawn(button(&font, Order::Home, if selection.home_armed { "Leave? Click again" } else { "Home" }, true));
+                r.spawn((
+                    button(&font, Order::Home, if selection.home_armed { "Leave? Click again" } else { "Home" }, true),
+                    crate::tips::Tip::new("Back to the home screen. This match was saved when the last turn ended; what you did since is lost."),
+                ));
             }
         });
     }
@@ -517,7 +549,7 @@ fn unit_panel(
                     _ => continue,
                 };
                 let label = if choice.availability == Availability::NeedsConfirmation { format!("{label}…") } else { label.to_string() };
-                p.spawn(button(&font, Order::Act(choice.action), label, true));
+                p.spawn((button(&font, Order::Act(choice.action), label, true), crate::tips::Tip::new(action_tip(choice.action))));
             }
             for improvement in &options.improvements {
                 p.spawn(button(&font, Order::Build(*improvement), format!("Build {}", rules.improvement(*improvement)), true));
@@ -617,19 +649,22 @@ fn turn_button(
     } else {
         "End turn".into()
     };
-    commands.entity(e).with_child(styled(
-        &font,
-        Order::Turn,
-        label,
-        !ready,
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            border_radius: BorderRadius::all(Val::Px(6.0)),
-            ..default()
-        },
+    commands.entity(e).with_child((
+        styled(
+            &font,
+            Order::Turn,
+            label,
+            !ready,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(6.0)),
+                ..default()
+            },
+        ),
+        crate::tips::Tip::new("What the turn waits on first: a decision, then units that need orders, then the end of the turn (Enter)"),
     ));
 }
 

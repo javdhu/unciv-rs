@@ -77,8 +77,8 @@ fn frame(mut commands: Commands, font: Res<UiFont>) {
         .with_children(|f| {
             f.spawn(Node { height: Val::Px(STRIP), column_gap: Val::Px(4.0), padding: UiRect::all(Val::Px(3.0)), ..default() })
                 .with_children(|b| {
-                    b.spawn(button(&font, Press::Fit, "Whole map"));
-                    b.spawn(button(&font, Press::Grid, "Grid (G)"));
+                    b.spawn((button(&font, Press::Fit, "Whole map"), crate::tips::Tip::new("Zoom out to see the whole map")));
+                    b.spawn((button(&font, Press::Grid, "Grid (G)"), crate::tips::Tip::new("Show or hide the hex grid on the map")));
                 });
             f.spawn((
                 Picture,

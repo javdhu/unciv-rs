@@ -58,6 +58,7 @@ enum Press {
     Tree,
     Units,
     Help,
+    Settings,
     /// A civ's badge in the ribbon: the civilizations panel.
     Badge(u8),
     Coup(u8),
@@ -894,7 +895,13 @@ fn ribbon(
         for (civ, war) in met {
             let (name, outer, inner) = nation(&rules, v, civ);
             let initial: String = name.chars().next().map(|c| c.to_string()).unwrap_or_default();
+            let relation = v.relations.iter().find(|x| x.civ == civ);
+            let tip = match relation {
+                Some(x) => format!("{name} · {} · {} · score {}", if x.at_war { "at war with you" } else { "at peace" }, x.attitude.to_lowercase(), x.score),
+                None => name.to_string(),
+            };
             r.spawn((
+                crate::tips::Tip(tip),
                 Press::Badge(civ),
                 Button,
                 Hovered::default(),
@@ -930,13 +937,15 @@ fn buttons(
     }
     *made = true;
     commands.entity(e).with_children(|b| {
-        b.spawn(button(&font, Press::Tree, "Tech", TEXT));
-        b.spawn(button(&font, Press::OpenPolicies, "Policies", TEXT));
-        b.spawn(button(&font, Press::OpenCivs, "Civilizations", TEXT));
-        b.spawn(button(&font, Press::Empire, "Empire", TEXT));
-        b.spawn(button(&font, Press::Units, "Units", TEXT));
-        b.spawn(button(&font, Press::Log, "Log", TEXT));
-        b.spawn(button(&font, Press::Help, "?", TEXT));
+        use crate::tips::Tip;
+        b.spawn((button(&font, Press::Tree, "Tech", TEXT), Tip::new("The tech tree: what to research, and what each technology opens (T)")));
+        b.spawn((button(&font, Press::OpenPolicies, "Policies", TEXT), Tip::new("Social policies, bought with culture (P)")));
+        b.spawn((button(&font, Press::OpenCivs, "Civilizations", TEXT), Tip::new("Every civilization and city-state you have met: war, peace, deals and trade (C)")));
+        b.spawn((button(&font, Press::Empire, "Empire", TEXT), Tip::new("Your nation: great people, faith, spies and how far each victory has come (E)")));
+        b.spawn((button(&font, Press::Units, "Units", TEXT), Tip::new("Every unit you have and what it is doing (U)")));
+        b.spawn((button(&font, Press::Log, "Log", TEXT), Tip::new("What happened, turn by turn; click a line to look there (L)")));
+        b.spawn((button(&font, Press::Settings, "Settings", TEXT), Tip::new("Interface size, camera speed, panning at the window's edge")));
+        b.spawn((button(&font, Press::Help, "?", TEXT), Tip::new("Every key and mouse action (H or ?)")));
     });
     screens.stale = false;
 }
@@ -964,6 +973,7 @@ fn on_press(
     mut empire: ResMut<crate::empire::Empire>,
     mut units: ResMut<crate::units::UnitsPanel>,
     mut help: ResMut<crate::help::Help>,
+    mut settings: ResMut<crate::settings::Settings>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
     let press = press.clone();
@@ -993,6 +1003,7 @@ fn on_press(
         Press::Units => crate::help::only(crate::keys::Act::Units, &mut screens, &mut empire, &mut log, &mut units),
         Press::Tree => selection.research_open = !selection.research_open,
         Press::Help => help.open = !help.open,
+        Press::Settings => settings.open = !settings.open,
         Press::Coup(target) => {
             outbox.submit(Action::AttemptCoup { target });
         }

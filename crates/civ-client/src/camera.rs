@@ -136,6 +136,7 @@ fn input(
     mut pinch: MessageReader<PinchGesture>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut cameras: Query<(&Camera, &GlobalTransform, &mut MapCamera)>,
+    settings: Option<Res<crate::settings::Settings>>,
 ) {
     let Ok((camera, transform, mut map)) = cameras.single_mut() else { return };
     let cursor = window.single().ok().and_then(|w| w.cursor_position());
@@ -193,9 +194,26 @@ fn input(
             pan += dir;
         }
     }
+    // Panning at the window's edge, when the settings ask for it.
+    if let (Some(s), Ok(w), Some(c)) = (settings.as_deref(), window.single(), cursor) {
+        if s.edge_pan && w.focused {
+            let edge = 6.0;
+            if c.x < edge {
+                pan -= Vec2::X;
+            } else if c.x > w.width() - edge {
+                pan += Vec2::X;
+            }
+            if c.y < edge {
+                pan += Vec2::Y;
+            } else if c.y > w.height() - edge {
+                pan -= Vec2::Y;
+            }
+        }
+    }
     if pan != Vec2::ZERO {
         let distance = map.distance;
-        map.target += pan.normalize() * distance * time.delta_secs();
+        let speed = settings.as_deref().map_or(1.0, |s| s.camera_speed);
+        map.target += pan.normalize() * distance * speed * time.delta_secs();
         map.anchor = None;
     }
 }

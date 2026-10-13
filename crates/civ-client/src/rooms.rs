@@ -120,6 +120,7 @@ enum Press {
     Back,
     Load(String),
     Delete(String),
+    Settings,
 }
 
 pub fn plugin(app: &mut App) {
@@ -220,6 +221,7 @@ fn home(mut commands: Commands, font: Res<UiFont>) {
             c.spawn(button(&font, Press::Solo, "New game against bots"));
             c.spawn(button(&font, Press::Watch, "Watch bots play"));
             c.spawn(button(&font, Press::Rooms, "Rooms"));
+            c.spawn(button(&font, Press::Settings, "Settings"));
         });
     });
 }
@@ -638,8 +640,13 @@ fn on_press(
     names: Query<&EditableText, With<NameField>>,
     invites: Query<&EditableText, With<InviteField>>,
     mut saves: ResMut<crate::saves::Saves>,
+    mut settings: ResMut<crate::settings::Settings>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
+    if *press == Press::Settings {
+        settings.open = !settings.open;
+        return;
+    }
     // Each new game gets its own map.
     let seed = (now_secs() * 1000.0) as u64 % 1_000_000_007;
     let solo = civ_sim::Settings { seed, ..civ_sim::Settings::default() };
@@ -705,7 +712,7 @@ fn on_press(
             }
         }
         Press::Back => next.set(AppState::Rooms),
-        Press::Solo | Press::Watch | Press::Rooms | Press::Home | Press::Load(_) | Press::Delete(_) => {}
+        Press::Solo | Press::Watch | Press::Rooms | Press::Home | Press::Load(_) | Press::Delete(_) | Press::Settings => {}
     }
 }
 
