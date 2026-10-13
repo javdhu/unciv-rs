@@ -150,6 +150,113 @@ pub struct KnowledgeView {
     pub religion_enhanced: bool,
     pub research_progress: Vec<ResearchProgressView>,
     pub resources: Vec<ResourceStockView>,
+    /// This player's progress toward each great person it can earn by points, by `unit` then civilian before
+    /// combat. Only its own view carries it; absent for a nation that earns none (a city-state).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub great_people: Option<Vec<GreatPersonProgressView>>,
+}
+
+/// How near this player is to its next great person of one kind, as civ-core counts it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GreatPersonProgressView {
+    /// The unit the points count toward, by id in `RuleTables.units`, as `greatPersonPoints` rows name it. A
+    /// nation with its own version of that unit is born its own version.
+    pub unit: u32,
+    /// Points gathered toward it.
+    pub points: i32,
+    /// What its cities earn toward it a turn as things stand: buildings and specialists, after the percentage
+    /// bonuses. Always 0 for a combat kind.
+    pub per_turn: i32,
+    /// The points the next birth takes. Every kind with the same `pool` shares it, and a birth of any of them
+    /// doubles it.
+    pub threshold: i32,
+    /// The great person group whose threshold this kind shares: the unit's `Is part of Great Person group`,
+    /// empty for a unit in no group (those share one threshold too). Absent for a combat kind, whose threshold
+    /// is its own and rises by 50 a birth.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<String>,
+    /// Earned from the experience its units gain fighting anyone but barbarians, not from cities.
+    pub combat: bool,
+}
+
+/// The great people `me` can earn by points, with civ-core's own numbers. The kinds are every unit a building
+/// or specialist in the rules earns points toward, every unit `me` itself could earn in combat (its own
+/// version, as `on_combat_xp` picks them; a unit's per-fight condition such as `<for [Land] units>` is left
+/// out), and any kind it already holds points for. A great person born another way only (the faith-bought
+/// prophet) is not listed.
+fn great_people_view(w: &World, r: &Ruleset, me: CivId) -> Option<Vec<GreatPersonProgressView>> {
+    use civ_core::world::great_people;
+    use civ_core::UniqueType;
+    use std::collections::{BTreeMap, BTreeSet};
+    let civ = w.civ(me).filter(|c| c.is_major())?;
+    let people = &civ.great_people;
+    // The turn prices births at the speed's `greatPersonModifier`, else its growth speed (turn.rs, before
+    // `great_people::process_turn`).
+    let speed = w
+        .speed
+        .and_then(|id| r.speeds.get(id))
+        .and_then(|s| s.great_person_modifier)
+        .unwrap_or(TurnModifiers::for_world(w, r).growth.speed);
+    // `great_people::pool_key`: the unit's `GPPointPool` group, empty when it names none.
+    let pool = |kind: &str| {
+        r.units
+            .by_name(kind)
+            .and_then(|b| b.uniques.iter().find(|u| u.unique_type() == Some(UniqueType::GPPointPool)))
+            .and_then(|u| u.params.first())
+            .cloned()
+            .unwrap_or_default()
+    };
+    let earned = great_people::points_per_turn(w, r, me);
+    let civilian: BTreeSet<&str> = r
+        .buildings
+        .iter()
+        .flat_map(|(_, b)| b.great_person_points.keys())
+        .chain(r.specialists.iter().flat_map(|(_, s)| s.great_person_points.keys()))
+        .chain(people.points.keys())
+        .chain(earned.keys())
+        .map(String::as_str)
+        .collect();
+    let nation = r.nations.name_of(civ.nation);
+    let combat: BTreeSet<&str> = r
+        .units
+        .iter()
+        .filter(|(id, b)| {
+            civ_core::world::effects::equivalent_unit(w, r, me, *id) == *id
+                && b.unique_to.as_deref().is_none_or(|n| nation == Some(n))
+                && b.uniques.iter().any(|u| u.unique_type() == Some(UniqueType::GreatPersonFromCombat))
+        })
+        .map(|(_, b)| b.name.as_str())
+        .chain(people.combat_points.keys().map(String::as_str))
+        .collect();
+    let mut out = BTreeMap::new();
+    for kind in civilian {
+        let Some(unit) = r.units.id(kind) else { continue };
+        let pool = pool(kind);
+        out.insert((unit.index(), false), GreatPersonProgressView {
+            unit: unit.index(),
+            points: people.points.get(kind).copied().unwrap_or(0),
+            per_turn: earned.get(kind).copied().unwrap_or(0),
+            threshold: people.threshold(&pool, speed),
+            pool: Some(pool),
+            combat: false,
+        });
+    }
+    for kind in combat {
+        let Some(unit) = r.units.id(kind) else { continue };
+        out.insert((unit.index(), true), GreatPersonProgressView {
+            unit: unit.index(),
+            points: people.combat_points.get(kind).copied().unwrap_or(0),
+            per_turn: 0,
+            // `great_people::process_turn`: 200 for the first, 50 more for each after.
+            threshold: people.combat_thresholds.get(kind).copied().unwrap_or(200),
+            pool: None,
+            combat: true,
+        });
+    }
+    (!out.is_empty()).then(|| out.into_values().collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -1176,6 +1283,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                         amount,
                     })
                     .collect(),
+                great_people: great_people_view(w, r, me),
             }
         },
         rewards: w
@@ -1459,6 +1567,16 @@ pub enum PresentationEvent {
         flankers: Vec<EntityRef>,
         /// The great general whose aura counted toward the attacker's strength.
         general: Option<EntityRef>,
+        /// The nation that owned the defending unit or city when the blow landed. Every `attacked` this
+        /// player is sent carries it: the player fought, or saw both sides.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        defender_owner: Option<u8>,
+        /// The attacker's nation, when this player struck the blow or could see the attacker (the sight that
+        /// filters `flankers`). Absent when an unseen unit attacked this player.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        attacker_owner: Option<u8>,
     },
     /// A melee attack took a civilian at `at`: it passes from `from` to `to` under the same id, and
     /// `becomes` is its new unit type when that changed (a Settler becomes a Worker).
@@ -2142,6 +2260,14 @@ fn attacked(
         defender_mods: battle_modifiers(&b.tags.defender_mods),
         flankers: b.tags.flankers.iter().copied().filter(|id| known_unit(*id)).map(Into::into).collect(),
         general: b.tags.general.filter(|id| known_unit(*id)).map(Into::into),
+        defender_owner: Some(b.defender_owner.0),
+        attacker_owner: (b.attacker_owner == me
+            || match b.attacker {
+                Target::Unit(id) => known_unit(id),
+                // A city fires from its centre.
+                Target::City(_) => known_tile(b.from),
+            })
+        .then_some(b.attacker_owner.0),
     }
 }
 
