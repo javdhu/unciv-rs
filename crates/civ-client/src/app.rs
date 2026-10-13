@@ -114,7 +114,10 @@ pub fn open(world: &mut World, start: Start) {
     let (link, mode, sight) = match start {
         Start::Solo(settings) => (Link::play(settings), Mode::Play, Sight::All),
         Start::Watch(settings, sight) => (Link::watch(settings, sight), Mode::Watch, sight),
-        Start::Room { server, match_id } => (Link::remote(server, match_id), Mode::Play, Sight::Seat),
+        Start::Room { server, match_id } => {
+            address(Some(&match_id));
+            (Link::remote(server, match_id), Mode::Play, Sight::Seat)
+        }
     };
     world.insert_resource(link);
     world.insert_resource(mode);
@@ -157,6 +160,19 @@ fn sweep(
     }
     commands.remove_resource::<Link>();
     commands.remove_resource::<crate::play::Mode>();
+    address(None);
+}
+
+/// In the browser, the page's address names the room's match while it is open, so a reload returns to it.
+fn address(_match_id: Option<&str>) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
+        let url = match _match_id {
+            Some(id) => format!("?match={id}"),
+            None => web_sys::window().and_then(|w| w.location().pathname().ok()).unwrap_or_else(|| "/".into()),
+        };
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url));
+    }
 }
 
 fn menu_camera(mut commands: Commands) {

@@ -32,7 +32,7 @@ js-sys = "0.3"
 web-sys = { version = "0.3", features = [
     "Worker", "WorkerOptions", "WorkerType", "DedicatedWorkerGlobalScope",
     "Window", "Location", "WebSocket", "MessageEvent", "CloseEvent", "Event", "Request", "RequestInit",
-    "RequestCredentials", "Response", "Headers", "Performance", "Clipboard", "Navigator",
+    "RequestCredentials", "Response", "Headers", "Performance", "History",
 ] }
 # PNG encoding for review shots posted from the page; the same version Bevy uses.
 image = { version = "0.25", default-features = false, features = ["png"] }
