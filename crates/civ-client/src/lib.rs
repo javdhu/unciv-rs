@@ -31,7 +31,12 @@ pub fn run() {
     }
     let shots = shots::Shots::requested();
     // Shots and recordings watch; otherwise you play, unless CIV_WATCH (or civWatch on the page) asks to watch.
-    let mode = if shots.is_some() || watch_requested() { play::Mode::Watch } else { play::Mode::Play };
+    let mode = match &shots {
+        Some(s) if s.scene.play => play::Mode::Play,
+        Some(_) => play::Mode::Watch,
+        None if watch_requested() => play::Mode::Watch,
+        None => play::Mode::Play,
+    };
     let (settings, sight) = match &shots {
         Some(s) => (s.scene.settings.clone(), s.scene.sight),
         None => (settings(), sight()),

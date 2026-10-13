@@ -220,7 +220,6 @@ fn click(
     hover_map: Res<HoverMap>,
     nodes: Query<(), With<Node>>,
     view: Res<ViewState>,
-    link: Res<Link>,
     mut outbox: ResMut<Outbox>,
     mut selection: ResMut<Selection>,
     mut pressed_at: Local<Option<Vec2>>,
@@ -271,16 +270,21 @@ fn click(
         return;
     }
     if let Some(c) = city.filter(|c| c.owner == v.me) {
-        selection.unit = None;
-        selection.city = Some((c.id, c.r#gen));
-        selection.city_options = None;
-        selection.asked += 1;
-        ask(&link, &mut selection, "city", Ask::CityOptions { city: entity((c.id, c.r#gen)) });
+        select_city(&mut selection, (c.id, c.r#gen));
         return;
     }
     selection.unit = None;
     selection.city = None;
     selection.armed = None;
+}
+
+/// Open an own city's panel; its options are asked on the next refresh.
+pub fn select_city(selection: &mut Selection, city: Key) {
+    selection.unit = None;
+    selection.city = Some(city);
+    selection.city_options = None;
+    selection.armed = None;
+    selection.asked = 0;
 }
 
 /// Select a unit and ask what it can do (the next view change asks again).

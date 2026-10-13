@@ -83,11 +83,11 @@ fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color) -> impl B
 }
 
 fn button(font: &UiFont, order: Order, label: impl Into<String>, enabled: bool) -> impl Bundle {
-    (
+    styled(
+        font,
         order,
-        Button,
-        Hovered::default(),
-        observe(press),
+        label,
+        enabled,
         Node {
             min_height: Val::Px(28.0),
             padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
@@ -96,6 +96,16 @@ fn button(font: &UiFont, order: Order, label: impl Into<String>, enabled: bool) 
             border_radius: BorderRadius::all(Val::Px(4.0)),
             ..default()
         },
+    )
+}
+
+fn styled(font: &UiFont, order: Order, label: impl Into<String>, enabled: bool, node: Node) -> impl Bundle {
+    (
+        order,
+        Button,
+        Hovered::default(),
+        observe(press),
+        node,
         BackgroundColor(BUTTON),
         children![text(font, label, 13.0, if enabled { TEXT } else { DIM })],
     )
@@ -353,9 +363,19 @@ fn turn_button(
     }
     clear(&mut commands, children);
     let label = if awaiting(&view, &selection, None).is_some() { "Next unit" } else { "End turn" };
-    commands.entity(e).with_child((
-        button(&font, Order::Turn, label, true),
-        Node { width: Val::Percent(100.0), height: Val::Percent(100.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, border_radius: BorderRadius::all(Val::Px(6.0)), ..default() },
+    commands.entity(e).with_child(styled(
+        &font,
+        Order::Turn,
+        label,
+        true,
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border_radius: BorderRadius::all(Val::Px(6.0)),
+            ..default()
+        },
     ));
 }
 
@@ -395,9 +415,20 @@ fn city_panel(
                 let turns = choice.production_cost.map_or("–".into(), |cost| turns(cost, c.production_stored.unwrap_or(0), production));
                 p.spawn(Node { column_gap: Val::Px(6.0), align_items: AlignItems::Center, ..default() })
                 .with_children(|row| {
-                    row.spawn((
-                        button(&font, Order::Produce(choice.construction.clone()), format!("{} · {turns} turns", choice.name), true),
-                        Node { flex_grow: 1.0, justify_content: JustifyContent::FlexStart, padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)), border_radius: BorderRadius::all(Val::Px(4.0)), ..default() },
+                    row.spawn(styled(
+                        &font,
+                        Order::Produce(choice.construction.clone()),
+                        format!("{} · {turns} turns", choice.name),
+                        true,
+                        Node {
+                            flex_grow: 1.0,
+                            min_height: Val::Px(28.0),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::FlexStart,
+                            padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                            border_radius: BorderRadius::all(Val::Px(4.0)),
+                            ..default()
+                        },
                     ));
                     if let Some(price) = choice.gold.as_ref().and_then(|g| g.amount.clone().map(|a| (a, g.affordable.unwrap_or(false)))) {
                         row.spawn(button(&font, Order::Buy(choice.construction.clone()), format!("{} gold", price.0), price.1));

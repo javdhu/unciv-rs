@@ -1,7 +1,7 @@
 # Play spec: a turn you play (M3)
 
 Status: P1-P3 decided by Javed on 2026-10-13 (below). Builds on [VISUAL-SPEC.md](VISUAL-SPEC.md) (map, pieces, motion,
-HUD) and [CLIENT-BRIEF.md](CLIENT-BRIEF.md) (Link, ViewState, Outbox). Nothing here is built yet.
+HUD) and [CLIENT-BRIEF.md](CLIENT-BRIEF.md) (Link, ViewState, Outbox). M3 built 2026-10-13; see "How M3 is built" below.
 
 ## What the screen has to say
 
@@ -45,6 +45,23 @@ The spectator controls (speed, one round, eyes) leave the top bar while you play
 - Undo (Ctrl+Z or the button) takes back your last command when the engine allows it; a refusal says why
   ("it showed you new tiles", "a battle happened", "something else changed since").
 - Keys: Enter = the turn button; F fortify, S skip, B found a city when the unit can; Esc clears; Ctrl+Z undo.
+
+## How M3 is built
+
+- `cargo client` plays (seat 0 against bots); `CIV_WATCH=1` watches. `Link::play` stages each command in-process
+  and answers with its receipt and updates; the Outbox sends one command at a time with a stable id.
+- `src/play.rs` asks the host for the selected unit's reach and options, the open city's choices, the civ's
+  research and the combat preview, again after every view change, dropping answers to older questions. Clicks
+  follow P1; highlights are a white 18% fill and 0.03 m outline (dashed where uncertain), red on targets, and a
+  ring under the selected unit.
+- `src/playui.rs` lays out the top bar, unit panel, turn button, city panel, research list, toasts and the combat
+  card as above. Founding names the city from the nation's list.
+- Presentation plays the round's replay batches (the other civs' turns) and then your own events.
+- Verified: headless tests play a turn (found, research, end) and check retried and reused command ids; a
+  scripted 32 s recording (`CIV_SCENE=turn`) plays one turn through the same selection and Outbox paths.
+- Not verified by hand: the mouse and keyboard paths (the script drives the same state the clicks drive).
+- Not built: units seen only in a replay are not drawn; promotions, upgrades and the other actions wait for
+  M4 and M6.
 
 ## Out of M3
 

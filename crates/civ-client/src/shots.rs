@@ -34,6 +34,8 @@ pub struct Scene {
     pub views: Vec<(&'static str, Focus, f32)>,
     /// Record this many seconds of play from `turn` instead of shooting views.
     pub record: Option<f32>,
+    /// Played on seat 0 by a script (`turn_script`) rather than watched.
+    pub play: bool,
 }
 
 /// Frames a second in a recording; the clock steps exactly this much per frame while recording.
@@ -69,11 +71,24 @@ pub fn scene(name: &str) -> Option<Scene> {
                 turn: 30,
                 views: Vec::new(),
                 record: Some(45.0),
+                play: false,
+            });
+        }
+        // M3's review: one played turn from the start, driven by a script, then the other civs' turns.
+        "turn" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(3),
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: Some(32.0),
+                play: true,
             });
         }
         _ => return None,
     };
-    Some(Scene { name: name.into(), settings, sight, turn, views, record: None })
+    Some(Scene { name: name.into(), settings, sight, turn, views, record: None, play: false })
 }
 
 pub enum Out {
@@ -129,7 +144,7 @@ impl Shots {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Captured>()
         .add_systems(PostStartup, offscreen)
-        .add_systems(Update, shoot.after(crate::map::MapSet::Rebuild));
+        .add_systems(Update, (shoot, turn_script).chain().after(crate::map::MapSet::Rebuild));
 }
 
 /// Point the map camera at an image of the review size.
@@ -316,4 +331,112 @@ fn post(name: &str, image: &Image) {
 #[cfg(target_arch = "wasm32")]
 fn post_done(scene: &str) {
     let _ = civ_shots_done(scene);
+}
+
+
+/// The played turn the "turn" scene records: each step at a set frame of the recording.
+#[allow(clippy::too_many_arguments)]
+fn turn_script(
+    shots: Option<Res<Shots>>,
+    view: Res<ViewState>,
+    rules: Option<Res<crate::rules::Rules>>,
+    land: Option<Res<Land>>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut outbox: ResMut<crate::client::Outbox>,
+    mut cameras: Query<&mut MapCamera>,
+) {
+    use crate::play::{entity, select_unit, unit_action};
+    use civ_sim::protocol::Action;
+    use civ_sim::queries::UnitActionKind;
+    let (Some(shots), Some(rules), Some(land), Some(v)) = (shots, rules, land, view.view()) else { return };
+    if !shots.scene.play || shots.stage != Stage::Recording {
+        return;
+    }
+    let mine = |name: &str| {
+        v.units
+            .iter()
+            .filter(|u| u.owner == v.me)
+            .find(|u| rules.tables.units.iter().any(|r| r.id == u.base && r.name == name))
+            .map(|u| ((u.id, u.r#gen), u.tile))
+    };
+    let military = || {
+        v.units
+            .iter()
+            .filter(|u| u.owner == v.me)
+            .find(|u| crate::pieces::Class::of(&rules, u.base) != crate::pieces::Class::Civilian)
+            .map(|u| ((u.id, u.r#gen), u.tile))
+    };
+    let look = |cameras: &mut Query<&mut MapCamera>, tile: u16| {
+        if let Ok(mut c) = cameras.single_mut() {
+            c.jump(land.0.grid.centre(tile), 14.0);
+        }
+    };
+    match shots.frames {
+        20 => {
+            if let Some((settler, tile)) = mine("Settler") {
+                select_unit(&mut selection, settler);
+                look(&mut cameras, tile);
+            }
+        }
+        110 => {
+            if let Some(settler) = selection.unit {
+                if let Some(action) = unit_action(UnitActionKind::FoundCity, settler, &view, &rules) {
+                    outbox.submit(action);
+                }
+            }
+        }
+        190 => {
+            if let Some((warrior, tile)) = military() {
+                select_unit(&mut selection, warrior);
+                look(&mut cameras, tile);
+            }
+        }
+        260 => {
+            // The reachable tile farthest from where the unit stands.
+            if let (Some(unit), Some(here)) = (selection.unit, military().map(|m| m.1)) {
+                let from = land.0.grid.centre(here);
+                let far = selection.reach.iter().max_by(|a, b| {
+                    let da = land.0.grid.centre(a.tile).distance(from);
+                    let db = land.0.grid.centre(b.tile).distance(from);
+                    da.total_cmp(&db)
+                });
+                if let Some(r) = far {
+                    outbox.submit(Action::MoveUnit { unit: entity(unit), to: r.tile });
+                }
+            }
+        }
+        340 => {
+            if let Some(city) = v.cities.iter().find(|c| c.owner == v.me) {
+                crate::play::select_city(&mut selection, (city.id, city.r#gen));
+                look(&mut cameras, city.centre);
+            }
+        }
+        400 => {
+            if let (Some(city), Some(options)) = (selection.city, selection.city_options.clone()) {
+                if let Some(choice) = options.choices.first() {
+                    outbox.submit(Action::SetProduction { city: entity(city), queue: vec![choice.construction.clone()] });
+                }
+            }
+        }
+        460 => {
+            selection.city = None;
+            selection.research_open = true;
+        }
+        540 => {
+            if let Some(tech) = selection.civ_options.as_ref().and_then(|o| o.research.first()).map(|r| r.id) {
+                outbox.submit(Action::SetResearch { technology: tech });
+            }
+            selection.research_open = false;
+        }
+        600 => {
+            outbox.submit(Action::FinishTurn);
+            selection.unit = None;
+            if let Ok(mut c) = cameras.single_mut() {
+                let d = 30.0;
+                let t = c.target;
+                c.jump(t, d);
+            }
+        }
+        _ => {}
+    }
 }
