@@ -88,7 +88,7 @@ city's tiles, and a full-screen tech list.
 # M4: cities, research, policies and diplomacy
 
 Status: Q1-Q4 decided by Javed on 2026-10-13: Q1 (a) branch trees, with civ-sim sending each policy's branch;
-Q2 (a) city tiles on the map; Q3 (a) a full-screen tech tree; Q4 (a) a trade window. Nothing below is built yet.
+Q2 (a) city tiles on the map; Q3 (a) a full-screen tech tree; Q4 (a) a trade window. Built: see How M4 is built.
 
 ## What the screens have to say
 
@@ -129,7 +129,43 @@ what they are offering you.
 - Offers to you (`GameUpdate.offers`) appear as a card on the right with Accept and Decline (`answerOffer`);
   your own open offers list under the civ with Withdraw.
 
-## Open choices
+## How M4 is built
+
+- civ-sim's rule tables carry `policyRows` (each policy's branch, era, column, row and prerequisites); nothing
+  else in civ-sim changed for M4.
+- City panel (`src/playui.rs`): focus toggles, avoid growth, specialists per building with + and - (one
+  `assignCitizens` each, via `play::reassign`), buildings to sell with their refund, production and purchase as
+  in M3.
+- City tiles (`src/play.rs`, Q2 a): while a city is open its workable tiles show their non-zero yields; worked
+  tiles are drawn in gold, pinned ones brighter, tiles for sale in green with their price. Clicks on the map act
+  on tiles: a worked tile toggles its pin (`lockTile`), a free one is worked by an idle citizen, or by one
+  taken from the weakest unpinned worked tile (`assignCitizens`), a tile for sale is bought on a second
+  click (`buyTile`).
+- Tech tree (`src/screens.rs`, Q3 a): full screen, scrollable, columns of 190 px and rows of 46 px from the
+  rules, prerequisite lines, filled when researched, outlined when current, bright when available. Clicking a
+  later tech stores the path of its missing prerequisites; `follow_path` sends the next `setResearch` each time
+  research comes free.
+- Policies (Q1 a): one column per branch, adopted policies filled, adoptable ones bright; adopting takes a
+  second click.
+- Civilizations panel: every civ met with colour, leader, score, war or peace, embassies, agreement turns and
+  attitude; city-states with influence and protection. Buttons: declare war (second click), peace, friendship,
+  research agreement, defensive pact, denounce, gift gold, pledge or withdraw protection, trade. Offers to you
+  show as a card with Accept and Decline; your own open offers list with Withdraw.
+- Trade window (Q4 a): two columns. You give: gold, gold per turn, your luxuries and strategic resources, open
+  borders, embassy. They give: gold, gold per turn, open borders, embassy. Repeated clicks add to an item
+  (`screens::add`, unit-tested); `offerTrade` sends it.
+- Layering: screens on `GlobalZIndex` 20 over a 97% slate, side panels on 10, the top bar on 21, toasts on 30.
+- Verified: 16 client tests, including working a free tile through the engine (`tests/play.rs`); a scripted
+  36 s recording (`CIV_SCENE=tour`) founds a city, plays turns until it meets a civ, then shows the tech tree,
+  the policies, the city's tiles, the civilizations panel and a drafted trade (not sent); native and wasm
+  (webgpu) builds check clean.
+- Not verified: the mouse paths by hand; every diplomacy button, offers and a sent trade (no test sends
+  them or reads a bot's answer); the research path across several completions; tile pins and purchases.
+- Not built: what the other side holds is not in your view, so "they give" cannot list their luxuries,
+  strategic resources or cities; cities as trade items either way. Great people and religion were listed for
+  M4 under Out of M3 but are not in M4's spec; where they go is open.
+
+## Open choices (decided)
 
 Q1. Policies. (a) Branch trees, as the rules group them; this needs civ-sim to add each policy's branch to the
 rule tables it sends (a small, additive change). (b) A flat list of what can be adopted now and what has been,
