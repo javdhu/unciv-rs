@@ -1,6 +1,18 @@
 # Play quality spec (M7)
 
-Status: draft, 2026-10-13. Choices K1-K6 are open; nothing here is built.
+Status: K1-K6 decided by Javed on 2026-10-13; the HUD arrangement (K3) is written below for his check. Nothing
+is built.
+
+| | Choice | Pick |
+|---|---|---|
+| K1 | Tooltips | What each thing is, plus where numbers come from: civ-sim adds yield breakdowns to the view |
+| K2 | Keys | A small set of this client's own, listed in the key map |
+| K3 | Minimap | The whole HUD arranged like Civilization VI's, minimap included (layout below) |
+| K4 | Units | Next and previous, plus a units panel |
+| K5 | UI scale | Automatic from window size and display density, with a setting |
+| K6 | Playtest issues | Written in chat |
+
+The options not picked stay at the end for the record.
 
 ## Problem
 
@@ -49,6 +61,23 @@ The milestone ends with a loop where Javed plays and lists what feels wrong, and
 6. **Settings.** UI scale, edge-of-window panning on or off, camera speed and key bindings (if K2 allows rebinding), kept per player: a file in the config directory natively, localStorage in the browser. Opened from Home and from the top bar.
 7. **The playtest loop.** Javed plays native and browser builds; what feels wrong comes back as a list; fixes inside existing designs follow, and anything needing a decision is put to him. How issues are captured: K6.
 
+## The HUD, arranged like Civilization VI (K3)
+
+Placements marked *sourced* are from Civ VI guides; those marked *remembered* are from memory and wait for Javed's
+correction.
+
+| Where | Civ VI | Here |
+|---|---|---|
+| Top edge, full width | Top bar: yields on the left, turn, date and menus on the right (*remembered*; faith sits top right, *sourced*) | Gold, science, culture, faith, happiness on the left with their per-turn change; turn, year, Undo and Home on the right |
+| Under the top bar, left | A launch bar of round buttons for the trees and empire screens, and the world tracker with current research and civic (*remembered*; the world tracker shows current tech and civic, *sourced*) | Launch bar: Tech tree, Policies, Civilizations, Empire, Units, Log, Help, Settings. Below it the tracker: research with turns left (click opens the tree) and culture toward the next policy (click opens policies); in a room, the seats and deadline beneath |
+| Under the top bar, right | The diplomacy ribbon: portraits of the leaders met (*remembered*) | A ribbon of met civs' colour badges with their nation's initial; at war ringed red; click opens the civilizations panel at that civ |
+| Right edge, above End Turn | Notifications slide down the right-hand side (*sourced*) | Decisions and the turn's notes as a stack of short cards, newest at the bottom; click opens the decision or looks at the place |
+| Bottom right | The action panel: End Turn, naming what it waits on (*sourced*) | The End Turn button (M6a), larger, with its prompt above it and Later beside |
+| Bottom left corner | The minimap with its map options: filters, grid, markers, strategic view (*sourced*) | The minimap (known world, owners, fog, the camera's view outlined; click or drag to look), with buttons along its top: zoom to fit, yields on or off, the grid on or off |
+| Bottom, beside the minimap | The selected unit's panel (*remembered*) | The unit panel: name, health, moves, experience, then its actions |
+| Right side | The city panel when a city is open (*remembered*) | The city panel (M4), under the diplomacy ribbon |
+| At the pointer | – | What the hover inspector shows now becomes a tooltip on the tile under the pointer |
+
 ## Non-goals
 
 - Visual changes to the map and pieces (M8).
@@ -63,7 +92,7 @@ The milestone ends with a loop where Javed plays and lists what feels wrong, and
 - A recording that hovers each kind of control, opens the key map, uses the minimap and cycles units.
 - The playtest loop itself.
 
-## Open choices
+## Choices (decided; see the table at the top)
 
 K1. What tooltips say.
 - (a) What each control and number is, in words. Client-only.
