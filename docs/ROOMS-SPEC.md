@@ -1,6 +1,6 @@
 # Rooms spec (M5)
 
-Status: R1-R7 decided by Javed on 2026-10-13; built the same day (How M5 is built, at the end).
+Status: R1-R7 decided by Javed on 2026-10-13; built the same day (How M5 is built, at the end) and approved.
 
 | | Choice | Pick |
 |---|---|---|
