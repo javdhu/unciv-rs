@@ -1,5 +1,6 @@
 //! The Bevy client for civ-sim matches (docs/CLIENT-BRIEF.md, docs/VISUAL-SPEC.md).
 
+pub mod api;
 pub mod app;
 pub mod camera;
 pub mod client;
@@ -17,6 +18,7 @@ mod playui;
 mod screens;
 mod present;
 mod relief;
+mod rooms;
 mod roomui;
 pub mod rules;
 mod shots;
@@ -64,12 +66,12 @@ pub fn run() {
             play::plugin,
             playui::plugin,
             screens::plugin,
-            roomui::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,
             shots::plugin,
-        ));
+        ))
+        .add_plugins((roomui::plugin, rooms::plugin));
     if let Some(shots) = shots {
         // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
         // each capture takes.
