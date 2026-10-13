@@ -1,8 +1,7 @@
 # Visual spec: the 3D terrain map
 
-Status: proposal for Javed's review, 2026-10-13 (D7 in [CLIENT-BRIEF.md](CLIENT-BRIEF.md)). Nothing here is
-built or approved. Every number is a starting value that M1 and M2 screenshots will test; changes after review
-go back into this file. The open choices are V1-V5 at the end.
+Status: direction (D7) and choices V1-V5 decided by Javed on 2026-10-13; the numbers are starting values that
+M1 and M2 screenshots will test, and changes after review go back into this file. Nothing here is built.
 
 ## What the screen has to say
 
@@ -217,26 +216,14 @@ Estimates, measured in M1 and M2:
 
 The city screen, research, policies and diplomacy (M3 and later), natural-wonder models, combat close-ups.
 
-## Open choices
+## Choices
 
-Yours; none is picked.
+Taken by Javed on 2026-10-13. The options he did not pick are in git history (637b789).
 
-V1. Where 3D models and icons come from.
-(a) Procedural meshes in code: nothing to license; every shape is built and tuned by hand.
-(b) CC0 packs such as Kenney, KayKit or Quaternius: fast and free; licences checked per pack; their look
-is shared with other games.
-(c) The Polyperfect Low Poly Ultimate Pack you bought for civ.game: 3,080 low-poly models with flat-colour
-materials that recolour by material name; its licence needs checking for this project, and its files' location
-after the 09-29 cleanup needs confirming.
-(d) Placeholders as specified through M2, decided before art.
-
-V2. The unexplored look. (a) Dark slate as specified. (b) A cloud layer. (c) Parchment.
-
-V3. Sound in M2. (a) Silent. (b) Event sounds from a CC0 library. (c) Procedural sound in code.
-
-V4. Two verdicts carried over from your civ.game reviews in September, marked [carried] above: mountains and
-forests continuous across hexes, and a quiet world with loud pieces. (a) Keep both. (b) Keep only the first.
-(c) Keep only the second. (d) Drop both.
-
-V5. Wasm graphics API. (a) WebGPU only: one rendering path; browsers without it can't play. (b) WebGPU with a
-WebGL2 fallback: wider reach; a second path to test, and some effects reduced on it.
+| | Choice | Pick |
+|---|---|---|
+| V1 | Models and icons | Procedural meshes in code. The placeholders above are the first versions of those meshes |
+| V2 | Unexplored | Dark slate, as specified under Fog |
+| V3 | Sound | Hooks, no sound: presentation emits a typed sound cue for each event (move, attack, death, founding, capture, border change, round start) through a Bevy message nothing consumes yet; no audio plugin is compiled in |
+| V4 | Carried-over looks | Both kept: continuous mountain ranges and forests, quiet world with loud pieces |
+| V5 | Wasm graphics | WebGPU with a WebGL2 fallback. Bevy 0.20's `webgpu` feature overrides `webgl2` at compile time, so there are two wasm builds and the page loads the WebGPU one when `navigator.gpu` gives an adapter, the WebGL2 one otherwise |
