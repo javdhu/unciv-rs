@@ -114,7 +114,7 @@ fn styled(font: &UiFont, order: Order, label: impl Into<String>, enabled: bool, 
 }
 
 fn panel(node: Node) -> impl Bundle {
-    (node, BackgroundColor(PANEL), Visibility::Hidden)
+    (node, BackgroundColor(PANEL), Visibility::Hidden, crate::screens::PANEL_Z)
 }
 
 fn frame(mut commands: Commands) {
@@ -131,6 +131,7 @@ fn frame(mut commands: Commands) {
             ..default()
         },
         BackgroundColor(PANEL),
+        GlobalZIndex(21),
         children![
             (TopLeft, Node { width: Val::Px(260.0), ..default() }),
             (TopCentre, Node { column_gap: Val::Px(6.0), ..default() }),
@@ -156,6 +157,7 @@ fn frame(mut commands: Commands) {
     ));
     commands.spawn((
         TurnButton,
+        crate::screens::PANEL_Z,
         Node {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
@@ -524,6 +526,7 @@ fn toasts(
     for Toast(message) in toasts.read() {
         commands.spawn((
             ToastBox(TOAST_SECONDS),
+            GlobalZIndex(30),
             Node {
                 position_type: PositionType::Absolute,
                 bottom: Val::Px(92.0),

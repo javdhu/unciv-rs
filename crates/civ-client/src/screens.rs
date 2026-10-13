@@ -34,9 +34,9 @@ pub struct Screens {
 
 #[derive(Clone, Default)]
 pub struct Trade {
-    with: u8,
-    give: Vec<TradeItem>,
-    get: Vec<TradeItem>,
+    pub with: u8,
+    pub give: Vec<TradeItem>,
+    pub get: Vec<TradeItem>,
 }
 
 /// What a screen button does.
@@ -119,14 +119,26 @@ fn button(font: &UiFont, press: Press, label: impl Into<String>, colour: Color) 
     )
 }
 
+/// Screens and panels draw above the map's badges, banners and labels.
+pub(crate) const SCREEN_Z: GlobalZIndex = GlobalZIndex(20);
+pub(crate) const PANEL_Z: GlobalZIndex = GlobalZIndex(10);
+
 fn hidden(node: Node) -> impl Bundle {
-    (node, BackgroundColor(PANEL), Visibility::Hidden)
+    (node, BackgroundColor(PANEL), Visibility::Hidden, PANEL_Z)
 }
+
+fn hidden_solid(node: Node) -> impl Bundle {
+    (node, BackgroundColor(SOLID), Visibility::Hidden, SCREEN_Z)
+}
+
+/// Full-screen views hide the map behind them.
+const SOLID: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.97);
 
 fn frames(mut commands: Commands) {
     // The top bar's screen buttons sit beside the research chip.
     commands.spawn((
         ScreenButtons,
+        GlobalZIndex(21),
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(6.0),
@@ -137,7 +149,7 @@ fn frames(mut commands: Commands) {
     ));
     commands.spawn((
         TreeScreen,
-        hidden(Node {
+        hidden_solid(Node {
             position_type: PositionType::Absolute,
             top: Val::Px(40.0),
             left: Val::Px(0.0),
@@ -150,7 +162,7 @@ fn frames(mut commands: Commands) {
     ));
     commands.spawn((
         PolicyScreen,
-        hidden(Node {
+        hidden_solid(Node {
             position_type: PositionType::Absolute,
             top: Val::Px(40.0),
             left: Val::Px(0.0),
@@ -194,6 +206,7 @@ fn frames(mut commands: Commands) {
     ));
     commands.spawn((
         OfferCards,
+        PANEL_Z,
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(52.0),
@@ -846,5 +859,28 @@ fn on_press(
         Press::Withdraw(offer) => {
             outbox.submit(Action::WithdrawOffer { offer });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trade_items_merge_amounts_and_keep_one_of_each_kind() {
+        let mut side = Vec::new();
+        for item in [Item::Gold, Item::Gold, Item::GoldPerTurn, Item::Strategic(4), Item::Strategic(4), Item::OpenBorders, Item::OpenBorders, Item::Luxury(2)] {
+            add(&mut side, &item);
+        }
+        assert_eq!(
+            side,
+            vec![
+                TradeItem::Gold { amount: 100 },
+                TradeItem::GoldPerTurn { amount: 1 },
+                TradeItem::Strategic { resource: 4, amount: 2 },
+                TradeItem::OpenBorders,
+                TradeItem::Luxury { resource: 2 },
+            ]
+        );
     }
 }

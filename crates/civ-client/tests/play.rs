@@ -118,3 +118,37 @@ impl WithRequest for CommandRequest {
         Up::Client(ClientMessage::Command { request_id: id.into(), command: self })
     }
 }
+
+/// Working a free tile moves a citizen there, as the engine applies it.
+#[test]
+fn working_a_tile_moves_a_citizen_there() {
+    use civ_client::play::{reassign, Change};
+    let mut app = app();
+    pump_until(&mut app, "the welcome", |a| a.world().resource::<ViewState>().view().is_some());
+    let rules = civ_sim::tables(&civ_sim::content::load().unwrap());
+    let settler = rules.units.iter().find(|u| u.name == "Settler").unwrap().id;
+    let view = app.world().resource::<ViewState>().view().unwrap().clone();
+    let unit = view.units.iter().find(|u| u.owner == view.me && u.base == settler).unwrap();
+    let unit = civ_sim::protocol::EntityRef { id: unit.id, r#gen: unit.r#gen };
+    let found = app.world_mut().resource_mut::<Outbox>().submit(Action::FoundCity { unit, name: "Workburg".into() });
+    pump_until(&mut app, "the founding", |a| receipt(a, &found).is_some());
+    pump_until(&mut app, "the city", |a| a.world().resource::<ViewState>().view().unwrap().cities.iter().any(|c| c.name == "Workburg"));
+    let city = app.world().resource::<ViewState>().view().unwrap().cities.iter().find(|c| c.name == "Workburg").unwrap().clone();
+    let key = civ_sim::protocol::EntityRef { id: city.id, r#gen: city.r#gen };
+    app.world().resource::<Link>().send(Up::Client(ClientMessage::Query { request_id: "city".into(), query: Query::CityOptions { city: key.clone() } }));
+    pump_until(&mut app, "the city options", |a| a.world().resource::<Seen>().answers.iter().any(|q| q.request_id == "city"));
+    let options = match &app.world().resource::<Seen>().answers.iter().find(|q| q.request_id == "city").unwrap().reply.result {
+        QueryResult::CityOptions { options } => options.clone().expect("own city options"),
+        other => panic!("not city options: {other:?}"),
+    };
+    let tile = options.workable_tiles.iter().find(|t| !t.worked && !t.taken).expect("a free tile").tile;
+    let own = city.own.as_ref().expect("own city");
+    let (worked, specialists) = reassign(&city, own, &options, Change::Work(tile)).expect("a citizen to move");
+    assert!(worked.contains(&tile));
+    let assign = app.world_mut().resource_mut::<Outbox>().submit(Action::AssignCitizens { city: key, worked, specialists });
+    pump_until(&mut app, "the assignment", |a| receipt(a, &assign).is_some());
+    assert_eq!(receipt(&app, &assign), Some(CommandStatus::Applied));
+    pump_until(&mut app, "the city working the tile", |a| {
+        a.world().resource::<ViewState>().view().unwrap().cities.iter().find(|c| c.name == "Workburg").and_then(|c| c.own.as_ref()).is_some_and(|o| o.worked.contains(&tile))
+    });
+}
