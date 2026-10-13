@@ -80,3 +80,16 @@ fn every_base_milestone_is_judged() {
         charter.uniques.iter().map(|u| &u.text).collect::<Vec<_>>()
     );
 }
+
+/// The rule tables place every policy in its branch, so a client can draw the branches as trees.
+#[test]
+fn policy_rows_place_each_policy_in_its_branch() {
+    let tables = civ_sim::tables(&civ_sim::content::load().unwrap());
+    let rows = tables.policy_rows.expect("policy rows");
+    let row = |name: &str| rows.iter().find(|r| r.name == name).unwrap_or_else(|| panic!("{name}"));
+    assert_eq!(row("Tradition").branch.as_deref(), Some("Tradition"));
+    assert_eq!(row("Aristocracy").branch.as_deref(), Some("Tradition"));
+    assert!(row("Tradition").era.is_some());
+    let branched = rows.iter().filter(|r| r.branch.is_some()).count();
+    assert!(branched * 10 >= rows.len() * 9, "{branched} of {} policies have a branch", rows.len());
+}

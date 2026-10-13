@@ -37,6 +37,25 @@ pub struct RuleTables {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub influence_thresholds: Option<InfluenceThresholds>,
+    /// Every policy with its branch and its place in the branch's tree, for drawing the branches.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_rows: Option<Vec<PolicyRow>>,
+}
+
+/// A policy and its place in its branch. A branch is a policy too (adopting it opens the branch); its
+/// `branch` is its own name. `requires` names other policies by id.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyRow {
+    pub id: u32,
+    pub name: String,
+    pub branch: Option<String>,
+    /// The branch's era.
+    pub era: Option<String>,
+    pub column: Option<i32>,
+    pub row: Option<i32>,
+    pub requires: Vec<u32>,
 }
 
 /// Where a city-state's relationship with a major changes rank, in influence:
@@ -385,6 +404,23 @@ pub fn tables(r: &Ruleset) -> RuleTables {
             })
             .collect(),
         max_wave: r.max_wave,
+        policy_rows: Some(
+            r.policies
+                .iter()
+                .map(|(id, p)| {
+                    let branch = p.branch.and_then(|b| r.policy_branches.get(b));
+                    PolicyRow {
+                        id: id.index(),
+                        name: p.name.clone(),
+                        branch: branch.map(|b| b.name.clone()),
+                        era: branch.map(|b| b.era.clone()),
+                        column: p.column,
+                        row: p.row,
+                        requires: p.requires.iter().filter_map(|n| r.policies.id(n)).map(|i| i.index()).collect(),
+                    }
+                })
+                .collect(),
+        ),
         influence_thresholds: Some(InfluenceThresholds {
             friend: civ_core::world::city_states::FRIEND_THRESHOLD.floor() as i32,
             ally: civ_core::world::city_states::ALLY_THRESHOLD.floor() as i32,
