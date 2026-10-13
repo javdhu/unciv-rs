@@ -44,7 +44,7 @@ fn panel(mut commands: Commands) {
         EmpirePanel,
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(crate::playui::LEFT_PANEL_TOP),
             left: Val::Px(12.0),
             width: Val::Px(360.0),
             max_height: Val::Percent(75.0),

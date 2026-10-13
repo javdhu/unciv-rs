@@ -183,17 +183,13 @@ fn input(
         map.drag = None;
     }
     let mut pan = Vec2::ZERO;
-    for (key, dir) in [
-        (KeyCode::KeyW, Vec2::Y),
-        (KeyCode::ArrowUp, Vec2::Y),
-        (KeyCode::KeyS, -Vec2::Y),
-        (KeyCode::ArrowDown, -Vec2::Y),
-        (KeyCode::KeyA, -Vec2::X),
-        (KeyCode::ArrowLeft, -Vec2::X),
-        (KeyCode::KeyD, Vec2::X),
-        (KeyCode::ArrowRight, Vec2::X),
+    for (act, dir) in [
+        (crate::keys::Act::PanUp, Vec2::Y),
+        (crate::keys::Act::PanDown, -Vec2::Y),
+        (crate::keys::Act::PanLeft, -Vec2::X),
+        (crate::keys::Act::PanRight, Vec2::X),
     ] {
-        if keys.pressed(key) {
+        if crate::keys::held(&keys, act) {
             pan += dir;
         }
     }

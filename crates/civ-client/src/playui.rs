@@ -24,6 +24,17 @@ pub(crate) const DIM: Color = Color::srgb(0.6, 0.63, 0.67);
 pub(crate) const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
 pub(crate) const BUTTON_ON: Color = Color::srgba(1.0, 1.0, 1.0, 0.22);
 const TOAST_SECONDS: f32 = 3.0;
+
+// The HUD, arranged like Civilization VI (docs/QUALITY-SPEC.md, K3): the top bar, the launch bar and tracker under
+// it on the left, the diplomacy ribbon on the right, the minimap in the bottom-left corner with the unit panel
+// beside it, notifications above End Turn at the bottom right.
+pub(crate) const LAUNCH_TOP: f32 = 46.0;
+pub(crate) const TRACKER_TOP: f32 = 82.0;
+/// Where the panels on the left (civilizations, empire, log, units, a room's seats) begin.
+pub(crate) const LEFT_PANEL_TOP: f32 = 150.0;
+/// Where the panels on the right (a city, offers) begin, under the ribbon.
+pub(crate) const RIGHT_PANEL_TOP: f32 = 86.0;
+pub(crate) const MINIMAP_SIZE: Vec2 = Vec2::new(280.0, 180.0);
 pub(crate) const URGENT: Color = Color::srgb(1.0, 0.45, 0.4);
 
 /// What a play button does.
@@ -57,6 +68,7 @@ enum Order {
     Site,
     /// Put off the decision End turn leads with.
     Later,
+    Policies,
     GreatPerson(GreatPersonAction),
     Religious(ReligiousAction),
     /// Aim a mission at one of its targets on the map.
@@ -98,8 +110,9 @@ impl Fate {
 
 #[derive(Component)]
 struct TopLeft;
+/// Research and policy progress under the launch bar.
 #[derive(Component)]
-struct TopCentre;
+struct Tracker;
 #[derive(Component)]
 struct TopRight;
 #[derive(Component)]
@@ -136,6 +149,23 @@ pub(crate) fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color
         Text::new(s),
         TextFont { font: font.regular.clone().into(), font_size: FontSize::Px(size), ..default() },
         TextColor(colour),
+    )
+}
+
+/// A tracker line: the whole width, opening its screen.
+fn tracker_row(font: &UiFont, order: Order, label: String) -> impl Bundle {
+    styled(
+        font,
+        order,
+        label,
+        true,
+        Node {
+            min_height: Val::Px(24.0),
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+            align_items: AlignItems::Center,
+            border_radius: BorderRadius::all(Val::Px(4.0)),
+            ..default()
+        },
     )
 }
 
@@ -188,28 +218,41 @@ fn frame(mut commands: Commands) {
         BackgroundColor(PANEL),
         GlobalZIndex(21),
         children![
-            // Room for the screen buttons beside the turn (`screens.rs`, absolute at 280 px).
-            (TopLeft, Node { width: Val::Px(560.0), ..default() }),
-            (TopCentre, Node { column_gap: Val::Px(6.0), ..default() }),
-            (
-                TopRight,
-                Node { width: Val::Px(620.0), justify_content: JustifyContent::FlexEnd, column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }
-            ),
+            (TopLeft, Node { column_gap: Val::Px(16.0), align_items: AlignItems::Center, ..default() }),
+            (TopRight, Node { justify_content: JustifyContent::FlexEnd, column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }),
         ],
+    ));
+    commands.spawn((
+        Tracker,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(TRACKER_TOP),
+            left: Val::Px(12.0),
+            width: Val::Px(300.0),
+            padding: UiRect::all(Val::Px(6.0)),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        crate::screens::PANEL_Z,
     ));
     commands.spawn((
         UnitPanel,
         panel(Node {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
-            left: Val::Percent(50.0),
+            // Beside the minimap.
+            left: Val::Px(12.0 + MINIMAP_SIZE.x + 12.0),
+            max_width: Val::Percent(52.0),
             min_height: Val::Px(64.0),
             padding: UiRect::all(Val::Px(10.0)),
             column_gap: Val::Px(8.0),
+            row_gap: Val::Px(6.0),
+            flex_wrap: FlexWrap::Wrap,
             align_items: AlignItems::Center,
             ..default()
         }),
-        UiTransform { translation: Val2::percent(-50.0, 0.0), ..default() },
     ));
     commands.spawn((
         TurnButton,
@@ -218,8 +261,8 @@ fn frame(mut commands: Commands) {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
             right: Val::Px(12.0),
-            width: Val::Px(180.0),
-            height: Val::Px(44.0),
+            width: Val::Px(240.0),
+            height: Val::Px(56.0),
             ..default()
         },
     ));
@@ -227,10 +270,10 @@ fn frame(mut commands: Commands) {
         CityPanel,
         panel(Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(RIGHT_PANEL_TOP),
             right: Val::Px(12.0),
             width: Val::Px(320.0),
-            max_height: Val::Percent(75.0),
+            max_height: Val::Percent(68.0),
             padding: UiRect::all(Val::Px(12.0)),
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(6.0),
@@ -335,8 +378,8 @@ fn top_bar(
     selection: Res<Selection>,
     font: Res<UiFont>,
     left: Query<(Entity, Option<&Children>), With<TopLeft>>,
-    centre: Query<(Entity, Option<&Children>), (With<TopCentre>, Without<TopLeft>)>,
-    right: Query<(Entity, Option<&Children>), (With<TopRight>, Without<TopLeft>, Without<TopCentre>)>,
+    tracker: Query<(Entity, Option<&Children>), (With<Tracker>, Without<TopLeft>)>,
+    right: Query<(Entity, Option<&Children>), (With<TopRight>, Without<TopLeft>, Without<Tracker>)>,
     link: Option<Res<crate::link::Link>>,
 ) {
     let Some(v) = view.view() else { return };
@@ -345,13 +388,23 @@ fn top_bar(
         return;
     }
     let me = v.civs.iter().find(|c| c.id == v.me);
+    let signed = |n: i32| if n >= 0 { format!("+{n}") } else { n.to_string() };
     if let Ok((e, children)) = left.single() {
         clear(&mut commands, children);
-        commands.entity(e).with_child(text(&font, format!("Turn {} · {}", v.turn, year(v.year)), 14.0, TEXT));
+        let treasury = me.and_then(|c| c.gold).map_or("–".into(), |g| g.to_string());
+        let e2 = &v.economy;
+        let mood = if e2.happiness < 0 { URGENT } else { TEXT };
+        commands.entity(e).with_children(|r| {
+            r.spawn(text(&font, format!("Gold {treasury} ({})", signed(e2.gold)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Science {}", signed(e2.science)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Culture {}", signed(e2.culture)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Faith {} ({})", v.knowledge.faith, signed(e2.faith)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Happiness {}", e2.happiness), 13.0, mood));
+        });
     }
-    if let Ok((e, children)) = centre.single() {
+    if let Ok((e, children)) = tracker.single() {
         clear(&mut commands, children);
-        let label = match me.and_then(|c| c.researching.clone()) {
+        let research = match me.and_then(|c| c.researching.clone()) {
             Some(name) => {
                 let left = selection
                     .civ_options
@@ -365,20 +418,22 @@ fn top_bar(
             }
             None => "Choose research".to_string(),
         };
-        commands.entity(e).with_child(button(&font, Order::Research, label, true));
+        let culture = me.and_then(|c| c.culture).unwrap_or(0);
+        let cost = selection.civ_options.as_ref().map_or(0, |o| o.next_policy_cost);
+        let policy = match (v.rewards.policies, cost) {
+            (n, _) if n > 0 => format!("{n} free policy to adopt"),
+            (_, 0) => "Policies".to_string(),
+            (_, cost) => format!("Next policy · culture {culture} of {cost} · {} turns", turns(cost, culture, v.economy.culture)),
+        };
+        commands.entity(e).with_children(|t| {
+            t.spawn(tracker_row(&font, Order::Research, research));
+            t.spawn(tracker_row(&font, Order::Policies, policy));
+        });
     }
     if let Ok((e, children)) = right.single() {
         clear(&mut commands, children);
-        let treasury = me.and_then(|c| c.gold).map_or("–".into(), |g| g.to_string());
-        let signed = |n: i32| if n >= 0 { format!("+{n}") } else { n.to_string() };
         commands.entity(e).with_children(|r| {
-            let e = &v.economy;
-            r.spawn(text(&font, format!("Gold {treasury} ({})", signed(e.gold)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Science {}", signed(e.science)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Culture {}", signed(e.culture)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Faith {} ({})", v.knowledge.faith, signed(e.faith)), 13.0, TEXT));
-            let mood = if e.happiness < 0 { URGENT } else { TEXT };
-            r.spawn(text(&font, format!("Happiness {}", e.happiness), 13.0, mood));
+            r.spawn(text(&font, format!("Turn {} · {}", v.turn, year(v.year)), 14.0, TEXT));
             let undo = view.update().and_then(|u| u.undo.as_ref()).is_none_or(|u| u.available);
             r.spawn(button(&font, Order::Undo, "Undo", undo));
             // A room's match is left from its own panel (`roomui.rs`); a solo one is lost on leaving.
@@ -438,7 +493,7 @@ fn unit_panel(
             for choice in &options.actions {
                 let label = match choice.action {
                     UnitActionKind::Fortify => "Fortify (F)",
-                    UnitActionKind::Skip => "Wait (S)",
+                    UnitActionKind::Skip => "Wait (Space)",
                     UnitActionKind::FoundCity => "Found city (B)",
                     UnitActionKind::Automate => "Automate",
                     UnitActionKind::Explore => "Explore",
@@ -549,9 +604,9 @@ fn turn_button(
             _ => "Waiting for the round".to_string(),
         }
     } else if let (Some(d), Some(v)) = (decisions.next(), view.view()) {
-        // Decisions lead (docs/ACTIONS-SPEC.md, A1), with a way to put each off.
+        // Decisions lead (docs/ACTIONS-SPEC.md, A1), with a way to put each off beside the button.
         commands.entity(e).with_child((
-            Node { position_type: PositionType::Absolute, bottom: Val::Px(50.0), right: Val::Px(0.0), ..default() },
+            Node { position_type: PositionType::Absolute, bottom: Val::Px(14.0), right: Val::Px(248.0), ..default() },
             children![button(&font, Order::Later, "Later", true)],
         ));
         d.label(v, rules.as_deref())
@@ -850,18 +905,11 @@ fn keys(
     mut decisions: ResMut<crate::decisions::Decisions>,
     mut screens: ResMut<crate::screens::Screens>,
 ) {
-    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::SuperLeft);
-    if ctrl && keys.just_pressed(KeyCode::KeyZ) {
+    use crate::keys::{just, Act};
+    if just(&keys, Act::Undo) {
         outbox.submit(Action::Undo);
     }
-    if keys.just_pressed(KeyCode::Escape) {
-        selection.unit = None;
-        selection.city = None;
-        selection.research_open = false;
-        selection.armed = None;
-        selection.end_armed = false;
-    }
-    if keys.just_pressed(KeyCode::Enter) {
+    if just(&keys, Act::EndTurn) {
         match decisions.next().cloned() {
             Some(d) if !view.update().is_some_and(|u| u.ready) => crate::decisions::open(d, &mut decisions, &mut selection, &mut screens),
             _ => {
@@ -874,9 +922,9 @@ fn keys(
         stale.0 = false;
         return;
     };
-    for (key, kind) in [(KeyCode::KeyF, UnitActionKind::Fortify), (KeyCode::KeyS, UnitActionKind::Skip), (KeyCode::KeyB, UnitActionKind::FoundCity)] {
+    for (key, kind) in [(Act::Fortify, UnitActionKind::Fortify), (Act::Wait, UnitActionKind::Skip), (Act::Found, UnitActionKind::FoundCity)] {
         let offered = selection.options.as_ref().is_some_and(|o| o.actions.iter().any(|a| a.action == kind));
-        if !ctrl && keys.just_pressed(key) && offered {
+        if just(&keys, key) && offered {
             act(&mut selection, &mut outbox, &view, &rules, unit, kind);
         }
     }
@@ -1033,6 +1081,7 @@ fn press(
             selection.research_open = !selection.research_open;
             stale.0 = true;
         }
+        Order::Policies => screens.policies = !screens.policies,
         Order::Act(kind) => {
             if let (Some(unit), Some(rules)) = (selection.unit, rules) {
                 act(&mut selection, &mut outbox, &view, &rules, unit, kind);

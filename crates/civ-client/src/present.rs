@@ -188,22 +188,27 @@ pub fn plugin(app: &mut App) {
         );
 }
 
-fn keys(keys: Res<ButtonInput<KeyCode>>, mut playback: ResMut<Playback>) {
-    if keys.just_pressed(KeyCode::Space) {
+/// Watching's keys (`keys.rs`); in play, Space and F belong to units.
+fn keys(keys: Res<ButtonInput<KeyCode>>, mut playback: ResMut<Playback>, mode: Option<Res<crate::play::Mode>>) {
+    use crate::keys::{just, Act};
+    if mode.is_some_and(|m| *m == crate::play::Mode::Play) {
+        return;
+    }
+    if just(&keys, Act::Pause) {
         playback.paused = !playback.paused;
     }
-    for (key, speed) in [(KeyCode::Digit1, 1.0), (KeyCode::Digit2, 2.0), (KeyCode::Digit3, 4.0), (KeyCode::Digit4, 8.0)] {
-        if keys.just_pressed(key) {
+    for (act, speed) in [(Act::Speed1, 1.0), (Act::Speed2, 2.0), (Act::Speed3, 4.0), (Act::Speed4, 8.0)] {
+        if just(&keys, act) {
             playback.speed = speed;
         }
     }
-    if keys.just_pressed(KeyCode::Period) {
+    if just(&keys, Act::Step) {
         playback.step = true;
     }
-    if keys.just_pressed(KeyCode::KeyK) {
+    if just(&keys, Act::SkipAnimations) {
         playback.skip = !playback.skip;
     }
-    if keys.just_pressed(KeyCode::KeyF) {
+    if just(&keys, Act::Follow) {
         playback.follow = !playback.follow;
     }
 }

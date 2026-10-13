@@ -47,9 +47,9 @@ fn panel(mut commands: Commands, font: Res<UiFont>) {
         RoomPanel,
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(crate::playui::LEFT_PANEL_TOP),
             left: Val::Px(12.0),
-            width: Val::Px(240.0),
+            width: Val::Px(300.0),
             padding: UiRect::all(Val::Px(10.0)),
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(6.0),

@@ -56,7 +56,7 @@ fn setup(mut commands: Commands) {
 }
 
 fn toggle(keys: Res<ButtonInput<KeyCode>>, mut hud: Query<&mut Visibility, With<Hud>>) {
-    if keys.just_pressed(KeyCode::F3) {
+    if crate::keys::just(&keys, crate::keys::Act::Timings) {
         for mut v in &mut hud {
             *v = if *v == Visibility::Hidden { Visibility::Inherited } else { Visibility::Hidden };
         }

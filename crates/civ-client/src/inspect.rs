@@ -70,16 +70,16 @@ fn panel(mut commands: Commands, font: Res<UiFont>) {
     commands
         .spawn((
             Inspector,
+            // A tooltip on the tile under the pointer (docs/QUALITY-SPEC.md, the HUD), placed each frame.
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(12.0),
-                bottom: Val::Px(12.0),
-                width: Val::Px(280.0),
-                padding: UiRect::all(Val::Px(12.0)),
+                max_width: Val::Px(280.0),
+                padding: UiRect::all(Val::Px(10.0)),
                 display: Display::None,
                 ..default()
             },
             BackgroundColor(PANEL),
+            GlobalZIndex(35),
         ))
         .with_child((
             InspectorText,
@@ -193,15 +193,41 @@ fn outline(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inspector(
     hover: Res<Hover>,
     rules: Option<Res<Rules>>,
     view: Res<ViewState>,
-    mut panel: Query<&mut Node, With<Inspector>>,
+    mut panel: Query<(&mut Node, &ComputedNode), With<Inspector>>,
     mut text: Query<&mut Text, With<InspectorText>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    hover_map: Res<bevy::picking::hover::HoverMap>,
+    nodes: Query<(), With<Node>>,
+    time: Res<Time>,
+    ui_scale: Res<UiScale>,
+    mut rest: Local<(Option<u16>, f32)>,
 ) {
-    let (Ok(mut node), Ok(mut text)) = (panel.single_mut(), text.single_mut()) else { return };
-    let tile = hover.pinned.or(hover.tile);
+    let (Ok((mut node, computed)), Ok(mut text)) = (panel.single_mut(), text.single_mut()) else { return };
+    let window = windows.single().ok();
+    let cursor = window.and_then(|w| w.cursor_position());
+    // Shown once the pointer has rested on a tile a moment, and never over a panel.
+    let resting = hover.tile.filter(|_| !crate::play::over_ui(&hover_map, &nodes));
+    if rest.0 != resting {
+        *rest = (resting, 0.0);
+    } else {
+        rest.1 += time.delta_secs();
+    }
+    let tile = hover.pinned.or(resting.filter(|_| rest.1 >= 0.35));
+    if let (Some(cursor), Some(window)) = (cursor, window) {
+        // In the panels' units: logical pixels over the UI scale.
+        let s = ui_scale.0;
+        let size = computed.size() / (window.scale_factor() * s);
+        let (cursor, w, h) = (cursor / s, window.width() / s, window.height() / s);
+        let x = (cursor.x + 18.0).min(w - size.x - 8.0).max(8.0);
+        let y = if cursor.y + 18.0 + size.y > h - 8.0 { cursor.y - size.y - 12.0 } else { cursor.y + 18.0 };
+        node.left = Val::Px(x);
+        node.top = Val::Px(y.max(8.0));
+    }
     let (Some(rules), Some(view), Some(id)) = (rules, view.view(), tile) else {
         node.display = Display::None;
         return;

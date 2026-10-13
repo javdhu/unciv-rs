@@ -24,6 +24,8 @@ pub struct MapParams {
     pub wrap_x: u32,
     /// 0 ground, 1 objects (trees, borders), 2 water.
     pub kind: u32,
+    /// The hex grid over the ground, on or off.
+    pub grid: u32,
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
@@ -106,6 +108,7 @@ fn setup(
                     height: grid.height as u32,
                     wrap_x: grid.wrap_x as u32,
                     kind,
+                    grid: 0,
                 },
                 tiles: tiles.clone(),
                 palette: palette.clone(),

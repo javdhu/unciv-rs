@@ -32,6 +32,8 @@ struct MapParams {
     wrap_x: u32,
     // 0 ground, 1 objects (trees, borders), 2 water.
     kind: u32,
+    // The hex grid drawn over the ground (G, the minimap's Grid).
+    grid: u32,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> params: MapParams;
@@ -210,6 +212,13 @@ fn paint_ground(base: vec3<f32>, p: vec2<f32>, t: Tile, a: vec4<u32>, b: vec4<u3
     if (owner > 0u && (b.g & 1u) == 0u) {
         let outer = textureLoad(palette, vec2<i32>(i32(owner - 1u), 0), 0).rgb;
         c = mix(c, outer, 0.10);
+    }
+    // The grid: darker where the hex meets its neighbours. Pointy-top edges face 0, 60 and 120 degrees, at the
+    // apothem (half the pitch) from the centre.
+    if (params.grid != 0u) {
+        let d = p - t.centre;
+        let reach = max(abs(d.x), max(abs(dot(d, vec2<f32>(0.5, 0.8660254))), abs(dot(d, vec2<f32>(-0.5, 0.8660254)))));
+        c = mix(c, c * 0.5, 1.0 - smoothstep(0.012, 0.03, PITCH * 0.5 - reach));
     }
     return c;
 }

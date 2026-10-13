@@ -307,7 +307,7 @@ fn undo_reason(refusal: civ_sim::protocol::UndoRefusal) -> &'static str {
 }
 
 /// Whether the mouse is over a UI node, where a click belongs to the UI.
-fn over_ui(hover: &HoverMap, nodes: &Query<(), With<Node>>) -> bool {
+pub(crate) fn over_ui(hover: &HoverMap, nodes: &Query<(), With<Node>>) -> bool {
     hover.values().flat_map(|m| m.keys()).any(|e| nodes.contains(*e))
 }
 
@@ -664,6 +664,15 @@ fn highlight(
 /// The next own unit awaiting orders after `after`, in id order: moves left, not fortified, not automated, not
 /// told to wait.
 pub fn awaiting(view: &ViewState, selection: &Selection, after: Option<Key>) -> Option<Key> {
+    cycle(view, selection, after, false)
+}
+
+/// The unit that needs orders before `before`, wrapping around.
+pub fn awaiting_before(view: &ViewState, selection: &Selection, before: Option<Key>) -> Option<Key> {
+    cycle(view, selection, before, true)
+}
+
+fn cycle(view: &ViewState, selection: &Selection, from: Option<Key>, back: bool) -> Option<Key> {
     let v = view.view()?;
     let mut ready: Vec<Key> = v
         .units
@@ -674,7 +683,10 @@ pub fn awaiting(view: &ViewState, selection: &Selection, after: Option<Key>) -> 
         .filter(|k| !selection.skipped.contains(k))
         .collect();
     ready.sort();
-    match after.and_then(|a| ready.iter().position(|k| *k == a)) {
+    if back {
+        ready.reverse();
+    }
+    match from.and_then(|a| ready.iter().position(|k| *k == a)) {
         Some(i) => ready.get(i + 1).or(ready.first()).copied(),
         None => ready.first().copied(),
     }

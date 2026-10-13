@@ -1,12 +1,11 @@
 //! The notification log (docs/ACTIONS-SPEC.md, A1): every presented event the player should read, as a line of
-//! text (`notes.rs`), kept for the match. Decisions and losses also show as toasts when they arrive. The log
-//! opens from the top bar; clicking a line with a place looks at it.
+//! text (`notes.rs`), kept for the match. The turn's decisions and notes that matter also stack above End Turn.
+//! The log opens from the launch bar; clicking a line with a place looks at it.
 
 use crate::camera::MapCamera;
 use crate::client::RoundEvents;
 use crate::inspect::UiFont;
 use crate::notes::{describe, Note, NoteKind};
-use crate::play::Toast;
 use crate::playui::{clear, text, BUTTON_ON, DIM, TEXT, URGENT};
 use crate::rules::Rules;
 use crate::view_state::ViewState;
@@ -29,17 +28,28 @@ pub struct NoteLog {
 #[derive(Component)]
 struct LogPanel;
 
+/// Notifications above End Turn: what the engine waits on, then this turn's notes that matter.
+#[derive(Component)]
+struct Stack;
+
+#[derive(Component, Clone)]
+struct OpenDecision(crate::decisions::Decision);
+
+/// A card in the stack, which keeps a panel behind it over the map.
+#[derive(Component)]
+struct InStack;
+
 /// A line that looks at its place when clicked.
 #[derive(Component, Clone, Copy)]
 struct LookAt(u16);
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<NoteLog>()
-        .add_systems(OnEnter(crate::app::AppState::Match), panel.run_if(crate::play::playing))
+        .add_systems(OnEnter(crate::app::AppState::Match), (panel, stack_frame).run_if(crate::play::playing))
         .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<NoteLog>)
         .add_systems(
             Update,
-            (collect, draw, shade).chain().run_if(crate::play::playing).in_set(crate::app::InMatch),
+            (collect, draw, stack, shade).chain().run_if(crate::play::playing).in_set(crate::app::InMatch),
         );
 }
 
@@ -48,7 +58,6 @@ fn collect(
     view: Res<ViewState>,
     rules: Option<Res<Rules>>,
     mut log: ResMut<NoteLog>,
-    mut toasts: MessageWriter<Toast>,
 ) {
     let (Some(v), Some(rules)) = (view.view(), rules) else {
         rounds.clear();
@@ -60,9 +69,6 @@ fn collect(
                 continue;
             }
             let Some(note) = describe(&e.event, v, &rules) else { continue };
-            if matches!(note.kind, NoteKind::Decision | NoteKind::Bad) {
-                toasts.write(Toast(note.text.clone()));
-            }
             log.notes.push((v.turn, note));
         }
     }
@@ -77,7 +83,7 @@ fn panel(mut commands: Commands) {
         LogPanel,
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(crate::playui::LEFT_PANEL_TOP),
             left: Val::Px(12.0),
             width: Val::Px(340.0),
             max_height: Val::Percent(70.0),
@@ -139,14 +145,107 @@ fn draw(
     });
 }
 
+fn stack_frame(mut commands: Commands) {
+    commands.spawn((
+        Stack,
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(12.0),
+            bottom: Val::Px(12.0 + 56.0 + 30.0),
+            width: Val::Px(300.0),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::FlexEnd,
+            row_gap: Val::Px(4.0),
+            ..default()
+        },
+        crate::screens::PANEL_Z,
+    ));
+}
+
+/// The stack's cards: decisions first (a click opens one), then up to four of this turn's notes that are not
+/// plain information (a click looks at the place).
+#[allow(clippy::too_many_arguments)]
+fn stack(
+    mut commands: Commands,
+    log: Res<NoteLog>,
+    decisions: Res<crate::decisions::Decisions>,
+    view: Res<ViewState>,
+    rules: Option<Res<Rules>>,
+    font: Res<UiFont>,
+    slot: Query<(Entity, Option<&Children>), With<Stack>>,
+) {
+    let (Some(v), Ok((e, children))) = (view.view(), slot.single()) else { return };
+    if !log.is_changed() && !decisions.is_changed() {
+        return;
+    }
+    clear(&mut commands, children);
+    let notes: Vec<&Note> = log
+        .notes
+        .iter()
+        .rev()
+        .take_while(|(t, _)| *t == v.turn)
+        .map(|(_, n)| n)
+        .filter(|n| !matches!(n.kind, NoteKind::Info))
+        .take(4)
+        .collect();
+    commands.entity(e).with_children(|s| {
+        for d in decisions.list.iter().take(5) {
+            s.spawn((
+                OpenDecision(d.clone()),
+                LookAt(u16::MAX),
+                Button,
+                Hovered::default(),
+                observe(open_decision),
+                card(),
+                InStack,
+                BackgroundColor(crate::playui::PANEL),
+                children![text(&font, d.label(v, rules.as_deref()), 13.0, TEXT)],
+            ));
+        }
+        for note in notes.into_iter().rev() {
+            let colour = match note.kind {
+                NoteKind::Bad => URGENT,
+                NoteKind::Good => GOOD,
+                _ => TEXT,
+            };
+            let mut c = s.spawn((card(), InStack, BackgroundColor(crate::playui::PANEL), children![text(&font, note.text.clone(), 12.0, colour)]));
+            if let Some(tile) = note.tile {
+                c.insert((LookAt(tile), Button, Hovered::default(), observe(look)));
+            }
+        }
+    });
+}
+
+fn card() -> (Node, Outline) {
+    (
+        Node { padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)), border_radius: BorderRadius::all(Val::Px(4.0)), ..default() },
+        Outline::new(Val::Px(1.0), Val::ZERO, Color::srgba(1.0, 1.0, 1.0, 0.15)),
+    )
+}
+
+fn open_decision(
+    event: On<Activate>,
+    cards: Query<&OpenDecision>,
+    mut decisions: ResMut<crate::decisions::Decisions>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut screens: ResMut<crate::screens::Screens>,
+) {
+    if let Ok(OpenDecision(d)) = cards.get(event.entity) {
+        crate::decisions::open(d.clone(), &mut decisions, &mut selection, &mut screens);
+    }
+}
+
 fn look(event: On<Activate>, lines: Query<&LookAt>, land: Option<Res<crate::map::Land>>, mut cameras: Query<&mut MapCamera>) {
     let (Ok(LookAt(tile)), Some(land), Ok(mut camera)) = (lines.get(event.entity), land, cameras.single_mut()) else { return };
+    if *tile == u16::MAX {
+        return;
+    }
     let distance = camera.distance;
     camera.jump(land.0.grid.centre(*tile), distance);
 }
 
-fn shade(mut lines: Query<(&Hovered, &mut BackgroundColor), (With<LookAt>, Changed<Hovered>)>) {
-    for (hovered, mut colour) in &mut lines {
-        colour.0 = if hovered.get() { BUTTON_ON } else { Color::NONE };
+fn shade(mut lines: Query<(&Hovered, &mut BackgroundColor, Has<InStack>), (With<LookAt>, Changed<Hovered>)>) {
+    for (hovered, mut colour, stacked) in &mut lines {
+        colour.0 = if hovered.get() { BUTTON_ON } else if stacked { crate::playui::PANEL } else { Color::NONE };
     }
 }

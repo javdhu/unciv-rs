@@ -55,6 +55,11 @@ enum Press {
     Log,
     /// Show or hide the empire panel (`empire.rs`).
     Empire,
+    Tree,
+    Units,
+    Help,
+    /// A civ's badge in the ribbon: the civilizations panel.
+    Badge(u8),
     Coup(u8),
     Close,
     Tech(u32),
@@ -104,6 +109,9 @@ struct TreeScreen;
 struct PolicyScreen;
 #[derive(Component)]
 struct CivPanel;
+/// Met civs' badges under the top bar on the right.
+#[derive(Component)]
+struct Ribbon;
 #[derive(Component)]
 struct TradeWindow;
 #[derive(Component)]
@@ -117,7 +125,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Screens>)
         .add_systems(
             Update,
-            (mark, follow_path, tree, policies, civs, trade, offers, buttons, shade)
+            (mark, follow_path, tree, policies, civs, trade, offers, buttons, ribbon, shade)
                 .chain()
                 .run_if(playing)
                 .after(crate::map::MapSet::Rebuild)
@@ -167,9 +175,21 @@ fn frames(mut commands: Commands) {
         GlobalZIndex(21),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(6.0),
-            left: Val::Px(280.0),
-            column_gap: Val::Px(6.0),
+            // The launch bar, under the top bar on the left.
+            top: Val::Px(crate::playui::LAUNCH_TOP),
+            left: Val::Px(12.0),
+            column_gap: Val::Px(4.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        Ribbon,
+        PANEL_Z,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(crate::playui::LAUNCH_TOP),
+            right: Val::Px(12.0),
+            column_gap: Val::Px(4.0),
             ..default()
         },
     ));
@@ -205,7 +225,7 @@ fn frames(mut commands: Commands) {
         CivPanel,
         hidden(Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(crate::playui::LEFT_PANEL_TOP),
             left: Val::Px(12.0),
             width: Val::Px(300.0),
             max_height: Val::Percent(80.0),
@@ -235,7 +255,7 @@ fn frames(mut commands: Commands) {
         PANEL_Z,
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
+            top: Val::Px(crate::playui::RIGHT_PANEL_TOP),
             right: Val::Px(344.0),
             width: Val::Px(280.0),
             flex_direction: FlexDirection::Column,
@@ -849,6 +869,53 @@ fn offers(
 }
 
 /// The top bar's Policies and Civilizations buttons.
+/// The diplomacy ribbon: a badge per met major civ in its colours with its initial, ringed red at war.
+fn ribbon(
+    mut commands: Commands,
+    view: Res<ViewState>,
+    rules: Option<Res<Rules>>,
+    font: Res<UiFont>,
+    slot: Query<(Entity, Option<&Children>), With<Ribbon>>,
+    mut shown: Local<Vec<(u8, bool)>>,
+) {
+    let (Some(v), Some(rules), Ok((e, children))) = (view.view(), rules, slot.single()) else { return };
+    let major = |civ: u8| {
+        v.civs.iter().find(|c| c.id == civ).is_some_and(|c| {
+            !c.city_state && !rules.tables.nations.iter().any(|n| n.id == c.nation && n.barbarian == Some(true))
+        })
+    };
+    let met: Vec<(u8, bool)> = v.relations.iter().filter(|r| major(r.civ)).map(|r| (r.civ, r.at_war)).collect();
+    if *shown == met && children.is_some() {
+        return;
+    }
+    *shown = met.clone();
+    clear(&mut commands, children);
+    commands.entity(e).with_children(|r| {
+        for (civ, war) in met {
+            let (name, outer, inner) = nation(&rules, v, civ);
+            let initial: String = name.chars().next().map(|c| c.to_string()).unwrap_or_default();
+            r.spawn((
+                Press::Badge(civ),
+                Button,
+                Hovered::default(),
+                observe(on_press),
+                Node {
+                    width: Val::Px(30.0),
+                    height: Val::Px(30.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(if war { 2.0 } else { 1.0 })),
+                    border_radius: BorderRadius::all(Val::Px(15.0)),
+                    ..default()
+                },
+                BackgroundColor(outer),
+                BorderColor::all(if war { Color::srgb(0.95, 0.3, 0.25) } else { Color::srgba(1.0, 1.0, 1.0, 0.3) }),
+                children![text(&font, initial, 14.0, inner)],
+            ));
+        }
+    });
+}
+
 fn buttons(
     mut commands: Commands,
     font: Res<UiFont>,
@@ -863,17 +930,20 @@ fn buttons(
     }
     *made = true;
     commands.entity(e).with_children(|b| {
+        b.spawn(button(&font, Press::Tree, "Tech", TEXT));
         b.spawn(button(&font, Press::OpenPolicies, "Policies", TEXT));
         b.spawn(button(&font, Press::OpenCivs, "Civilizations", TEXT));
         b.spawn(button(&font, Press::Empire, "Empire", TEXT));
+        b.spawn(button(&font, Press::Units, "Units", TEXT));
         b.spawn(button(&font, Press::Log, "Log", TEXT));
+        b.spawn(button(&font, Press::Help, "?", TEXT));
     });
     screens.stale = false;
 }
 
 fn shade(mut buttons: Query<(&Hovered, &mut BackgroundColor, &Press), Without<TreeScreen>>, screens: Res<Screens>) {
     for (hovered, mut colour, press) in &mut buttons {
-        if matches!(press, Press::Tech(_)) {
+        if matches!(press, Press::Tech(_) | Press::Badge(_)) {
             continue;
         }
         let armed = screens.armed.as_ref() == Some(press);
@@ -892,6 +962,8 @@ fn on_press(
     rules: Option<Res<Rules>>,
     mut log: ResMut<crate::log::NoteLog>,
     mut empire: ResMut<crate::empire::Empire>,
+    mut units: ResMut<crate::units::UnitsPanel>,
+    mut help: ResMut<crate::help::Help>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
     let press = press.clone();
@@ -909,22 +981,18 @@ fn on_press(
             screens.policies = !screens.policies;
             selection.research_open = false;
         }
-        // The civilizations, empire and log panels share the left side: one at a time.
-        Press::OpenCivs => {
-            screens.civs = !screens.civs;
-            log.open = false;
-            empire.open = false;
+        // The panels on the left open one at a time.
+        Press::OpenCivs => crate::help::only(crate::keys::Act::Civilizations, &mut screens, &mut empire, &mut log, &mut units),
+        Press::Badge(_) => {
+            if !screens.civs {
+                crate::help::only(crate::keys::Act::Civilizations, &mut screens, &mut empire, &mut log, &mut units);
+            }
         }
-        Press::Log => {
-            log.open = !log.open;
-            screens.civs = false;
-            empire.open = false;
-        }
-        Press::Empire => {
-            empire.open = !empire.open;
-            screens.civs = false;
-            log.open = false;
-        }
+        Press::Log => crate::help::only(crate::keys::Act::Log, &mut screens, &mut empire, &mut log, &mut units),
+        Press::Empire => crate::help::only(crate::keys::Act::Empire, &mut screens, &mut empire, &mut log, &mut units),
+        Press::Units => crate::help::only(crate::keys::Act::Units, &mut screens, &mut empire, &mut log, &mut units),
+        Press::Tree => selection.research_open = !selection.research_open,
+        Press::Help => help.open = !help.open,
         Press::Coup(target) => {
             outbox.submit(Action::AttemptCoup { target });
         }
