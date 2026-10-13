@@ -12,6 +12,7 @@ mod renamed_content;
 mod sight_audit;
 mod slices;
 mod smoke;
+mod tradable;
 mod watched_match;
 
 /// A file added to this directory runs only once it is declared above.
