@@ -11,6 +11,7 @@ mod hosted;
 mod offers;
 pub mod protocol;
 pub mod queries;
+pub mod rooms;
 pub mod session;
 #[cfg(feature = "js")]
 pub use hosted::HostedGame;

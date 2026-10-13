@@ -1,6 +1,7 @@
 //! Local, private-room host. The only network game state is a seat-filtered projection.
 mod host;
 mod http;
+mod site;
 mod store;
 
 pub use host::{Config, Host, HostError};

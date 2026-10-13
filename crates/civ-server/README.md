@@ -23,6 +23,20 @@ Environment options:
 | `CIV_DATABASE` | `civ-server.sqlite3` | Durable SQLite file |
 | `CIV_ALLOWED_ORIGINS` | Loopback origins above | Comma-separated exact browser origins |
 | `CIV_SECURE_COOKIE` | unset | Set `1` when serving through TLS |
+| `CIV_STATIC_DIR` | unset | Directory of the browser client's files, served on the API's origin |
+
+With `CIV_STATIC_DIR` set (it must be an existing directory), every GET and HEAD
+outside `/api` and `/health` is answered from it: `/` is `index.html`, other paths
+name files. Each segment is percent-decoded and must be a plain non-empty name: one
+that starts with `.`, or contains `..`, `/`, `\`, `:` or NUL, is refused. The file
+is then resolved through any symlinks and must still lie inside the canonical
+directory and be a regular file. Anything refused, missing or a directory answers
+404 `{ "error": "notFound" }`. Responses carry `Cross-Origin-Opener-Policy:
+same-origin`, `Cross-Origin-Embedder-Policy: require-corp`,
+`Cross-Origin-Resource-Policy: same-origin`, `X-Content-Type-Options: nosniff` and
+`Cache-Control: no-cache`. When `<file>.br` exists and `Accept-Encoding` accepts
+`br`, it is served with `Content-Encoding: br` and the original's type. File
+requests need no `Origin`; other methods on those paths go to the API as before.
 
 A different bind address requires explicit allowed origins. This executable does
 not terminate TLS. Mutating HTTP requests and WebSocket upgrades must include an
@@ -52,6 +66,9 @@ stored in SQLite. Losing the cookie loses access to that guest's seats.
 6. Use `ClientMessage`/`ServerMessage` from `civ-sim::protocol` for commands,
    queries and resynchronization. Commands never accept a civilization/actor ID.
    Keep the same command identity and payload when retrying after lost receipts.
+
+Every `/api` request and response body, errors included, is a type in
+`civ_sim::rooms`.
 
 The room response contains its dimensions/capacity, occupied-seat count, caller's
 seat, owner status, turn duration and match ID. Only the owner sees the invite.

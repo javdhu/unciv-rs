@@ -35,8 +35,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if address.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) && origins.is_none() {
         return Err("non-default bind requires explicit CIV_ALLOWED_ORIGINS".into());
     }
+    let static_dir = std::env::var("CIV_STATIC_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    if let Some(dir) = &static_dir {
+        if !dir.is_dir() {
+            return Err(format!("CIV_STATIC_DIR {} is not a directory", dir.display()).into());
+        }
+        eprintln!("Serving files from {}", dir.display());
+    }
     let mut config = Config {
         secure_cookie,
+        static_dir,
         ..Config::default()
     };
     if let Some(origins) = origins {
