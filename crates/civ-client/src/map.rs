@@ -1,14 +1,18 @@
-//! The map drawn from the view (docs/VISUAL-SPEC.md): land, water, trees and an overlay of rivers, roads,
-//! improvements and borders, in chunks of 8x8 tiles. A view change marks the chunks of the tiles it touched
-//! and of their neighbours (heights and fades blend across edges); at most three chunks rebuild per frame.
+//! The map drawn from the view (docs/VISUAL-SPEC.md): the land's shape, water, trees, and an overlay of
+//! borders, in chunks of 8x8 tiles, shaded by the map material (src/paint.rs), which paints what lies on the
+//! land, the owner's tint and the fog from per-tile data. A chunk rebuilds only when a tile's shape changes in
+//! it or beside it (heights blend across edges): becoming known, its ground, features, rivers, owner (borders)
+//! or a mine; sight, roads and other improvements only rewrite the tile texture. At most three chunks rebuild a
+//! frame.
 
 use crate::client::ViewChanged;
 use crate::hex::{self, Grid, PITCH, R};
-use crate::relief::{hash1, remembered, srgb, Cell, Relief, SLATE};
+use crate::paint::Paint;
+use crate::relief::{hash1, srgb, Cell, Improvement, Relief, SLATE};
 use crate::rules::{Feature, Ground, Rules};
 use crate::view_state::ViewState;
 use bevy::asset::RenderAssetUsages;
-use bevy::color::{LinearRgba, Mix};
+use bevy::color::LinearRgba;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
@@ -17,10 +21,10 @@ use std::collections::BTreeSet;
 pub const CHUNK: u16 = 8;
 const PER_FRAME: usize = 3;
 /// Lattice rings of a hex and their radii (fractions of the corner distance): four rings, 96 triangles a hex,
-/// crowded toward the edge, where colours, fades and shores change.
+/// crowded toward the edge, where shores and blends change.
 const RINGS: [f32; 5] = [0.0, 0.42, 0.72, 0.9, 1.0];
 
-/// The known world the meshes were last built from; picking and the inspector read it too.
+/// The known world the meshes were last built from; picking, the inspector and the tile texture read it too.
 #[derive(Resource)]
 pub struct Land(pub Relief);
 
@@ -38,32 +42,30 @@ impl Dirty {
 }
 
 #[derive(Resource)]
-pub(crate) struct Materials {
-    land: Handle<StandardMaterial>,
-    water: Handle<StandardMaterial>,
-    overlay: Handle<StandardMaterial>,
-    slate: Handle<StandardMaterial>,
-}
+struct Slate(Handle<StandardMaterial>);
 
 #[derive(Component)]
-pub(crate) struct ChunkPart((u16, u16));
+struct ChunkPart((u16, u16));
 
 #[derive(Component)]
 struct SlatePlane;
 
-pub fn plugin(app: &mut App) {
-    app.init_resource::<Dirty>()
-        .add_systems(Startup, materials)
-        .add_systems(Update, (track, rebuild).chain());
+/// Where other plugins hook into the map's frame: after the relief is refreshed, before chunks rebuild.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MapSet {
+    Track,
+    Rebuild,
 }
 
-fn materials(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
-    commands.insert_resource(Materials {
-        land: materials.add(StandardMaterial { perceptual_roughness: 0.9, reflectance: 0.2, ..default() }),
-        water: materials.add(StandardMaterial { perceptual_roughness: 0.45, reflectance: 0.3, ..default() }),
-        overlay: materials.add(StandardMaterial { perceptual_roughness: 0.85, reflectance: 0.2, ..default() }),
-        slate: materials.add(StandardMaterial { base_color: SLATE, unlit: true, ..default() }),
-    });
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Dirty>()
+        .configure_sets(Update, (MapSet::Track, MapSet::Rebuild).chain())
+        .add_systems(Startup, slate)
+        .add_systems(Update, (track.in_set(MapSet::Track), rebuild.in_set(MapSet::Rebuild)));
+}
+
+fn slate(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+    commands.insert_resource(Slate(materials.add(StandardMaterial { base_color: SLATE, unlit: true, ..default() })));
 }
 
 fn chunk_of(grid: &Grid, id: u16) -> (u16, u16) {
@@ -71,7 +73,13 @@ fn chunk_of(grid: &Grid, id: u16) -> (u16, u16) {
     (col / CHUNK, row / CHUNK)
 }
 
-/// Refresh the relief and mark chunks when the view or the rules change.
+/// What a tile's meshes depend on: whether it is known, its ground, features, rivers, owner and a mine's pit.
+fn shape(cell: &Option<Cell>) -> Option<(Ground, u16, u8, Option<u8>, bool)> {
+    cell.map(|c| (c.ground, c.features, c.rivers, c.owner, c.improvement == Improvement::Mine))
+}
+
+/// Refresh the relief when the view or the rules change, and mark the chunks whose shape changed.
+#[allow(clippy::too_many_arguments)]
 fn track(
     mut commands: Commands,
     view: Res<ViewState>,
@@ -80,45 +88,39 @@ fn track(
     mut dirty: ResMut<Dirty>,
     land: Option<Res<Land>>,
     parts: Query<Entity, Or<(With<ChunkPart>, With<SlatePlane>)>>,
-    materials: Res<Materials>,
+    slate: Res<Slate>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let (Some(rules), Some(v)) = (rules, view.view()) else {
         changes.clear();
         return;
     };
-    let relief = Relief::new(v, &rules);
-    let grid = relief.grid;
-    let mut all = rules.is_added() || land.as_ref().is_none_or(|l| l.0.grid != grid || l.0.liveries != relief.liveries);
-    let mut any = false;
-    let mut touched = Vec::new();
-    for ViewChanged(c) in changes.read() {
-        any = true;
-        all |= c.all;
-        touched.extend(c.tiles.iter().copied());
-    }
-    if !(any || all) {
+    let any = changes.read().count() > 0;
+    if !any && !rules.is_added() && land.is_some() {
         return;
     }
+    let relief = Relief::new(v, &rules);
+    let grid = relief.grid;
+    let all = rules.is_added() || land.as_ref().is_none_or(|l| l.0.grid != grid || l.0.liveries != relief.liveries);
     if all {
-        // A new frame of reference: start over.
         for e in &parts {
             commands.entity(e).despawn();
         }
         dirty.chunks.clear();
-        let (cw, ch) = (grid.width.div_ceil(CHUNK), grid.height.div_ceil(CHUNK));
-        for cy in 0..ch {
-            for cx in 0..cw {
+        for cy in 0..grid.height.div_ceil(CHUNK) {
+            for cx in 0..grid.width.div_ceil(CHUNK) {
                 dirty.chunks.insert((cx, cy));
             }
         }
-        spawn_slate(&mut commands, &grid, &materials, &mut meshes);
-    } else {
-        for id in touched {
-            dirty.chunks.insert(chunk_of(&grid, id));
-            for d in 0..6 {
-                if let Some(n) = grid.neighbour(id, d) {
-                    dirty.chunks.insert(chunk_of(&grid, n));
+        spawn_slate(&mut commands, &grid, &slate, &mut meshes);
+    } else if let Some(land) = &land {
+        for id in 0..grid.len() as u16 {
+            if shape(&land.0.cells[id as usize]) != shape(&relief.cells[id as usize]) {
+                dirty.chunks.insert(chunk_of(&grid, id));
+                for d in 0..6 {
+                    if let Some(n) = grid.neighbour(id, d) {
+                        dirty.chunks.insert(chunk_of(&grid, n));
+                    }
                 }
             }
         }
@@ -126,7 +128,7 @@ fn track(
     commands.insert_resource(Land(relief));
 }
 
-fn spawn_slate(commands: &mut Commands, grid: &Grid, materials: &Materials, meshes: &mut Assets<Mesh>) {
+fn spawn_slate(commands: &mut Commands, grid: &Grid, slate: &Slate, meshes: &mut Assets<Mesh>) {
     let (west, east, south, north) = grid.bounds();
     let margin = 400.0;
     let size = Vec2::new(east - west + 2.0 * margin, north - south + 2.0 * margin);
@@ -134,22 +136,21 @@ fn spawn_slate(commands: &mut Commands, grid: &Grid, materials: &Materials, mesh
     commands.spawn((
         SlatePlane,
         Mesh3d(meshes.add(Plane3d::default().mesh().size(size.x, size.y))),
-        MeshMaterial3d(materials.slate.clone()),
+        MeshMaterial3d(slate.0.clone()),
         Transform::from_translation(hex::world(centre, -0.6)),
         NotShadowCaster,
     ));
 }
 
-pub(crate) fn rebuild(
+fn rebuild(
     mut commands: Commands,
     land: Option<Res<Land>>,
-    rules: Option<Res<Rules>>,
+    paint: Option<Res<Paint>>,
     mut dirty: ResMut<Dirty>,
     parts: Query<(Entity, &ChunkPart)>,
-    materials: Res<Materials>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let (Some(land), Some(rules)) = (land, rules) else { return };
+    let (Some(land), Some(paint)) = (land, paint) else { return };
     let relief = &land.0;
     let batch: Vec<_> = dirty.chunks.iter().copied().take(PER_FRAME).collect();
     for key in batch {
@@ -161,14 +162,14 @@ pub(crate) fn rebuild(
         }
         let tiles = chunk_tiles(&relief.grid, key);
         let started = bevy::platform::time::Instant::now();
-        let built = build_chunk(relief, &rules, &tiles);
+        let built = build_chunk(relief, &tiles);
         dirty.built_ms.push(started.elapsed().as_secs_f32() * 1000.0);
         let copies: &[f32] = if relief.grid.wrap_x { &[-1.0, 0.0, 1.0] } else { &[0.0] };
         for (mesh, material, shadows) in [
-            (built.land, &materials.land, true),
-            (built.water, &materials.water, false),
-            (built.trees, &materials.land, true),
-            (built.overlay, &materials.overlay, false),
+            (built.land, &paint.ground, true),
+            (built.water, &paint.water, false),
+            (built.trees, &paint.objects, true),
+            (built.overlay, &paint.objects, false),
         ] {
             let Some(mesh) = mesh else { continue };
             let handle = meshes.add(mesh);
@@ -319,7 +320,7 @@ struct Built {
     overlay: Option<Mesh>,
 }
 
-fn build_chunk(relief: &Relief, rules: &Rules, tiles: &[u16]) -> Built {
+fn build_chunk(relief: &Relief, tiles: &[u16]) -> Built {
     let mut land = Builder::default();
     let mut water = Builder::default();
     let mut trees = Builder::default();
@@ -328,9 +329,6 @@ fn build_chunk(relief: &Relief, rules: &Rules, tiles: &[u16]) -> Built {
         let Some(cell) = relief.cell(id).copied() else { continue };
         hex_patch(relief, id, &mut land, &mut water);
         features(relief, id, &cell, &mut trees, &mut overlay);
-        rivers(relief, id, &cell, &mut overlay);
-        roads(relief, id, &cell, &mut overlay);
-        improvement(relief, rules, id, &cell, &mut overlay);
         borders(relief, id, &cell, &mut overlay);
     }
     Built { land: land.finish(), water: water.finish(), trees: trees.finish(), overlay: overlay.finish() }
@@ -361,19 +359,22 @@ fn hex_patch(relief: &Relief, id: u16, land: &mut Builder, water: &mut Builder) 
                 continue;
             };
             let h = relief.height_of(&sample);
-            // Beside an unexplored tile the land continues flat. Forward differences: the same function of
-            // position on both sides of a seam.
-            let at = |q: Vec2| relief.height(q).unwrap_or(h);
+            // Forward differences. The edge ring is shared with the neighbouring hex, so it evaluates the exact
+            // function of position (beside an unexplored tile the land continues flat); inside the hex the
+            // sample's own triangle serves.
+            let at = |q: Vec2| {
+                if r == n { relief.height(q).unwrap_or(h) } else { relief.height_near(&sample, q) }
+            };
             let e = 0.04;
             let (dx, dy) = (at(p + Vec2::X * e) - h, at(p + Vec2::Y * e) - h);
             // Ground gradient (x east, y north) to a world normal (z south).
             let normal = Vec3::new(-dx, e, dy).normalize();
-            let fade = relief.fade_of(&sample);
-            let colour = relief.colour_of(&sample, h, normal.y).mix(&slate, fade);
-            let wc = relief.water_of(&sample, h).mix(&slate, fade);
+            let colour = relief.colour_of(&sample, h, normal.y);
+            // Water carries the depth below it in its alpha, for the shader's colour and foam.
+            let depth = LinearRgba::new(1.0, 1.0, 1.0, (-h).clamp(0.0, 1.0));
             ring.push((
                 land.vertex(hex::world(p, h), normal, colour),
-                water.vertex(hex::world(p, 0.0), Vec3::Y, wc),
+                water.vertex(hex::world(p, 0.0), Vec3::Y, depth),
                 h < 0.02,
             ));
         }
@@ -403,10 +404,6 @@ fn hex_patch(relief: &Relief, id: u16, land: &mut Builder, water: &mut Builder) 
     }
 }
 
-fn shade(cell: &Cell, c: LinearRgba) -> LinearRgba {
-    if cell.visible { c } else { remembered(c) }
-}
-
 /// Points scattered over a hex, fixed per tile and salt.
 fn scatter(relief: &Relief, id: u16, count: usize, radius: f32, salt: u32) -> Vec<Vec2> {
     let c = relief.grid.centre(id);
@@ -420,7 +417,7 @@ fn scatter(relief: &Relief, id: u16, count: usize, radius: f32, salt: u32) -> Ve
 }
 
 fn features(relief: &Relief, id: u16, cell: &Cell, trees: &mut Builder, overlay: &mut Builder) {
-    let trunk = shade(cell, srgb(0x5A4632));
+    let trunk = srgb(0x5A4632);
     // `h` is the tree's whole height.
     let tree = |b: &mut Builder, p: Vec2, kind: u32, h: f32| {
         let y = relief.height(p).unwrap_or(0.0);
@@ -429,22 +426,22 @@ fn features(relief: &Relief, id: u16, cell: &Cell, trees: &mut Builder, overlay:
             // Conifer.
             0 => {
                 b.frustum(base, 0.05 * h, 0.035 * h, 0.15 * h, 5, trunk);
-                b.frustum(base + Vec3::Y * 0.1 * h, 0.30 * h, 0.0, 0.9 * h, 7, shade(cell, srgb(0x2F4A34)));
+                b.frustum(base + Vec3::Y * 0.1 * h, 0.30 * h, 0.0, 0.9 * h, 7, srgb(0x2F4A34));
             }
             // Broadleaf.
             1 => {
                 b.frustum(base, 0.05 * h, 0.04 * h, 0.5 * h, 5, trunk);
-                b.ball(base + Vec3::Y * 0.62 * h, 0.38 * h, shade(cell, srgb(0x3F5F2F)));
+                b.ball(base + Vec3::Y * 0.62 * h, 0.38 * h, srgb(0x3F5F2F));
             }
             // Jungle broadleaf.
             2 => {
                 b.frustum(base, 0.05 * h, 0.04 * h, 0.5 * h, 5, trunk);
-                b.ball(base + Vec3::Y * 0.6 * h, 0.42 * h, shade(cell, srgb(0x2E5A2A)));
+                b.ball(base + Vec3::Y * 0.6 * h, 0.42 * h, srgb(0x2E5A2A));
             }
             // Palm.
             3 => {
                 b.frustum(base, 0.04 * h, 0.03 * h, 0.85 * h, 5, trunk);
-                b.frustum(base + Vec3::Y * 0.82 * h, 0.45 * h, 0.0, 0.18 * h, 7, shade(cell, srgb(0x4F7A35)));
+                b.frustum(base + Vec3::Y * 0.82 * h, 0.45 * h, 0.0, 0.18 * h, 7, srgb(0x4F7A35));
             }
             // Bare trunk.
             _ => b.frustum(base, 0.05 * h, 0.02 * h, h, 5, trunk),
@@ -487,93 +484,12 @@ fn features(relief: &Relief, id: u16, cell: &Cell, trees: &mut Builder, overlay:
         }
     }
     if cell.has(Feature::Wonder) {
-        overlay.post(relief, relief.grid.centre(id), 0.08, 0.6, shade(cell, srgb(0xC9A94B)));
+        overlay.post(relief, relief.grid.centre(id), 0.08, 0.6, srgb(0xC9A94B));
     }
 }
 
 /// The edge facing direction `d`, moved `inset` toward the centre; its ends move along the corner bisectors,
 /// so insets of neighbouring edges meet at the corner.
-fn edge(relief: &Relief, id: u16, d: usize, samples: usize, inset: f32) -> Vec<Vec2> {
-    let c = relief.grid.centre(id);
-    let shrink = 1.0 - inset / (R * (60f32).to_radians().sin());
-    let (a, b) = (hex::corner((d + 5) % 6) * shrink, hex::corner(d) * shrink);
-    (0..=samples).map(|i| c + a + (b - a) * (i as f32 / samples as f32)).collect()
-}
-
-fn rivers(relief: &Relief, id: u16, cell: &Cell, overlay: &mut Builder) {
-    for d in 0..6 {
-        if cell.rivers & (1 << d) == 0 {
-            continue;
-        }
-        let other = relief.grid.neighbour(id, d).filter(|n| relief.cell(*n).is_some());
-        if other.is_some_and(|n| n < id) {
-            continue;
-        }
-        overlay.ribbon(relief, &edge(relief, id, d, 6, 0.0), 0.14, 0.012, shade(cell, srgb(0x3A7FA2)));
-    }
-}
-
-fn roads(relief: &Relief, id: u16, cell: &Cell, overlay: &mut Builder) {
-    if cell.road == 0 {
-        return;
-    }
-    let c = relief.grid.centre(id);
-    for d in 0..6 {
-        let Some(n) = relief.grid.neighbour(id, d) else { continue };
-        let Some(other) = relief.cell(n) else { continue };
-        if other.road == 0 || n < id {
-            continue;
-        }
-        let step = hex::direction(d) * PITCH;
-        let rail = cell.road == 2 && other.road == 2;
-        let pillaged = cell.road_pillaged || other.road_pillaged;
-        let points: Vec<Vec2> = (0..=8).map(|i| c + step * (i as f32 / 8.0)).collect();
-        let pieces: Vec<&[Vec2]> =
-            if pillaged { points.chunks(2).filter(|p| p.len() == 2).collect() } else { vec![&points[..]] };
-        let side = Vec2::new(-step.y, step.x).normalize();
-        for piece in pieces {
-            if rail {
-                overlay.ribbon(relief, piece, 0.14, 0.01, shade(cell, srgb(0x6E6A63)));
-                for s in [-0.035f32, 0.035] {
-                    let line: Vec<Vec2> = piece.iter().map(|p| *p + side * s).collect();
-                    overlay.ribbon(relief, &line, 0.012, 0.02, shade(cell, srgb(0x3B3A38)));
-                }
-            } else {
-                overlay.ribbon(relief, piece, 0.10, 0.01, shade(cell, srgb(0x8A7556)));
-            }
-        }
-    }
-}
-
-fn improvement(relief: &Relief, rules: &Rules, id: u16, cell: &Cell, overlay: &mut Builder) {
-    let Some(improvement) = cell.improvement else { return };
-    let c = relief.grid.centre(id);
-    let dim = |x: LinearRgba| {
-        let x = shade(cell, x);
-        if cell.improvement_pillaged { x * 0.5 } else { x }
-    };
-    match rules.improvement(improvement) {
-        "Farm" => {
-            for i in 0..5 {
-                let y = -0.24 + 0.12 * i as f32;
-                let row = [c + Vec2::new(-0.3, y), c + Vec2::new(0.0, y), c + Vec2::new(0.3, y)];
-                let colour = if i % 2 == 0 { srgb(0xB9A75A) } else { srgb(0x8FA24C) };
-                overlay.ribbon(relief, &row, 0.12, 0.008, dim(colour));
-            }
-        }
-        "Mine" => {
-            let cut = [c + Vec2::new(-0.15, 0.0), c, c + Vec2::new(0.15, 0.0)];
-            overlay.ribbon(relief, &cut, 0.3, 0.01, dim(srgb(0x4A4540)));
-        }
-        "Pasture" => {
-            let ring: Vec<Vec2> =
-                (0..=16).map(|i| c + Vec2::from_angle(std::f32::consts::TAU * i as f32 / 16.0) * 0.45 * R).collect();
-            overlay.ribbon(relief, &ring, 0.025, 0.03, dim(srgb(0x8A7556)));
-        }
-        _ => overlay.post(relief, c + Vec2::new(0.25, -0.2), 0.03, 0.15, dim(srgb(0x8A7556))),
-    }
-}
-
 fn borders(relief: &Relief, id: u16, cell: &Cell, overlay: &mut Builder) {
     let Some(owner) = cell.owner else { return };
     let Some((outer, inner)) = relief.liveries.get(&owner).copied() else { return };
@@ -585,8 +501,8 @@ fn borders(relief: &Relief, id: u16, cell: &Cell, overlay: &mut Builder) {
             continue;
         }
         let line = |inset: f32| border_edge(relief, id, d, inset, ours(d + 5), ours(d + 1));
-        overlay.ribbon(relief, &line(0.05 + 0.035), 0.07, 0.015, shade(cell, outer));
-        overlay.ribbon(relief, &line(0.05 + 0.07 + 0.015), 0.03, 0.016, shade(cell, inner));
+        overlay.ribbon(relief, &line(0.05 + 0.035), 0.07, 0.015, outer);
+        overlay.ribbon(relief, &line(0.05 + 0.07 + 0.015), 0.03, 0.016, inner);
     }
 }
 

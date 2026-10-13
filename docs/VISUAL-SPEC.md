@@ -216,22 +216,27 @@ Estimates, measured in M1 and M2:
 
 The city screen, research, policies and diplomacy (M3 and later), natural-wonder models, combat close-ups.
 
-## Where M1 differs from this spec
+## How M1 draws it
 
-Built 2026-10-13, for review. Each of these is a deviation to accept or send back.
+Javed's review, 2026-10-13: the look stands as M2's base; "things that are terrain should be terrain not
+stickers"; the mesh, light and mountain changes below stand.
 
-- Hex mesh: four rings at 0.42, 0.72, 0.9 and 1.0 of the corner distance (96 triangles a hex, 983k on the
-  largest map), not three even rings. Even rings blurred every edge, because colour changes inside a third of
-  a hex; crowding the rings toward the edge keeps the 0.20 R blend crisp.
-- Light: sun 3,000 lux, ambient 400 (cd/m²), which holds the 40% shadow ratio. At 10,000 lux the default
-  exposure washed every colour out.
-- Water: roughness 0.45. At a glassier value the sun's glint whitened a whole edge of the map.
-- Rivers are ribbons laid along the edges in the lake colour, not channels cut into the land: a 0.14 m channel
-  is finer than the mesh.
-- Mountains add ridged variation (0.8 to 1.2 of the peak) so a peak reads as rock, not a cone. Rock needs height
-  above 0.40 m as well as a steep slope, so hills keep their ground's colour.
-- Not built yet: the 0.35 s fade when a tile comes into sight (M2 presentation), normal-map waves on the water,
-  natural-wonder models (a marker post stands in), city meshes and units (M2).
+- Shape is geometry: the heightfield carries hills, mountains with ridged crags, river beds (0.06 m deep along
+  river edges, both banks agreeing), mine pits, marsh and oasis pools and atoll rings.
+- What lies on the land is painted per pixel by the map shader (`crates/civ-client/src/shaders/map.wesl`) from
+  a texture of per-tile data: river water in its bed with wet banks, roads and railroads to each neighbour that
+  has one, furrowed fields at an angle fixed per tile, a mine's dark floor, a pasture's fence ring, the owner's
+  10% tint, remembered tiles' colour, the edge fade to slate and the 0.35 s reveal. A change in sight,
+  ownership, roads or improvements rewrites the texture; only a change of shape rebuilds a chunk.
+- Water takes its colour, shore foam and small moving waves (0.3 Hz) in the same shader, from the depth each
+  water vertex carries; remembered water lies still.
+- Hex mesh: four rings at 0.42, 0.72, 0.9 and 1.0 of the corner distance (96 triangles a hex), crowded toward
+  the edge where shores and blends change.
+- Light: sun 3,000 lux, ambient 400 (cd/m²), holding the 40% shadow ratio. Water roughness 0.45.
+- Rock needs height above 0.40 m as well as a steep slope, so hills keep their ground's colour.
+- Measured 2026-10-13: chunk build 2.05 ms median (budget 2 ms), 3.3 ms worst; native 112-120 fps with a round
+  closing every frame; wasm download 7.8 MB (WebGPU) and 8.4 MB (WebGL2) brotli.
+- Not built yet: natural-wonder models (a marker post stands in), city meshes and units (M2).
 
 ## Choices
 

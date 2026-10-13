@@ -23,7 +23,7 @@ pub struct Cell {
     pub rivers: u8,
     pub road: u8,
     pub road_pillaged: bool,
-    pub improvement: Option<u32>,
+    pub improvement: Improvement,
     pub improvement_pillaged: bool,
     pub resource: Option<u32>,
     pub owner: Option<u8>,
@@ -74,6 +74,16 @@ impl Cell {
     }
 }
 
+/// How an improvement shows on the land (src/shaders/map.wesl paints it; a mine is also cut in).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Improvement {
+    None,
+    Farm,
+    Mine,
+    Pasture,
+    Other,
+}
+
 pub fn bit(f: Feature) -> u16 {
     1 << f as u16
 }
@@ -109,7 +119,13 @@ impl Relief {
                     rivers: t.river_edges,
                     road: t.road,
                     road_pillaged: t.road_pillaged,
-                    improvement: t.improvement,
+                    improvement: match t.improvement.map(|i| rules.improvement(i)) {
+                        None => Improvement::None,
+                        Some("Farm") => Improvement::Farm,
+                        Some("Mine") => Improvement::Mine,
+                        Some("Pasture") => Improvement::Pasture,
+                        Some(_) => Improvement::Other,
+                    },
                     improvement_pillaged: t.improvement_pillaged,
                     resource: t.resource,
                     owner: t.owner,
@@ -166,7 +182,7 @@ impl Relief {
     pub fn sample(&self, p: Vec2) -> Option<Sample> {
         let (home, corners, weights) = self.triangle(p)?;
         self.cell(home)?;
-        let mut sample = Sample { p, home, corners: [None; 3] };
+        let mut sample = Sample { p, home, corners: [None; 3], centres: corners.map(|(_, c)| c) };
         let mut total = 0.0;
         for (slot, ((tile, centre), w)) in sample.corners.iter_mut().zip(corners.iter().zip(weights)) {
             if let Some(cell) = tile.and_then(|t| self.cell(t)) {
@@ -186,12 +202,31 @@ impl Relief {
         self.sample(p).map(|s| self.height_of(&s))
     }
 
+    /// Height at `q`, a point near `s.p`, weighed over `s`'s triangle without looking it up again. Close to
+    /// `height(q)` but not equal across a triangle's edge, so only for points no other mesh shares.
+    pub fn height_near(&self, s: &Sample, q: Vec2) -> f32 {
+        let weights = barycentric(q, s.centres[0], s.centres[1], s.centres[2]);
+        let mut near = Sample { p: q, ..*s };
+        let mut total = 0.0;
+        for (corner, w) in near.corners.iter_mut().zip(weights) {
+            if let Some(c) = corner {
+                c.weight = w.max(0.0);
+                total += c.weight;
+            }
+        }
+        if total > 0.0 {
+            near.corners.iter_mut().flatten().for_each(|c| c.weight /= total);
+        }
+        self.height_of(&near)
+    }
+
     pub fn height_of(&self, s: &Sample) -> f32 {
         let p = s.p;
         let sharp = s.sharpened(3);
         let mut base = 0.0;
         let mut relief = 0.0f32;
         let mut dip = 0.0f32;
+        let mut cut = 0.0f32;
         let corners = s.corners;
         for (i, corner) in corners.iter().enumerate() {
             let Some(k) = corner else { continue };
@@ -222,15 +257,26 @@ impl Relief {
             if k.cell.has(Feature::Atoll) {
                 relief = relief.max(0.25 * cosine_bump((d - 0.5 * R).abs() / 0.1));
             }
+            // Cut into the land: a mine's pit, and river beds along river edges (both banks' tiles hold the
+            // edge, so the bed is whole).
+            if k.cell.improvement == Improvement::Mine {
+                cut = cut.max(0.08 * cosine_bump(d / (0.26 * R)));
+            }
+            for e in 0..6 {
+                if k.cell.rivers & (1 << e) != 0 {
+                    let s = segment_distance(p, k.centre + hex::corner((e + 5) % 6), k.centre + hex::corner(e));
+                    cut = cut.max(0.06 * (1.0 - smoothstep(0.0, 0.1, s)));
+                }
+            }
         }
         let base = base - dip;
         let land = base.max(0.0) / LAND;
         let rough = if relief > 0.3 { 0.10 } else { 0.04 };
-        base + relief + rough * land.min(1.0) * (2.0 * noise(self.unwrap(p) * 2.0) - 1.0)
+        base + relief - cut * land.min(1.0) + rough * land.min(1.0) * (2.0 * noise(self.unwrap(p) * 2.0) - 1.0)
     }
 
-    /// Linear colour of a sample at `height` with a normal whose upward component is `normal_y`, before the
-    /// edge fade.
+    /// The ground's own linear colour at a sample, `height` and upward normal component `normal_y`. The owner's
+    /// tint, the fog and everything lying on the land are painted by the map shader.
     pub fn colour_of(&self, s: &Sample, height: f32, normal_y: f32) -> LinearRgba {
         let p = s.p;
         let sharp = s.sharpened(8);
@@ -241,14 +287,6 @@ impl Relief {
             if k.cell.has(Feature::FloodPlains) && near_river(k.centre, p, k.cell.rivers, 0.5) {
                 c = srgb(0x93A84E);
             }
-            if let Some(owner) = k.cell.owner.filter(|_| !k.cell.is_water()) {
-                if let Some((outer, _)) = self.liveries.get(&owner) {
-                    c = c.mix(outer, 0.10);
-                }
-            }
-            if !k.cell.visible {
-                c = remembered(c);
-            }
             colour = colour + c * w;
         }
         let mut colour = LinearRgba { alpha: 1.0, ..colour };
@@ -256,63 +294,12 @@ impl Relief {
         // Hills stay their ground's colour: rock needs height as well as slope.
         let rock = smoothstep(0.86, 0.78, normal_y) * smoothstep(0.40, 0.60, height);
         if rock > 0.0 && !home.is_water() {
-            let r = srgb(0x7C766D);
-            colour = colour.mix(&if home.visible { r } else { remembered(r) }, rock);
+            colour = colour.mix(&srgb(0x7C766D), rock);
         }
         if height > SNOW_LINE {
-            let snow = srgb(0xF3F5F6);
-            let snow = if home.visible { snow } else { remembered(snow) };
-            colour = colour.mix(&snow, smoothstep(SNOW_LINE, SNOW_LINE + 0.08, height));
+            colour = colour.mix(&srgb(0xF3F5F6), smoothstep(SNOW_LINE, SNOW_LINE + 0.08, height));
         }
         colour
-    }
-
-    /// Water colour over a sample whose floor lies at `floor` (negative under water).
-    pub fn water_of(&self, s: &Sample, floor: f32) -> LinearRgba {
-        let home = s.home_cell();
-        let depth = (-floor).max(0.0);
-        let mut c = srgb(0x3C8FA9).mix(&srgb(0x1E4C78), smoothstep(0.20, 0.55, depth));
-        if home.ground == Ground::Lake {
-            c = srgb(0x3A7FA2);
-        }
-        if home.has(Feature::Ice) {
-            c = srgb(0xDCE8EF);
-        }
-        // Foam where the floor meets the surface.
-        c = c.mix(&srgb(0xE8EEF0), 1.0 - smoothstep(0.0, 0.025, depth));
-        if home.visible { c } else { remembered(c) }
-    }
-
-    /// How far toward slate a point fades: 1 on an edge shared with an unexplored tile, 0 from 0.25 R in.
-    pub fn fade(&self, p: Vec2) -> f32 {
-        match self.sample(p) {
-            Some(s) => self.fade_of(&s),
-            None => 1.0,
-        }
-    }
-
-    pub fn fade_of(&self, s: &Sample) -> f32 {
-        let (p, home) = (s.p, s.home);
-        let c = self.grid.centre(home);
-        let rel = {
-            let mut r = self.unwrap(p) - c;
-            if self.grid.wrap_x {
-                let span = self.grid.span();
-                r.x = (r.x + span / 2.0).rem_euclid(span) - span / 2.0;
-            }
-            r
-        };
-        let mut fade = 0.0f32;
-        for d in 0..6 {
-            let unknown = self.grid.neighbour(home, d).is_none_or(|n| self.cell(n).is_none());
-            if unknown {
-                let toward = hex::direction(d);
-                // Distance from the shared edge, measured toward the home centre.
-                let to_edge = PITCH / 2.0 - rel.dot(toward);
-                fade = fade.max(1.0 - (to_edge / (0.25 * R)).clamp(0.0, 1.0));
-            }
-        }
-        fade
     }
 }
 
@@ -330,6 +317,8 @@ pub struct Sample {
     pub home: u16,
     /// Corner 0 is always the home tile.
     pub corners: [Option<Corner>; 3],
+    /// The triangle's three centres, known or not.
+    pub centres: [Vec2; 3],
 }
 
 impl Sample {
@@ -377,6 +366,12 @@ fn ridge(p: Vec2, a: Vec2, b: Vec2, peak: f32) -> f32 {
     let saddle = 0.55 * peak;
     let along = saddle + (peak - saddle) * (2.0 * t - 1.0).powi(2);
     along * (1.0 - (off / (0.45 * R)).powi(2)).max(0.0)
+}
+
+fn segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
+    (p - (a + ab * t)).length()
 }
 
 fn near_river(centre: Vec2, p: Vec2, rivers: u8, within: f32) -> bool {
@@ -431,7 +426,7 @@ mod tests {
             rivers: 0,
             road: 0,
             road_pillaged: false,
-            improvement: None,
+            improvement: Improvement::None,
             improvement_pillaged: false,
             resource: None,
             owner: None,
@@ -479,17 +474,34 @@ mod tests {
         }
     }
 
-    /// A tile the view lacks has no ground, and its known neighbours fade to slate at the shared edge only.
+    /// A tile the view lacks has no ground; its known neighbours keep theirs.
     #[test]
-    fn unknown_tiles_have_no_ground_and_fade_their_edge() {
+    fn unknown_tiles_have_no_ground() {
         let mut r = relief(false);
         let hidden = r.grid.id(4, 3).unwrap();
         r.cells[hidden as usize] = None;
         assert_eq!(r.height(r.grid.centre(hidden)), None);
         let next = r.grid.neighbour(hidden, 0).unwrap();
-        let toward_hidden = -hex::direction(0);
-        let near_edge = r.grid.centre(next) + toward_hidden * (PITCH / 2.0 - 0.01);
-        assert!(r.fade(near_edge) > 0.9);
-        assert_eq!(r.fade(r.grid.centre(next)), 0.0);
+        assert!(r.height(r.grid.centre(next)).is_some());
+    }
+
+    /// A river bed is cut along the edge, and both banks agree on its depth.
+    #[test]
+    fn river_beds_are_cut_on_both_banks() {
+        let mut r = relief(false);
+        let (a, b) = (r.grid.id(5, 2).unwrap(), r.grid.id(6, 2).unwrap());
+        for id in [a, b] {
+            if let Some(c) = r.cells[id as usize].as_mut() {
+                c.ground = Ground::Plains;
+            }
+        }
+        let flat = r.height(r.grid.centre(a) + hex::direction(0) * (PITCH / 2.0)).unwrap();
+        r.cells[a as usize].as_mut().unwrap().rivers |= 1 << 0;
+        r.cells[b as usize].as_mut().unwrap().rivers |= 1 << 3;
+        let mid = r.grid.centre(a) + hex::direction(0) * (PITCH / 2.0);
+        let n = hex::direction(0) * 1e-4;
+        let (west, east) = (r.height(mid - n).unwrap(), r.height(mid + n).unwrap());
+        assert!((west - east).abs() < 2e-3);
+        assert!(west < flat - 0.04, "bed {west} vs bank {flat}");
     }
 }

@@ -63,6 +63,9 @@ pub fn plugin(app: &mut App) {
 fn spawn(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
+        // The UI (inspector, resource markers) follows this camera, also when it renders into the review
+        // shots' image.
+        IsDefaultUiCamera,
         Projection::Perspective(PerspectiveProjection { fov: FOV_DEGREES.to_radians(), ..default() }),
         MapCamera {
             target: Vec2::ZERO,

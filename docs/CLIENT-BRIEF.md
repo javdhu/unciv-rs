@@ -1,8 +1,8 @@
 # Bevy client: design brief
 
 Status, 2026-10-13: decisions D1-D9 taken (D4 deferred), visual choices V1-V5 taken. S0 passed on native,
-Chromium (WebGPU and WebGL2); Safari's frame timing is still unmeasured. M0 built and verified. M1 built,
-screenshots awaiting review.
+Chromium (WebGPU and WebGL2); Safari's frame timing is still unmeasured. M0 built and verified. M1 built and
+reviewed; its polish (terrain painted by a shader from per-tile data) done. Next: M2.
 
 ## Problem
 

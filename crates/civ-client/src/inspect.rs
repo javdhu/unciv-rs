@@ -93,7 +93,13 @@ fn pick(
     land: Option<Res<Land>>,
     mut hover: ResMut<Hover>,
     mut pressed_at: Local<Option<Vec2>>,
+    shots: Option<Res<crate::shots::Shots>>,
 ) {
+    // Review shots show the map alone, whatever the cursor rests on.
+    if shots.is_some() {
+        hover.tile = None;
+        return;
+    }
     let (Some(land), Ok((camera, transform, map))) = (land, cameras.single()) else { return };
     let cursor = window.single().ok().and_then(|w| w.cursor_position());
     let hit = cursor.and_then(|c| {

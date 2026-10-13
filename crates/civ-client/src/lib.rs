@@ -7,6 +7,7 @@ pub mod hex;
 mod inspect;
 pub mod link;
 mod map;
+mod paint;
 mod relief;
 pub mod rules;
 mod shots;
@@ -41,6 +42,7 @@ pub fn run() {
             client::plugin,
             rules::plugin,
             map::plugin,
+            paint::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,

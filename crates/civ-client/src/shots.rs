@@ -1,5 +1,6 @@
 //! The screenshot script for review (docs/CLIENT-BRIEF.md, M1): play a watched match to a set turn, pause,
-//! let the map settle, then shoot fixed views of it and quit.
+//! let the map settle, then shoot fixed views of it and quit. The camera renders into a 1600x1000 image rather
+//! than the window, so a shot never depends on whether the window is on screen.
 //!
 //! Natively `CIV_SHOTS=<dir> CIV_SCENE=<scene>` writes `<dir>/<scene>-<view>.png`. On the page `?shots=<scene>`
 //! posts each PNG to the local server (`web/serve.py`), which writes `web/shots/<flavour>-<scene>-<view>.png`.
@@ -10,6 +11,8 @@ use crate::map::{Dirty, Land};
 use crate::rules::Ground;
 use crate::view_state::ViewState;
 use bevy::prelude::*;
+use bevy::camera::{ImageRenderTarget, RenderTarget};
+use bevy::render::render_resource::{TextureFormat, TextureUsages};
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use civ_sim::session::Sight;
 use civ_sim::Settings;
@@ -68,6 +71,7 @@ pub enum Out {
 pub struct Shots {
     pub scene: Scene,
     out: Out,
+    target: Option<Handle<Image>>,
     stage: Stage,
     frames: u32,
     index: usize,
@@ -101,12 +105,29 @@ impl Shots {
             (name, Out::Page)
         };
         let scene = scene(&name)?;
-        Some(Shots { scene, out, stage: Stage::Advancing, frames: 0, index: 0 })
+        Some(Shots { scene, out, target: None, stage: Stage::Advancing, frames: 0, index: 0 })
     }
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Captured>().add_systems(Update, shoot.after(crate::map::rebuild));
+    app.init_resource::<Captured>()
+        .add_systems(PostStartup, offscreen)
+        .add_systems(Update, shoot.after(crate::map::MapSet::Rebuild));
+}
+
+/// Point the map camera at an image of the review size.
+fn offscreen(
+    mut commands: Commands,
+    shots: Option<ResMut<Shots>>,
+    cameras: Query<Entity, With<MapCamera>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let (Some(mut shots), Ok(camera)) = (shots, cameras.single()) else { return };
+    let mut image = Image::new_target_texture(1600, 1000, TextureFormat::Rgba8UnormSrgb, None);
+    image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
+    let handle = images.add(image);
+    commands.entity(camera).insert(RenderTarget::Image(ImageRenderTarget::from(handle.clone())));
+    shots.target = Some(handle);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -159,7 +180,8 @@ fn shoot(
                 return;
             }
             let name = format!("{}-{}", shots.scene.name, shots.scene.views[shots.index].0);
-            let mut screenshot = commands.spawn(Screenshot::primary_window());
+            let Some(target) = shots.target.clone() else { return };
+            let mut screenshot = commands.spawn(Screenshot::image(target));
             screenshot.observe(|_: On<ScreenshotCaptured>, mut c: ResMut<Captured>| c.0 += 1);
             match &shots.out {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -205,7 +227,7 @@ fn aim(land: &Land, view: &civ_sim::PlayerView, focus: Focus) -> Vec2 {
                 return 0;
             }
             let wet = (0..6).filter_map(|d| grid.neighbour(id, d)).filter(|n| relief.cell(*n).is_some_and(|c| c.is_water())).count() as i32;
-            wet.min(3) + 3 * (c.rivers != 0) as i32 + 2 * (c.road > 0) as i32 + 2 * c.improvement.is_some() as i32
+            wet.min(3) + 3 * (c.rivers != 0) as i32 + 2 * (c.road > 0) as i32 + 2 * (c.improvement != crate::relief::Improvement::None) as i32
         })
         .unwrap_or(centre),
         Focus::Seat => {
