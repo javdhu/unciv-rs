@@ -256,6 +256,33 @@ pub struct RelationView {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub influence: Option<InfluenceView>,
+    /// What they could give this player in a trade, as Unciv's trade screen shows it (R7 in docs/ROOMS-SPEC.md),
+    /// but only while this player holds an embassy in their capital (`our_embassy`), they are a living major and
+    /// the two are at peace. A proposal still reveals nothing beyond this: `agreements::validate_proposal` never
+    /// reads the recipient's treasury, stock or income.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tradable: Option<TradableView>,
+}
+
+/// Everything another major would be allowed to give this player, each judged alone by the engine's own trade
+/// rules. Amounts are the most the engine accepts: an offer asking for more is refused at acceptance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TradableView {
+    /// Their treasury.
+    pub gold: i32,
+    /// Their income after the gold a turn they already pay or receive in deals.
+    pub gold_per_turn: i32,
+    /// Luxuries they hold at least one spare copy of, with the count; sorted by resource.
+    pub luxuries: Vec<ResourceStockView>,
+    /// Strategic resources in their spare stock, with the count; sorted by resource.
+    pub strategics: Vec<ResourceStockView>,
+    /// Their cities this player knows of and could be given; never the capital. Sorted by id.
+    pub cities: Vec<crate::protocol::EntityRef>,
+    pub open_borders: bool,
+    /// Whether they could grant this player an embassy (never true while the embassy that gates this view stands).
+    pub embassy: bool,
 }
 
 /// Influence between this player and one rival, as progress rather than raw
@@ -714,8 +741,8 @@ fn moves(raw: i64) -> f64 {
 }
 
 pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
-    let economy =
-        civ_core::world::turn::plan_economy(w, r, me, CityFocus::None, TurnModifiers::for_world(w, r));
+    let mods = TurnModifiers::for_world(w, r);
+    let economy = civ_core::world::turn::plan_economy(w, r, me, CityFocus::None, mods);
     let tiles = w
         .visibility
         .known_tiles(me)
@@ -1100,6 +1127,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     score: rounded_score(w, r, c.id),
                     influence: (c.is_major() && civ_core::world::influence::tracks_influence(r))
                         .then(|| influence_view(w, r, me, c.id)),
+                    tradable: tradable_view(w, r, me, c.id, mods),
                 }
             })
             .collect(),
@@ -1911,6 +1939,60 @@ fn influence_view(w: &World, r: &Ruleset, me: CivId, them: CivId) -> InfluenceVi
         influenced: inf::is_influential(w, r, them, me),
         rate: inf::influence_rate(w, r, me, them).max(0) as u32,
     }
+}
+
+/// What `them` could give `me`, by the engine's trade rules, behind R7's embassy gate (see `RelationView::tradable`).
+/// Each listed item, asked for alone, is one the authoritative acceptance (`trade::accept_with`) takes from them:
+/// cities, open borders and an embassy by `trade::can_give`, gold up to their treasury, gold a turn up to
+/// `trade::available_gold_per_turn`, resources up to `resources::available_stock`.
+fn tradable_view(w: &World, r: &Ruleset, me: CivId, them: CivId, mods: TurnModifiers) -> Option<TradableView> {
+    use civ_core::world::trade::{self, Item};
+    let living_major = |c: CivId| w.civ(c).is_some_and(|c| c.is_major() && c.is_alive());
+    if !living_major(me)
+        || !living_major(them)
+        || !w.diplomacy.have_met(me, them)
+        || w.diplomacy.at_war(me, them)
+        || !w.diplomacy.has_embassy(me, them)
+    {
+        return None;
+    }
+    let gives = |item| trade::can_give(w, them, me, item).is_ok();
+    let gold = w.civ(them).map_or(0, |c| c.gold).max(0);
+    // A refusal to compute the cap (a malformed running deal) leaves nothing to give.
+    let gold_per_turn =
+        trade::available_gold_per_turn(w, r, them, mods).map_or(0, |n| i32::try_from(n).unwrap_or(i32::MAX));
+    let (mut luxuries, mut strategics) = (Vec::new(), Vec::new());
+    for (resource, amount) in civ_core::world::resources::available_stock(w, r, them) {
+        let kind = r.resources.get(resource).map(|t| t.resource_type.as_str());
+        let stock = ResourceStockView { resource: resource.index(), amount };
+        match kind {
+            Some("Luxury") if amount >= 1 => luxuries.push(stock),
+            Some("Strategic") if amount >= 1 => strategics.push(stock),
+            _ => {}
+        }
+    }
+    let capital = civ_core::world::connections::capital_of(w, r, them);
+    let mut cities: Vec<crate::protocol::EntityRef> = w
+        .civ(them)
+        .into_iter()
+        .flat_map(|c| c.cities.iter().copied())
+        .filter(|id| Some(*id) != capital && gives(Item::City(*id)))
+        // A proposal may only ask for a city the proposer knows to be theirs (`trade::validate_proposal`).
+        .filter(|id| w.visibility.known_cities(me).any(|c| c.id == *id && c.owner == them))
+        .map(|id| crate::protocol::EntityRef { id: id.index(), gen: id.generation() })
+        .collect();
+    cities.sort_by_key(|c| (c.id, c.gen));
+    luxuries.sort_by_key(|s| s.resource);
+    strategics.sort_by_key(|s| s.resource);
+    Some(TradableView {
+        gold,
+        gold_per_turn,
+        luxuries,
+        strategics,
+        cities,
+        open_borders: gives(Item::OpenBorders),
+        embassy: gives(Item::Embassy),
+    })
 }
 
 fn wall_views(w: &World, r: &Ruleset, me: CivId) -> Option<Vec<WallView>> {

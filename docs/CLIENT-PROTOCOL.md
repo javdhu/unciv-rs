@@ -365,6 +365,14 @@ Also additive; the protocol version stays 4. Every new field is optional in Type
   `RuleTables.influenceThresholds?: { friend, ally, unforgivable }` is 30, 60 and -30: `Ally` from `ally` (only
   the major furthest ahead), `Friend` from `friend`, `Neutral` from 0, `Enemy` below 0, `Unforgivable` at
   `unforgivable` or below, or at war.
+- **Trade view.** `RelationView.tradable?: TradableView` is what another major could give this player, as Unciv's
+  trade screen shows it, but only while this player holds an embassy in their capital (`ourEmbassy`) and the two
+  are at peace (R7 in ROOMS-SPEC.md): `{ gold, goldPerTurn, luxuries, strategics, cities, openBorders, embassy }`,
+  resources as `{ resource, amount }` and cities as `EntityRef`, each list sorted by id. Each item, asked for
+  alone, is one the engine's acceptance takes from them: cities, open borders and embassy by `trade::can_give`
+  (cities only those the player knows of, never the capital), amounts up to their treasury,
+  `available_gold_per_turn` and `available_stock`. Proposals still reveal nothing beyond this. Absent for
+  city-states and for a civ's own relation.
 - **Spies.** `SpyView.stealCost?` is the science a stealing spy's `progress` must reach for the next theft.
   Coup odds are `CityStateRelationsView.coupChance`; forbidden cities come from `spyingForbidden`.
 - **Great people.** `UnitOptions.great_person_abilities?: GreatPersonAbility[]` lists every ability a great person
