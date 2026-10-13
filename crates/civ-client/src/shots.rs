@@ -564,7 +564,7 @@ fn decide_script(
     let frame = shots.frames;
     let (step, began) = *phase.get_or_insert((0, frame));
     let since = frame - began;
-    let mut next = |phase: &mut Option<(u32, u32)>| *phase = Some((step + 1, frame));
+    let next = |phase: &mut Option<(u32, u32)>| *phase = Some((step + 1, frame));
     let look = |cameras: &mut Query<&mut MapCamera>, tile: u16, d: f32| {
         if let Ok(mut c) = cameras.single_mut() {
             c.jump(land.0.grid.centre(tile), d);

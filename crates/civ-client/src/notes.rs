@@ -6,14 +6,11 @@
 //! It answers None only for what the map already shows: a step (`unitMoved`), a unit fortifying (its piece shows
 //! it), another nation's unit promoted or upgraded in sight (its piece), and a fight or withdrawal between other
 //! nations seen in the replay (animated, or walked as a `unitMoved`).
-//!
-//! Three payloads are typed in civ-sim but not exported from it (`NoticeKind`, `ReligiousEventKind`,
-//! `GreatPersonOutcome`), so they are read by their wire names, and a name this client does not know reads as a
-//! generic line rather than failing.
+//! The payloads inside events (`NoticeKind`, `ReligiousEventKind`, `GreatPersonOutcome`) are matched the same way.
 
 use crate::rules::Rules;
 use civ_sim::protocol::{AttackTarget, ConstructionRef, Demand};
-use civ_sim::{CityView, EventView, PlayerView, PresentationEvent as E, UnitView};
+use civ_sim::{CityView, EventView, GreatPersonOutcome, NoticeKind, PlayerView, PresentationEvent as E, ReligiousEventKind, UnitView};
 
 /// One line of the notification log.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,13 +34,6 @@ pub enum NoteKind {
 macro_rules! key {
     ($r:expr) => {
         ($r.id, $r.r#gen)
-    };
-}
-
-/// A payload enum's wire name (`"religionFounded"`), for the ones civ-sim does not export.
-macro_rules! wire_name {
-    ($v:expr) => {
-        serde_json::to_value($v).ok().and_then(|v| v.as_str().map(str::to_string))
     };
 }
 
@@ -126,15 +116,13 @@ pub fn describe(ev: &EventView, v: &PlayerView, rules: &Rules) -> Option<Note> {
             let u = w.unit(key!(unit));
             let who = w.unit_phrase(key!(unit), "your religious unit");
             let carried = u.and_then(|u| u.own.as_ref()).and_then(|o| o.religion).map_or_else(|| "its religion".to_string(), |r| w.religion(r));
-            let (did, kind) = match wire_name!(action).as_deref() {
-                Some("founded") => ("founded a religion".to_string(), Good),
-                Some("enhanced") => ("enhanced your religion".to_string(), Good),
-                Some("spread") => (format!("spread {carried}"), Good),
-                Some("heresyRemoved") => ("removed heresy".to_string(), Good),
-                Some("holySiteConstructed") => ("built a holy site".to_string(), Good),
-                Some("attrition") => ("lost strength to attrition".to_string(), Bad),
-                // An action this client does not name yet.
-                _ => ("acted".to_string(), Info),
+            let (did, kind) = match action {
+                ReligiousEventKind::Founded => ("founded a religion".to_string(), Good),
+                ReligiousEventKind::Enhanced => ("enhanced your religion".to_string(), Good),
+                ReligiousEventKind::Spread => (format!("spread {carried}"), Good),
+                ReligiousEventKind::HeresyRemoved => ("removed heresy".to_string(), Good),
+                ReligiousEventKind::HolySiteConstructed => ("built a holy site".to_string(), Good),
+                ReligiousEventKind::Attrition => ("lost strength to attrition".to_string(), Bad),
             };
             note(format!("{who} {did}"), u.map(|u| u.tile), kind)
         }
@@ -376,36 +364,26 @@ pub fn describe(ev: &EventView, v: &PlayerView, rules: &Rules) -> Option<Note> {
             note(format!("{} was born", a(kind)), unit.and_then(|u| w.unit(key!(u))).map(|u| u.tile), Good)
         }
         E::GreatPersonActed { outcome } => {
-            let o = serde_json::to_value(outcome).unwrap_or_default();
-            let num = |field: &str| o.get(field).and_then(serde_json::Value::as_i64);
-            match o.get("type").and_then(serde_json::Value::as_str) {
-                Some("science") => {
-                    let mut text = format!("Your luminary added {} science", num("amount").unwrap_or(0));
-                    if let Some(tech) = num("learned") {
-                        text += &format!(" and finished {}", w.tech(tech as u32));
+            match outcome {
+                GreatPersonOutcome::Science { amount, learned } => {
+                    let mut text = format!("Your luminary added {amount} science");
+                    if let Some(tech) = learned {
+                        text += &format!(" and finished {}", w.tech(*tech));
                     }
                     note(text, None, Good)
                 }
-                Some("production") => {
-                    let city = o.get("city").and_then(|c| Some((c.get("id")?.as_u64()? as u32, c.get("gen")?.as_u64()? as u32)));
-                    let name = city.map_or_else(|| "a city".to_string(), |k| w.city_name(k));
-                    let text = format!("Your luminary added {} production in {name}", num("hammers").unwrap_or(0));
-                    note(text, city.and_then(|k| w.city_tile(k)), Good)
+                GreatPersonOutcome::Production { city, hammers } => {
+                    let k = key!(city);
+                    note(format!("Your luminary added {hammers} production in {}", w.city_name(k)), w.city_tile(k), Good)
                 }
-                Some("tradeMission") => {
-                    let cs = num("cityState").map_or_else(|| "a city-state".to_string(), |c| w.city_state(c as u8));
-                    let (gold, influence) = (num("gold").unwrap_or(0), num("influence").unwrap_or(0));
+                GreatPersonOutcome::TradeMission { city_state, gold, influence } => {
+                    let cs = w.city_state(*city_state);
                     note(format!("Your trade mission to {cs} earned {gold} gold and {influence} influence"), None, Good)
                 }
-                Some("goldenAge") => {
-                    note(format!("Your luminary brought a golden age of {} turns", num("turns").unwrap_or(0)), None, Good)
+                GreatPersonOutcome::GoldenAge { turns } => note(format!("Your luminary brought a golden age of {turns} turns"), None, Good),
+                GreatPersonOutcome::Constructed { tile, improvement } => {
+                    note(format!("Your luminary built {}", a(&w.improvement(*improvement))), Some(*tile), Good)
                 }
-                Some("constructed") => {
-                    let built = num("improvement").map_or_else(|| "an improvement".to_string(), |i| a(&w.improvement(i as u32)));
-                    note(format!("Your luminary built {built}"), num("tile").map(|t| t as u16), Good)
-                }
-                // An outcome this client does not name yet.
-                _ => note("Your luminary was spent", None, Good),
             }
         }
         E::CityCompleted { city, construction } => {
@@ -500,15 +478,13 @@ pub fn describe(ev: &EventView, v: &PlayerView, rules: &Rules) -> Option<Note> {
         E::CityStateMarried { city_state, gold } => {
             note(format!("{} joined your nation by marriage for {gold} gold", w.city_state(*city_state)), None, Good)
         }
-        E::Notice { notice } => match wire_name!(notice).as_deref() {
-            Some("religionFounded") => note("You founded a religion", None, Good),
-            Some("religionEnhanced") => note("You enhanced your religion", None, Good),
-            Some("pantheonFounded") => note("You founded a pantheon", None, Good),
-            Some("civDefeated") => note("Your nation was defeated", None, Bad),
-            Some("goldenAgeStarted") => note("Your golden age began", None, Good),
-            Some("goldenAgeEnded") => note("Your golden age ended", None, Info),
-            // A notice this client does not name yet.
-            _ => note("Something changed in your nation", None, Info),
+        E::Notice { notice } => match notice {
+            NoticeKind::ReligionFounded => note("You founded a religion", None, Good),
+            NoticeKind::ReligionEnhanced => note("You enhanced your religion", None, Good),
+            NoticeKind::PantheonFounded => note("You founded a pantheon", None, Good),
+            NoticeKind::CivDefeated => note("Your nation was defeated", None, Bad),
+            NoticeKind::GoldenAgeStarted => note("Your golden age began", None, Good),
+            NoticeKind::GoldenAgeEnded => note("Your golden age ended", None, Info),
         },
     }
 }
@@ -841,9 +817,9 @@ mod tests {
         assert_eq!(describe(&fight(false, "English Warrior attacked French"), &v, &rules), None);
     }
 
-    /// Payloads civ-sim does not export are read by wire name: every name here must still be one the engine sends.
+    /// Every notice, religious act and great person outcome reads as its own line, from the wire as sent.
     #[test]
-    fn unexported_payloads_are_read_by_their_wire_names() {
+    fn payloads_read_as_their_own_lines() {
         let (v, rules, _, _) = fixture();
         let generic = ["Something changed in your nation", "Your luminary was spent"];
         let notices = ["religionFounded", "religionEnhanced", "pantheonFounded", "civDefeated", "goldenAgeStarted", "goldenAgeEnded"];
