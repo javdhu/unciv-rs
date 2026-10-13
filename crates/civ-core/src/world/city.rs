@@ -11,7 +11,7 @@
 //! reconstructed from a diff afterwards.
 
 use crate::arena::Id;
-use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind};
+use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind, YieldParts, YieldSource};
 use crate::ruleset::{Ruleset, Speed};
 use crate::stats::{Fixed, Stat, Stats};
 use crate::world::grid::{CivId, TileGrid, TileId};
@@ -291,27 +291,29 @@ pub fn yield_tiles(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<TileId> {
 
 /// Everything the city produces, attributed by tile.
 pub fn city_yield_breakdown(grid: &TileGrid, r: &Ruleset, city: &City) -> Vec<Contribution> {
-    city_yield_parts(grid, r, city, true, None)
+    city_yield_parts(grid, r, city, true, None).into_iter().map(|(_, part)| part).collect()
 }
 
+/// The city's flat contributions, each with the [`YieldSource`] it counts toward.
 fn city_yield_parts(
     grid: &TileGrid,
     r: &Ruleset,
     city: &City,
     legacy_uniques: bool,
     observer: Option<&crate::world::entities::Civilization>,
-) -> Vec<Contribution> {
+) -> Vec<(YieldSource, Contribution)> {
     let tile_output = |tile| {
         observer
             .map_or_else(|| tile_yield(grid, r, tile), |civ| crate::world::yields::tile_yield_for(grid, r, tile, civ))
     };
     let centre = tile_output(city.centre);
-    let mut out = vec![(Source::new(SourceKind::Terrain, format!("{} centre", city.name)), centre)];
+    let mut out =
+        vec![(YieldSource::Centre, (Source::new(SourceKind::Terrain, format!("{} centre", city.name)), centre))];
     // A city centre is topped up to a floor whatever it sits on, so founding
     // on poor terrain is survivable.
     if let Some(gap) = crate::world::yields::missing_from_minimum(centre, crate::world::yields::city_centre_minimum(r))
     {
-        out.push((Source::new(SourceKind::Terrain, "city centre minimum"), gap));
+        out.push((YieldSource::Centre, (Source::new(SourceKind::Terrain, "city centre minimum"), gap)));
     }
     // Citizens produce regardless of what they stand on: one science each,
     // and one production each for those with no tile to work
@@ -323,12 +325,12 @@ fn city_yield_parts(
         ..Stats::ZERO
     };
     if !population.is_zero() {
-        out.push((Source::new(SourceKind::Other, "Population"), population));
+        out.push((YieldSource::Population, (Source::new(SourceKind::Other, "Population"), population)));
     }
     // Specialists yield as a building's flat stats do, before percentages.
     let specialists = crate::world::specialists::yields(r, city);
     if !specialists.is_zero() {
-        out.push((Source::new(SourceKind::Other, "Specialists"), specialists));
+        out.push((YieldSource::Specialists, (Source::new(SourceKind::Other, "Specialists"), specialists)));
     }
 
     // Buildings contribute their flat yields before any percentage applies.
@@ -336,7 +338,7 @@ fn city_yield_parts(
         let Some(b) = r.buildings.get(*id) else { continue };
         let stats = crate::ruleset::queries::HasStats::stats(b);
         if !stats.is_zero() {
-            out.push((Source::new(SourceKind::Building, b.name.clone()), stats));
+            out.push((YieldSource::Buildings, (Source::new(SourceKind::Building, b.name.clone()), stats)));
         }
     }
 
@@ -359,7 +361,7 @@ fn city_yield_parts(
                     for st in Stat::ALL {
                         scaled[st] = stats[st] * Fixed::whole(times);
                     }
-                    out.push((Source::new(SourceKind::Building, u.text.clone()), scaled));
+                    out.push((YieldSource::Buildings, (Source::new(SourceKind::Building, u.text.clone()), scaled)));
                 }
             }
             Some(UniqueType::StatsFromTiles) => {
@@ -381,7 +383,7 @@ fn city_yield_parts(
                     for st in Stat::ALL {
                         scaled[st] = stats[st] * Fixed::whole(matching);
                     }
-                    out.push((Source::new(SourceKind::Building, u.text.clone()), scaled));
+                    out.push((YieldSource::Buildings, (Source::new(SourceKind::Building, u.text.clone()), scaled)));
                 }
             }
             _ => {}
@@ -390,7 +392,7 @@ fn city_yield_parts(
 
     for t in yield_tiles(grid, r, city).into_iter().filter(|t| *t != city.centre) {
         let (col, row) = grid.coords(t);
-        out.push((Source::new(SourceKind::Terrain, format!("({col}, {row})")), tile_output(t)));
+        out.push((YieldSource::Tiles, (Source::new(SourceKind::Terrain, format!("({col}, {row})")), tile_output(t))));
     }
     out
 }
@@ -402,14 +404,30 @@ fn city_yield_parts(
 /// base/additive split `ModifierStack` exists for, so the ordering question is
 /// answered by construction rather than by whoever writes the next building.
 pub fn city_percent_bonuses(r: &Ruleset, city: &City) -> std::collections::BTreeMap<Stat, ModifierStack> {
-    let mut stacks: std::collections::BTreeMap<Stat, ModifierStack> = Default::default();
+    percent_modifiers(r, city)
+        .into_iter()
+        .map(|(stat, modifiers)| {
+            let mut stack = ModifierStack::new();
+            for (_, m) in modifiers {
+                stack.add(m);
+            }
+            (stat, stack)
+        })
+        .collect()
+}
+
+type PercentModifiers = std::collections::BTreeMap<Stat, Vec<(YieldSource, Modifier)>>;
+
+/// [`city_percent_bonuses`], each modifier with the [`YieldSource`] it counts toward.
+fn percent_modifiers(r: &Ruleset, city: &City) -> PercentModifiers {
+    let mut stacks = PercentModifiers::new();
     for id in &city.built {
         let Some(b) = r.buildings.get(*id) else { continue };
         for (stat_name, percent) in &b.percent_stat_bonus {
             let Some(stat) = Stat::parse(stat_name) else { continue };
-            stacks.entry(stat).or_default().add(Modifier::additive_percent(
-                Fixed::whole(*percent),
-                Source::new(SourceKind::Building, b.name.clone()),
+            stacks.entry(stat).or_default().push((
+                YieldSource::Buildings,
+                Modifier::additive_percent(Fixed::whole(*percent), Source::new(SourceKind::Building, b.name.clone())),
             ));
         }
     }
@@ -417,10 +435,10 @@ pub fn city_percent_bonuses(r: &Ruleset, city: &City) -> std::collections::BTree
     // (`getStatPercentBonusesFromPuppetCity`).
     if city.puppet {
         for stat in [Stat::Science, Stat::Culture] {
-            stacks
-                .entry(stat)
-                .or_default()
-                .add(Modifier::additive_percent(Fixed::whole(-25), Source::new(SourceKind::Other, "Puppet")));
+            stacks.entry(stat).or_default().push((
+                YieldSource::Puppet,
+                Modifier::additive_percent(Fixed::whole(-25), Source::new(SourceKind::Other, "Puppet")),
+            ));
         }
     }
     stacks
@@ -451,10 +469,24 @@ pub fn city_yield_with_happiness(
     golden_age: bool,
     happiness: Option<i32>,
 ) -> Stats {
+    city_output_parts(world, r, city, golden_age, happiness).total()
+}
+
+/// [`city_yield_with_happiness`], by source: the parts it sums.
+pub fn city_output_parts(
+    world: &crate::world::world::World,
+    r: &Ruleset,
+    city: &City,
+    golden_age: bool,
+    happiness: Option<i32>,
+) -> YieldParts {
     let (flat, percent) = crate::world::city_effects::bonuses(world, r, city, happiness);
-    let bonus = tile_percentage_bonus(world, r, city, golden_age) + flat;
-    let base: Stats =
-        city_yield_parts(&world.grid, r, city, false, world.civ(city.owner)).into_iter().map(|(_, s)| s).sum();
+    let mut parts = YieldParts::new();
+    for (source, (_, stats)) in city_yield_parts(&world.grid, r, city, false, world.civ(city.owner)) {
+        parts.add(source, stats);
+    }
+    parts.add(YieldSource::Tiles, tile_percentage_bonus(world, r, city, golden_age));
+    parts.merge(&flat);
     let mut rate = Fixed::from_fraction(1, 4);
     if let Some(stat) = city.production_conversion {
         let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(city.owner);
@@ -480,7 +512,7 @@ pub fn city_yield_with_happiness(
             })
             .count()
     });
-    finish_output(r, city, golden_tiles, base + bonus, percent, rate)
+    finish_output(r, city, golden_tiles, parts, &percent, rate)
 }
 
 fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: &City, golden_age: bool) -> Stats {
@@ -591,55 +623,94 @@ fn tile_percentage_bonus(world: &crate::world::world::World, r: &Ruleset, city: 
 }
 
 fn finish_city_yield(grid: &TileGrid, r: &Ruleset, city: &City, golden_age: bool, tile_bonus: Stats) -> Stats {
-    let base: Stats = city_yield_breakdown(grid, r, city).into_iter().map(|(_, s)| s).sum();
+    let mut parts = YieldParts::new();
+    for (source, (_, stats)) in city_yield_parts(grid, r, city, true, None) {
+        parts.add(source, stats);
+    }
+    parts.add(YieldSource::Tiles, tile_bonus);
     let golden_tiles = golden_age.then(|| {
         yield_tiles(grid, r, city)
             .into_iter()
             .filter(|&tile| crate::world::golden_age::gains_gold(r, grid, tile))
             .count()
     });
-    finish_output(r, city, golden_tiles, base + tile_bonus, Stats::ZERO, Fixed::from_fraction(1, 4))
+    finish_output(r, city, golden_tiles, parts, &YieldParts::new(), Fixed::from_fraction(1, 4)).total()
 }
 
+/// The flat parts, after the percentages: what each percentage adds is
+/// credited to its own source.
 fn finish_output(
     r: &Ruleset,
     city: &City,
     golden_tiles: Option<usize>,
-    mut base: Stats,
-    percent: Stats,
+    mut parts: YieldParts,
+    percent: &YieldParts,
     conversion_rate: Fixed,
-) -> Stats {
-    let mut bonuses = city_percent_bonuses(r, city);
-    for stat in Stat::ALL {
-        if !percent[stat].is_zero() {
-            bonuses
-                .entry(stat)
-                .or_default()
-                .add(Modifier::additive_percent(percent[stat], Source::new(SourceKind::Other, "Ruleset")));
+) -> YieldParts {
+    let mut bonuses = percent_modifiers(r, city);
+    for (source, by_stat) in percent.iter() {
+        for stat in Stat::ALL {
+            if !by_stat[stat].is_zero() {
+                bonuses.entry(stat).or_default().push((
+                    source,
+                    Modifier::additive_percent(by_stat[stat], Source::new(SourceKind::Other, "Ruleset")),
+                ));
+            }
         }
     }
     if let Some(gold_tiles) = golden_tiles {
-        base.gold += Fixed::whole(gold_tiles as i32);
+        parts.add(YieldSource::GoldenAge, Stats::of(Stat::Gold, Fixed::whole(gold_tiles as i32)));
         for stat in [Stat::Production, Stat::Culture] {
-            bonuses.entry(stat).or_default().add(Modifier::additive_percent(
-                Fixed::whole(crate::world::golden_age::PERCENT_BONUS),
-                Source::new(SourceKind::Other, "Golden Age"),
+            bonuses.entry(stat).or_default().push((
+                YieldSource::GoldenAge,
+                Modifier::additive_percent(
+                    Fixed::whole(crate::world::golden_age::PERCENT_BONUS),
+                    Source::new(SourceKind::Other, "Golden Age"),
+                ),
             ));
         }
     }
 
-    let mut out = base;
-    out.production = bonuses.get(&Stat::Production).map_or(base.production, |stack| stack.evaluate(base.production));
-    if let Some(stat) = city.production_conversion {
-        base[stat] += out.production * conversion_rate;
-        out[stat] = base[stat];
+    if let Some(modifiers) = bonuses.get(&Stat::Production) {
+        apply_percentages(&mut parts, Stat::Production, modifiers);
     }
-    for (stat, stack) in &bonuses {
+    if let Some(stat) = city.production_conversion {
+        let converted = parts.total().production * conversion_rate;
+        parts.add(YieldSource::ProductionConversion, Stats::of(stat, converted));
+    }
+    for (stat, modifiers) in &bonuses {
         if *stat != Stat::Production {
-            out[*stat] = stack.evaluate(base[*stat]);
+            apply_percentages(&mut parts, *stat, modifiers);
         }
     }
-    out
+    parts
+}
+
+/// Resolve one stat's percentages against what its parts sum to, and credit
+/// each source of a percentage with its share: what the result would lose
+/// without that source, as [`ModifierStack::breakdown`] counts it. The last
+/// takes what rounding left, so the parts sum to the stack's own result.
+fn apply_percentages(parts: &mut YieldParts, stat: Stat, modifiers: &[(YieldSource, Modifier)]) {
+    let base = parts.total()[stat];
+    let stack_without = |left_out: Option<YieldSource>| {
+        let mut stack = ModifierStack::new();
+        for (_, m) in modifiers.iter().filter(|(source, _)| Some(*source) != left_out) {
+            stack.add(m.clone());
+        }
+        stack
+    };
+    let total = stack_without(None).evaluate(base);
+    let sources: std::collections::BTreeSet<YieldSource> = modifiers.iter().map(|(source, _)| *source).collect();
+    let mut credited = Fixed::ZERO;
+    for (i, source) in sources.iter().enumerate() {
+        let share = if i + 1 == sources.len() {
+            total - base - credited
+        } else {
+            total - stack_without(Some(*source)).evaluate(base)
+        };
+        credited += share;
+        parts.add(*source, Stats::of(stat, share));
+    }
 }
 
 /// The most damage a city can absorb.

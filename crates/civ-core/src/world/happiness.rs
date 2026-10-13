@@ -21,7 +21,7 @@
 //! behaviour. Writing the thresholds in Rust would have duplicated data that
 //! the ruleset already states — and a mod changing them would then be ignored.
 
-use crate::modifiers::{Source, SourceKind};
+use crate::modifiers::YieldSource;
 use crate::ruleset::{Difficulty, Ruleset};
 use crate::stats::Fixed;
 use crate::world::grid::CivId;
@@ -43,7 +43,7 @@ const ANNEXED_CITY_EXTRA: i32 = -2;
 const OCCUPIED_CITY: i32 = -2;
 
 /// One line of the happiness tally.
-pub type Contribution = (Source, i32);
+pub type Contribution = (YieldSource, i32);
 
 /// Where a civ's happiness comes from, itemised.
 ///
@@ -55,7 +55,7 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
     let mut out = Vec::new();
 
     let base = difficulty.map_or(9, |d| d.base_happiness);
-    out.push((Source::new(SourceKind::Difficulty, "Base happiness"), base));
+    out.push((YieldSource::Difficulty, base));
 
     // Each *distinct* luxury counts once, however many copies you hold — which
     // is why Civ players trade for variety rather than quantity.
@@ -77,7 +77,7 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         .filter(|(id, _)| r.resources.get(**id).is_some_and(|x| x.resource_type == "Luxury"))
         .count() as i32;
     if luxuries > 0 {
-        out.push((Source::new(SourceKind::Resource, "Luxury resources"), luxuries * per_luxury));
+        out.push((YieldSource::Luxuries, luxuries * per_luxury));
     }
 
     let supplied: std::collections::BTreeSet<_> = crate::world::city_states::city_states(world)
@@ -95,7 +95,7 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         * Fixed::from_fraction(i64::from(bonus(crate::UniqueType::CityStateLuxuryHappiness)), 100))
     .floor() as i32;
     if extra != 0 {
-        out.push((Source::new(SourceKind::Resource, "City-State luxuries"), extra));
+        out.push((YieldSource::CityStateLuxuries, extra));
     }
     let exported: std::collections::BTreeSet<_> = world
         .diplomacy
@@ -114,12 +114,12 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         * Fixed::from_fraction(i64::from(bonus(crate::UniqueType::RetainHappinessFromLuxury)), 100))
     .floor() as i32;
     if retained != 0 {
-        out.push((Source::new(SourceKind::Resource, "Traded luxuries"), retained));
+        out.push((YieldSource::TradedLuxuries, retained));
     }
 
     let wonders = crate::world::natural_wonders::known_stats(world, r, civ_id).happiness.floor() as i32;
     if wonders != 0 {
-        out.push((Source::new(SourceKind::Other, "Natural Wonders"), wonders));
+        out.push((YieldSource::NaturalWonders, wonders));
     }
 
     let from_cities: i32 = world
@@ -129,11 +129,11 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         .map(|(_, city)| crate::world::city::city_yield_in(world, r, city, false).happiness.floor() as i32)
         .sum();
     if from_cities != 0 {
-        out.push((Source::new(SourceKind::Other, "City happiness"), from_cities));
+        out.push((YieldSource::CityHappiness, from_cities));
     }
     let global = crate::world::city_states::civ_wide_yields(world, r, civ_id).happiness.floor() as i32;
     if global != 0 {
-        out.push((Source::new(SourceKind::Other, "Empire happiness"), global));
+        out.push((YieldSource::Empire, global));
     }
     let modifier = difficulty.map_or(Fixed::ONE, |d| d.unhappiness_modifier);
     let city_modifier =
@@ -172,13 +172,13 @@ pub fn breakdown(world: &World, r: &Ruleset, civ_id: CivId, difficulty: Option<&
         }
     }
     if !city_unhappy.is_zero() {
-        out.push((Source::new(SourceKind::Other, "Cities"), city_unhappy.floor() as i32));
+        out.push((YieldSource::Cities, city_unhappy.floor() as i32));
     }
     if !citizen_unhappy.is_zero() {
-        out.push((Source::new(SourceKind::Other, "Population"), citizen_unhappy.floor() as i32));
+        out.push((YieldSource::Population, citizen_unhappy.floor() as i32));
     }
     if occupied > 0 {
-        out.push((Source::new(SourceKind::Other, "Occupied cities"), occupied * OCCUPIED_CITY));
+        out.push((YieldSource::OccupiedCities, occupied * OCCUPIED_CITY));
     }
 
     out
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(happiness(&w, &r, CivId(0), prince(&r)), 0, "9 - 3 - 6");
 
         let items = breakdown(&w, &r, CivId(0), prince(&r));
-        println!("{:?}", items.iter().map(|(s, v)| (&s.name, v)).collect::<Vec<_>>());
+        println!("{items:?}");
         assert_eq!(items.iter().map(|(_, v)| *v).sum::<i32>(), 0);
     }
 

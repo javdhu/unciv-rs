@@ -26,6 +26,7 @@ pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnRep
 pub use view::{
     CaptureChoice, CityStateView, CityView, CivView, EventView, GreatPersonOutcome, GreatPersonProgressView, NoticeKind,
     PresentationEvent, Reach, RelationView, ReligiousEventKind, SpyActionView, TileView, TradableView, UnitView,
+    YieldSourceView, YieldStat,
 };
 
 #[cfg(feature = "js")]

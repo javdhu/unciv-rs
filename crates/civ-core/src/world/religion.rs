@@ -758,12 +758,23 @@ pub fn city_uniques<'a>(
     r: &'a Ruleset,
     city: &'a crate::world::city::City,
 ) -> Vec<&'a crate::Unique> {
+    city_uniques_by_origin(world, r, city).map(|(_, u)| u).collect()
+}
+
+/// [`city_uniques`], each with where it was gathered from: the city's
+/// buildings, its owner's index, or the beliefs of its majority faith.
+pub fn city_uniques_by_origin<'a>(
+    world: &'a World,
+    r: &'a Ruleset,
+    city: &'a crate::world::city::City,
+) -> impl Iterator<Item = (crate::modifiers::YieldSource, &'a crate::Unique)> + 'a {
+    use crate::modifiers::YieldSource;
     city.uniques
         .all()
         .filter(|u| !u.is_global() || u.unique_type() == Some(crate::UniqueType::Stats))
-        .chain(world.civ(city.owner).into_iter().flat_map(|c| c.uniques.all()))
-        .chain(city_belief_uniques(world, r, city))
-        .collect()
+        .map(|u| (YieldSource::Buildings, u))
+        .chain(world.civ(city.owner).into_iter().flat_map(|c| c.uniques.all()).map(|u| (YieldSource::Empire, u)))
+        .chain(city_belief_uniques(world, r, city).into_iter().map(|u| (YieldSource::Religion, u)))
 }
 
 #[cfg(test)]

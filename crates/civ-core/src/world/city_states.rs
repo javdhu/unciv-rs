@@ -459,21 +459,32 @@ pub fn civ_wide_yields_with_modifiers(
     civ: CivId,
     mods: crate::world::TurnModifiers,
 ) -> crate::stats::Stats {
+    civ_wide_yield_parts(world, r, civ, mods).total()
+}
+
+/// [`civ_wide_yields_with_modifiers`], by source: the parts it sums.
+pub fn civ_wide_yield_parts(
+    world: &World,
+    r: &Ruleset,
+    civ: CivId,
+    mods: crate::world::TurnModifiers,
+) -> crate::modifiers::YieldParts {
+    use crate::modifiers::{YieldParts, YieldSource};
     use crate::stats::Stats;
-    let Some(c) = world.civ(civ) else { return Stats::ZERO };
-    let mut total = Stats::ZERO;
+    let mut parts = YieldParts::new();
+    let Some(c) = world.civ(civ) else { return parts };
 
     let ctx = crate::world::conditionals::GameContext::new(r).with_world(world).for_civ(civ);
     let holds = |u: &Unique| crate::world::conditionals::applies(u, &ctx) == crate::world::conditionals::Verdict::True;
 
     for u in c.uniques.matching(crate::UniqueType::Stats).filter(|u| holds(u)) {
         if let Some(s) = u.params.first().and_then(|p| Stats::parse(p)) {
-            total += s;
+            parts.add(YieldSource::Empire, s);
         }
     }
 
-    total += crate::world::city_effects::founder_yields(world, r, civ);
-    total += crate::world::city_effects::reserve_yields(world, r, civ);
+    parts.add(YieldSource::Religion, crate::world::city_effects::founder_yields(world, r, civ));
+    parts.add(YieldSource::Empire, crate::world::city_effects::reserve_yields(world, r, civ));
     if c.is_major() {
         for u in c.uniques.matching(crate::UniqueType::CityStateStatPercent).filter(|u| holds(u)) {
             let Some(stat) = u.params.first().and_then(|p| crate::stats::Stat::parse(p)) else { continue };
@@ -492,11 +503,17 @@ pub fn civ_wide_yields_with_modifiers(
                     crate::stats::Stat::Food => plan.food.iter().map(|(_, n)| *n).sum(),
                     crate::stats::Stat::Production => plan.production.iter().map(|(_, n)| *n).sum(),
                 };
-                total[stat] += (Fixed::whole(amount) * percent).checked_div(Fixed::whole(100)).unwrap_or_default();
+                parts.add(
+                    YieldSource::CityStates,
+                    Stats::of(
+                        stat,
+                        (Fixed::whole(amount) * percent).checked_div(Fixed::whole(100)).unwrap_or_default(),
+                    ),
+                );
             }
         }
     }
-    total
+    parts
 }
 
 // ---------------------------------------------------------------------------
