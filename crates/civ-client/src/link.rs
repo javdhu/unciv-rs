@@ -70,19 +70,22 @@ impl Link {
 
 fn epoch(settings: &Settings, sight: Sight) -> String {
     let eyes = match sight {
-        Sight::All => "all",
-        Sight::Seat => "seat",
+        Sight::All => "all".to_string(),
+        Sight::Seat => "seat".to_string(),
+        Sight::Civ(civ) => format!("civ{civ}"),
     };
     format!("watch-{}-{eyes}", settings.seed)
 }
 
 fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Down>) -> Result<(), String> {
     let mut session = Session::watch(settings.clone(), epoch(&settings, sight), sight).map_err(|e| e.to_string())?;
+    // The watcher's seat: seat 0, or the civ watched through.
+    let seat = |session: &Session| session.seats().next().unwrap_or(0);
     let welcome = |session: &Session| -> Result<ServerMessage, String> {
         Ok(ServerMessage::Welcome {
             version: PROTOCOL_VERSION,
             content_hash: session.content_hash(),
-            update: session.current_update(0).map_err(|e| e.to_string())?,
+            update: session.current_update(seat(session)).map_err(|e| e.to_string())?,
         })
     };
     let send = |message| {
@@ -100,9 +103,10 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
         match message {
             Up::Advance => {
                 let Some(transition) = session.stage_round().map_err(|e| e.to_string())? else { continue };
-                for (seat, update) in transition.updates {
-                    if seat == 0 {
-                        send(session.update_message(0, update).map_err(|e| e.to_string())?);
+                let watcher = seat(&session);
+                for (s, update) in transition.updates {
+                    if s == watcher {
+                        send(session.update_message(watcher, update).map_err(|e| e.to_string())?);
                     }
                 }
                 session = transition.next;
@@ -120,9 +124,9 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
             }
             Up::Client(ClientMessage::Hello { .. }) => send(welcome(&session)?),
             Up::Client(ClientMessage::Resync) => send(ServerMessage::Update {
-                update: session.current_update(0).map_err(|e| e.to_string())?,
+                update: session.current_update(seat(&session)).map_err(|e| e.to_string())?,
             }),
-            Up::Client(ClientMessage::Query { request_id, query }) => match session.query(0, query) {
+            Up::Client(ClientMessage::Query { request_id, query }) => match session.query(seat(&session), query) {
                 Ok(reply) => send(ServerMessage::QueryReply { request_id, reply }),
                 Err(_) => send(ServerMessage::Error { code: "query".into() }),
             },

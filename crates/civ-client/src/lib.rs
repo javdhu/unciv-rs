@@ -68,14 +68,18 @@ pub fn run() {
     app.run();
 }
 
-/// Whose eyes a watched match is seen through: `CIV_SIGHT=seat` natively, `civSight` on the page; all-seeing
-/// otherwise.
+/// Whose eyes a watched match is seen through: `CIV_SIGHT=seat` or a civ id natively, `civSight` on the page;
+/// all-seeing otherwise.
 fn sight() -> Sight {
     #[cfg(not(target_arch = "wasm32"))]
     let wanted = std::env::var("CIV_SIGHT").ok();
     #[cfg(target_arch = "wasm32")]
     let wanted = js_sys::Reflect::get(&js_sys::global(), &"civSight".into()).ok().and_then(|v| v.as_string());
-    if wanted.as_deref() == Some("seat") { Sight::Seat } else { Sight::All }
+    match wanted.as_deref() {
+        Some("seat") => Sight::Seat,
+        Some(civ) => civ.parse().map_or(Sight::All, Sight::Civ),
+        None => Sight::All,
+    }
 }
 
 /// Match settings as civ-sim's JSON (`Settings`, camelCase): `CIV_SETTINGS` natively, `civSettings` on the

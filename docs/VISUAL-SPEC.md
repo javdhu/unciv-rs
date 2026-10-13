@@ -254,8 +254,8 @@ Built 2026-10-13 for review (spectator mode).
 - HUD: the top bar and the civ panel as specified; the panel's columns are cities and techs (the view carries
   techs only for the watcher's own civ, so others show a dash). Raiders are left out.
 - Sound: a `Cue` message for each round, move, battle, fall, founding and capture; nothing plays it.
-- Whose eyes: all-seeing or seat 0's eyes. Switching replays the match to the same turn under the other
-  sight. Any other civ's eyes needs civ-sim to watch through a chosen civ.
+- Whose eyes: all-seeing, then each living major civ in turn (civ-sim's `Sight::Civ`, added 2026-10-13 on
+  Javed's call). Switching replays the match to the same turn under the new sight.
 - Not built: border edges drawing in over 0.4 s, and the banner colour wipe on capture (the taken city rises
   instead).
 

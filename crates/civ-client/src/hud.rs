@@ -127,11 +127,14 @@ fn bar(mut commands: Commands, font: Res<UiFont>, link: Option<Res<Link>>) {
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn activate(
     event: On<Activate>,
     controls: Query<&Control>,
     mut playback: ResMut<Playback>,
     eyes: Option<Res<Eyes>>,
+    view: Res<ViewState>,
+    rules: Option<Res<Rules>>,
     link: Res<Link>,
     mut commands: Commands,
 ) {
@@ -144,8 +147,34 @@ fn activate(
             Control::Skip => playback.skip = !playback.skip,
             Control::Follow => playback.follow = !playback.follow,
             Control::Eyes => {
+                // All-seeing, then each living major civ in turn, then all-seeing again.
                 let now = eyes.as_deref().map_or(Sight::All, |e| e.0);
-                let next = if now == Sight::All { Sight::Seat } else { Sight::All };
+                let majors: Vec<u8> = view
+                    .view()
+                    .map(|v| {
+                        v.civs
+                            .iter()
+                            .filter(|c| !c.city_state && c.alive)
+                            .filter(|c| {
+                                rules.as_ref().is_none_or(|r| {
+                                    r.tables.nations.iter().find(|n| n.id == c.nation).and_then(|n| n.barbarian)
+                                        != Some(true)
+                                })
+                            })
+                            .map(|c| c.id)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let current = match now {
+                    Sight::All => None,
+                    Sight::Seat => Some(0),
+                    Sight::Civ(c) => Some(c),
+                };
+                let next = match current.and_then(|c| majors.iter().position(|m| *m == c)) {
+                    None if current.is_none() => majors.first().map_or(Sight::All, |c| Sight::Civ(*c)),
+                    Some(i) if i + 1 < majors.len() => Sight::Civ(majors[i + 1]),
+                    _ => Sight::All,
+                };
                 link.send(Up::Watch(next));
                 commands.insert_resource(Eyes(next));
             }
@@ -174,7 +203,7 @@ fn show_controls(
             Control::Pause => Some(if playback.paused { "Play".to_string() } else { "Pause".to_string() }),
             Control::Eyes => Some(match eyes.as_deref().map_or(Sight::All, |e| e.0) {
                 Sight::All => "All-seeing".to_string(),
-                Sight::Seat => view
+                Sight::Seat | Sight::Civ(_) => view
                     .view()
                     .and_then(|v| v.civs.iter().find(|c| c.id == v.me))
                     .and_then(|c| rules.as_ref().and_then(|r| r.nation(c.nation)).map(|n| format!("{}'s eyes", n.0)))
