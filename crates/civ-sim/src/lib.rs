@@ -24,7 +24,8 @@ pub use setup::{new_game, new_game_for, new_game_in, SeatChoice, Settings};
 pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnReport};
 // The view and event types a Rust client matches on; they already cross the wire inside `GameUpdate`.
 pub use view::{
-    CaptureChoice, CityStateView, CityView, GreatPersonOutcome, NoticeKind, ReligiousEventKind, SpyActionView, CivView, EventView, PresentationEvent, Reach, RelationView, TileView, TradableView, UnitView,
+    CaptureChoice, CityStateView, CityView, CivView, EventView, GreatPersonOutcome, GreatPersonProgressView, NoticeKind,
+    PresentationEvent, Reach, RelationView, ReligiousEventKind, SpyActionView, TileView, TradableView, UnitView,
 };
 
 #[cfg(feature = "js")]

@@ -381,6 +381,18 @@ Also additive; the protocol version stays 4. Every new field is optional in Type
   nothingToAdd | notACityState | atWar | cannotBuildHere | notAble`. `amount` is the science (`hurryResearch`),
   hammers here (`hurryProduction`) or gold (`tradeMission`) it would bring now. `great_person_actions` keeps
   listing only the legal ones.
+- **Great person progress.** `KnowledgeView.greatPeople?: GreatPersonProgressView[]` is this player's own progress
+  (no other nation's is ever sent), one entry per kind it can earn by points, sorted by `unit` then civilian before
+  combat: `{ unit, points, perTurn, threshold, pool?, combat }`. `unit` is the kind's unit id in `RuleTables.units`
+  (as `greatPersonPoints` rows name it; a nation's own version is what is born). Civilian kinds are those a
+  building or specialist earns points toward: `perTurn` is what its cities earn now, and `threshold` is shared by
+  every kind with the same `pool` (the unit's great person group, `""` for none) and doubles at each birth in it.
+  Combat kinds (`combat: true`, no `pool`, `perTurn` 0) are earned from fighting anyone but barbarians, each with
+  its own threshold, 200 then 50 more a birth. The faith-born prophet is not listed. Absent for a city-state.
+- **Defender's owner.** `attacked.defenderOwner?: number` is the nation that owned the defending unit or city when
+  the blow landed. Every `attacked` sent carries it, so a fight whose defender died still says whose it was.
+- **Attacker's owner.** `attacked.attackerOwner?: number` is the attacker's nation, present when this player
+  attacked or could see the attacker (the sight that filters `flankers`), absent when an unseen unit attacked it.
 - **Eras.** `PlayerView.eraStarts?: number[]` is the turn this player reached each era, indexed by era number (in
   `RuleTables` era order) up to its current era. Starting eras and skipped eras read the turn it got there, so the
   list never decreases. The engine records it at each round end and saves keep it; a save made before
