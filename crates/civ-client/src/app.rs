@@ -55,6 +55,51 @@ pub fn plugin(app: &mut App) {
         .add_systems(PostStartup, launch)
         .add_systems(OnEnter(AppState::Match), menu_camera_on(false))
         .add_systems(OnExit(AppState::Match), (sweep, menu_camera_on(true)));
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(rounds) = std::env::var("CIV_REJOIN").ok().and_then(|n| n.parse::<u32>().ok()) {
+        app.insert_resource(Rejoin { rounds, frame: 0, counts: Vec::new() })
+            .add_systems(Update, rejoin);
+    }
+}
+
+/// `CIV_REJOIN=n`: open a solo match and leave it n times, counting entities at home after each, and exit
+/// with an error if the count grew after the first (a match left something behind).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Resource)]
+struct Rejoin {
+    rounds: u32,
+    frame: u32,
+    counts: Vec<usize>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn rejoin(
+    mut commands: Commands,
+    mut rejoin: ResMut<Rejoin>,
+    state: Res<State<AppState>>,
+    mut next: ResMut<NextState<AppState>>,
+    entities: Query<Entity>,
+) {
+    rejoin.frame += 1;
+    match state.get() {
+        AppState::Match if rejoin.frame >= 240 => {
+            rejoin.frame = 0;
+            leave(&mut next, AppState::Home);
+        }
+        AppState::Home if rejoin.frame == 30 => {
+            let count = entities.iter().count();
+            rejoin.counts.push(count);
+            info!("rejoin: {count} entities at home after {} matches", rejoin.counts.len() - 1);
+            if rejoin.counts.len() as u32 > rejoin.rounds {
+                let grew = rejoin.counts.windows(2).skip(1).any(|w| w[1] > w[0]);
+                println!("rejoin counts {:?}: {}", rejoin.counts, if grew { "GREW" } else { "steady" });
+                std::process::exit(if grew { 1 } else { 0 });
+            }
+            rejoin.frame = 0;
+            enter(&mut commands, &mut next, Start::Solo(Settings::default()));
+        }
+        _ => {}
+    }
 }
 
 /// Open a match: its link and mode, then the state change runs every plugin's `OnEnter(AppState::Match)`.
