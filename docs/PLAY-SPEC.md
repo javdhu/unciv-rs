@@ -141,6 +141,6 @@ Q3. The tech tree. (a) Full-screen, scrollable, laid out by the rules' columns a
 (b) Keep the side list of M3 and add the tree as a toggle in it.
 
 Q4. Trade. (a) A trade window: two columns, yours and theirs, items added from what each side has (gold, gold per
-turn, luxuries, strategic resources, open borders, embassy, cities), the AI's answer shown before sending. (b)
+turn, luxuries, strategic resources, open borders, embassy, cities), sent with `offerTrade`. (b)
 Only the fixed agreements above for now (peace, friendship, research agreement, pact, gift gold), with trade
 later.
