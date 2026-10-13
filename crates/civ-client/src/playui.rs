@@ -66,13 +66,15 @@ struct Stale(bool);
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Stale>()
-        .add_systems(Startup, frame.run_if(playing))
+        .add_systems(OnEnter(crate::app::AppState::Match), frame.run_if(playing))
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Stale>)
         .add_systems(
             Update,
             (mark, top_bar, unit_panel, turn_button, city_panel, preview_card, toasts, keys, shade)
                 .chain()
                 .run_if(playing)
-                .after(crate::map::MapSet::Rebuild),
+                .after(crate::map::MapSet::Rebuild)
+                .in_set(crate::app::InMatch),
         );
 }
 
@@ -346,16 +348,33 @@ fn turn_button(
     slot: Query<(Entity, Option<&Children>), With<TurnButton>>,
 ) {
     let Ok((e, children)) = slot.single() else { return };
-    if !stale.0 && !outbox.is_changed() {
+    if !stale.0 && !outbox.is_changed() && !selection.is_changed() && !view.is_changed() {
         return;
     }
     clear(&mut commands, children);
-    let label = if awaiting(&view, &selection, None).is_some() { "Next unit" } else { "End turn" };
+    let ready = view.update().is_some_and(|u| u.ready);
+    let label = if ready {
+        // Rooms: the round closes when every person has finished, or at the deadline.
+        let others = view.update().and_then(|u| u.seats.as_ref().map(|s| (u.view.me, s))).map(|(me, seats)| {
+            seats.iter().filter(|s| s.seat != me && s.controlled && !s.ready && s.left != Some(true)).count()
+        });
+        match others {
+            Some(1) => "Waiting for 1 player".to_string(),
+            Some(n) if n > 1 => format!("Waiting for {n} players"),
+            _ => "Waiting for the round".to_string(),
+        }
+    } else if awaiting(&view, &selection, None).is_some() {
+        "Next unit".into()
+    } else if selection.end_armed {
+        "Click again to end turn".into()
+    } else {
+        "End turn".into()
+    };
     commands.entity(e).with_child(styled(
         &font,
         Order::Turn,
         label,
-        true,
+        !ready,
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
@@ -553,6 +572,7 @@ fn keys(
     mut cameras: Query<&mut MapCamera>,
     land: Option<Res<crate::map::Land>>,
     mut stale: ResMut<Stale>,
+    link: Option<Res<crate::link::Link>>,
 ) {
     let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::SuperLeft);
     if ctrl && keys.just_pressed(KeyCode::KeyZ) {
@@ -563,9 +583,11 @@ fn keys(
         selection.city = None;
         selection.research_open = false;
         selection.armed = None;
+        selection.end_armed = false;
     }
     if keys.just_pressed(KeyCode::Enter) {
-        turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref());
+        let room = link.is_some_and(|l| l.is_remote());
+        turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
     }
     let (Some(unit), Some(rules)) = (selection.unit, rules) else {
         stale.0 = false;
@@ -590,7 +612,17 @@ fn act(selection: &mut Selection, outbox: &mut Outbox, view: &ViewState, rules: 
 }
 
 /// "Next unit" selects the next unit awaiting orders and glides to it; "End turn" ends it.
-fn turn(selection: &mut Selection, outbox: &mut Outbox, view: &ViewState, cameras: &mut Query<&mut MapCamera>, land: Option<&crate::map::Land>) {
+fn turn(
+    selection: &mut Selection,
+    outbox: &mut Outbox,
+    view: &ViewState,
+    cameras: &mut Query<&mut MapCamera>,
+    land: Option<&crate::map::Land>,
+    room: bool,
+) {
+    if view.update().is_some_and(|u| u.ready) {
+        return;
+    }
     match awaiting(view, selection, selection.unit) {
         Some(next) => {
             select_unit(selection, next);
@@ -601,9 +633,11 @@ fn turn(selection: &mut Selection, outbox: &mut Outbox, view: &ViewState, camera
                 camera.jump(target, distance);
             }
         }
+        None if room && !selection.end_armed => selection.end_armed = true,
         None => {
             outbox.submit(Action::FinishTurn);
             selection.unit = None;
+            selection.end_armed = false;
         }
     }
 }
@@ -619,10 +653,14 @@ fn press(
     mut cameras: Query<&mut MapCamera>,
     land: Option<Res<crate::map::Land>>,
     mut stale: ResMut<Stale>,
+    link: Option<Res<crate::link::Link>>,
 ) {
     let Ok(order) = orders.get(event.entity) else { return };
     match order.clone() {
-        Order::Turn => turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref()),
+        Order::Turn => {
+            let room = link.is_some_and(|l| l.is_remote());
+            turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
+        }
         Order::Undo => {
             outbox.submit(Action::Undo);
         }

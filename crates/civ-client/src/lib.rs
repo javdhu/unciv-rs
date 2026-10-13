@@ -1,5 +1,6 @@
 //! The Bevy client for civ-sim matches (docs/CLIENT-BRIEF.md, docs/VISUAL-SPEC.md).
 
+pub mod app;
 pub mod camera;
 pub mod client;
 mod harness;
@@ -8,6 +9,7 @@ pub mod hex;
 mod inspect;
 pub mod link;
 mod map;
+pub mod net;
 mod paint;
 mod pieces;
 pub mod play;
@@ -15,6 +17,7 @@ mod playui;
 mod screens;
 mod present;
 mod relief;
+mod roomui;
 pub mod rules;
 mod shots;
 pub mod thread;
@@ -31,16 +34,14 @@ pub fn run() {
         return;
     }
     let shots = shots::Shots::requested();
-    // Shots and recordings watch; otherwise you play, unless CIV_WATCH (or civWatch on the page) asks to watch.
-    let mode = match &shots {
-        Some(s) if s.scene.play => play::Mode::Play,
-        Some(_) => play::Mode::Watch,
-        None if watch_requested() => play::Mode::Watch,
-        None => play::Mode::Play,
-    };
-    let (settings, sight) = match &shots {
-        Some(s) => (s.scene.settings.clone(), s.scene.sight),
-        None => (settings(), sight()),
+    // Shots and recordings go straight to their match, as do CIV_SOLO, CIV_WATCH and CIV_MATCH (civSolo,
+    // civWatch and ?match= on the page); otherwise the app opens on the rooms screens.
+    let launch = match &shots {
+        Some(s) if s.scene.play => Some(app::Start::Solo(s.scene.settings.clone())),
+        Some(s) => Some(app::Start::Watch(s.scene.settings.clone(), s.scene.sight)),
+        None if flag("CIV_WATCH", "civWatch") => Some(app::Start::Watch(settings(), sight())),
+        None if flag("CIV_SOLO", "civSolo") => Some(app::Start::Solo(settings())),
+        None => match_requested().map(|match_id| app::Start::Room { server: net::Server::from_env(), match_id }),
     };
     let mut window =
         Window { title: "civ".into(), canvas: Some("#bevy".into()), fit_canvas_to_parent: true, ..default() };
@@ -50,12 +51,8 @@ pub fn run() {
     }
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin { primary_window: Some(window), ..default() }))
-        .insert_resource(match mode {
-            play::Mode::Watch => link::Link::watch(settings, sight),
-            play::Mode::Play => link::Link::play(settings),
-        })
-        .insert_resource(mode)
-        .insert_resource(hud::Eyes(sight))
+        .add_plugins(app::plugin)
+        .insert_resource(app::Launch(launch))
         .add_plugins((
             client::plugin,
             rules::plugin,
@@ -67,15 +64,12 @@ pub fn run() {
             play::plugin,
             playui::plugin,
             screens::plugin,
+            roomui::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,
             shots::plugin,
         ));
-    if mode == play::Mode::Play {
-        // A played match's rounds close when you end your turn.
-        app.insert_resource(client::Pace::Paused);
-    }
     if let Some(shots) = shots {
         // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
         // each capture takes.
@@ -89,11 +83,30 @@ pub fn run() {
     app.run();
 }
 
-fn watch_requested() -> bool {
+/// An environment variable natively, a page global in the browser.
+fn flag(env: &str, global: &str) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
-    return std::env::var("CIV_WATCH").is_ok();
+    {
+        let _ = global;
+        std::env::var(env).is_ok()
+    }
     #[cfg(target_arch = "wasm32")]
-    return js_sys::Reflect::get(&js_sys::global(), &"civWatch".into()).is_ok_and(|v| v.is_truthy());
+    {
+        let _ = env;
+        js_sys::Reflect::get(&js_sys::global(), &global.into()).is_ok_and(|v| v.is_truthy())
+    }
+}
+
+/// A room's match to open at once: `CIV_MATCH` natively, `?match=` on the page (kept there while a match is
+/// open, so a reload returns to it).
+fn match_requested() -> Option<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return std::env::var("CIV_MATCH").ok().filter(|m| !m.is_empty());
+    #[cfg(target_arch = "wasm32")]
+    return web_sys::window()
+        .and_then(|w| w.location().search().ok())
+        .and_then(|q| q.trim_start_matches('?').split('&').find_map(|p| p.strip_prefix("match=").map(str::to_string)))
+        .filter(|m| !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
 }
 
 /// Whose eyes a watched match is seen through: `CIV_SIGHT=seat` or a civ id natively, `civSight` on the page;

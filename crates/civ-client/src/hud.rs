@@ -40,8 +40,9 @@ struct TurnText;
 struct CivList;
 
 pub fn plugin(app: &mut App) {
-    let watching = |mode: Option<Res<crate::play::Mode>>| mode.is_none_or(|m| *m == crate::play::Mode::Watch);
-    app.add_systems(Startup, bar.run_if(watching)).add_systems(Update, (show_controls, show_turn, show_civs).run_if(watching));
+    let watching = |mode: Option<Res<crate::play::Mode>>| mode.is_some_and(|m| *m == crate::play::Mode::Watch);
+    app.add_systems(OnEnter(crate::app::AppState::Match), bar.run_if(watching))
+        .add_systems(Update, (show_controls, show_turn, show_civs).run_if(watching).in_set(crate::app::InMatch));
 }
 
 fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color) -> impl Bundle {

@@ -93,13 +93,15 @@ struct ScreenButtons;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Screens>()
-        .add_systems(Startup, frames.run_if(playing))
+        .add_systems(OnEnter(crate::app::AppState::Match), frames.run_if(playing))
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Screens>)
         .add_systems(
             Update,
             (mark, follow_path, tree, policies, civs, trade, offers, buttons, shade)
                 .chain()
                 .run_if(playing)
-                .after(crate::map::MapSet::Rebuild),
+                .after(crate::map::MapSet::Rebuild)
+                .in_set(crate::app::InMatch),
         );
 }
 

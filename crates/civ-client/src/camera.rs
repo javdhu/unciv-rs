@@ -58,11 +58,11 @@ impl MapCamera {
 pub fn plugin(app: &mut App) {
     let shadow_map = if cfg!(target_arch = "wasm32") { 1024 } else { 2048 };
     app.insert_resource(DirectionalLightShadowMap { size: shadow_map })
-        .add_systems(Startup, spawn)
-        .add_systems(Update, (frame, input, place).chain());
+        .add_systems(OnEnter(crate::app::AppState::Match), spawn)
+        .add_systems(Update, (frame, input, place).chain().in_set(crate::app::InMatch));
 }
 
-fn spawn(mut commands: Commands) {
+pub(crate) fn spawn(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         // The UI (inspector, resource markers) follows this camera, also when it renders into the review

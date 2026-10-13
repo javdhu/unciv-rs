@@ -1,6 +1,7 @@
 //! The one path between the Bevy world and a match host (docs/CLIENT-BRIEF.md, component 1).
 //!
-//! Messages are civ-sim's own wire types, so a remote host (M5) slots in behind the same queues. The solo host
+//! Messages are civ-sim's own wire types, so a room's remote host (`Link::remote`, `net.rs`) sits behind the
+//! same queues. The solo host
 //! is a `Session` on its own thread (`thread::spawn`). Both directions are lock-free queues: the browser's
 //! main thread must never wait on a lock, so the Bevy side only pushes, pops and unparks; the host thread
 //! parks when it has nothing to do.
@@ -20,13 +21,27 @@ pub enum Up {
     /// Watch the same match through other eyes: the host replays it to the current turn under the new sight
     /// (the engine is deterministic) and welcomes the client again under a new epoch.
     Watch(Sight),
+    /// The client left the match: the host stops. Sent when the `Link` is dropped.
+    Close,
 }
 
 /// From the host.
 pub enum Down {
     Message(ServerMessage),
-    /// The host stopped and sends nothing more: the match is over or the host failed.
+    /// A remote host's connection came up or was lost.
+    Status(Status),
+    /// The host stopped and sends nothing more: the match is over, the host failed, or the server will not
+    /// take this client back.
     Stopped(String),
+}
+
+/// A remote host's connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Status {
+    #[default]
+    Live,
+    /// Lost, about to try again for the nth time in a row.
+    Retrying(u32),
 }
 
 #[derive(bevy::prelude::Resource)]
@@ -34,16 +49,51 @@ pub struct Link {
     up: Arc<ConcurrentQueue<Up>>,
     down: Arc<ConcurrentQueue<Down>>,
     host: Arc<OnceLock<std::thread::Thread>>,
+    /// A room's server and match, for a remote host.
+    remote: Option<(crate::net::Server, String)>,
 }
 
 impl Link {
-    /// Watch bots play one match in-process. The host sends its welcome unasked.
-    pub fn watch(settings: Settings, sight: Sight) -> Link {
-        let link = Link {
+    fn new(remote: Option<(crate::net::Server, String)>) -> Link {
+        Link {
             up: Arc::new(ConcurrentQueue::unbounded()),
             down: Arc::new(ConcurrentQueue::unbounded()),
             host: Arc::new(OnceLock::new()),
-        };
+            remote,
+        }
+    }
+
+    /// Play a seat in a civ-server room. The socket says hello and the server welcomes; a lost socket is tried
+    /// again (`net::Retry`), and every new connection starts from a full welcome.
+    pub fn remote(server: crate::net::Server, match_id: String) -> Link {
+        let link = Link::new(Some((server.clone(), match_id.clone())));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (up, down, host) = (link.up.clone(), link.down.clone(), link.host.clone());
+            thread::spawn("socket", move || {
+                let _ = host.set(std::thread::current());
+                let reason = crate::net::run_socket(server, match_id, &up, &down);
+                let _ = down.push(Down::Stopped(reason));
+            });
+        }
+        link
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.remote.is_some()
+    }
+
+    /// Drive a remote host's socket in the browser, where it lives on the page's thread.
+    #[cfg(target_arch = "wasm32")]
+    pub fn pump(&self) {
+        if let Some((server, match_id)) = &self.remote {
+            crate::net::web::pump(server, match_id, &self.up, &self.down);
+        }
+    }
+
+    /// Watch bots play one match in-process. The host sends its welcome unasked.
+    pub fn watch(settings: Settings, sight: Sight) -> Link {
+        let link = Link::new(None);
         let (up, down, host) = (link.up.clone(), link.down.clone(), link.host.clone());
         thread::spawn("host", move || {
             let _ = host.set(std::thread::current());
@@ -59,11 +109,7 @@ impl Link {
     /// Play a match against bots in-process, on seat 0. The host stages each command and answers with its
     /// receipt and the updates it caused; finishing the turn closes the round.
     pub fn play(settings: Settings) -> Link {
-        let link = Link {
-            up: Arc::new(ConcurrentQueue::unbounded()),
-            down: Arc::new(ConcurrentQueue::unbounded()),
-            host: Arc::new(OnceLock::new()),
-        };
+        let link = Link::new(None);
         let (up, down, host) = (link.up.clone(), link.down.clone(), link.host.clone());
         thread::spawn("host", move || {
             let _ = host.set(std::thread::current());
@@ -85,6 +131,16 @@ impl Link {
 
     pub fn receive(&self) -> Option<Down> {
         self.down.pop().ok()
+    }
+}
+
+impl Drop for Link {
+    fn drop(&mut self) {
+        self.send(Up::Close);
+        #[cfg(target_arch = "wasm32")]
+        if self.remote.is_some() {
+            crate::net::web::close();
+        }
     }
 }
 
@@ -152,6 +208,7 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
             },
             // A watched match takes no commands.
             Up::Client(ClientMessage::Command { .. }) => send(ServerMessage::Error { code: "watching".into() }),
+            Up::Close => return Ok(()),
         }
     }
 }
@@ -198,6 +255,7 @@ fn play(settings: Settings, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Dow
             Up::Client(ClientMessage::Hello { .. }) => send(welcome(&session)?),
             // A played match's rounds close when its seat finishes; it has no other eyes.
             Up::Advance | Up::Watch(_) => {}
+            Up::Close => return Ok(()),
         }
     }
 }

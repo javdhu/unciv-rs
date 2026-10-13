@@ -50,8 +50,12 @@ struct Marker {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Hover>()
         .add_systems(PreStartup, fonts)
-        .add_systems(Startup, panel)
-        .add_systems(Update, (pick, outline, inspector, markers, place_markers).chain().after(crate::camera::place));
+        .add_systems(OnEnter(crate::app::AppState::Match), panel)
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Hover>)
+        .add_systems(
+            Update,
+            (pick, outline, inspector, markers, place_markers).chain().after(crate::camera::place).in_set(crate::app::InMatch),
+        );
 }
 
 fn fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {

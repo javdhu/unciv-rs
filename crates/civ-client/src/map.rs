@@ -59,8 +59,9 @@ pub enum MapSet {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Dirty>()
-        .configure_sets(Update, (MapSet::Track, MapSet::Rebuild).chain())
+        .configure_sets(Update, (MapSet::Track, MapSet::Rebuild).chain().in_set(crate::app::InMatch))
         .add_systems(Startup, slate)
+        .add_systems(OnExit(crate::app::AppState::Match), (crate::app::reset::<Dirty>, crate::app::drop::<Land>))
         .add_systems(Update, (track.in_set(MapSet::Track), rebuild.in_set(MapSet::Rebuild)));
 }
 

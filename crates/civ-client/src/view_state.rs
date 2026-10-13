@@ -31,6 +31,10 @@ pub enum Applied {
 #[derive(Resource, Default)]
 pub struct ViewState {
     update: Option<GameUpdate>,
+    /// The rules the host plays by, from its last welcome.
+    content_hash: Option<String>,
+    /// Welcomes applied: each one starts a connection over (a reconnect, or new eyes on a watched match).
+    welcomes: u32,
 }
 
 impl ViewState {
@@ -42,6 +46,14 @@ impl ViewState {
         self.update.as_ref().map(|u| &u.view)
     }
 
+    pub fn content_hash(&self) -> Option<&str> {
+        self.content_hash.as_deref()
+    }
+
+    pub fn welcomes(&self) -> u32 {
+        self.welcomes
+    }
+
     pub fn cursor(&self) -> Option<&ViewCursor> {
         self.update.as_ref().map(|u| &u.cursor)
     }
@@ -49,7 +61,12 @@ impl ViewState {
     /// Apply a welcome, update or delta. Other messages carry no view and return `None`.
     pub fn apply(&mut self, message: ServerMessage) -> Option<Applied> {
         Some(match message {
-            ServerMessage::Welcome { update, .. } | ServerMessage::Update { update } => self.replace(update),
+            ServerMessage::Welcome { update, content_hash, .. } => {
+                self.content_hash = Some(content_hash);
+                self.welcomes += 1;
+                self.replace(update)
+            }
+            ServerMessage::Update { update } => self.replace(update),
             ServerMessage::Delta { base, update, removed } => self.patch(base, update, removed),
             ServerMessage::Receipt { .. } | ServerMessage::QueryReply { .. } | ServerMessage::Error { .. } => {
                 return None;

@@ -179,7 +179,12 @@ pub fn plugin(app: &mut App) {
                 doom.before(crate::pieces::PiecesSet::Project),
                 begin.after(crate::pieces::PiecesSet::Project).before(crate::pieces::PiecesSet::Stand),
                 (keys, play, numbers, projectiles, gate).chain().after(begin).before(crate::pieces::PiecesSet::Stand),
-            ),
+            )
+                .in_set(crate::app::InMatch),
+        )
+        .add_systems(
+            OnExit(crate::app::AppState::Match),
+            (crate::app::reset::<Playback>, crate::app::reset::<Show>, |mut c: Commands| c.insert_resource(Gate { open: true })),
         );
 }
 

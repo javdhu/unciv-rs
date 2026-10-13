@@ -51,6 +51,8 @@ pub struct Selection {
     pub research_open: bool,
     /// A tile for sale clicked once: a second click buys it.
     pub armed_tile: Option<u16>,
+    /// In a room, End turn clicked once: a second click ends it, since it cannot be taken back there.
+    pub end_armed: bool,
     /// The turn the skips belong to.
     turn: u32,
     /// Bumped with every new question, so older answers are dropped.
@@ -90,8 +92,10 @@ pub fn plugin(app: &mut App) {
             (refresh, answers, receipts, click, preview, highlight, tile_labels, place_labels)
                 .chain()
                 .run_if(playing)
-                .after(crate::map::MapSet::Rebuild),
-        );
+                .after(crate::map::MapSet::Rebuild)
+                .in_set(crate::app::InMatch),
+        )
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Selection>);
 }
 
 pub fn entity(k: Key) -> EntityRef {

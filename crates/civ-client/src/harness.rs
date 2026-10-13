@@ -13,8 +13,9 @@ const SUMMARY_WINDOWS: u32 = 12;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Record>()
-        .add_systems(Startup, setup)
-        .add_systems(Update, (count, toggle, measure).chain());
+        .add_systems(OnEnter(crate::app::AppState::Match), setup)
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Record>)
+        .add_systems(Update, (count, toggle, measure).chain().in_set(crate::app::InMatch));
 }
 
 #[derive(Component)]

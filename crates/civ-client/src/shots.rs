@@ -155,8 +155,8 @@ impl Shots {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Captured>()
-        .add_systems(PostStartup, offscreen)
-        .add_systems(Update, (shoot, turn_script, tour_script).chain().after(crate::map::MapSet::Rebuild));
+        .add_systems(OnEnter(crate::app::AppState::Match), offscreen.after(crate::camera::spawn))
+        .add_systems(Update, (shoot, turn_script, tour_script).chain().after(crate::map::MapSet::Rebuild).in_set(crate::app::InMatch));
 }
 
 /// Point the map camera at an image of the review size.

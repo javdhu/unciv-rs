@@ -67,7 +67,8 @@ pub fn plugin(app: &mut App) {
     embedded_asset!(app, "shaders/map.wesl");
     app.add_plugins(MaterialPlugin::<MapMaterial>::default())
         .init_resource::<Reveal>()
-        .add_systems(Update, (setup, reveal, write).chain().after(MapSet::Track).before(MapSet::Rebuild));
+        .add_systems(Update, (setup, reveal, write).chain().after(MapSet::Track).before(MapSet::Rebuild))
+        .add_systems(OnExit(crate::app::AppState::Match), (crate::app::reset::<Reveal>, crate::app::drop::<Paint>));
 }
 
 fn data_image(width: u32, height: u32, format: TextureFormat) -> Image {

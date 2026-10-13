@@ -122,7 +122,11 @@ pub enum PiecesSet {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Pieces>()
         .init_resource::<Shapes>()
-        .configure_sets(Update, (PiecesSet::Project, PiecesSet::Stand).chain().after(crate::map::MapSet::Rebuild))
+        .configure_sets(
+            Update,
+            (PiecesSet::Project, PiecesSet::Stand).chain().after(crate::map::MapSet::Rebuild).in_set(crate::app::InMatch),
+        )
+        .add_systems(OnExit(crate::app::AppState::Match), crate::app::reset::<Pieces>)
         .add_systems(
             Update,
             (project.in_set(PiecesSet::Project), (stand, badges, banners).chain().in_set(PiecesSet::Stand)),

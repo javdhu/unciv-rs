@@ -1,7 +1,7 @@
 //! The Bevy side of a match: drain the `Link` into `ViewState`, announce what changed, ask for a resync when a
 //! delta does not fit, and pace a watched match's rounds.
 
-use crate::link::{Down, Link, Up};
+use crate::link::{Down, Link, Status, Up};
 use crate::view_state::{Applied, Changed, ViewState};
 use bevy::prelude::*;
 use civ_sim::protocol::{Action, ClientMessage, CommandReceipt, CommandRequest, QueryReply, ServerMessage};
@@ -37,7 +37,9 @@ pub struct HostError(pub String);
 #[derive(Resource, Default)]
 pub struct Outbox {
     queue: std::collections::VecDeque<(String, Action)>,
-    in_flight: Option<String>,
+    /// Sent, its receipt not yet in: sent again exactly as it was after every welcome (a reconnect), so the
+    /// server applies it once and answers with the receipt it stored.
+    in_flight: Option<(String, CommandRequest)>,
     next: u64,
 }
 
@@ -78,6 +80,8 @@ pub struct LinkState {
     /// A round asked for and not yet applied.
     pub awaiting_round: bool,
     pub stopped: Option<String>,
+    /// A remote host's connection; always live in-process.
+    pub connection: Status,
 }
 
 pub fn plugin(app: &mut App) {
@@ -90,7 +94,17 @@ pub fn plugin(app: &mut App) {
         .add_message::<ReceiptArrived>()
         .add_message::<HostError>()
         .init_resource::<Outbox>()
-        .add_systems(PreUpdate, (receive, pace, send).chain());
+        .add_systems(PreUpdate, (pump, receive, pace, send).chain().in_set(crate::app::InMatch))
+        .add_systems(
+            OnExit(crate::app::AppState::Match),
+            (crate::app::reset::<ViewState>, crate::app::reset::<LinkState>, crate::app::reset::<Outbox>),
+        );
+}
+
+/// A room's socket lives on the page's thread in the browser; natively it has its own.
+fn pump(_link: Res<Link>) {
+    #[cfg(target_arch = "wasm32")]
+    _link.pump();
 }
 
 pub fn receive(
@@ -110,18 +124,26 @@ pub fn receive(
                 answered.write(QueryAnswered { request_id, reply });
             }
             Down::Message(ServerMessage::Receipt { request_id, receipt }) => {
-                if outbox.in_flight.as_deref() == Some(request_id.as_str()) {
+                if outbox.in_flight.as_ref().is_some_and(|(id, _)| *id == request_id) {
                     outbox.in_flight = None;
                 }
                 receipts.write(ReceiptArrived { request_id, receipt });
             }
             Down::Message(ServerMessage::Error { code }) => {
-                // The host answers a failed command with an error, not a receipt: let the next one go.
-                outbox.in_flight = None;
+                // The in-process host answers a failed command with an error, not a receipt: let the next one
+                // go. A server's errors are about the connection, and the command goes again after the welcome.
+                if !link.is_remote() {
+                    outbox.in_flight = None;
+                }
                 errors.write(HostError(code));
             }
-            Down::Message(message) => match view.apply(message) {
-                Some(Applied::Changed(c)) => {
+            Down::Message(message) => match (matches!(message, ServerMessage::Welcome { .. }), view.apply(message)) {
+                (welcome, Some(Applied::Changed(c))) => {
+                    if welcome {
+                        if let Some((id, command)) = &outbox.in_flight {
+                            link.send(Up::Client(ClientMessage::Command { request_id: id.clone(), command: command.clone() }));
+                        }
+                    }
                     state.applied += 1;
                     state.awaiting_round = false;
                     changed.write(ViewChanged(c));
@@ -132,13 +154,14 @@ pub fn receive(
                         }
                     }
                 }
-                Some(Applied::Stale) => state.stale += 1,
-                Some(Applied::NeedResync) => {
+                (_, Some(Applied::Stale)) => state.stale += 1,
+                (_, Some(Applied::NeedResync)) => {
                     state.resyncs += 1;
                     link.send(Up::Client(ClientMessage::Resync));
                 }
-                None => {}
+                (_, None) => {}
             },
+            Down::Status(status) => state.connection = status,
             Down::Stopped(reason) => state.stopped = Some(reason),
         }
     }
@@ -172,8 +195,8 @@ fn send(link: Res<Link>, view: Res<ViewState>, mut outbox: ResMut<Outbox>) {
         turn_token: update.turn_token.clone(),
         action,
     };
-    link.send(Up::Client(ClientMessage::Command { request_id: id.clone(), command }));
-    outbox.in_flight = Some(id);
+    link.send(Up::Client(ClientMessage::Command { request_id: id.clone(), command: command.clone() }));
+    outbox.in_flight = Some((id, command));
 }
 
 /// What presentation plays for an update: the other civs' turns (replay batches, in order) and then this seat's

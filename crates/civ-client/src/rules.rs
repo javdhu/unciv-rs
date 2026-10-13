@@ -153,13 +153,17 @@ impl Rules {
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(PreUpdate, (ask, receive).after(crate::client::receive));
+    app.add_systems(PreUpdate, (ask, receive).after(crate::client::receive).in_set(crate::app::InMatch));
 }
 
-/// Ask once a view exists and no rules are held.
-fn ask(link: Res<Link>, view: Res<ViewState>, rules: Option<Res<Rules>>, mut asked: Local<bool>) {
-    if rules.is_none() && !*asked && view.view().is_some() {
-        *asked = true;
+/// Ask when the rules held are not the host's, once per connection (an answer lost with a socket is asked
+/// for again after the next welcome).
+fn ask(link: Res<Link>, view: Res<ViewState>, rules: Option<Res<Rules>>, mut asked: Local<Option<(String, u32)>>) {
+    let Some(hash) = view.content_hash() else { return };
+    let held = rules.is_some_and(|r| r.content_hash == hash);
+    let this = (hash.to_string(), view.welcomes());
+    if !held && asked.as_ref() != Some(&this) && view.view().is_some() {
+        *asked = Some(this);
         link.send(Up::Client(ClientMessage::Query { request_id: RULES_REQUEST.into(), query: Query::Rules }));
     }
 }
