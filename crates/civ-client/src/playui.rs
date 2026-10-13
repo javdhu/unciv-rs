@@ -697,7 +697,17 @@ fn city_panel(
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
             children![text(&font, format!("{}  ·  {}", c.name, c.population), 16.0, TEXT), button(&font, Order::CloseCity, "Close", true)],
         ));
-        p.spawn(text(&font, format!("Food +{food} · Production +{production}"), 12.0, DIM));
+        let yields_tip = own.map_or(String::new(), |o| {
+            let section = |stat: &str, title: &str| {
+                let lines = crate::tips::city_lines(o, stat);
+                if lines.is_empty() { String::new() } else { format!("{title}\n{}\n", lines.join("\n")) }
+            };
+            format!("{}{}{}{}", section("food", "Food"), section("production", "Production"), section("gold", "Gold"), section("science", "Science"))
+        });
+        p.spawn((
+            text(&font, format!("Food +{food} · Production +{production}"), 12.0, DIM),
+            crate::tips::Tip(if yields_tip.is_empty() { "What the city makes each turn".into() } else { yields_tip.trim_end().to_string() }),
+        ));
         if let Some(own) = own {
             let mut status = Vec::new();
             if own.puppet {

@@ -1,7 +1,7 @@
 # Play quality spec (M7)
 
 Status: K1-K6 decided by Javed on 2026-10-13, and the HUD arrangement below confirmed by him as written; M7
-being built.
+built (How M7 is built, at the end), the playtest loop next.
 
 | | Choice | Pick |
 |---|---|---|
@@ -119,3 +119,47 @@ K5. UI scale.
 K6. Capturing playtest issues.
 - (a) Javed writes them in chat.
 - (b) A report key (F8) saves a screenshot, the turn, the selection and a line Javed types into `playtest/` beside the build (natively) or downloads it (browser), so each issue can be reproduced exactly.
+
+## How M7 is built
+
+- **Breakdowns (K1, civ-sim and civ-core):**
+  - The own view carries `economy.breakdown` (gold, science, culture, faith and happiness) and each own city's `own.yieldBreakdown` (food, production, gold, science, culture, faith) as `{ stat, source, amount }`. Every stat's parts sum exactly to the figure shown; a test checks this every turn over 80 rounds.
+  - civ-core's economy now builds each total from tagged parts (`YieldSource`, `city_output_parts`, `civ_wide_yield_parts`, `happiness::breakdown`), so the parts and the total are one computation.
+  - Policies, wonders, technologies, the nation and city-state friendship show as one source, `empire`, because the unique index does not record where a civ-wide unique came from.
+  - The release persistence gate (`complete_matches_save_and_replay`) and all 1,154 workspace tests pass.
+- **The HUD** (`playui.rs`, `screens.rs`, `log.rs`, `minimap.rs`, `inspect.rs`), as the table above:
+  - Yields on the left of the top bar, the turn, Undo and Home on the right.
+  - The launch bar (Tech, Policies, Civilizations, Empire, Units, Log, Settings, ?) and the tracker (research and policy progress) under it.
+  - Met civs' badges on the right, ringed red at war.
+  - The notification stack above End Turn: decisions, then up to four of the turn's notes that matter; these replace the toasts that M6a gave notes.
+  - End Turn at the bottom right with Later beside it.
+  - The minimap in the bottom-left corner with the unit panel beside it.
+  - The tile inspector is now a tooltip at the pointer, after a 0.35 s rest.
+- **End Turn** also leads with "Choose research" (nothing researched) and "Adopt a policy" (culture enough), the prompts a player expects; the tracker says when a policy is ready.
+- **Tooltips** (`tips.rs`): any node with a `Tip` shows a card after 0.4 s, below what is hovered or above it, never over it, inside the window. They are on:
+  - the top bar's numbers, with their sources largest first;
+  - a city's yields, by source;
+  - the tracker, the launch bar and the badges;
+  - unit actions, End Turn, Home and Undo;
+  - the minimap's buttons.
+- **Keys (K2):**
+  - `keys.rs` is one table that the input systems read and the key map (H or ?) lists, so the map cannot leave a key out.
+  - Wait moved from S to Space: S both panned the camera and made the unit wait.
+  - New: N and Shift N cycle units that need orders; T P C E U L open screens; G shows the hex grid; Esc closes the topmost panel first, then what is aimed, then the selection.
+- **Minimap (K3):**
+  - Drawn from the view at 4 by 3 pixels a tile: ground colours, land tinted by owner, remembered tiles dimmed, cities as light dots.
+  - The camera's footprint is outlined; a click or drag looks there.
+  - Whole map zooms out; Grid (or G) draws hex edges in the map shader.
+- **Units panel (K4):** every unit, those that need orders first, then waiting, on its own, fortified and moved; a click selects it and looks at it.
+- **UI scale (K5):** automatic from the window (laid out for 1600 by 1000, clamped to 80% to 160%), times a setting of 75% to 150%. Review shots keep 100%.
+- **Settings:** interface size, camera speed, panning at the window's edge. They are kept in `<config>/settings.json` natively and localStorage in the browser, and opened from Home and the launch bar.
+- **Verified:**
+  - 40 client tests. New ones cover tooltip placement, the key map listing every key once without clashes, the minimap's tile and ground mapping, its tile colours against a real view, breakdown lines summing to the figures shown, settings reading back, and the decision order with research and policies.
+  - A 30 s recording (`CIV_SCENE=quality` on a developed save) shows the HUD, the gold tooltip with its sources, the key map, the units panel, the grid and unit cycling.
+  - Both wasm builds check.
+- **Not verified by hand:**
+  - Hovering with a real pointer: the recording forces the tooltip it shows.
+  - Edge panning, the automatic scale on other window sizes, and settings kept in a browser.
+  - Clicking and dragging the minimap.
+  - The keys.
+

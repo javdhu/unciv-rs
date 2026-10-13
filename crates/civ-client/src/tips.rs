@@ -116,6 +116,31 @@ fn show(
 mod tests {
     use super::*;
 
+    /// The top bar's tooltips list where each number comes from, and the lines add up to the number shown.
+    #[test]
+    fn breakdown_lines_add_up_to_the_figures_shown() {
+        use civ_sim::protocol::{Action, CommandRequest};
+        let mut session = civ_sim::session::Session::new(civ_sim::Settings { seed: 5, ..civ_sim::Settings::default() }, "t".into(), vec![0]).unwrap();
+        // Found the capital and play a few turns so there is an economy.
+        let v = session.current_update(0).unwrap().view;
+        let settler = v.units.iter().find(|u| u.owner == v.me && u.base == civ_sim::tables(&civ_sim::content::load().unwrap()).units.iter().find(|r| r.name == "Settler").unwrap().id).unwrap();
+        for (i, action) in [Action::FoundCity { unit: civ_sim::protocol::EntityRef { id: settler.id, r#gen: settler.r#gen }, name: "Tipton".into() }, Action::FinishTurn, Action::FinishTurn]
+            .into_iter()
+            .enumerate()
+        {
+            let u = session.current_update(0).unwrap();
+            let r = CommandRequest { command_id: format!("t{i}"), epoch: u.cursor.epoch.clone(), turn_token: u.turn_token.clone(), action };
+            session = session.stage_command(0, r).unwrap().next;
+        }
+        let v = session.current_update(0).unwrap().view;
+        let sum = |stat: &str| breakdown_lines(&v, stat).iter().map(|l| l.split_whitespace().next().unwrap().parse::<i32>().unwrap()).sum::<i32>();
+        assert!(!breakdown_lines(&v, "science").is_empty());
+        assert_eq!(sum("science"), v.economy.science);
+        assert_eq!(sum("gold"), v.economy.gold);
+        assert_eq!(source_words("tradeRoutes"), "City connections");
+        assert_eq!(source_words("somethingNew"), "Something new");
+    }
+
     #[test]
     fn cards_never_cover_what_is_hovered_and_stay_inside_the_window() {
         let window = Vec2::new(1600.0, 1000.0);
@@ -135,7 +160,72 @@ mod tests {
     }
 }
 
-/// A civ-wide stat's sources for its tooltip, largest first, once the view carries them.
-pub fn breakdown_lines(_v: &civ_sim::PlayerView, _stat: &str) -> Vec<String> {
-    Vec::new()
+/// A civ-wide stat's sources for its tooltip (`economy.breakdown`), largest first.
+pub fn breakdown_lines(v: &civ_sim::PlayerView, stat: &str) -> Vec<String> {
+    lines(v.economy.breakdown.iter().flatten(), stat)
+}
+
+/// A city's sources of a yield for its tooltip (`own.yieldBreakdown`), largest first.
+pub fn city_lines(own: &civ_sim::CityStateView, stat: &str) -> Vec<String> {
+    lines(own.yield_breakdown.iter().flatten(), stat)
+}
+
+fn lines<'a>(parts: impl Iterator<Item = &'a civ_sim::YieldSourceView>, stat: &str) -> Vec<String> {
+    let mut parts: Vec<&civ_sim::YieldSourceView> = parts.filter(|p| stat_name(p.stat) == stat && p.amount != 0).collect();
+    parts.sort_by_key(|p| std::cmp::Reverse(p.amount.abs()));
+    parts.iter().map(|p| format!("{:+}  {}", p.amount, source_words(&p.source))).collect()
+}
+
+fn stat_name(s: civ_sim::YieldStat) -> &'static str {
+    use civ_sim::YieldStat as S;
+    match s {
+        S::Food => "food",
+        S::Production => "production",
+        S::Gold => "gold",
+        S::Science => "science",
+        S::Culture => "culture",
+        S::Faith => "faith",
+        S::Happiness => "happiness",
+    }
+}
+
+/// A source key in plain words; one this client does not know reads as its words split apart.
+pub fn source_words(key: &str) -> String {
+    let known = match key {
+        "centre" => "City centres",
+        "tiles" => "Worked tiles",
+        "buildings" => "Buildings",
+        "specialists" => "Specialists",
+        "empire" => "Policies, wonders, technologies and your nation",
+        "consumption" => "Citizens eating",
+        "growth" => "Growth bonuses",
+        "foodConversion" => "Food turned into production",
+        "population" => "Citizens",
+        "religion" => "Religion",
+        "tradeRoutes" => "City connections",
+        "buildingUpkeep" => "Building upkeep",
+        "transportUpkeep" => "Road upkeep",
+        "unitUpkeep" => "Unit upkeep",
+        "happinessConversion" => "Mood",
+        "difficulty" => "Difficulty",
+        "cities" => "Number of cities",
+        "cityHappiness" => "Cities",
+        "naturalWonders" => "Natural wonders",
+        _ => "",
+    };
+    if !known.is_empty() {
+        return known.to_string();
+    }
+    let mut out = String::new();
+    for (i, ch) in key.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            out.push(' ');
+            out.push(ch.to_ascii_lowercase());
+        } else if i == 0 {
+            out.push(ch.to_ascii_uppercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
