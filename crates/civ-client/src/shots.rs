@@ -664,6 +664,7 @@ fn tour_script(
                         with: r.civ,
                         give: vec![civ_sim::protocol::TradeItem::Gold { amount: 50 }],
                         get: vec![civ_sim::protocol::TradeItem::OpenBorders],
+                        treaty: false,
                     });
                 }
             }

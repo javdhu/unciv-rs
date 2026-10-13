@@ -32,6 +32,8 @@ pub struct Screens {
     /// The tech last sent to research, until the civ's options show it: options answered before the command
     /// applied still name the old research, and would send it again.
     sent: Option<u32>,
+    /// The civ whose demands are listed in the civilizations panel.
+    demands: Option<u8>,
     stale: bool,
 }
 
@@ -40,6 +42,8 @@ pub struct Trade {
     pub with: u8,
     pub give: Vec<TradeItem>,
     pub get: Vec<TradeItem>,
+    /// Sent as a peace treaty (`offerPeaceTreaty`) rather than a trade.
+    pub treaty: bool,
 }
 
 /// What a screen button does.
@@ -56,9 +60,18 @@ enum Press {
     Research(u8),
     Pact(u8),
     Denounce(u8),
-    Gift(u8),
+    /// Gold to a civ or city-state, by amount.
+    Gift(u8, i32),
     Pledge(u8, bool),
     Trade(u8),
+    /// A peace treaty with terms, drafted in the trade window.
+    Treaty(u8),
+    /// Show or hide the demands that can be made of a civ.
+    Demands(u8),
+    Demand(u8, civ_sim::protocol::Demand),
+    /// A city-state's tribute: gold, or a worker.
+    Tribute(u8, bool),
+    Marriage(u8),
     Give(Item),
     Get(Item),
     Drop(bool, usize),
@@ -140,6 +153,7 @@ fn hidden_solid(node: Node) -> impl Bundle {
 
 /// Full-screen views hide the map behind them.
 const SOLID: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.97);
+pub(crate) const SOLID_PANEL: Color = SOLID;
 
 fn frames(mut commands: Commands) {
     // The top bar's screen buttons sit beside the research chip.
@@ -415,7 +429,15 @@ fn policies(
         s.spawn((
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
             children![
-                text(&font, format!("Policies · culture {culture} of {cost} (+{} a turn)", v.economy.culture), 16.0, TEXT),
+                text(
+                    &font,
+                    match v.rewards.policies {
+                        0 => format!("Policies · culture {culture} of {cost} (+{} a turn)", v.economy.culture),
+                        n => format!("Policies · {n} free: adopt any open policy at no cost"),
+                    },
+                    16.0,
+                    TEXT,
+                ),
                 button(&font, Press::Close, "Close", TEXT),
             ],
         ));
@@ -470,6 +492,7 @@ fn civs(
     }
     *visibility = Visibility::Inherited;
     let armed = |p: &Press| screens.armed.as_ref() == Some(p);
+    let treasury = v.civs.iter().find(|c| c.id == v.me).and_then(|c| c.gold).unwrap_or(0);
     commands.entity(e).with_children(|panel| {
         panel.spawn((
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
@@ -506,6 +529,7 @@ fn civs(
                     card.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|row| {
                         if r.at_war {
                             row.spawn(button(&font, Press::Peace(r.civ), "Offer peace", TEXT));
+                            row.spawn(button(&font, Press::Treaty(r.civ), "Peace treaty…", TEXT));
                         } else {
                             let war = Press::War(r.civ);
                             let label = if armed(&war) { "Declare war?" } else { "Declare war" };
@@ -521,9 +545,23 @@ fn civs(
                             }
                             row.spawn(button(&font, Press::Denounce(r.civ), "Denounce", TEXT));
                             row.spawn(button(&font, Press::Trade(r.civ), "Trade…", TEXT));
+                            row.spawn(button(&font, Press::Demands(r.civ), "Demand…", TEXT));
                         }
-                        row.spawn(button(&font, Press::Gift(r.civ), "Gift 50 gold", TEXT));
+                        gifts(row, &font, r.civ, treasury);
                     });
+                    if screens.demands == Some(r.civ) && !r.at_war {
+                        card.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|row| {
+                            use civ_sim::protocol::Demand as D;
+                            for (demand, label) in [
+                                (D::DoNotSettleNearUs, "Stop settling near us"),
+                                (D::DoNotAttackUs, "Do not attack us"),
+                                (D::DontSpyOnUs, "Stop spying on us"),
+                                (D::DoNotSpreadReligion, "Stop spreading your faith"),
+                            ] {
+                                row.spawn(button(&font, Press::Demand(r.civ, demand), label, TEXT));
+                            }
+                        });
+                    }
                     for offer in update.offers.iter().filter(|o| o.from == v.me && o.to == r.civ) {
                         card.spawn((
                             Node { column_gap: Val::Px(6.0), align_items: AlignItems::Center, ..default() },
@@ -558,11 +596,31 @@ fn civs(
                         if cs.may_withdraw {
                             row.spawn(button(&font, Press::Pledge(cs.civ, false), "Withdraw protection", TEXT));
                         }
-                        row.spawn(button(&font, Press::Gift(cs.civ), "Gift 50 gold", TEXT));
+                        if cs.tribute_gold {
+                            row.spawn(button(&font, Press::Tribute(cs.civ, false), format!("Demand {} gold", cs.tribute_amount), TEXT));
+                        }
+                        if cs.tribute_worker {
+                            row.spawn(button(&font, Press::Tribute(cs.civ, true), "Demand a worker", TEXT));
+                        }
+                        if cs.may_request_marriage {
+                            row.spawn(button(&font, Press::Marriage(cs.civ), "Request marriage", TEXT));
+                        }
+                        gifts(row, &font, cs.civ, treasury);
                     });
+                    for q in &cs.quests {
+                        let until = q.expires_on.map_or(String::new(), |t| format!(", until turn {t}"));
+                        card.spawn(text(&font, format!("{}: {} (+{} influence{until})", q.name, q.description, q.influence_reward), 11.0, DIM));
+                    }
                 });
         }
     });
+}
+
+/// Gift gold buttons for the amounts the treasury covers.
+fn gifts(row: &mut ChildSpawnerCommands, font: &UiFont, civ: u8, treasury: i32) {
+    for gold in [50, 100, 250, 500].into_iter().filter(|g| *g <= treasury) {
+        row.spawn(button(font, Press::Gift(civ, gold), format!("Gift {gold} gold"), TEXT));
+    }
 }
 
 fn item_label(item: &TradeItem, rules: &Rules, v: &civ_sim::PlayerView) -> String {
@@ -708,7 +766,10 @@ fn trade(
     commands.entity(e).with_children(|w| {
         w.spawn((
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
-            children![text(&font, format!("Trade with {them}"), 16.0, TEXT), button(&font, Press::Close, "Cancel", TEXT)],
+            children![
+                text(&font, if draft.treaty { format!("Peace treaty with {them}") } else { format!("Trade with {them}") }, 16.0, TEXT),
+                button(&font, Press::Close, "Cancel", TEXT)
+            ],
         ));
         w.spawn(Node { column_gap: Val::Px(16.0), ..default() }).with_children(|cols| {
             for (side, title, offers, table) in [(false, "You give", &mine, &draft.give), (true, "They give", &theirs, &draft.get)] {
@@ -843,6 +904,11 @@ fn on_press(
             if known.contains(&t) {
                 return;
             }
+            // A free technology pending takes any it may have.
+            if v.rewards.technologies > 0 && selection.civ_options.as_ref().is_some_and(|o| o.free_technologies.contains(&t)) {
+                outbox.submit(Action::ClaimFreeTechnology { technology: t });
+                return;
+            }
             screens.path = path_to(&rules, &known, t);
             let available = selection.civ_options.as_ref().is_some_and(|o| o.research.iter().any(|r| r.id == t));
             let first = if available {
@@ -880,8 +946,23 @@ fn on_press(
         Press::Denounce(target) => {
             outbox.submit(Action::Denounce { target });
         }
-        Press::Gift(target) => {
-            outbox.submit(Action::GiftGold { target, gold: 50 });
+        Press::Gift(target, gold) => {
+            outbox.submit(Action::GiftGold { target, gold });
+        }
+        Press::Treaty(with) => screens.trade = Some(Trade { with, treaty: true, ..default() }),
+        Press::Demands(civ) => {
+            screens.demands = if screens.demands == Some(civ) { None } else { Some(civ) };
+            screens.stale = true;
+        }
+        Press::Demand(target, demand) => {
+            outbox.submit(Action::Demand { target, demand });
+            screens.demands = None;
+        }
+        Press::Tribute(target, worker) => {
+            outbox.submit(Action::DemandTribute { target, worker });
+        }
+        Press::Marriage(target) => {
+            outbox.submit(Action::BuyCityState { target });
         }
         Press::Pledge(target, true) => {
             outbox.submit(Action::PledgeProtection { target });
@@ -910,7 +991,10 @@ fn on_press(
         }
         Press::Send => {
             if let Some(t) = screens.trade.take() {
-                outbox.submit(Action::OfferTrade { target: t.with, give: t.give, get: t.get });
+                outbox.submit(match t.treaty {
+                    true => Action::OfferPeaceTreaty { target: t.with, give: t.give, get: t.get },
+                    false => Action::OfferTrade { target: t.with, give: t.give, get: t.get },
+                });
             }
         }
         Press::Answer(offer, accept) => {

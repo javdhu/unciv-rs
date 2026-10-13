@@ -15,7 +15,7 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui_widgets::{observe, Activate, Button};
 use bevy::window::PrimaryWindow;
-use civ_sim::protocol::{Action, CityFocus, ConstructionRef, Currency};
+use civ_sim::protocol::{Action, CityFocus, ConstructionRef, Currency, ProductionConversion};
 use civ_sim::queries::{Availability, UnitActionKind};
 
 pub(crate) const PANEL: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.85);
@@ -24,6 +24,7 @@ pub(crate) const DIM: Color = Color::srgb(0.6, 0.63, 0.67);
 pub(crate) const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
 pub(crate) const BUTTON_ON: Color = Color::srgba(1.0, 1.0, 1.0, 0.22);
 const TOAST_SECONDS: f32 = 3.0;
+pub(crate) const URGENT: Color = Color::srgb(1.0, 0.45, 0.4);
 
 /// What a play button does.
 #[derive(Component, Clone, PartialEq, Debug)]
@@ -43,6 +44,51 @@ enum Order {
     Sell(u32),
     /// Leave a solo match for the home screen.
     Home,
+    Promote(u32),
+    Upgrade,
+    /// Add to the end of the open city's queue.
+    Queue(ConstructionRef),
+    /// Take the queue's nth item out, or move it one up.
+    Unqueue(usize),
+    Raise(usize),
+    Convert(Option<ProductionConversion>),
+    Fate(Fate),
+    /// Choose where the open city's current wonder stands: the next click on one of its sites.
+    Site,
+    /// Put off the decision End turn leads with.
+    Later,
+}
+
+/// What becomes of a city taken or held as a puppet.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum Fate {
+    Keep,
+    Annex,
+    Raze,
+    StopRazing,
+    Liberate,
+}
+
+impl Fate {
+    pub(crate) fn action(self, city: civ_sim::protocol::EntityRef) -> Action {
+        match self {
+            Fate::Keep => Action::KeepPuppet { city },
+            Fate::Annex => Action::Annex { city },
+            Fate::Raze => Action::Raze { city },
+            Fate::StopRazing => Action::StopRazing { city },
+            Fate::Liberate => Action::LiberateCity { city },
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Fate::Keep => "Keep as a puppet",
+            Fate::Annex => "Annex",
+            Fate::Raze => "Raze",
+            Fate::StopRazing => "Stop razing",
+            Fate::Liberate => "Liberate",
+        }
+    }
 }
 
 #[derive(Component)]
@@ -141,7 +187,7 @@ fn frame(mut commands: Commands) {
             (TopCentre, Node { column_gap: Val::Px(6.0), ..default() }),
             (
                 TopRight,
-                Node { width: Val::Px(360.0), justify_content: JustifyContent::FlexEnd, column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }
+                Node { width: Val::Px(620.0), justify_content: JustifyContent::FlexEnd, column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }
             ),
         ],
     ));
@@ -218,6 +264,20 @@ fn year(y: i32) -> String {
     if y < 0 { format!("{} BC", -y) } else { format!("AD {y}") }
 }
 
+/// A unit's experience and the promotions it holds.
+fn experience(u: &civ_sim::UnitView, rules: &Rules) -> String {
+    let Some(own) = u.own.as_ref() else { return String::new() };
+    let names: Vec<&str> = own
+        .promotions
+        .iter()
+        .filter_map(|p| rules.tables.promotions.iter().find(|r| r.id == *p).map(|r| r.name.as_str()))
+        .collect();
+    match names.is_empty() {
+        true => format!("Experience {}", own.experience),
+        false => format!("Experience {} · {}", own.experience, names.join(", ")),
+    }
+}
+
 pub(crate) fn turns(cost: i32, done: i32, per_turn: i32) -> String {
     let left = (cost - done).max(0);
     if per_turn <= 0 { "–".into() } else { format!("{}", (left + per_turn - 1) / per_turn) }
@@ -268,9 +328,15 @@ fn top_bar(
         let treasury = me.and_then(|c| c.gold).map_or("–".into(), |g| g.to_string());
         let signed = |n: i32| if n >= 0 { format!("+{n}") } else { n.to_string() };
         commands.entity(e).with_children(|r| {
-            r.spawn(text(&font, format!("Gold {treasury} ({})", signed(v.economy.gold)), 13.0, TEXT));
-            r.spawn(text(&font, format!("Science {}", signed(v.economy.science)), 13.0, TEXT));
-            r.spawn(button(&font, Order::Undo, "Undo", true));
+            let e = &v.economy;
+            r.spawn(text(&font, format!("Gold {treasury} ({})", signed(e.gold)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Science {}", signed(e.science)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Culture {}", signed(e.culture)), 13.0, TEXT));
+            r.spawn(text(&font, format!("Faith {} ({})", v.knowledge.faith, signed(e.faith)), 13.0, TEXT));
+            let mood = if e.happiness < 0 { URGENT } else { TEXT };
+            r.spawn(text(&font, format!("Happiness {}", e.happiness), 13.0, mood));
+            let undo = view.update().and_then(|u| u.undo.as_ref()).is_none_or(|u| u.available);
+            r.spawn(button(&font, Order::Undo, "Undo", undo));
             // A room's match is left from its own panel (`roomui.rs`); a solo one is lost on leaving.
             if !room {
                 r.spawn(button(&font, Order::Home, if selection.home_armed { "Leave? Click again" } else { "Home" }, true));
@@ -321,6 +387,7 @@ fn unit_panel(
             children![
                 text(&font, format!("{glyph}  {name}"), 15.0, TEXT),
                 text(&font, format!("Health {} · Moves {moves} / {max_moves}", u.health), 12.0, DIM),
+                text(&font, experience(u, &rules), 12.0, DIM),
             ],
         ));
         if let Some(options) = &selection.options {
@@ -334,6 +401,7 @@ fn unit_panel(
                     UnitActionKind::Disband => "Disband",
                     UnitActionKind::Pillage => "Pillage",
                     UnitActionKind::SetUp => "Set up",
+                    UnitActionKind::Gift => "Gift to the city-state",
                     _ => continue,
                 };
                 let label = if choice.availability == Availability::NeedsConfirmation { format!("{label}…") } else { label.to_string() };
@@ -341,6 +409,13 @@ fn unit_panel(
             }
             for improvement in &options.improvements {
                 p.spawn(button(&font, Order::Build(*improvement), format!("Build {}", rules.improvement(*improvement)), true));
+            }
+            for promotion in &options.promotions {
+                p.spawn(button(&font, Order::Promote(promotion.id), format!("Promote: {}", promotion.name), true));
+            }
+            if let Some(up) = &options.upgrade {
+                let to = rules.tables.units.iter().find(|r| r.id == up.unit_type).map_or("?", |r| r.name.as_str());
+                p.spawn(button(&font, Order::Upgrade, format!("Upgrade to {to} ({} gold)", up.gold_cost), true));
             }
         }
     });
@@ -354,9 +429,11 @@ fn turn_button(
     outbox: Res<Outbox>,
     font: Res<UiFont>,
     slot: Query<(Entity, Option<&Children>), With<TurnButton>>,
+    decisions: Res<crate::decisions::Decisions>,
+    rules: Option<Res<Rules>>,
 ) {
     let Ok((e, children)) = slot.single() else { return };
-    if !stale.0 && !outbox.is_changed() && !selection.is_changed() && !view.is_changed() {
+    if !stale.0 && !outbox.is_changed() && !selection.is_changed() && !view.is_changed() && !decisions.is_changed() {
         return;
     }
     clear(&mut commands, children);
@@ -371,6 +448,13 @@ fn turn_button(
             Some(n) if n > 1 => format!("Waiting for {n} players"),
             _ => "Waiting for the round".to_string(),
         }
+    } else if let (Some(d), Some(v)) = (decisions.next(), view.view()) {
+        // Decisions lead (docs/ACTIONS-SPEC.md, A1), with a way to put each off.
+        commands.entity(e).with_child((
+            Node { position_type: PositionType::Absolute, bottom: Val::Px(50.0), right: Val::Px(0.0), ..default() },
+            children![button(&font, Order::Later, "Later", true)],
+        ));
+        d.label(v, rules.as_deref())
     } else if awaiting(&view, &selection, None).is_some() {
         "Next unit".into()
     } else if selection.end_armed {
@@ -417,14 +501,89 @@ fn city_panel(
     *visibility = Visibility::Inherited;
     let own = c.own.as_ref();
     let (food, production) = own.map_or((0, 0), |o| (o.food_per_turn, o.production_per_turn));
-    let building = c.queue.as_ref().and_then(|q| q.first().cloned()).unwrap_or_else(|| "Nothing".into());
     commands.entity(e).with_children(|p| {
         p.spawn((
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
             children![text(&font, format!("{}  ·  {}", c.name, c.population), 16.0, TEXT), button(&font, Order::CloseCity, "Close", true)],
         ));
         p.spawn(text(&font, format!("Food +{food} · Production +{production}"), 12.0, DIM));
-        p.spawn(text(&font, format!("Building {building}"), 13.0, TEXT));
+        if let Some(own) = own {
+            let mut status = Vec::new();
+            if own.puppet {
+                status.push("a puppet".to_string());
+            }
+            if own.razing {
+                status.push(format!("being razed, a citizen a turn"));
+            }
+            if own.resistance > 0 {
+                status.push(format!("in resistance for {} turns", own.resistance));
+            }
+            if !status.is_empty() {
+                p.spawn(text(&font, format!("This city is {}", status.join(", ")), 12.0, URGENT));
+            }
+            let key = civ_sim::protocol::EntityRef { id: c.id, r#gen: c.r#gen };
+            let pending = v.pending_captures.iter().flatten().any(|pc| pc.city == key);
+            let mut fates = Vec::new();
+            if own.puppet && !pending {
+                fates.push(Fate::Annex);
+            }
+            if own.razing {
+                fates.push(Fate::StopRazing);
+            } else if own.may_raze && !pending {
+                fates.push(Fate::Raze);
+            }
+            if own.may_liberate && !pending {
+                fates.push(Fate::Liberate);
+            }
+            if !fates.is_empty() {
+                p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() })
+                    .with_children(|row| {
+                        for fate in fates {
+                            row.spawn(button(&font, Order::Fate(fate), fate.label(), true));
+                        }
+                    });
+            }
+            // The queue, front first: the first item is being built.
+            let names = c.queue.clone().unwrap_or_default();
+            if names.is_empty() {
+                p.spawn(text(&font, "Building nothing", 13.0, TEXT));
+            }
+            for (i, name) in names.iter().enumerate() {
+                p.spawn(Node { column_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|row| {
+                    let label = if i == 0 { format!("Building {name}") } else { format!("{}. {name}", i + 1) };
+                    row.spawn((text(&font, label, 13.0, TEXT), Node { flex_grow: 1.0, ..default() }));
+                    if i > 0 {
+                        row.spawn(button(&font, Order::Raise(i), "↑", true));
+                    }
+                    row.spawn(button(&font, Order::Unqueue(i), "×", true));
+                });
+            }
+            if let Some(options) = &selection.city_options {
+                let current = own.production_conversion;
+                for stat in &options.production_conversions {
+                    let label = match stat {
+                        ProductionConversion::Gold => "Turn production into gold",
+                        ProductionConversion::Science => "Turn production into science",
+                    };
+                    if current != Some(*stat) {
+                        p.spawn(button(&font, Order::Convert(Some(*stat)), label, true));
+                    }
+                }
+                if current.is_some() {
+                    p.spawn(button(&font, Order::Convert(None), "Stop converting production", true));
+                }
+                let front = c.queue_refs.as_ref().and_then(|q| q.first());
+                let sites = front.and_then(|f| options.choices.iter().find(|ch| &ch.construction == f)).and_then(|ch| ch.sites.as_ref());
+                if let Some(sites) = sites.filter(|s| s.tiles.len() > 1) {
+                    let label = if selection.siting { "Click one of the marked tiles".to_string() } else { "Choose where it stands".to_string() };
+                    let _ = sites;
+                    p.spawn(button(&font, Order::Site, label, true));
+                }
+                if !options.bombard.is_empty() {
+                    p.spawn(text(&font, format!("Can bombard {} enemy units: click one on the map", options.bombard.len()), 12.0, URGENT));
+                }
+            }
+        }
         if let Some(own) = own {
             p.spawn(text(&font, "Focus", 12.0, DIM));
             p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|row| {
@@ -488,6 +647,7 @@ fn city_panel(
                             ..default()
                         },
                     ));
+                    row.spawn(button(&font, Order::Queue(choice.construction.clone()), "+", choice.refusal.is_none()));
                     if let Some(price) = choice.gold.as_ref().and_then(|g| g.amount.clone().map(|a| (a, g.affordable.unwrap_or(false)))) {
                         row.spawn(button(&font, Order::Buy(choice.construction.clone()), format!("{} gold", price.0), price.1));
                     }
@@ -581,6 +741,8 @@ fn keys(
     land: Option<Res<crate::map::Land>>,
     mut stale: ResMut<Stale>,
     link: Option<Res<crate::link::Link>>,
+    mut decisions: ResMut<crate::decisions::Decisions>,
+    mut screens: ResMut<crate::screens::Screens>,
 ) {
     let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::SuperLeft);
     if ctrl && keys.just_pressed(KeyCode::KeyZ) {
@@ -594,8 +756,13 @@ fn keys(
         selection.end_armed = false;
     }
     if keys.just_pressed(KeyCode::Enter) {
-        let room = link.is_some_and(|l| l.is_remote());
-        turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
+        match decisions.next().cloned() {
+            Some(d) if !view.update().is_some_and(|u| u.ready) => crate::decisions::open(d, &mut decisions, &mut selection, &mut screens),
+            _ => {
+                let room = link.is_some_and(|l| l.is_remote());
+                turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
+            }
+        }
     }
     let (Some(unit), Some(rules)) = (selection.unit, rules) else {
         stale.0 = false;
@@ -663,15 +830,72 @@ fn press(
     mut stale: ResMut<Stale>,
     link: Option<Res<crate::link::Link>>,
     mut next: ResMut<NextState<crate::app::AppState>>,
+    mut decisions: ResMut<crate::decisions::Decisions>,
+    mut screens: ResMut<crate::screens::Screens>,
 ) {
     let Ok(order) = orders.get(event.entity) else { return };
     match order.clone() {
-        Order::Turn => {
-            let room = link.is_some_and(|l| l.is_remote());
-            turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
+        Order::Turn => match decisions.next().cloned() {
+            Some(d) if !view.update().is_some_and(|u| u.ready) => crate::decisions::open(d, &mut decisions, &mut selection, &mut screens),
+            _ => {
+                let room = link.is_some_and(|l| l.is_remote());
+                turn(&mut selection, &mut outbox, &view, &mut cameras, land.as_deref(), room);
+            }
+        },
+        Order::Later => {
+            if let Some(d) = decisions.next().cloned() {
+                decisions.put_off(d);
+            }
         }
         Order::Undo => {
             outbox.submit(Action::Undo);
+        }
+        Order::Promote(promotion) => {
+            if let Some(unit) = selection.unit {
+                outbox.submit(Action::Promote { unit: entity(unit), promotion });
+            }
+        }
+        Order::Upgrade => {
+            if let Some(unit) = selection.unit {
+                outbox.submit(Action::Upgrade { unit: entity(unit) });
+            }
+        }
+        Order::Queue(_) | Order::Unqueue(_) | Order::Raise(_) | Order::Convert(_) | Order::Fate(_) | Order::Site => {
+            let Some(key) = selection.city else { return };
+            let city = entity(key);
+            let refs = view
+                .view()
+                .and_then(|v| v.cities.iter().find(|c| (c.id, c.r#gen) == key))
+                .and_then(|c| c.queue_refs.clone())
+                .unwrap_or_default();
+            match order.clone() {
+                Order::Queue(what) => {
+                    let mut queue = refs;
+                    queue.push(what);
+                    outbox.submit(Action::SetProduction { city, queue });
+                }
+                Order::Unqueue(i) if i < refs.len() => {
+                    let mut queue = refs;
+                    queue.remove(i);
+                    outbox.submit(Action::SetProduction { city, queue });
+                }
+                Order::Raise(i) if i > 0 && i < refs.len() => {
+                    let mut queue = refs;
+                    queue.swap(i - 1, i);
+                    outbox.submit(Action::SetProduction { city, queue });
+                }
+                Order::Convert(stat) => {
+                    outbox.submit(Action::SetProductionConversion { city, stat });
+                }
+                Order::Fate(fate) => {
+                    outbox.submit(fate.action(city));
+                }
+                Order::Site => {
+                    selection.siting = !selection.siting;
+                    stale.0 = true;
+                }
+                _ => {}
+            }
         }
         Order::Home if selection.home_armed => crate::app::leave(&mut next, crate::app::AppState::Home),
         Order::Home => {

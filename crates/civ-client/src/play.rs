@@ -55,6 +55,8 @@ pub struct Selection {
     pub end_armed: bool,
     /// Home clicked once in a solo match: a second click leaves it, and the match is lost.
     pub home_armed: bool,
+    /// The open city's next map click picks where its current wonder stands.
+    pub siting: bool,
     /// The turn the skips belong to.
     turn: u32,
     /// Bumped with every new question, so older answers are dropped.
@@ -183,11 +185,45 @@ fn aim(view: Res<ViewState>, rules: Option<Res<Rules>>, land: Option<Res<Land>>,
     }
     let targets = match (view.view(), rules, land, selection.unit) {
         (Some(v), Some(rules), Some(land), Some(key)) => attackable(v, &rules, &land.0.grid, &selection, key),
+        // An open city aims its bombardment at what `cityOptions` lists.
+        (Some(v), ..) if selection.city.is_some() => bombardable(v, &selection).into_iter().map(|(t, _)| t).collect(),
         _ => Vec::new(),
     };
     if selection.targets != targets {
         selection.targets = targets;
     }
+    // Choosing a wonder's site marks its tiles as the reach.
+    if selection.unit.is_none() {
+        let sites: Vec<civ_sim::Reach> = match (selection.siting, view.view()) {
+            (true, Some(v)) => sites(v, &selection)
+                .map(|(_, s)| s.tiles.iter().map(|&tile| civ_sim::Reach { tile, moves_left: 0.0, uncertain: false }).collect())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        if selection.reach != sites {
+            selection.reach = sites;
+        }
+    }
+}
+
+/// Enemy units the open city may bombard, by tile.
+fn bombardable(v: &civ_sim::PlayerView, selection: &Selection) -> Vec<(u16, EntityRef)> {
+    let Some(options) = &selection.city_options else { return Vec::new() };
+    options
+        .bombard
+        .iter()
+        .filter_map(|b| v.units.iter().find(|u| (u.id, u.r#gen) == (b.unit.id, b.unit.r#gen)).map(|u| (u.tile, b.unit.clone())))
+        .collect()
+}
+
+/// The open city's current wonder and where it may stand.
+fn sites<'a>(v: &civ_sim::PlayerView, selection: &'a Selection) -> Option<(u32, &'a civ_sim::queries::SiteChoice)> {
+    let key = selection.city?;
+    let city = v.cities.iter().find(|c| (c.id, c.r#gen) == key)?;
+    let front = city.queue_refs.as_ref()?.first()?.clone();
+    let civ_sim::protocol::ConstructionRef::Building { id } = front else { return None };
+    let choice = selection.city_options.as_ref()?.choices.iter().find(|c| c.construction == front)?;
+    Some((id, choice.sites.as_ref()?))
 }
 
 fn attackable(v: &civ_sim::PlayerView, rules: &Rules, grid: &crate::hex::Grid, selection: &Selection, key: Key) -> Vec<u16> {
@@ -287,6 +323,26 @@ fn click(
         return;
     }
     let (Some(v), Some(tile)) = (view.view(), hover.tile) else { return };
+    // An open city first: placing its wonder, then bombarding.
+    if let (None, Some(city)) = (selection.unit, selection.city) {
+        if selection.siting {
+            if let Some((building, choice)) = sites(v, &selection).filter(|(_, s)| s.tiles.contains(&tile)) {
+                let _ = choice;
+                outbox.submit(Action::ChooseSite { city: entity(city), building, tile });
+            }
+            selection.siting = false;
+            return;
+        }
+        if let Some((_, target)) = bombardable(v, &selection).into_iter().find(|(t, _)| *t == tile) {
+            if selection.armed == Some(tile) {
+                outbox.submit(Action::Bombard { city: entity(city), target });
+                selection.armed = None;
+            } else {
+                selection.armed = Some(tile);
+            }
+            return;
+        }
+    }
     // While an own city's panel is open, clicks on its tiles manage the city (docs/PLAY-SPEC.md, M4, Q2).
     if let Some(action) = city_tile_click(&mut selection, v, tile) {
         if let Some(action) = action {
@@ -609,6 +665,7 @@ pub fn unit_action(kind: UnitActionKind, unit: Key, view: &ViewState, rules: &Ru
         UnitActionKind::Disband => Action::DisbandUnit { unit },
         UnitActionKind::Pillage => Action::Pillage { unit },
         UnitActionKind::SetUp => Action::SetUp { unit },
+        UnitActionKind::Gift => Action::GiftUnit { unit },
         _ => return None,
     })
 }
@@ -759,5 +816,56 @@ mod tests {
         }
         assert!(tried >= 3, "only {tried} chances to attack came up");
         assert!(taken * 10 >= tried * 8, "the engine took {taken} of {tried} aimed attacks");
+        // The fights earned experience: a promotion offered is one the engine takes.
+        let v = session.current_update(0).unwrap().view;
+        let mut promoted = 0;
+        for unit in v.units.iter().filter(|u| u.owner == v.me) {
+            let QueryResult::UnitOptions { options: Some(o) } =
+                session.query(0, Ask::UnitOptions { unit: entity((unit.id, unit.r#gen)), nuclear_target: None }).unwrap().result
+            else {
+                continue;
+            };
+            if let Some(p) = o.promotions.first() {
+                assert_eq!(send(&mut session, Action::Promote { unit: entity((unit.id, unit.r#gen)), promotion: p.id }), CommandStatus::Applied);
+                promoted += 1;
+            }
+        }
+        assert!(promoted > 0, "no unit earned a promotion");
+    }
+
+    /// The city panel's queue edits: append, raise and remove send whole queues the engine keeps as sent.
+    #[test]
+    fn queue_edits_are_kept_as_sent() {
+        let mut session = Session::new(Settings { seed: 3, ..Settings::default() }, "q".into(), vec![0]).unwrap();
+        let tables = civ_sim::tables(&civ_sim::content::load().unwrap());
+        let mut n = 0;
+        let mut send = |session: &mut Session, action: Action| {
+            n += 1;
+            let update = session.current_update(0).unwrap();
+            let request = CommandRequest { command_id: format!("q{n}"), epoch: update.cursor.epoch.clone(), turn_token: update.turn_token.clone(), action };
+            let t = session.stage_command(0, request).unwrap();
+            let status = t.receipt.result.clone();
+            *session = t.next;
+            status
+        };
+        let v = session.current_update(0).unwrap().view;
+        let settler = tables.units.iter().find(|u| u.name == "Settler").unwrap().id;
+        let unit = v.units.iter().find(|u| u.owner == v.me && u.base == settler).unwrap();
+        assert_eq!(send(&mut session, Action::FoundCity { unit: entity((unit.id, unit.r#gen)), name: "Queueburg".into() }), CommandStatus::Applied);
+        let city = session.current_update(0).unwrap().view.cities.iter().find(|c| c.name == "Queueburg").unwrap().clone();
+        let key = entity((city.id, city.r#gen));
+        let QueryResult::CityOptions { options: Some(o) } = session.query(0, Ask::CityOptions { city: key.clone() }).unwrap().result else { panic!() };
+        let choices: Vec<_> = o.choices.iter().filter(|c| c.refusal.is_none()).map(|c| c.construction.clone()).take(3).collect();
+        assert_eq!(choices.len(), 3);
+        let queue = |s: &Session| s.current_update(0).unwrap().view.cities.iter().find(|c| c.name == "Queueburg").unwrap().queue_refs.clone().unwrap();
+        assert_eq!(send(&mut session, Action::SetProduction { city: key.clone(), queue: choices.clone() }), CommandStatus::Applied);
+        assert_eq!(queue(&session), choices);
+        let mut raised = choices.clone();
+        raised.swap(1, 2);
+        assert_eq!(send(&mut session, Action::SetProduction { city: key.clone(), queue: raised.clone() }), CommandStatus::Applied);
+        assert_eq!(queue(&session), raised);
+        raised.remove(0);
+        assert_eq!(send(&mut session, Action::SetProduction { city: key, queue: raised.clone() }), CommandStatus::Applied);
+        assert_eq!(queue(&session), raised);
     }
 }
