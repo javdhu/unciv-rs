@@ -18,6 +18,10 @@ impl Tip {
     }
 }
 
+/// A tip to show as if its node were hovered, for review recordings that have no pointer.
+#[derive(Resource, Default)]
+pub struct Forced(pub Option<Entity>);
+
 #[derive(Component)]
 struct Card;
 #[derive(Component)]
@@ -27,7 +31,7 @@ const DELAY: f32 = 0.4;
 const GAP: f32 = 6.0;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, card).add_systems(Update, show);
+    app.init_resource::<Forced>().add_systems(Startup, card).add_systems(Update, show);
 }
 
 fn card(mut commands: Commands, font: Res<UiFont>) {
@@ -71,15 +75,19 @@ fn show(
     windows: Query<&Window, With<PrimaryWindow>>,
     ui_scale: Res<UiScale>,
     time: Res<Time>,
+    forced: Res<Forced>,
     mut rest: Local<(Option<Entity>, f32)>,
     mut cards: Query<(&mut Node, &ComputedNode), (With<Card>, Without<Tip>)>,
     mut texts: Query<&mut Text, With<CardText>>,
 ) {
     let (Ok((mut node, card)), Ok(mut text), Ok(window)) = (cards.single_mut(), texts.single_mut(), windows.single()) else { return };
     // The tipped node under the pointer: the nearest ancestor of anything hovered that has a tip.
-    let hovered = hover_map.values().flat_map(|m| m.keys()).copied().find_map(|e| {
-        std::iter::once(e).chain(parents.iter_ancestors(e)).find(|a| tips.contains(*a))
-    });
+    let hovered = hover_map
+        .values()
+        .flat_map(|m| m.keys())
+        .copied()
+        .find_map(|e| std::iter::once(e).chain(parents.iter_ancestors(e)).find(|a| tips.contains(*a)))
+        .or(forced.0.filter(|e| tips.contains(*e)));
     if rest.0 != hovered {
         *rest = (hovered, 0.0);
     } else {

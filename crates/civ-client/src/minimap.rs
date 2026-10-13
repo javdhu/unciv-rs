@@ -320,6 +320,25 @@ fn shade(mut buttons: Query<(&Hovered, &mut BackgroundColor), (With<Press>, Chan
 mod tests {
     use super::*;
 
+    /// Tiles of a real view colour as the spec says: water and land apart, owners tinting land only, tiles out of
+    /// sight dimmer than those in it.
+    #[test]
+    fn tile_colours_follow_the_view() {
+        let session = civ_sim::session::Session::new(civ_sim::Settings { seed: 4, ..civ_sim::Settings::default() }, "m".into(), vec![0]).unwrap();
+        let v = session.current_update(0).unwrap().view;
+        let rules = Rules::new(session.content_hash(), civ_sim::tables(&civ_sim::content::load().unwrap()));
+        let water = |t: &civ_sim::TileView| matches!(rules.ground(t.terrain), Ground::Ocean | Ground::Coast | Ground::Lake);
+        let land = v.tiles.iter().find(|t| !water(t) && t.visible).expect("land in sight");
+        let sea = v.tiles.iter().find(|t| water(t) && t.visible).expect("water in sight");
+        let red = Some(Color::srgb(1.0, 0.0, 0.0));
+        assert_ne!(colour(land, &rules, red), colour(land, &rules, None), "an owner tints land");
+        assert_eq!(colour(sea, &rules, red), colour(sea, &rules, None), "but not water");
+        let mut remembered = land.clone();
+        remembered.visible = false;
+        let (seen, dim) = (colour(land, &rules, None), colour(&remembered, &rules, None));
+        assert!(dim[..3].iter().zip(&seen[..3]).all(|(d, s)| d <= s) && dim != seen, "remembered tiles are dimmer");
+    }
+
     /// A tile's block and the ground point at its centre map onto each other.
     #[test]
     fn tiles_and_ground_meet_on_the_minimap() {

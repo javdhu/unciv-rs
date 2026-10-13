@@ -50,6 +50,10 @@ crates/civ-client/web/build.sh                 # both measured wasm builds into 
 python3 crates/civ-client/web/serve.py         # http://127.0.0.1:5310, cross-origin isolated
 ```
 
+Keys (the key map in the client, H or ?, lists them all): WASD or arrows pan, Enter leads the turn, Esc closes the
+top panel, N and Shift N cycle units that need orders, F fortify, Space wait, B found a city, T P C E U L open the
+tech tree, policies, civilizations, empire, units and log, G shows the hex grid, Ctrl or Cmd Z undoes.
+
 The client opens on home: play against bots, watch bots, or rooms. `CIV_SOLO=1` and `CIV_WATCH=1` (`civSolo`,
 `civWatch` on the page) go straight into a match.
 

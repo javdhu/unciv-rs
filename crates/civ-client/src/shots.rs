@@ -132,6 +132,20 @@ pub fn scene(name: &str) -> Option<Scene> {
                 room: false,
             });
         }
+        // M7's review: the HUD arranged like Civ VI, a tooltip, the key map, the units panel, the grid and unit
+        // cycling, on the developed save (`CIV_SAVE`).
+        "quality" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(3),
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: Some(30.0),
+                play: true,
+                room: false,
+            });
+        }
         // Home with its saved games, shot once they are listed.
         "home" => {
             return Some(Scene {
@@ -238,7 +252,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(OnEnter(crate::app::AppState::Match), offscreen.after(crate::camera::spawn))
         .add_systems(
             Update,
-            (shoot, turn_script, tour_script, room_script, decide_script, empire_script)
+            (shoot, turn_script, tour_script, room_script, decide_script, empire_script, quality_script)
                 .chain()
                 .after(crate::map::MapSet::Rebuild)
                 .in_set(crate::app::InMatch),
@@ -650,6 +664,66 @@ fn empire_script(
     }
     if *phase == Some((5, frame)) {
         shots.scene.record = Some((frame + 150) as f32 / RECORD_FPS);
+    }
+}
+
+/// The quality scene: a tooltip on the gold figure, the key map, the units panel, the grid, then next unit twice.
+#[allow(clippy::too_many_arguments)]
+fn quality_script(
+    mut shots: Option<ResMut<Shots>>,
+    view: Res<ViewState>,
+    land: Option<Res<Land>>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut help: ResMut<crate::help::Help>,
+    mut units: ResMut<crate::units::UnitsPanel>,
+    mut minimap: ResMut<crate::minimap::Minimap>,
+    mut forced: ResMut<crate::tips::Forced>,
+    tips: Query<(Entity, &crate::tips::Tip)>,
+    mut cameras: Query<&mut MapCamera>,
+    mut phase: Local<Option<(u32, u32)>>,
+) {
+    let (Some(shots), Some(land)) = (shots.as_deref_mut(), land) else { return };
+    if shots.scene.name != "quality" || shots.stage != Stage::Recording {
+        return;
+    }
+    let frame = shots.frames;
+    let (step, began) = *phase.get_or_insert((0, frame));
+    let since = frame - began;
+    let next = |phase: &mut Option<(u32, u32)>| *phase = Some((step + 1, frame));
+    match step {
+        0 if since >= 30 => {
+            forced.0 = tips.iter().find(|(_, t)| t.0.starts_with("Gold in the treasury")).map(|(e, _)| e);
+            next(&mut phase);
+        }
+        1 if since >= 120 => {
+            forced.0 = None;
+            help.open = true;
+            next(&mut phase);
+        }
+        2 if since >= 150 => {
+            help.open = false;
+            units.open = true;
+            next(&mut phase);
+        }
+        3 if since >= 120 => {
+            units.open = false;
+            minimap.grid = true;
+            next(&mut phase);
+        }
+        4 | 5 if since >= 90 => {
+            if let Some(k) = crate::play::awaiting(&view, &selection, selection.unit) {
+                crate::play::select_unit(&mut selection, k);
+                let tile = view.view().and_then(|v| v.units.iter().find(|u| (u.id, u.r#gen) == k)).map(|u| u.tile);
+                if let (Some(tile), Ok(mut c)) = (tile, cameras.single_mut()) {
+                    c.jump(land.0.grid.centre(tile), 14.0);
+                }
+            }
+            next(&mut phase);
+        }
+        _ => {}
+    }
+    if *phase == Some((6, frame)) {
+        shots.scene.record = Some((frame + 120) as f32 / RECORD_FPS);
     }
 }
 
