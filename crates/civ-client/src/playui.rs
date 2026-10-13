@@ -452,6 +452,7 @@ fn top_bar(
         let policy = match (v.rewards.policies, cost) {
             (n, _) if n > 0 => format!("{n} free policy to adopt"),
             (_, 0) => "Policies".to_string(),
+            (_, cost) if culture >= cost => format!("A policy is ready · culture {culture} of {cost}"),
             (_, cost) => format!("Next policy · culture {culture} of {cost} · {} turns", turns(cost, culture, v.economy.culture)),
         };
         commands.entity(e).with_children(|t| {

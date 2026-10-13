@@ -22,6 +22,10 @@ use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Decision {
+    /// Nothing is being researched: science would go to waste.
+    ChooseResearch,
+    /// Culture enough for a policy.
+    AdoptPolicy,
     Capture(Key),
     FreeTechnology,
     FreeGreatPerson,
@@ -54,6 +58,8 @@ impl Decision {
                 .map_or("a unit".into(), |row| row.name.clone())
         };
         match self {
+            Decision::ChooseResearch => "Choose research".into(),
+            Decision::AdoptPolicy => "Adopt a policy".into(),
             Decision::Capture(k) => format!("Decide {}'s fate", city(k)),
             Decision::FreeTechnology => "Choose a free technology".into(),
             Decision::FreeGreatPerson => "Choose a great person".into(),
@@ -200,6 +206,15 @@ pub(crate) fn pending(v: &civ_sim::PlayerView, options: Option<&civ_sim::queries
     if v.rewards.policies > 0 {
         list.push(Decision::FreePolicy);
     }
+    // What a player is asked each time it comes up, though the engine would carry on without it.
+    let me = v.civs.iter().find(|c| c.id == v.me);
+    if me.is_some_and(|c| c.researching.is_none()) && options.is_some_and(|o| !o.research.is_empty()) {
+        list.push(Decision::ChooseResearch);
+    }
+    let culture = me.and_then(|c| c.culture).unwrap_or(0);
+    if v.rewards.policies == 0 && options.is_some_and(|o| o.next_policy_cost > 0 && culture >= o.next_policy_cost && o.policies.iter().any(|p| p.affordable)) {
+        list.push(Decision::AdoptPolicy);
+    }
     for d in v.demands.iter().flatten() {
         list.push(Decision::Demand(d.by, demand_code(d.demand)));
     }
@@ -218,8 +233,8 @@ pub(crate) fn pending(v: &civ_sim::PlayerView, options: Option<&civ_sim::queries
 /// Open a decision: its screen, its unit, or its card.
 pub fn open(d: Decision, decisions: &mut Decisions, selection: &mut Selection, screens: &mut crate::screens::Screens) {
     match &d {
-        Decision::FreeTechnology => selection.research_open = true,
-        Decision::FreePolicy => screens.policies = true,
+        Decision::FreeTechnology | Decision::ChooseResearch => selection.research_open = true,
+        Decision::FreePolicy | Decision::AdoptPolicy => screens.policies = true,
         Decision::Promote(k) => crate::play::select_unit(selection, *k),
         _ => {}
     }
@@ -334,6 +349,8 @@ fn draw(
         }
         // These open a screen or a unit; the card only says so.
         Decision::FreeTechnology => rows.push(("Choose any technology you may research: it is yours at once.".into(), TEXT)),
+        Decision::ChooseResearch => rows.push(("Nothing is being researched, so this turn's science would be lost.".into(), TEXT)),
+        Decision::AdoptPolicy => rows.push(("You have culture enough for a social policy.".into(), TEXT)),
         Decision::FreePolicy => rows.push(("Adopt any open policy at no cost.".into(), TEXT)),
         Decision::Promote(_) => rows.push(("Choose a promotion in the unit panel.".into(), TEXT)),
     }
@@ -416,7 +433,9 @@ mod tests {
         let QueryResult::CivOptions { options } = session.query(0, Ask::CivOptions).unwrap().result else { panic!() };
         let mut options = serde_json::to_value(options).unwrap();
         let base: civ_sim::PlayerView = serde_json::from_value(view.clone()).unwrap();
-        assert!(pending(&base, None, &HashSet::new()).is_empty(), "a new match asks nothing");
+        assert!(pending(&base, None, &HashSet::new()).is_empty(), "without the civ's options, nothing is asked");
+        let o0: civ_sim::queries::CivOptions = serde_json::from_value(options.clone()).unwrap();
+        assert_eq!(pending(&base, Some(&o0), &HashSet::new()), vec![Decision::ChooseResearch], "a new match asks for research");
 
         view["pendingCaptures"] = serde_json::json!([{ "city": { "id": 7, "gen": 1 }, "choices": ["annex", "keep", "raze"] }]);
         view["rewards"] = serde_json::json!({ "technologies": 1, "policies": 1, "greatPeople": 1 });
@@ -432,6 +451,7 @@ mod tests {
                 Decision::Capture((7, 1)),
                 Decision::FreeTechnology,
                 Decision::FreePolicy,
+                Decision::ChooseResearch,
                 Decision::Demand(1, 2),
                 Decision::StateFaith,
                 Decision::Promote((4, 1)),

@@ -196,7 +196,7 @@ fn paint(
     if let Some(old) = minimap.image.replace(handle.clone()) {
         images.remove(&old);
     }
-    commands.entity(picture).insert(ImageNode::new(handle));
+    commands.entity(picture).insert(ImageNode::new(handle).with_mode(bevy::ui::widget::NodeImageMode::Stretch));
 }
 
 /// Ground point to minimap node coordinates, and back.
