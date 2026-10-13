@@ -163,7 +163,10 @@ what they are offering you.
   them or reads a bot's answer); the research path across several completions; tile pins and purchases.
 - Not built: what the other side holds is not in your view, so "they give" cannot list their luxuries,
   strategic resources or cities; cities as trade items either way. Great people and religion were listed for
-  M4 under Out of M3 but are not in M4's spec; where they go is open.
+  M4 under Out of M3 but are not in M4's spec.
+- Approved by Javed on 2026-10-13, with two follow-ups decided: civ-sim adds what each met civ can trade to the
+  view, so "they give" can list it (specified with M5); great people and religion go to M6 with the rest of the
+  action catalogue.
 
 ## Open choices (decided)
 
