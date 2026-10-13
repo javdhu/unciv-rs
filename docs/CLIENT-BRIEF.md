@@ -1,6 +1,6 @@
 # Bevy client: design brief
 
-Status, 2026-10-13: decisions D1-D9 taken (D4 deferred), visual choices V1-V5 taken. S0 passed on native,
+Status, 2026-10-13: decisions D1-D9 taken (D4 with M5's R3), visual choices V1-V5 taken. S0 passed on native,
 Chromium (WebGPU and WebGL2); Safari's frame timing is still unmeasured. M0 built and verified. M1 built and
 reviewed; its polish (terrain painted by a shader from per-tile data) done. M2 (spectator) built and approved;
 civ-sim watches through any chosen civ. M3 (a turn you play) and M4 (cities, research, policies, diplomacy
@@ -88,8 +88,8 @@ prediction.
    may be drawn behind the view; when the queue drains, visuals equal the view. Skippable; a resync clears it.
    Input always reads ViewState, never the visuals.
 5. Outbox. Pending commands keyed by `commandId`, sent in order; `finishTurn` waits for earlier receipts.
-   On reconnect it resends unresolved commands with the same id and payload. Written to disk before sending, so
-   a crash cannot lose an outcome.
+   On reconnect it resends unresolved commands with the same id and payload. Kept in memory only (R4 in
+   [ROOMS-SPEC.md](ROOMS-SPEC.md)): a client crash forgets orders not yet acknowledged.
 6. Map renderer. Odd-r pointy-top geometry. Terrain in chunks, rebuilt only when a changed tile falls in
    one. Three fog states from the view: absent (never seen), remembered (`observed_turn`), visible. Wrap in x
    by drawing the chunk strip twice and wrapping the camera.
@@ -127,7 +127,7 @@ Taken by Javed on 2026-10-13. The options he did not pick and their trade-offs a
 | D1 | Targets | Native and wasm from one codebase |
 | D2 | Solo play | In-process `Session` |
 | D3 | Wire types | The client depends on civ-sim as it is |
-| D4 | Native auth for rooms | Deferred until a native client joins rooms |
+| D4 | Native auth for rooms | Imitate a browser: guest cookie and Origin (R3 in [ROOMS-SPEC.md](ROOMS-SPEC.md)) |
 | D5 | First ruleset | `base` |
 | D6 | First playable | Watch bots play (`Session::watch`) |
 | D7 | Visual direction | 3D terrain map at a fixed oblique angle; spec in [VISUAL-SPEC.md](VISUAL-SPEC.md) |

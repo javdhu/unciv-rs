@@ -1,6 +1,18 @@
 # Rooms spec (M5)
 
-Status: draft, 2026-10-13. Choices R1-R7 are open; nothing here is built.
+Status: R1-R7 decided by Javed on 2026-10-13; nothing here is built yet.
+
+| | Choice | Pick |
+|---|---|---|
+| R1 | App flow | In-app states: Home, Rooms, Lobby, Match; a match tears down cleanly on leaving |
+| R2 | Serving the browser client | civ-server serves a static directory (`CIV_STATIC_DIR`) with COOP/COEP |
+| R3 | Native identity (D4) | Imitate a browser: guest token from `Set-Cookie`, stored per server (0600), sent as `Cookie` with the server's own `Origin` |
+| R4 | Outbox across a restart | Memory only; reconnects resend |
+| R5 | Rooms HTTP types | Moved to civ-sim, used by server and client |
+| R6 | Network crates | Native `tungstenite` and `ureq` on the Link thread; browser `web-sys` WebSocket and fetch |
+| R7 | Trade view | As Unciv (gold, gold per turn, resource counts, cities), only for civs where you hold an embassy |
+
+The options not picked stay below for the record.
 
 ## Problem
 
@@ -103,7 +115,7 @@ the screen it is on, the Outbox, and nothing else that outlives a connection. A 
 status Retrying, socket opens, `hello`, `Welcome` replaces the view, presentation clears, the Outbox resends,
 status Live.
 
-## Open choices
+## Choices (decided; see the table at the top)
 
 R1. App flow. (a) In-app states: Home, Rooms, Lobby and Match as Bevy states; leaving a match tears down its
 entities and resets ViewState, Outbox, Selection and Screens, and the next match starts clean in the same
