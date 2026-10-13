@@ -87,7 +87,8 @@ city's tiles, and a full-screen tech list.
 
 # M4: cities, research, policies and diplomacy
 
-Status: proposal for Javed's review, 2026-10-13. Q1-Q4 at the end are open. Nothing below is built.
+Status: Q1-Q4 decided by Javed on 2026-10-13: Q1 (a) branch trees, with civ-sim sending each policy's branch;
+Q2 (a) city tiles on the map; Q3 (a) a full-screen tech tree; Q4 (a) a trade window. Nothing below is built yet.
 
 ## What the screens have to say
 
