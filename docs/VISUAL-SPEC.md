@@ -216,6 +216,23 @@ Estimates, measured in M1 and M2:
 
 The city screen, research, policies and diplomacy (M3 and later), natural-wonder models, combat close-ups.
 
+## Where M1 differs from this spec
+
+Built 2026-10-13, for review. Each of these is a deviation to accept or send back.
+
+- Hex mesh: four rings at 0.42, 0.72, 0.9 and 1.0 of the corner distance (96 triangles a hex, 983k on the
+  largest map), not three even rings. Even rings blurred every edge, because colour changes inside a third of
+  a hex; crowding the rings toward the edge keeps the 0.20 R blend crisp.
+- Light: sun 3,000 lux, ambient 400 (cd/m²), which holds the 40% shadow ratio. At 10,000 lux the default
+  exposure washed every colour out.
+- Water: roughness 0.45. At a glassier value the sun's glint whitened a whole edge of the map.
+- Rivers are ribbons laid along the edges in the lake colour, not channels cut into the land: a 0.14 m channel
+  is finer than the mesh.
+- Mountains add ridged variation (0.8 to 1.2 of the peak) so a peak reads as rock, not a cone. Rock needs height
+  above 0.40 m as well as a steep slope, so hills keep their ground's colour.
+- Not built yet: the 0.35 s fade when a tile comes into sight (M2 presentation), normal-map waves on the water,
+  natural-wonder models (a marker post stands in), city meshes and units (M2).
+
 ## Choices
 
 Taken by Javed on 2026-10-13. The options he did not pick are in git history (637b789).

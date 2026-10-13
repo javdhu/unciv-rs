@@ -50,6 +50,11 @@ crates/civ-client/web/build.sh                 # both measured wasm builds into 
 python3 crates/civ-client/web/serve.py         # http://127.0.0.1:5310, cross-origin isolated
 ```
 
+Review screenshots: `CIV_SHOTS=<dir> CIV_SCENE=<world|fog|seed2|seed3> cargo client` plays a watched match to a
+set turn, shoots fixed views into `<dir>` and quits; on the page, `?shots=<scene>` posts them to `serve.py`, which
+writes `crates/civ-client/web/shots/`. Mouse: wheel or pinch zooms toward the cursor, drag pans, a click pins a
+tile in the inspector; WASD or arrows pan; F3 shows frame and round timings.
+
 Dev builds optimise every dependency and the engine (`civ-core`, `civ-sim`) once, so the first build takes about
 six minutes on this Mac and later edits to the client rebuild in one to two seconds.
 

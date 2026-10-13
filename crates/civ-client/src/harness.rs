@@ -1,12 +1,11 @@
-//! The frame-time harness (S0, docs/CLIENT-BRIEF.md): a stand-in scene that keeps the main thread busy every
-//! frame while the host thread closes a watched match's rounds back to back, and a record of frame times, round
-//! times and link health, reported every five seconds (stdout natively, `globalThis.civReport` on the page).
-//! The stand-in scene goes when M1 draws the map; the record stays for the budgets in docs/VISUAL-SPEC.md.
+//! The frame-time harness (S0, docs/CLIENT-BRIEF.md): a record of frame times, round times and link health while
+//! the host thread closes a watched match's rounds, reported every five seconds (stdout natively,
+//! `globalThis.civReport` on the page).
+//! F3 shows the readout. The record serves the budgets in docs/VISUAL-SPEC.md.
 
 use crate::client::{LinkState, ViewChanged};
 use crate::view_state::ViewState;
 use bevy::prelude::*;
-use std::f32::consts::PI;
 
 /// Seconds per reported window, and windows per summary.
 const WINDOW: f64 = 5.0;
@@ -15,11 +14,8 @@ const SUMMARY_WINDOWS: u32 = 12;
 pub fn plugin(app: &mut App) {
     app.init_resource::<Record>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (count, bob, measure).chain());
+        .add_systems(Update, (count, toggle, measure).chain());
 }
-
-#[derive(Component)]
-struct Bob(f32);
 
 #[derive(Component)]
 struct Hud;
@@ -44,57 +40,25 @@ struct Record {
     resyncs: u32,
     stale: u32,
     stopped: Option<String>,
+    chunk_ms: Vec<f32>,
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let pitch = 52f32.to_radians();
-    let distance = 24.0;
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, distance * pitch.sin(), distance * pitch.cos()).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.spawn((
-        DirectionalLight { illuminance: 12_000.0, shadow_maps_enabled: true, ..default() },
-        Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, (315f32 - 180.0).to_radians(), -42f32.to_radians(), 0.0)),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(60.0, 36.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(0x6F, 0x8F, 0x3E))),
-    ));
-    let piece = meshes.add(Cuboid::new(0.6, 0.6, 0.6));
-    let colours = [0xA6A05A, 0xD9C48E, 0x7C766D, 0x3C8FA9].map(|c: u32| {
-        materials.add(Color::srgb_u8((c >> 16) as u8, (c >> 8) as u8, c as u8))
-    });
-    // One piece per tile of a 32x20 map, on odd-r hex centres.
-    for row in 0..20 {
-        for col in 0..32 {
-            let x = 3f32.sqrt() * (col as f32 + 0.5 * (row % 2) as f32) - 28.0;
-            let z = 1.5 * row as f32 - 14.0;
-            commands.spawn((
-                Mesh3d(piece.clone()),
-                MeshMaterial3d(colours[(row * 32 + col) % 4].clone()),
-                Transform::from_xyz(x, 0.3, z),
-                Bob((row * 32 + col) as f32 * 0.37),
-            ));
-        }
-    }
+/// The readout, hidden until F3.
+fn setup(mut commands: Commands) {
     commands.spawn((
         Hud,
-        Text::new("S0: starting"),
-        TextFont { font_size: FontSize::Px(15.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: Val::Px(10.0), left: Val::Px(12.0), ..default() },
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(13.0), ..default() },
+        Node { position_type: PositionType::Absolute, top: Val::Px(10.0), right: Val::Px(12.0), ..default() },
+        Visibility::Hidden,
     ));
 }
 
-fn bob(time: Res<Time>, mut pieces: Query<(&Bob, &mut Transform)>) {
-    let t = time.elapsed_secs();
-    for (bob, mut transform) in &mut pieces {
-        transform.translation.y = 0.3 + 0.25 * (t * 1.7 + bob.0).sin();
-        transform.rotation = Quat::from_rotation_y(t * 0.8 + bob.0 * PI);
+fn toggle(keys: Res<ButtonInput<KeyCode>>, mut hud: Query<&mut Visibility, With<Hud>>) {
+    if keys.just_pressed(KeyCode::F3) {
+        for mut v in &mut hud {
+            *v = if *v == Visibility::Hidden { Visibility::Inherited } else { Visibility::Hidden };
+        }
     }
 }
 
@@ -102,6 +66,7 @@ fn count(
     real: Res<Time<Real>>,
     view: Res<ViewState>,
     link: Res<LinkState>,
+    mut dirty: ResMut<crate::map::Dirty>,
     mut changes: MessageReader<ViewChanged>,
     mut record: ResMut<Record>,
 ) {
@@ -114,6 +79,8 @@ fn count(
             record.total.rounds.push(ms);
         }
     }
+    let built = std::mem::take(&mut dirty.built_ms);
+    record.chunk_ms.extend(built);
     record.turn = view.view().map_or(0, |v| v.turn);
     (record.resyncs, record.stale, record.stopped) = (link.resyncs, link.stale, link.stopped.clone());
 }
@@ -180,7 +147,7 @@ fn report(record: &Record, window: &Window, index: u32, summary: bool) -> String
             "{{\"summary\":{},\"window\":{},\"frames\":{},\"fps\":{:.1},\"p50\":{:.2},\"p95\":{:.2},",
             "\"p99\":{:.2},\"max\":{:.2},\"busyFrames\":{},\"busyP99\":{:.2},\"busyMax\":{:.2},\"rounds\":{},",
             "\"roundMsMean\":{:.1},\"roundMsMax\":{:.1},\"turn\":{},\"changedKeys\":{},\"resyncs\":{},\"stale\":{},",
-            "\"stopped\":{:?}}}"
+            "\"chunks\":{},\"chunkMsP50\":{:.2},\"chunkMsMax\":{:.2},\"stopped\":{:?}}}"
         ),
         summary,
         index,
@@ -200,6 +167,9 @@ fn report(record: &Record, window: &Window, index: u32, summary: bool) -> String
         record.changed_keys,
         record.resyncs,
         record.stale,
+        record.chunk_ms.len(),
+        percentile(&sorted(&record.chunk_ms), 0.5),
+        sorted(&record.chunk_ms).last().copied().unwrap_or(0.0),
         record.stopped.as_deref().unwrap_or(""),
     )
 }

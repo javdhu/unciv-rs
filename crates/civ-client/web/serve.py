@@ -1,10 +1,12 @@
-"""Serve the wasm client cross-origin isolated (SharedArrayBuffer needs COOP and COEP) and append what the
-page reports to POST /stats to stats.jsonl beside this file. Local development only."""
+"""Serve the wasm client cross-origin isolated (SharedArrayBuffer needs COOP and COEP), append what the page
+reports to POST /stats to stats.jsonl beside this file, and write review shots posted to /shot?name=... into
+shots/. Local development only."""
 import http.server
 import json
 import pathlib
 import sys
 import time
+import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5310
@@ -24,10 +26,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_POST(self):
-        if self.path != '/stats':
+        url = urllib.parse.urlparse(self.path)
+        body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        if url.path == '/shot':
+            name = urllib.parse.parse_qs(url.query).get('name', ['shot'])[0]
+            safe = ''.join(ch for ch in name if ch.isalnum() or ch in '-_')
+            (ROOT / 'shots').mkdir(exist_ok=True)
+            (ROOT / 'shots' / f'{safe}.png').write_bytes(body)
+            self.send_response(204)
+            self.end_headers()
+            return
+        if url.path != '/stats':
             self.send_error(404)
             return
-        body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
         record = {'received': time.time(), **json.loads(body)}
         with open(ROOT / 'stats.jsonl', 'a') as f:
             f.write(json.dumps(record) + '\n')

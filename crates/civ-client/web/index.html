@@ -15,7 +15,8 @@
 <div id="note"></div>
 <script type="module">
 // Two builds (docs/VISUAL-SPEC.md, V5): WebGPU when the browser gives an adapter, WebGL2 otherwise.
-// ?gpu=webgl2 forces one; ?settings={...} passes civ-sim match settings.
+// ?gpu=webgl2 forces one; ?settings={...} passes civ-sim match settings; ?sight=seat watches through seat 0's
+// eyes; ?shots=<scene> runs the review screenshot script (src/shots.rs).
 const params = new URLSearchParams(location.search);
 // Startup state and every error go to the local server too (serve.py), so a run can be read without devtools.
 const post = (record) => fetch('/stats', { method: 'POST', body: JSON.stringify({ ua: navigator.userAgent, ...record }) })
@@ -33,6 +34,9 @@ note.textContent = `${flavor}${crossOriginIsolated ? '' : ' · not cross-origin 
 post({ boot: true, flavor, isolated: crossOriginIsolated, gpu: !!navigator.gpu });
 globalThis.civWorkerUrl = new URL(`./pkg/${flavor}/worker.js`, location.href).href;
 globalThis.civSettings = params.get('settings') ?? undefined;
+globalThis.civSight = params.get('sight') ?? undefined;
+globalThis.civShots = params.get('shots') ?? undefined;
+globalThis.civFlavor = flavor;
 globalThis.civReport = (line) => post({ flavor, ...JSON.parse(line) });
 const pkg = await import(`./pkg/${flavor}/civ_client.js`);
 await pkg.default();

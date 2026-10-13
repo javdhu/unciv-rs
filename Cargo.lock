@@ -2146,6 +2146,7 @@ dependencies = [
  "bevy",
  "civ-sim",
  "concurrent-queue",
+ "image",
  "js-sys",
  "serde_json",
  "wasm-bindgen",

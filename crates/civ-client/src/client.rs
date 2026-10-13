@@ -4,11 +4,18 @@
 use crate::link::{Down, Link, Up};
 use crate::view_state::{Applied, Changed, ViewState};
 use bevy::prelude::*;
-use civ_sim::protocol::ClientMessage;
+use civ_sim::protocol::{ClientMessage, QueryReply, ServerMessage};
 
 /// One applied view message, for the projection (M1) and presentation (M2).
 #[derive(Message, Debug, Clone)]
 pub struct ViewChanged(pub Changed);
+
+/// A reply to a query this client sent, by the request id it chose.
+#[derive(Message, Debug, Clone)]
+pub struct QueryAnswered {
+    pub request_id: String,
+    pub reply: QueryReply,
+}
 
 /// When a watched match closes its next round. Presentation (M2) will hold rounds while it plays them.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,17 +40,22 @@ pub fn plugin(app: &mut App) {
         .init_resource::<LinkState>()
         .insert_resource(Pace::Continuous)
         .add_message::<ViewChanged>()
+        .add_message::<QueryAnswered>()
         .add_systems(PreUpdate, (receive, pace).chain());
 }
 
-fn receive(
+pub fn receive(
     link: Res<Link>,
     mut view: ResMut<ViewState>,
     mut state: ResMut<LinkState>,
     mut changed: MessageWriter<ViewChanged>,
+    mut answered: MessageWriter<QueryAnswered>,
 ) {
     while let Some(down) = link.receive() {
         match down {
+            Down::Message(ServerMessage::QueryReply { request_id, reply }) => {
+                answered.write(QueryAnswered { request_id, reply });
+            }
             Down::Message(message) => match view.apply(message) {
                 Some(Applied::Changed(c)) => {
                     state.applied += 1;
@@ -55,7 +67,7 @@ fn receive(
                     state.resyncs += 1;
                     link.send(Up::Client(ClientMessage::Resync));
                 }
-                // Receipts, query replies and errors belong to the Outbox (M3).
+                // Receipts and errors belong to the Outbox (M3).
                 None => {}
             },
             Down::Stopped(reason) => state.stopped = Some(reason),
