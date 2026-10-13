@@ -32,7 +32,12 @@ pub struct Scene {
     pub sight: Sight,
     pub turn: u32,
     pub views: Vec<(&'static str, Focus, f32)>,
+    /// Record this many seconds of play from `turn` instead of shooting views.
+    pub record: Option<f32>,
 }
+
+/// Frames a second in a recording; the clock steps exactly this much per frame while recording.
+pub const RECORD_FPS: f32 = 30.0;
 
 /// The review scenes: a developed world seen whole, its fog from one seat, and other seeds' terrain.
 pub fn scene(name: &str) -> Option<Scene> {
@@ -55,9 +60,20 @@ pub fn scene(name: &str) -> Option<Scene> {
             ("centre", Focus::Centre, 16.0),
             ("coast", Focus::Coast, 10.0),
         ]),
+        // M2's review: 45 seconds of a watched match from turn 30, at 1x, following the action.
+        "watch" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(1),
+                sight: Sight::All,
+                turn: 30,
+                views: Vec::new(),
+                record: Some(45.0),
+            });
+        }
         _ => return None,
     };
-    Some(Scene { name: name.into(), settings, sight, turn, views })
+    Some(Scene { name: name.into(), settings, sight, turn, views, record: None })
 }
 
 pub enum Out {
@@ -83,6 +99,7 @@ struct Captured(usize);
 #[derive(PartialEq)]
 enum Stage {
     Advancing,
+    Recording,
     Settling,
     Aiming,
     Waiting,
@@ -140,6 +157,7 @@ fn shoot(
     dirty: Res<Dirty>,
     land: Option<Res<Land>>,
     mut pace: ResMut<Pace>,
+    mut playback: ResMut<crate::present::Playback>,
     mut cameras: Query<&mut MapCamera>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -148,10 +166,40 @@ fn shoot(
     shots.frames += 1;
     match shots.stage {
         Stage::Advancing => {
+            // Reach the start turn as fast as the engine goes.
+            playback.skip = true;
             if turn >= shots.scene.turn || link.stopped.is_some() {
-                *pace = Pace::Paused;
-                shots.stage = Stage::Settling;
+                playback.skip = false;
                 shots.frames = 0;
+                if shots.scene.record.is_some() {
+                    shots.stage = Stage::Recording;
+                } else {
+                    *pace = Pace::Paused;
+                    shots.stage = Stage::Settling;
+                }
+            }
+        }
+        Stage::Recording => {
+            let total = (shots.scene.record.unwrap_or(0.0) * RECORD_FPS) as u32;
+            if shots.frames > total {
+                shots.stage = Stage::Done;
+                shots.frames = 0;
+                shots.index = total as usize;
+                return;
+            }
+            let Some(target) = shots.target.clone() else { return };
+            let name = format!("{}-{:05}", shots.scene.name, shots.frames);
+            let mut screenshot = commands.spawn(Screenshot::image(target));
+            screenshot.observe(|_: On<ScreenshotCaptured>, mut c: ResMut<Captured>| c.0 += 1);
+            match &shots.out {
+                #[cfg(not(target_arch = "wasm32"))]
+                Out::Dir(dir) => {
+                    screenshot.observe(bevy::render::view::screenshot::save_to_disk(dir.join(format!("{name}.png"))));
+                }
+                #[cfg(target_arch = "wasm32")]
+                Out::Page => {
+                    screenshot.observe(move |shot: On<ScreenshotCaptured>| post(&name, &shot.image));
+                }
             }
         }
         Stage::Settling => {
@@ -197,7 +245,8 @@ fn shoot(
             shots.stage = Stage::Aiming;
         }
         Stage::Done => {
-            if captured.0 >= shots.scene.views.len() && shots.frames > 30 {
+            let expected = shots.scene.record.map_or(shots.scene.views.len(), |s| (s * RECORD_FPS) as usize);
+            if captured.0 >= expected && shots.frames > 30 {
                 #[cfg(target_arch = "wasm32")]
                 post_done(&shots.scene.name);
                 exit.write(AppExit::Success);

@@ -271,7 +271,7 @@ impl Builder {
     }
 
     /// A low-poly cone or cylinder band, for trees.
-    fn frustum(&mut self, base: Vec3, r0: f32, r1: f32, height: f32, sides: usize, colour: LinearRgba) {
+    pub(crate) fn frustum(&mut self, base: Vec3, r0: f32, r1: f32, height: f32, sides: usize, colour: LinearRgba) {
         let slope = (r0 - r1) / height;
         for i in 0..sides {
             let (a0, a1) = (
@@ -286,6 +286,23 @@ impl Builder {
             let v3 = self.vertex(ring(a0, r1, height), normal(a0), colour);
             self.triangle(v0, v2, v1);
             self.triangle(v0, v3, v2);
+        }
+    }
+
+    /// An axis-aligned box standing on `base`: `sides` colour on the walls, `top` on the roof.
+    pub(crate) fn cuboid(&mut self, base: Vec3, size: Vec3, sides: LinearRgba, top: LinearRgba) {
+        let (x, y, z) = (size.x / 2.0, size.y, size.z / 2.0);
+        let faces: [(Vec3, [Vec3; 4], LinearRgba); 5] = [
+            (Vec3::Y, [Vec3::new(-x, y, -z), Vec3::new(-x, y, z), Vec3::new(x, y, z), Vec3::new(x, y, -z)], top),
+            (Vec3::X, [Vec3::new(x, 0.0, z), Vec3::new(x, 0.0, -z), Vec3::new(x, y, -z), Vec3::new(x, y, z)], sides),
+            (-Vec3::X, [Vec3::new(-x, 0.0, -z), Vec3::new(-x, 0.0, z), Vec3::new(-x, y, z), Vec3::new(-x, y, -z)], sides),
+            (Vec3::Z, [Vec3::new(-x, 0.0, z), Vec3::new(x, 0.0, z), Vec3::new(x, y, z), Vec3::new(-x, y, z)], sides),
+            (-Vec3::Z, [Vec3::new(x, 0.0, -z), Vec3::new(-x, 0.0, -z), Vec3::new(-x, y, -z), Vec3::new(x, y, -z)], sides),
+        ];
+        for (normal, corners, colour) in faces {
+            let v = corners.map(|c| self.vertex(base + c, normal, colour));
+            self.triangle(v[0], v[1], v[2]);
+            self.triangle(v[0], v[2], v[3]);
         }
     }
 

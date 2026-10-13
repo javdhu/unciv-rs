@@ -36,6 +36,8 @@ pub struct MapCamera {
     /// Ground point grabbed, the screen point pressed, and whether it has moved past a click.
     drag: Option<(Vec2, Vec2, bool)>,
     framed: bool,
+    /// When the viewer last panned or zoomed, in real seconds; following the action waits after it.
+    pub manual_at: f64,
 }
 
 impl MapCamera {
@@ -75,6 +77,7 @@ fn spawn(mut commands: Commands) {
             anchor: None,
             drag: None,
             framed: false,
+            manual_at: f64::NEG_INFINITY,
         },
         DistanceFog {
             color: Color::srgb_u8(0xC7, 0xD3, 0xDF),
@@ -139,17 +142,23 @@ fn input(
     let height = window.single().map_or(1000.0, |w| w.height());
     let metres_per_pixel = 2.0 * map.distance * (FOV_DEGREES / 2.0).to_radians().tan() / height;
     let mut zoom = 1.0f32;
+    let mut wheel_panned = false;
     for event in wheel.read() {
         match event.unit {
             MouseScrollUnit::Line => zoom *= ZOOM_STEP.powf(-event.y),
             // Trackpads scroll in pixels: two fingers pan.
             MouseScrollUnit::Pixel => {
                 map.target += Vec2::new(-event.x, event.y) * metres_per_pixel;
+                wheel_panned = true;
             }
         }
     }
     for PinchGesture(delta) in pinch.read() {
         zoom *= 1.0 - delta;
+    }
+    let manual = zoom != 1.0 || map.dragging() || keys.get_pressed().len() > 0 || wheel_panned;
+    if manual {
+        map.manual_at = time.elapsed_secs_f64();
     }
     if zoom != 1.0 {
         map.goal = (map.goal * zoom).clamp(MIN_DISTANCE, map.max_distance);

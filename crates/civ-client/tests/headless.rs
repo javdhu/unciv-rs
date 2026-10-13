@@ -17,14 +17,14 @@ fn a_watched_match_streams_into_the_view() {
         .insert_resource(Link::watch(Settings { seed: 5, ..Settings::default() }, Sight::Seat));
     let started = Instant::now();
     let turn = |app: &App| app.world().resource::<ViewState>().view().map_or(0, |v| v.turn);
-    while turn(&app) < 80 {
+    while turn(&app) < 100 {
         app.update();
         let state = app.world().resource::<LinkState>();
         assert!(state.stopped.is_none(), "host stopped: {:?}", state.stopped);
-        assert!(started.elapsed() < Duration::from_secs(300), "80 rounds took over five minutes");
+        assert!(started.elapsed() < Duration::from_secs(300), "100 rounds took over five minutes");
         std::thread::sleep(Duration::from_millis(1));
     }
     let state = app.world().resource::<LinkState>();
     assert_eq!((state.resyncs, state.stale), (0, 0));
-    assert!(state.applied >= 80);
+    assert!(state.applied >= 100);
 }

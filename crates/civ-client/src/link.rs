@@ -17,6 +17,9 @@ pub enum Up {
     Client(ClientMessage),
     /// A watched match closes its next round. Watched rounds are the host's to close; the client paces them.
     Advance,
+    /// Watch the same match through other eyes: the host replays it to the current turn under the new sight
+    /// (the engine is deterministic) and welcomes the client again under a new epoch.
+    Watch(Sight),
 }
 
 /// From the host.
@@ -65,9 +68,16 @@ impl Link {
     }
 }
 
+fn epoch(settings: &Settings, sight: Sight) -> String {
+    let eyes = match sight {
+        Sight::All => "all",
+        Sight::Seat => "seat",
+    };
+    format!("watch-{}-{eyes}", settings.seed)
+}
+
 fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Down>) -> Result<(), String> {
-    let epoch = format!("watch-{}", settings.seed);
-    let mut session = Session::watch(settings, epoch, sight).map_err(|e| e.to_string())?;
+    let mut session = Session::watch(settings.clone(), epoch(&settings, sight), sight).map_err(|e| e.to_string())?;
     let welcome = |session: &Session| -> Result<ServerMessage, String> {
         Ok(ServerMessage::Welcome {
             version: PROTOCOL_VERSION,
@@ -96,6 +106,17 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
                     }
                 }
                 session = transition.next;
+            }
+            Up::Watch(sight) => {
+                let turn = session.turn();
+                let mut again =
+                    Session::watch(settings.clone(), epoch(&settings, sight), sight).map_err(|e| e.to_string())?;
+                while again.turn() < turn {
+                    let Some(t) = again.stage_round().map_err(|e| e.to_string())? else { break };
+                    again = t.next;
+                }
+                session = again;
+                send(welcome(&session)?);
             }
             Up::Client(ClientMessage::Hello { .. }) => send(welcome(&session)?),
             Up::Client(ClientMessage::Resync) => send(ServerMessage::Update {

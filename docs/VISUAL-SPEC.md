@@ -238,6 +238,27 @@ stickers"; the mesh, light and mountain changes below stand.
   closing every frame; wasm download 7.8 MB (WebGPU) and 8.4 MB (WebGL2) brotli.
 - Not built yet: natural-wonder models (a marker post stands in), city meshes and units (M2).
 
+## How M2 draws it
+
+Built 2026-10-13 for review (spectator mode).
+
+- Units: the placeholder shapes per class above, in the owner's outer colour with an inner-colour band; an
+  embarked unit stands on a hull; units sharing a tile stand apart. The badge is screen-space UI sized to 0.24 m
+  at the unit's depth (10 to 28 px) with the class glyph; a health bar shows only when hurt.
+- Cities: blocks fixed by the city id, the capital's tower, walls when the city has them, all on the objects
+  material (remembered cities grey with their tiles). Banners as specified: population, star, name, a health
+  bar when damaged.
+- Motion as specified, played as beats, one per acting civ in order: its units walk at once, then its battles
+  play one by one; new and taken cities rise over 0.6 s. Rounds are capped at 8 s at 1x. Keys: space pauses,
+  1 to 4 pick 1x to 8x, full stop plays one round, K skips animations, F toggles following.
+- HUD: the top bar and the civ panel as specified; the panel's columns are cities and techs (the view carries
+  techs only for the watcher's own civ, so others show a dash). Raiders are left out.
+- Sound: a `Cue` message for each round, move, battle, fall, founding and capture; nothing plays it.
+- Whose eyes: all-seeing or seat 0's eyes. Switching replays the match to the same turn under the other
+  sight. Any other civ's eyes needs civ-sim to watch through a chosen civ.
+- Not built: border edges drawing in over 0.4 s, and the banner colour wipe on capture (the taken city rises
+  instead).
+
 ## Choices
 
 Taken by Javed on 2026-10-13. The options he did not pick are in git history (637b789).

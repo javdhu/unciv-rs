@@ -14,7 +14,7 @@ webgl2 = ["bevy/webgl2"]
 civ-sim = { path = "../civ-sim", default-features = false }
 bevy = { version = "0.20", default-features = false, features = [
     "default_app", "std", "bevy_winit", "default_font", "3d_bevy_render", "ui_api", "ui_bevy_render", "scene",
-    "picking",
+    "picking", "bevy_ui_widgets",
 ] }
 # Lock-free in both directions: the browser's main thread must never wait on a lock.
 concurrent-queue = "2"

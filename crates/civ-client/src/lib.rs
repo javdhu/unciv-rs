@@ -3,11 +3,14 @@
 pub mod camera;
 pub mod client;
 mod harness;
+mod hud;
 pub mod hex;
 mod inspect;
 pub mod link;
 mod map;
 mod paint;
+mod pieces;
+mod present;
 mod relief;
 pub mod rules;
 mod shots;
@@ -38,17 +41,28 @@ pub fn run() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin { primary_window: Some(window), ..default() }))
         .insert_resource(link::Link::watch(settings, sight))
+        .insert_resource(hud::Eyes(sight))
         .add_plugins((
             client::plugin,
             rules::plugin,
             map::plugin,
             paint::plugin,
+            pieces::plugin,
+            present::plugin,
+            hud::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,
             shots::plugin,
         ));
     if let Some(shots) = shots {
+        // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
+        // each capture takes.
+        if shots.scene.record.is_some() {
+            app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f32(
+                1.0 / shots::RECORD_FPS,
+            )));
+        }
         app.insert_resource(shots);
     }
     app.run();

@@ -10,6 +10,16 @@ use civ_sim::protocol::{ClientMessage, QueryReply, ServerMessage};
 #[derive(Message, Debug, Clone)]
 pub struct ViewChanged(pub Changed);
 
+/// The presentation events of one applied update, in order (a watched round's moves, battles, foundings).
+#[derive(Message, Debug, Clone)]
+pub struct RoundEvents(pub Vec<civ_sim::protocol::PresentedEvent>);
+
+/// Closed while presentation plays a round: the next round waits. Absent, rounds run back to back.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct Gate {
+    pub open: bool,
+}
+
 /// A reply to a query this client sent, by the request id it chose.
 #[derive(Message, Debug, Clone)]
 pub struct QueryAnswered {
@@ -41,6 +51,7 @@ pub fn plugin(app: &mut App) {
         .insert_resource(Pace::Continuous)
         .add_message::<ViewChanged>()
         .add_message::<QueryAnswered>()
+        .add_message::<RoundEvents>()
         .add_systems(PreUpdate, (receive, pace).chain());
 }
 
@@ -50,6 +61,7 @@ pub fn receive(
     mut state: ResMut<LinkState>,
     mut changed: MessageWriter<ViewChanged>,
     mut answered: MessageWriter<QueryAnswered>,
+    mut rounds: MessageWriter<RoundEvents>,
 ) {
     while let Some(down) = link.receive() {
         match down {
@@ -61,6 +73,9 @@ pub fn receive(
                     state.applied += 1;
                     state.awaiting_round = false;
                     changed.write(ViewChanged(c));
+                    if let Some(update) = view.update().filter(|u| !u.events.is_empty()) {
+                        rounds.write(RoundEvents(update.events.clone()));
+                    }
                 }
                 Some(Applied::Stale) => state.stale += 1,
                 Some(Applied::NeedResync) => {
@@ -75,9 +90,16 @@ pub fn receive(
     }
 }
 
-fn pace(link: Res<Link>, pace: Res<Pace>, view: Res<ViewState>, mut state: ResMut<LinkState>) {
+fn pace(
+    link: Res<Link>,
+    pace: Res<Pace>,
+    gate: Option<Res<Gate>>,
+    view: Res<ViewState>,
+    mut state: ResMut<LinkState>,
+) {
     let finished = view.view().is_some_and(|v| v.winner.is_some() || v.result.is_some());
-    if *pace == Pace::Continuous && view.view().is_some() && !state.awaiting_round && state.stopped.is_none() && !finished {
+    let open = gate.is_none_or(|g| g.open);
+    if *pace == Pace::Continuous && open && view.view().is_some() && !state.awaiting_round && state.stopped.is_none() && !finished {
         state.awaiting_round = true;
         link.send(Up::Advance);
     }
