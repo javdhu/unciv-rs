@@ -80,6 +80,25 @@ impl Grid {
         self.id(col as i32 + dc, row as i32 + dr)
     }
 
+    /// Steps between two tiles, across the seam on a wrapping map.
+    pub fn distance(&self, a: u16, b: u16) -> i32 {
+        // Odd rows sit half a hex east (odd-r); cube coordinates make hex distance the largest axis delta.
+        let cube = |col: i32, row: i32| (col - (row - (row & 1)) / 2, row);
+        let ((ac, ar), (bc, br)) = (self.coords(a), self.coords(b));
+        let (ax, az) = cube(ac as i32, ar as i32);
+        let w = self.width as i32;
+        let shifts: &[i32] = if self.wrap_x { &[-w, 0, w] } else { &[0] };
+        shifts
+            .iter()
+            .map(|s| {
+                let (bx, bz) = cube(bc as i32 + s, br as i32);
+                let (dx, dz) = (bx - ax, bz - az);
+                dx.abs().max(dz.abs()).max((dx + dz).abs())
+            })
+            .min()
+            .unwrap_or(0)
+    }
+
     /// Centre of the neighbour in direction `d` as seen from `id`: across a wrap seam it lies beside `id`,
     /// not at its own unwrapped column.
     pub fn neighbour_centre(&self, id: u16, d: usize) -> Vec2 {
@@ -121,6 +140,24 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neighbours_are_one_step_and_the_seam_is_crossed() {
+        for wrap_x in [false, true] {
+            let grid = Grid { width: 12, height: 9, wrap_x };
+            for id in 0..grid.len() as u16 {
+                assert_eq!(grid.distance(id, id), 0);
+                for d in 0..6 {
+                    if let Some(n) = grid.neighbour(id, d) {
+                        assert_eq!(grid.distance(id, n), 1, "{id} -> {n} (wrap {wrap_x})");
+                    }
+                }
+            }
+            let (west, east) = (grid.id(0, 4).unwrap(), grid.id(11, 4).unwrap());
+            assert_eq!(grid.distance(west, east), if wrap_x { 1 } else { 11 });
+            assert_eq!(grid.distance(grid.id(2, 0).unwrap(), grid.id(2, 4).unwrap()), 4);
+        }
+    }
 
     const GRID: Grid = Grid { width: 12, height: 8, wrap_x: false };
 

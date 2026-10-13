@@ -91,7 +91,7 @@ pub fn plugin(app: &mut App) {
         })
         .add_systems(
             Update,
-            (refresh, answers, receipts, click, preview, highlight, tile_labels, place_labels)
+            (refresh, answers, aim, receipts, click, preview, highlight, tile_labels, place_labels)
                 .chain()
                 .run_if(playing)
                 .after(crate::map::MapSet::Rebuild)
@@ -160,14 +160,7 @@ fn answers(mut answers: MessageReader<QueryAnswered>, mut selection: ResMut<Sele
         }
         match (what, &answer.reply.result) {
             ("reach", QueryResult::Reachable { reach }) => selection.reach = reach.clone(),
-            ("unit", QueryResult::UnitOptions { options }) => {
-                selection.targets = options
-                    .as_ref()
-                    .and_then(|o| o.targets.as_ref())
-                    .map(|t| t.iter().filter(|t| t.action == UnitActionKind::Attack).flat_map(|t| t.tiles.clone()).collect())
-                    .unwrap_or_default();
-                selection.options = options.clone();
-            }
+            ("unit", QueryResult::UnitOptions { options }) => selection.options = options.clone(),
             ("city", QueryResult::CityOptions { options }) => selection.city_options = options.clone(),
             ("civ", QueryResult::CivOptions { options }) => selection.civ_options = Some(options.clone()),
             ("preview", QueryResult::CombatPreview { preview }) => {
@@ -178,6 +171,49 @@ fn answers(mut answers: MessageReader<QueryAnswered>, mut selection: ResMut<Sele
             _ => {}
         }
     }
+}
+
+/// What the selected unit could attack from where it stands: hostile units and cities (at war, or raiders)
+/// next to it, or for a ranged unit within its range; the engine attacks without moving first. `unitOptions`
+/// offers `attack` without targets (its `targets` are for air and nuclear missions), so the client aims and the
+/// engine decides (`tests::aimed_targets_are_attacks_the_engine_takes`).
+fn aim(view: Res<ViewState>, rules: Option<Res<Rules>>, land: Option<Res<Land>>, mut selection: ResMut<Selection>) {
+    if !selection.is_changed() && !view.is_changed() {
+        return;
+    }
+    let targets = match (view.view(), rules, land, selection.unit) {
+        (Some(v), Some(rules), Some(land), Some(key)) => attackable(v, &rules, &land.0.grid, &selection, key),
+        _ => Vec::new(),
+    };
+    if selection.targets != targets {
+        selection.targets = targets;
+    }
+}
+
+fn attackable(v: &civ_sim::PlayerView, rules: &Rules, grid: &crate::hex::Grid, selection: &Selection, key: Key) -> Vec<u16> {
+    let offers_attack = selection.options.as_ref().is_some_and(|o| o.actions.iter().any(|a| a.action == UnitActionKind::Attack));
+    let Some(unit) = v.units.iter().find(|u| (u.id, u.r#gen) == key) else { return Vec::new() };
+    if !offers_attack {
+        return Vec::new();
+    }
+    let raiders = |civ: u8| {
+        let nation = v.civs.iter().find(|c| c.id == civ).map(|c| c.nation);
+        rules.tables.nations.iter().any(|n| Some(n.id) == nation && n.barbarian == Some(true))
+    };
+    let hostile = |civ: u8| civ != v.me && (raiders(civ) || v.relations.iter().any(|r| r.civ == civ && r.at_war));
+    let range = rules.tables.units.iter().find(|r| r.id == unit.base).filter(|r| r.ranged_strength > 0).map(|r| r.range);
+    let near = |tile: u16| grid.distance(unit.tile, tile) <= range.unwrap_or(1);
+    let mut out: Vec<u16> = v
+        .units
+        .iter()
+        .filter(|u| hostile(u.owner))
+        .map(|u| u.tile)
+        .chain(v.cities.iter().filter(|c| hostile(c.owner)).map(|c| c.centre))
+        .filter(|t| near(*t))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 /// Rejections and undo refusals become toasts, in plain words.
@@ -654,5 +690,74 @@ fn place_labels(
             }
             Err(_) => *visibility = Visibility::Hidden,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use civ_sim::protocol::{CommandRequest, CommandStatus};
+    use civ_sim::session::Session;
+    use civ_sim::Settings;
+
+    /// Seat 0 idles while bots and raiders play; whenever one of its units has something to aim at, every
+    /// aimed target is attacked through the engine. The aim is a guess the engine checks, so it must be right
+    /// most of the time and must find the fights that happen.
+    #[test]
+    fn aimed_targets_are_attacks_the_engine_takes() {
+        let settings = Settings { seed: 7, width: 24, height: 16, majors: 2, city_states: 1, ..Settings::default() };
+        let mut session = Session::new(settings, "aim".into(), vec![0]).unwrap();
+        let tables = civ_sim::tables(&civ_sim::content::load().unwrap());
+        let rules = Rules::new(session.content_hash(), tables);
+        let (mut tried, mut taken) = (0, 0);
+        let mut n = 0;
+        let mut send = |session: &mut Session, action: Action| {
+            n += 1;
+            let update = session.current_update(0).unwrap();
+            let request = CommandRequest {
+                command_id: format!("c{n}"),
+                epoch: update.cursor.epoch.clone(),
+                turn_token: update.turn_token.clone(),
+                action,
+            };
+            let transition = session.stage_command(0, request).unwrap();
+            let status = transition.receipt.result.clone();
+            *session = transition.next;
+            status
+        };
+        for _ in 0..150 {
+            let v = session.current_update(0).unwrap().view;
+            let grid = crate::hex::Grid { width: v.width, height: v.height, wrap_x: v.wrap_x };
+            for unit in v.units.iter().filter(|u| u.owner == v.me) {
+                let key = (unit.id, unit.r#gen);
+                let ask = |q| session.query(0, q).unwrap().result;
+                let QueryResult::UnitOptions { options } = ask(Ask::UnitOptions { unit: entity(key), nuclear_target: None }) else { panic!() };
+                let QueryResult::Reachable { reach } = ask(Ask::Reachable { unit: entity(key) }) else { panic!() };
+                let selection = Selection { options, reach, ..Selection::default() };
+                for tile in attackable(&v, &rules, &grid, &selection, key) {
+                    let target = match v.units.iter().find(|u| u.owner != v.me && u.tile == tile) {
+                        Some(u) => AttackTarget::Unit { unit: EntityRef { id: u.id, r#gen: u.r#gen } },
+                        None => {
+                            let c = v.cities.iter().find(|c| c.centre == tile).unwrap();
+                            AttackTarget::City { city: EntityRef { id: c.id, r#gen: c.r#gen } }
+                        }
+                    };
+                    tried += 1;
+                    if send(&mut session, Action::Attack { unit: entity(key), target }) == CommandStatus::Applied {
+                        taken += 1;
+                    }
+                    break;
+                }
+            }
+            if tried >= 10 {
+                break;
+            }
+            send(&mut session, Action::FinishTurn);
+            if session.finished() {
+                break;
+            }
+        }
+        assert!(tried >= 3, "only {tried} chances to attack came up");
+        assert!(taken * 10 >= tried * 8, "the engine took {taken} of {tried} aimed attacks");
     }
 }
