@@ -1471,11 +1471,7 @@ fn apply_plan_inner(
     events.extend(religious_events(plan.civ, crate::world::religious_units::end_turn(world, r, plan.civ)));
 
     // Luminaries may be priced apart from growth (`greatPersonModifier`).
-    let luminary_speed = world
-        .speed
-        .and_then(|id| r.speeds.get(id))
-        .and_then(|s| s.great_person_modifier)
-        .unwrap_or(m.speed);
+    let luminary_speed = crate::world::great_people::birth_speed(world, r, m.speed);
     for kind in crate::world::great_people::process_turn(world, r, plan.civ, luminary_speed) {
         events.push(TurnEvent::GreatPersonBorn { civ: plan.civ, kind });
     }

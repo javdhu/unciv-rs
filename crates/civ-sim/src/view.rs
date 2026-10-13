@@ -193,22 +193,8 @@ fn great_people_view(w: &World, r: &Ruleset, me: CivId) -> Option<Vec<GreatPerso
     use std::collections::{BTreeMap, BTreeSet};
     let civ = w.civ(me).filter(|c| c.is_major())?;
     let people = &civ.great_people;
-    // The turn prices births at the speed's `greatPersonModifier`, else its growth speed (turn.rs, before
-    // `great_people::process_turn`).
-    let speed = w
-        .speed
-        .and_then(|id| r.speeds.get(id))
-        .and_then(|s| s.great_person_modifier)
-        .unwrap_or(TurnModifiers::for_world(w, r).growth.speed);
-    // `great_people::pool_key`: the unit's `GPPointPool` group, empty when it names none.
-    let pool = |kind: &str| {
-        r.units
-            .by_name(kind)
-            .and_then(|b| b.uniques.iter().find(|u| u.unique_type() == Some(UniqueType::GPPointPool)))
-            .and_then(|u| u.params.first())
-            .cloned()
-            .unwrap_or_default()
-    };
+    let speed = great_people::birth_speed(w, r, TurnModifiers::for_world(w, r).growth.speed);
+    let pool = |kind: &str| great_people::pool_key(r, kind);
     let earned = great_people::points_per_turn(w, r, me);
     let civilian: BTreeSet<&str> = r
         .buildings
@@ -250,8 +236,7 @@ fn great_people_view(w: &World, r: &Ruleset, me: CivId) -> Option<Vec<GreatPerso
             unit: unit.index(),
             points: people.combat_points.get(kind).copied().unwrap_or(0),
             per_turn: 0,
-            // `great_people::process_turn`: 200 for the first, 50 more for each after.
-            threshold: people.combat_thresholds.get(kind).copied().unwrap_or(200),
+            threshold: people.combat_threshold(kind),
             pool: None,
             combat: true,
         });

@@ -34,11 +34,24 @@ pub struct GreatPeople {
     pub maya_last_award_turn: Option<u32>,
 }
 
+/// The first combat-born great person's threshold; each after costs 50 more, unscaled by speed.
+pub const FIRST_COMBAT_THRESHOLD: i32 = 200;
+
 impl GreatPeople {
     pub fn threshold(&self, kind: &str, speed: Fixed) -> i32 {
         let base = self.thresholds.get(kind).copied().unwrap_or(FIRST_THRESHOLD);
         (Fixed::whole(base) * speed).floor().max(1) as i32
     }
+
+    /// Points a combat-born kind needs for its next birth.
+    pub fn combat_threshold(&self, kind: &str) -> i32 {
+        self.combat_thresholds.get(kind).copied().unwrap_or(FIRST_COMBAT_THRESHOLD)
+    }
+}
+
+/// The speed births are priced at: the game speed's `greatPersonModifier`, else `growth`, its growth speed.
+pub fn birth_speed(world: &World, r: &Ruleset, growth: Fixed) -> Fixed {
+    world.speed.and_then(|id| r.speeds.get(id)).and_then(|s| s.great_person_modifier).unwrap_or(growth)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,7 +188,9 @@ pub fn on_combat_xp(world: &mut World, r: &Ruleset, unit: Id<Unit>, amount: u16,
     }
 }
 
-fn pool_key(r: &Ruleset, kind: &str) -> String {
+/// The pool a kind's threshold belongs to: its unit's `GPPointPool` group, empty when it names none. Kinds in
+/// one pool share a threshold, so any birth raises it for all.
+pub fn pool_key(r: &Ruleset, kind: &str) -> String {
     r.units
         .by_name(kind)
         .and_then(|b| b.uniques.iter().find(|u| u.unique_type() == Some(UniqueType::GPPointPool)))
@@ -199,7 +214,7 @@ pub fn process_turn(world: &mut World, r: &Ruleset, civ: CivId, speed: Fixed) ->
             .great_people
             .combat_points
             .iter()
-            .find(|(kind, n)| **n >= c.great_people.combat_thresholds.get(*kind).copied().unwrap_or(200))
+            .find(|(kind, n)| **n >= c.great_people.combat_threshold(kind))
             .map(|(kind, _)| (kind.clone(), true));
         let next = combat.or_else(|| {
             c.great_people
@@ -224,7 +239,7 @@ pub fn process_turn(world: &mut World, r: &Ruleset, civ: CivId, speed: Fixed) ->
         crate::world::luminaries::name_unit(world, r, id);
         let people = &mut world.civ_mut(civ).unwrap().great_people;
         if combat {
-            let needed = people.combat_thresholds.get(&kind).copied().unwrap_or(200);
+            let needed = people.combat_threshold(&kind);
             *people.combat_points.get_mut(&kind).unwrap() -= needed;
             people.combat_thresholds.insert(kind.clone(), needed.saturating_add(50));
         } else {

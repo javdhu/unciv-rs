@@ -187,10 +187,26 @@ pub fn stations(v: &civ_sim::PlayerView, spy: usize) -> Vec<&civ_sim::CityView> 
     out
 }
 
-/// The view's progress toward each great person, if the server sends it.
+/// Progress toward each great person (`knowledge.greatPeople`): points of the threshold, and the turns to go at
+/// the present rate. Kinds in one pool share their threshold, so any birth raises it for all.
 fn great_people(p: &mut ChildSpawnerCommands, font: &UiFont, v: &civ_sim::PlayerView, rules: &Rules) {
-    let _ = (v, rules);
-    p.spawn(text(font, "Their births are told in the log.", 12.0, DIM));
+    let Some(kinds) = v.knowledge.great_people.as_ref().filter(|k| !k.is_empty()) else {
+        p.spawn(text(font, "None yet: buildings, specialists and battles earn them.", 12.0, DIM));
+        return;
+    };
+    for k in kinds {
+        let name = rules.tables.units.iter().find(|u| u.id == k.unit).map_or("A great person", |u| u.name.as_str());
+        let to_go = (k.threshold - k.points).max(0);
+        let when = match (k.combat, k.per_turn) {
+            (true, _) => "from battles".to_string(),
+            (_, 0) => "nothing earns it now".to_string(),
+            (_, n) => format!("+{n} a turn, about {} turns", (to_go + n - 1) / n),
+        };
+        p.spawn(text(font, format!("{name}: {} of {} · {when}", k.points, k.threshold), 12.0, TEXT));
+    }
+    if kinds.iter().filter(|k| k.pool.is_some()).count() > 1 {
+        p.spawn(text(font, "The civilian kinds share one threshold: each birth raises it for all.", 11.0, DIM));
+    }
 }
 
 /// `EstablishingNetwork` as "establishing network".

@@ -218,12 +218,10 @@ pub fn describe(ev: &EventView, v: &PlayerView, rules: &Rules) -> Option<Note> {
                 note(format!("{} took {damage} damage", w.unit_phrase(key!(unit), "your unit")), tile, Bad)
             }
         }
-        E::Attacked { viewer_attacked, target, at, attacker_died, defender_died, damage_to_defender, .. } => {
-            // A unit that fell is gone from the view, so the engine's own line (worded for this player, with both
-            // sides named as they stood) is the text. It says "your" in every fight of the viewer's except one its
-            // city defends, and cities stay in the view to be recognised.
-            let defender = w.side_owner(target);
-            let viewers = *viewer_attacked || defender == Some(me) || (defender.is_none() && says_you(&ev.text));
+        E::Attacked { viewer_attacked, target, at, attacker_died, defender_died, damage_to_defender, defender_owner, .. } => {
+            // Whose fight it was comes with the event; a defender that fell is gone from the view.
+            let defender = defender_owner.or_else(|| w.side_owner(target));
+            let viewers = *viewer_attacked || defender == Some(me);
             if !viewers {
                 return None;
             }
@@ -519,11 +517,6 @@ fn standing(name: &str) -> Option<u8> {
     ["Unforgivable", "Enemy", "Neutral", "Friend", "Ally"].iter().position(|s| *s == name).map(|i| i as u8)
 }
 
-/// The engine words the viewer's fights with "your" (`battle_text`).
-fn says_you(text: &str) -> bool {
-    text.split(|c: char| !c.is_alphanumeric()).any(|word| word.eq_ignore_ascii_case("your"))
-}
-
 fn sentence(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
@@ -795,13 +788,14 @@ mod tests {
         assert_eq!((note.text, note.kind), (want, NoteKind::Decision));
     }
 
-    /// The viewer's fights read as the engine words them; a fight between others is the map's to show.
+    /// The viewer's fights read as the engine words them, known by the defender's owner even when the defender
+    /// fell; a fight between others is the map's to show.
     #[test]
     fn fights_are_the_viewers_or_the_maps() {
         let (v, rules, _, _) = fixture();
-        let fight = |viewer_attacked: bool, text: &str| {
+        let fight = |viewer_attacked: bool, defender: u8, text: &str| {
             serde_json::from_value::<EventView>(json!({ "kind": "Attacked", "text": text, "event": {
-                "type": "attacked", "viewerAttacked": viewer_attacked,
+                "type": "attacked", "viewerAttacked": viewer_attacked, "defenderOwner": defender,
                 "attacker": { "type": "unit", "unit": { "id": 6000, "gen": 0 } },
                 "target": { "type": "unit", "unit": { "id": 6001, "gen": 0 } },
                 "from": 1, "at": 2, "ranged": false, "damageToAttacker": 0, "damageToDefender": 100,
@@ -810,11 +804,12 @@ mod tests {
             }}))
             .unwrap()
         };
-        let won = describe(&fight(true, "Your Warrior destroyed a Brute"), &v, &rules).unwrap();
+        let other = if v.me == 1 { 2 } else { 1 };
+        let won = describe(&fight(true, other, "Your Warrior destroyed a Brute"), &v, &rules).unwrap();
         assert_eq!((won.text.as_str(), won.tile, won.kind), ("Your Warrior destroyed a Brute", Some(2), NoteKind::Good));
-        let lost = describe(&fight(false, "A Brute destroyed your Warrior"), &v, &rules).unwrap();
+        let lost = describe(&fight(false, v.me, "A Brute destroyed your Warrior"), &v, &rules).unwrap();
         assert_eq!(lost.kind, NoteKind::Bad);
-        assert_eq!(describe(&fight(false, "English Warrior attacked French"), &v, &rules), None);
+        assert_eq!(describe(&fight(false, other, "English Warrior attacked French"), &v, &rules), None);
     }
 
     /// Every notice, religious act and great person outcome reads as its own line, from the wire as sent.
