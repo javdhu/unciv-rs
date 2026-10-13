@@ -53,6 +53,9 @@ enum Press {
     OpenCivs,
     /// Show or hide the notification log (`log.rs`).
     Log,
+    /// Show or hide the empire panel (`empire.rs`).
+    Empire,
+    Coup(u8),
     Close,
     Tech(u32),
     Policy(u32),
@@ -612,6 +615,10 @@ fn civs(
                         if cs.tribute_worker {
                             row.spawn(button(&font, Press::Tribute(cs.civ, true), "Demand a worker", TEXT));
                         }
+                        if cs.may_coup {
+                            let chance = cs.coup_chance.map_or(String::new(), |c| format!(" ({c}%)"));
+                            row.spawn(button(&font, Press::Coup(cs.civ), format!("Attempt a coup{chance}"), TEXT));
+                        }
                         if cs.may_request_marriage {
                             row.spawn(button(&font, Press::Marriage(cs.civ), "Request marriage", TEXT));
                         }
@@ -858,6 +865,7 @@ fn buttons(
     commands.entity(e).with_children(|b| {
         b.spawn(button(&font, Press::OpenPolicies, "Policies", TEXT));
         b.spawn(button(&font, Press::OpenCivs, "Civilizations", TEXT));
+        b.spawn(button(&font, Press::Empire, "Empire", TEXT));
         b.spawn(button(&font, Press::Log, "Log", TEXT));
     });
     screens.stale = false;
@@ -883,6 +891,7 @@ fn on_press(
     view: Res<ViewState>,
     rules: Option<Res<Rules>>,
     mut log: ResMut<crate::log::NoteLog>,
+    mut empire: ResMut<crate::empire::Empire>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
     let press = press.clone();
@@ -900,14 +909,24 @@ fn on_press(
             screens.policies = !screens.policies;
             selection.research_open = false;
         }
+        // The civilizations, empire and log panels share the left side: one at a time.
         Press::OpenCivs => {
             screens.civs = !screens.civs;
             log.open = false;
+            empire.open = false;
         }
-        // The log and the civilizations panel share the left side.
         Press::Log => {
             log.open = !log.open;
             screens.civs = false;
+            empire.open = false;
+        }
+        Press::Empire => {
+            empire.open = !empire.open;
+            screens.civs = false;
+            log.open = false;
+        }
+        Press::Coup(target) => {
+            outbox.submit(Action::AttemptCoup { target });
         }
         Press::Close => {
             if screens.trade.is_some() {

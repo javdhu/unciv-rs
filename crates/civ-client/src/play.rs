@@ -57,6 +57,11 @@ pub struct Selection {
     pub home_armed: bool,
     /// The open city's next map click picks where its current wonder stands.
     pub siting: bool,
+    /// A mission the selected unit is aiming (`rebase`, `airSweep`, `paradrop`, `nuclearStrike`): its targets
+    /// are marked and the next click on one sends it.
+    pub mission: Option<UnitActionKind>,
+    /// What a nuclear strike on the armed tile would do.
+    pub nuclear: Option<civ_sim::queries::NuclearPreviewView>,
     /// The turn the skips belong to.
     turn: u32,
     /// Bumped with every new question, so older answers are dropped.
@@ -138,6 +143,7 @@ fn refresh(
     }
     selection.asked += 1;
     selection.armed = None;
+    selection.nuclear = None;
     selection.preview = None;
     selection.previewing = None;
     if let Some(k) = selection.unit {
@@ -163,6 +169,9 @@ fn answers(mut answers: MessageReader<QueryAnswered>, mut selection: ResMut<Sele
         match (what, &answer.reply.result) {
             ("reach", QueryResult::Reachable { reach }) => selection.reach = reach.clone(),
             ("unit", QueryResult::UnitOptions { options }) => selection.options = options.clone(),
+            ("nuke", QueryResult::UnitOptions { options }) => {
+                selection.nuclear = options.as_ref().and_then(|o| o.nuclear_preview.clone());
+            }
             ("city", QueryResult::CityOptions { options }) => selection.city_options = options.clone(),
             ("civ", QueryResult::CivOptions { options }) => selection.civ_options = Some(options.clone()),
             ("preview", QueryResult::CombatPreview { preview }) => {
@@ -183,7 +192,11 @@ fn aim(view: Res<ViewState>, rules: Option<Res<Rules>>, land: Option<Res<Land>>,
     if !selection.is_changed() && !view.is_changed() {
         return;
     }
+    let mission = selection.mission.and_then(|kind| {
+        selection.options.as_ref()?.targets.as_ref()?.iter().find(|t| t.action == kind).map(|t| t.tiles.clone())
+    });
     let targets = match (view.view(), rules, land, selection.unit) {
+        (_, _, _, Some(_)) if mission.is_some() => mission.unwrap_or_default(),
         (Some(v), Some(rules), Some(land), Some(key)) => attackable(v, &rules, &land.0.grid, &selection, key),
         // An open city aims its bombardment at what `cityOptions` lists.
         (Some(v), ..) if selection.city.is_some() => bombardable(v, &selection).into_iter().map(|(t, _)| t).collect(),
@@ -310,6 +323,7 @@ fn click(
     mut outbox: ResMut<Outbox>,
     mut selection: ResMut<Selection>,
     mut pressed_at: Local<Option<Vec2>>,
+    link: Res<Link>,
 ) {
     let cursor = windows.single().ok().and_then(|w| w.cursor_position());
     if buttons.just_pressed(MouseButton::Left) {
@@ -354,6 +368,30 @@ fn click(
     let enemy_unit = v.units.iter().find(|u| u.owner != v.me && u.tile == tile).map(|u| (u.id, u.r#gen));
     let city = v.cities.iter().find(|c| c.centre == tile);
     let enemy_city = city.filter(|c| c.owner != v.me).map(|c| (c.id, c.r#gen));
+    if let (Some(unit), Some(kind)) = (selection.unit, selection.mission) {
+        if selection.targets.contains(&tile) {
+            let u = entity(unit);
+            match kind {
+                UnitActionKind::Rebase => outbox.submit(Action::Rebase { unit: u, to: tile }),
+                UnitActionKind::AirSweep => outbox.submit(Action::AirSweep { unit: u, target: tile }),
+                UnitActionKind::Paradrop => outbox.submit(Action::Paradrop { unit: u, to: tile }),
+                // A strike asks first what it would do, and goes on the second click.
+                UnitActionKind::NuclearStrike if selection.armed == Some(tile) => {
+                    outbox.submit(Action::NuclearStrike { unit: u, target: tile })
+                }
+                UnitActionKind::NuclearStrike => {
+                    selection.armed = Some(tile);
+                    selection.nuclear = None;
+                    ask(&link, &mut selection, "nuke", Ask::UnitOptions { unit: u, nuclear_target: Some(tile) });
+                    return;
+                }
+                _ => String::new(),
+            };
+        }
+        selection.mission = None;
+        selection.armed = None;
+        return;
+    }
     if let Some(unit) = selection.unit {
         if selection.targets.contains(&tile) && (enemy_unit.is_some() || enemy_city.is_some()) {
             if selection.armed == Some(tile) {
@@ -666,6 +704,7 @@ pub fn unit_action(kind: UnitActionKind, unit: Key, view: &ViewState, rules: &Ru
         UnitActionKind::Pillage => Action::Pillage { unit },
         UnitActionKind::SetUp => Action::SetUp { unit },
         UnitActionKind::Gift => Action::GiftUnit { unit },
+        UnitActionKind::AssembleSpaceshipPart => Action::AssembleSpaceshipPart { unit },
         _ => return None,
     })
 }

@@ -15,7 +15,7 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui_widgets::{observe, Activate, Button};
 use bevy::window::PrimaryWindow;
-use civ_sim::protocol::{Action, CityFocus, ConstructionRef, Currency, ProductionConversion};
+use civ_sim::protocol::{Action, CityFocus, ConstructionRef, Currency, GreatPersonAction, ProductionConversion, ReligiousAction};
 use civ_sim::queries::{Availability, UnitActionKind};
 
 pub(crate) const PANEL: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.85);
@@ -57,6 +57,11 @@ enum Order {
     Site,
     /// Put off the decision End turn leads with.
     Later,
+    GreatPerson(GreatPersonAction),
+    Religious(ReligiousAction),
+    /// Aim a mission at one of its targets on the map.
+    Mission(UnitActionKind),
+    BuyWithFaith(ConstructionRef),
 }
 
 /// What becomes of a city taken or held as a puppet.
@@ -264,6 +269,44 @@ fn year(y: i32) -> String {
     if y < 0 { format!("{} BC", -y) } else { format!("AD {y}") }
 }
 
+/// A city's faiths: its majority, holy city, and followers of each.
+fn faith_line(own: &civ_sim::CityStateView, rules: &Rules) -> Option<String> {
+    let religion = &own.religion;
+    let name = |key: u8| {
+        rules.tables.faiths.iter().flatten().find(|f| f.key == key).map_or("a faith".to_string(), |f| f.name.clone())
+    };
+    if religion.followers.is_empty() {
+        return None;
+    }
+    let mut parts: Vec<String> = religion.followers.iter().map(|f| format!("{} {}", name(f.founder), f.followers)).collect();
+    parts.sort();
+    let mut line = format!("Faith: {}", parts.join(", "));
+    if let Some(m) = religion.majority {
+        line += &format!("; mostly {}", name(m));
+    }
+    if let Some(h) = religion.holy_city_of {
+        line += &format!("; holy city of {}", name(h));
+    }
+    Some(line)
+}
+
+/// Why a great person's ability cannot be used here, in a few words.
+fn refusal(why: civ_sim::queries::GreatPersonRefusal) -> &'static str {
+    use civ_sim::queries::GreatPersonRefusal as R;
+    match why {
+        R::NoMovement => "no moves left",
+        R::NothingResearched => "nothing being researched",
+        R::CannotBeHurried => "cannot be hurried",
+        R::NotInOwnCity => "stand in your own city",
+        R::NotABuilding => "the city is not building a building",
+        R::NothingToAdd => "it would finish anyway",
+        R::NotACityState => "stand in a city-state's land",
+        R::AtWar => "at war with that city-state",
+        R::CannotBuildHere => "not on this tile",
+        R::NotAble => "no longer able",
+    }
+}
+
 /// A unit's experience and the promotions it holds.
 fn experience(u: &civ_sim::UnitView, rules: &Rules) -> String {
     let Some(own) = u.own.as_ref() else { return String::new() };
@@ -402,6 +445,19 @@ fn unit_panel(
                     UnitActionKind::Pillage => "Pillage",
                     UnitActionKind::SetUp => "Set up",
                     UnitActionKind::Gift => "Gift to the city-state",
+                    UnitActionKind::AssembleSpaceshipPart => "Add to the spaceship",
+                    UnitActionKind::Rebase | UnitActionKind::AirSweep | UnitActionKind::Paradrop | UnitActionKind::NuclearStrike => {
+                        let label = match choice.action {
+                            UnitActionKind::Rebase => "Rebase…",
+                            UnitActionKind::AirSweep => "Air sweep…",
+                            UnitActionKind::Paradrop => "Paradrop…",
+                            _ => "Nuclear strike…",
+                        };
+                        let aiming = selection.mission == Some(choice.action);
+                        let label = if aiming { "Click a marked tile" } else { label };
+                        p.spawn(button(&font, Order::Mission(choice.action), label, true));
+                        continue;
+                    }
                     _ => continue,
                 };
                 let label = if choice.availability == Availability::NeedsConfirmation { format!("{label}…") } else { label.to_string() };
@@ -409,6 +465,49 @@ fn unit_panel(
             }
             for improvement in &options.improvements {
                 p.spawn(button(&font, Order::Build(*improvement), format!("Build {}", rules.improvement(*improvement)), true));
+            }
+            for ability in options.great_person_abilities.iter().flatten() {
+                let what = match &ability.action {
+                    GreatPersonAction::HurryResearch => "Hurry research".to_string(),
+                    GreatPersonAction::HurryProduction => "Hurry production".to_string(),
+                    GreatPersonAction::TradeMission => "Trade mission".to_string(),
+                    GreatPersonAction::GoldenAge => "Start a golden age".to_string(),
+                    GreatPersonAction::Construct { improvement } => format!("Build {}", rules.improvement(*improvement)),
+                };
+                let unit = match &ability.action {
+                    GreatPersonAction::HurryResearch => " science",
+                    GreatPersonAction::HurryProduction => " production",
+                    GreatPersonAction::TradeMission => " gold",
+                    _ => "",
+                };
+                let label = match (ability.amount, ability.why) {
+                    (_, Some(why)) if !ability.available => format!("{what} ({})", refusal(why)),
+                    (Some(n), _) => format!("{what} (+{n}{unit})"),
+                    _ => what,
+                };
+                p.spawn(button(&font, Order::GreatPerson(ability.action.clone()), label, ability.available));
+            }
+            for action in &options.religious_actions {
+                let label = match action {
+                    ReligiousAction::SpreadReligion { city } => {
+                        format!("Spread faith to {}", v.cities.iter().find(|c| c.id == city.id && c.r#gen == city.r#gen).map_or("a city", |c| c.name.as_str()))
+                    }
+                    ReligiousAction::RemoveHeresy { city } => {
+                        format!("Remove heresy in {}", v.cities.iter().find(|c| c.id == city.id && c.r#gen == city.r#gen).map_or("a city", |c| c.name.as_str()))
+                    }
+                    ReligiousAction::ConstructHolySite => "Build a holy site".into(),
+                    ReligiousAction::FoundReligion => "Found a religion".into(),
+                    ReligiousAction::EnhanceReligion => "Enhance the religion".into(),
+                };
+                p.spawn(button(&font, Order::Religious(action.clone()), label, true));
+            }
+            if let Some(n) = &selection.nuclear {
+                p.spawn(text(
+                    &font,
+                    format!("Blast of {} tiles, radius {}; {}% chance to be shot down. Click again to strike.", n.tiles.len(), n.blast_radius, n.intercept_chance),
+                    12.0,
+                    URGENT,
+                ));
             }
             for promotion in &options.promotions {
                 p.spawn(button(&font, Order::Promote(promotion.id), format!("Promote: {}", promotion.name), true));
@@ -520,6 +619,9 @@ fn city_panel(
             }
             if !status.is_empty() {
                 p.spawn(text(&font, format!("This city is {}", status.join(", ")), 12.0, URGENT));
+            }
+            if let Some(line) = rules.as_deref().and_then(|r| faith_line(own, r)) {
+                p.spawn(text(&font, line, 12.0, DIM));
             }
             let key = civ_sim::protocol::EntityRef { id: c.id, r#gen: c.r#gen };
             let pending = v.pending_captures.iter().flatten().any(|pc| pc.city == key);
@@ -650,6 +752,9 @@ fn city_panel(
                     row.spawn(button(&font, Order::Queue(choice.construction.clone()), "+", choice.refusal.is_none()));
                     if let Some(price) = choice.gold.as_ref().and_then(|g| g.amount.clone().map(|a| (a, g.affordable.unwrap_or(false)))) {
                         row.spawn(button(&font, Order::Buy(choice.construction.clone()), format!("{} gold", price.0), price.1));
+                    }
+                    if let Some(price) = choice.faith.as_ref().and_then(|f| f.amount.clone().map(|a| (a, f.affordable.unwrap_or(false)))) {
+                        row.spawn(button(&font, Order::BuyWithFaith(choice.construction.clone()), format!("{} faith", price.0), price.1));
                     }
                 });
             }
@@ -849,6 +954,27 @@ fn press(
         }
         Order::Undo => {
             outbox.submit(Action::Undo);
+        }
+        Order::GreatPerson(action) => {
+            if let Some(unit) = selection.unit {
+                outbox.submit(Action::GreatPerson { unit: entity(unit), action });
+            }
+        }
+        Order::Religious(action) => {
+            if let Some(unit) = selection.unit {
+                outbox.submit(Action::Religious { unit: entity(unit), action });
+            }
+        }
+        Order::Mission(kind) => {
+            selection.mission = if selection.mission == Some(kind) { None } else { Some(kind) };
+            selection.armed = None;
+            selection.nuclear = None;
+            stale.0 = true;
+        }
+        Order::BuyWithFaith(what) => {
+            if let Some(city) = selection.city {
+                outbox.submit(Action::Purchase { city: entity(city), what, currency: Currency::Faith });
+            }
         }
         Order::Promote(promotion) => {
             if let Some(unit) = selection.unit {
