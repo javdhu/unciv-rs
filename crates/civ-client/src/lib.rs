@@ -12,6 +12,7 @@ mod inspect;
 pub mod log;
 pub mod link;
 mod map;
+pub mod notes;
 pub mod net;
 mod paint;
 mod pieces;
