@@ -1,13 +1,14 @@
 # Bevy client: design brief
 
-Status: proposal for Javed's decision, 2026-10-13. Nothing is built.
+Status: decisions D1-D9 taken by Javed on 2026-10-13 (D4 deferred). Next: the visual spec
+([VISUAL-SPEC.md](VISUAL-SPEC.md)) for review. Nothing is built.
 
 ## Problem
 
 A new client for this engine and server, in Bevy 0.20 (released 2026-10-08; there is no Bevy 2.0). It is designed
 from two inputs only: the server's contract and what a player has to see and do in a turn. It does not port the
-removed Svelte/three.js client, and it does not continue the Bevy 0.19.1 client started on 2026-09-25 in
-clockwork (tag `archive/civ-client`), unless D8 says otherwise.
+removed Svelte/three.js client, and it does not continue or read the Bevy 0.19.1 client started on 2026-09-25
+in clockwork (tag `archive/civ-client`, D8).
 
 ## What the server gives
 
@@ -114,79 +115,75 @@ batches, Presentation plays the other civs' turns, and the visuals settle on the
 | Re-derive legality in the client from civ-core | Duplicates authority. The options queries already answer it. |
 | Generate types from the JSON schemas | Unneeded in Rust; linking the protocol types removes drift. |
 
-## Open decisions
+## Decisions
 
-Each one is yours. They are listed with their trade-offs and no pick.
+Taken by Javed on 2026-10-13. The options he did not pick and their trade-offs are in git history (5faae54).
 
-D1. Targets.
-(a) Native macOS only: simplest build, threads for in-process play, no binary size limit.
-(b) Native and wasm from one codebase: browser play like civ.game had; WebGPU or WebGL2 limits, no
-std threads without extra setup (in-process AI would block a frame), wasm size (the old engine alone was
-0.84 MB brotli; Bevy adds several MB), browser handles cookies and Origin for rooms.
-(c) Wasm first: same costs as (b), with native as a by-product.
+| | Decision | Pick |
+|---|---|---|
+| D1 | Targets | Native and wasm from one codebase |
+| D2 | Solo play | In-process `Session` |
+| D3 | Wire types | The client depends on civ-sim as it is |
+| D4 | Native auth for rooms | Deferred until a native client joins rooms |
+| D5 | First ruleset | `base` |
+| D6 | First playable | Watch bots play (`Session::watch`) |
+| D7 | Visual direction | 3D terrain map at a fixed oblique angle; spec in [VISUAL-SPEC.md](VISUAL-SPEC.md) |
+| D8 | The 09-25 Bevy client | Ignored, not read |
+| D9 | Where the engine runs in wasm | On a wasm thread inside the client (shared memory, atomics) |
 
-D2. Solo path.
-(a) In-process Session on a worker thread: no network stack for solo, saves are Session snapshots; two Link
-implementations.
-(b) Spawn a local civ-server and always speak WebSocket: one Link implementation; process management, the
-cookie and Origin handshake, and a SQLite file per solo game.
-(c) Rooms only, no solo: smallest client; nothing to play offline.
+### What D1, D2 and D9 mean for the build
 
-D3. Where the wire types live.
-(a) The client depends on civ-sim as it is: pulls civ-core and wasm-bindgen into the client. Free if D2 is (a).
-(b) Extract a wire-types crate (protocol plus view types, serde only) that civ-sim, civ-server and the client
-share. View types sit in `view.rs` beside the projection code, so this is a real refactor of the server's crate
-graph.
-
-D4. Native client auth for rooms (only if a native client joins rooms).
-(a) The client sends an allowed `Origin` and keeps the `civ_guest` cookie itself: no server change.
-(b) Add a bearer-token mode to civ-server for non-browser clients: a server interface change.
-
-D5. Ruleset to build against first. `base` (the whole game), `blitz` (one evening), or Unciv's `vanilla` or
-`gods-and-kings`, which a session cannot load today and would need content work.
-
-D6. First playable milestone.
-(a) Spectator: `Session::watch`, bots play, nothing to click. Proves map, fog and presentation first.
-(b) Your turn: move, attack, found, produce, research, finish, against bots.
-(c) Rooms first: remote Link and lobby before solo.
-
-D7. Visual direction. Pick an axis (for example a flat 2D hex board, a tilted 3D tabletop, or one you name);
-I then write the full spec with exact numbers for your approval before any art is built.
-
-D8. The Bevy 0.19.1 client of 09-25 (clockwork tag `archive/civ-client`: terrain, camera, picking,
-inspector). (a) Ignore it. (b) Read it for engineering facts only (hex maths, wrap handling), never its look.
+- One `Link` implementation for solo on both targets: the Session runs on its own thread and talks to the
+  Bevy world through channels. Native uses `std::thread`. Wasm uses a Web Worker that shares the module's
+  memory, because `std::thread::spawn` panics on `wasm32-unknown-unknown` even with atomics; a small spawn
+  shim (or a crate such as `wasm_thread`, chosen in the spike) stands in for it.
+- The wasm build needs a pinned nightly toolchain, `-C target-feature=+atomics,+bulk-memory`,
+  `-Z build-std=std,panic_abort` and wasm-bindgen's `--target web`. Native stays on stable. As of the sources
+  found on 2026-10-13, none of this is stable Rust.
+- The page that serves the wasm build must be cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin`
+  and `Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). Every resource it loads must allow
+  that.
+- The browser's main thread may not block on a lock or a channel: an atomic wait there traps. The Bevy side
+  only ever uses non-blocking receives; the engine thread may block freely.
+- Bevy's own task pools stay single-threaded on wasm. Only the Session gets a second thread.
+- D3 with wasm: civ-sim's `#[wasm_bindgen]` exports (`HostedGame`, `ruleTables`) would compile into the
+  client. A cargo feature in civ-sim, off for the client, keeps them out. That is a small server-crate change,
+  made in its own commit.
 
 ## Milestones
 
-Contents shift with D1 to D6.
-
 | | Milestone | Verified by |
 |---|---|---|
-| M0 | `crates/civ-client`, Link, ViewState, the delta test; headless | Test green over seeded bot games |
-| M1 | Map, camera, picking, fog, drawn from a welcome | Screenshots at fixed seeds for your review |
-| M2 | Spectator: watch mode, presentation, replay batches | A 100-round bot game with no resync; frame time measured on this Mac |
-| M3 | Your turn: the six first verbs, Outbox, receipts, undo | Scripted games; duplicate and retry tests |
+| S0 | Spike, the gate for D9: a Bevy 0.20 wasm build with atomics; one engine thread runs `Session::watch` on a `base` 32x20 map while the main thread renders | 60 fps held through AI rounds in Chrome and Safari on this Mac; same binary logic native; build steps written down |
+| M0 | `crates/civ-client`: Link (solo, both targets), ViewState, the delta test; headless | Test green over seeded bot games, native and under wasm |
+| M1 | The map per VISUAL-SPEC: terrain, water, features, rivers, roads, borders, fog, camera, picking, tile inspector, drawn from a welcome | Screenshot sets at fixed seeds for your review, native and wasm |
+| M2 | First playable: spectator. Bots play; units, cities, presentation, replay, speed controls, follow events | A 100-round bot game with no resync; frame budgets met on both targets |
+| M3 | Your turn: move, attack, found, production, research, finish; Outbox, receipts, undo | Scripted games; duplicate and retry tests |
 | M4 | Cities, research, policies, diplomacy offers | Query-driven UI tests |
-| M5 | Rooms: remote Link, lobby, reconnect, deadlines | Two clients finish a match on a local civ-server |
+| M5 | Rooms: remote Link, lobby, reconnect, deadlines (D4 decided here) | Two clients finish a match on a local civ-server |
 | M6 | The remaining actions, victory, saves | Every action reachable from a control |
-| M7 | Art to the approved visual spec | Your review |
+
+If S0 fails, D9 comes back to you with what broke; nothing after it starts.
 
 ## Risks and unknowns
 
+- Wasm threads on nightly: a pinned nightly can break with Bevy or wgpu updates; `-Z build-std` lengthens wasm
+  builds. Some crates misbehave on shared memory (getrandom once crashed there).
+- No source found that confirms Bevy 0.20 itself on a threaded wasm build. S0 settles it.
+- Cross-origin isolation constrains hosting: any third-party script, font or image must send CORP or CORS
+  headers.
 - Bevy 0.20 is five days old: BSN and Feathers APIs may still move, and community crates may not support it yet.
-- Welcome size on real map sizes is unmeasured; 7 KB is a 20x14 map.
-- If the client links civ-sim on wasm, civ-sim's own `wasm_bindgen` exports come along: size and symbol clashes
-  untested.
+- Welcome size on real map sizes is unmeasured; 7 KB is a 20x14 map. Map sizes run from 16x10 to 128x80.
 - In-process round time on large maps on this Mac is unmeasured.
 - MPL-2.0: a shipped client that links civ-core distributes MPL code; private use is unaffected.
 
 ## Verification
 
-Headless tests run Bevy with minimal plugins plus ViewState and Projection, against in-process Sessions and a
-civ-server started inside the test. Screenshot sets at fixed seeds for visual review. Frame-time budgets
-measured on this Mac.
+Headless tests run Bevy with minimal plugins plus ViewState and Projection, against in-process Sessions, native
+and under wasm (wasm-bindgen-test in a browser). Screenshot sets at fixed seeds for visual review. Frame-time
+budgets from VISUAL-SPEC measured on this Mac.
 
 ## Rollback
 
-The client is one new crate and its workspace entry; removing both restores the server-only tree. Any server
-change from D3 or D4 lands as its own commit.
+The client is one new crate and its workspace entry; removing both restores the server-only tree. The civ-sim
+feature for its wasm exports lands as its own commit and reverts alone.
