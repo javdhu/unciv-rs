@@ -130,11 +130,13 @@ pub struct Session {
 }
 
 /// What the watcher of a match no one plays sees: seat 0's own view, fog and
-/// all, or every tile in sight.
+/// all, every tile in sight, or one chosen civilization's own view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sight {
     Seat,
     All,
+    /// The civilization with this id, fog and all; its events are the ones it sees.
+    Civ(u8),
 }
 
 #[derive(Clone)]
@@ -196,16 +198,22 @@ impl Session {
     }
 
     /// A match no one plays, for the pages that watch bots: every civilization
-    /// is a bot, and seat 0 is only watched. It takes no commands; its rounds
-    /// close by [`Session::stage_round`]. It is never saved.
+    /// is a bot, and one seat is only watched: seat 0, or the civilization
+    /// [`Sight::Civ`] names. It takes no commands; its rounds close by
+    /// [`Session::stage_round`]. It is never saved.
     pub fn watch(settings: Settings, epoch: String, sight: Sight) -> Result<Self, SessionError> {
         if !valid_identifier(&epoch) {
             return Err(SessionError::InvalidSettings("invalid match epoch".into()));
         }
         let (world, rules, watched) =
             crate::setup::new_game(&settings).map_err(SessionError::InvalidSettings)?;
+        let civ = match sight {
+            Sight::Civ(civ) if (civ as usize) < world.civs.len() => civ,
+            Sight::Civ(_) => return Err(SessionError::InvalidSettings("no such civilization to watch".into())),
+            Sight::Seat | Sight::All => watched.0,
+        };
         let seat = Seat {
-            civ: watched.0,
+            civ,
             human: false,
             ready: false,
             next_human: None,

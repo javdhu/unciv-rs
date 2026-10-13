@@ -22,29 +22,34 @@ fn old_spectator_view(world: &civ_core::world::World, rules: &civ_core::ruleset:
     player_view(&world, rules, CivId(0))
 }
 
-fn only_update(updates: Vec<(u8, GameUpdate)>) -> GameUpdate {
+fn only_update(updates: Vec<(u8, GameUpdate)>, watcher: u8) -> GameUpdate {
     let mut updates = updates.into_iter();
     let (seat, update) = updates.next().expect("the watcher is shown the round");
-    assert_eq!(seat, 0);
+    assert_eq!(seat, watcher);
     assert!(updates.next().is_none(), "only the watcher is shown anything");
     update
 }
 
 fn compare(sight: Sight, seed: u64, turns: u32) {
     // `new Game(settings)`, then `endTurn()` and `view()` or `spectatorView()` turn by turn.
-    let (mut world, rules, me) = new_game(&settings(seed)).unwrap();
-    assert_eq!(me, CivId(0));
+    let (mut world, rules, player) = new_game(&settings(seed)).unwrap();
+    assert_eq!(player, CivId(0));
+    let me = match sight {
+        Sight::Civ(civ) => CivId(civ),
+        Sight::Seat | Sight::All => player,
+    };
     let old_view = |world: &_| match sight {
-        Sight::Seat => player_view(world, &rules, me),
+        Sight::Seat | Sight::Civ(_) => player_view(world, &rules, me),
         Sight::All => old_spectator_view(world, &rules),
     };
     let mut session = Session::watch(settings(seed), "watch".into(), sight).unwrap();
-    assert_eq!(session.current_update(0).unwrap().view, old_view(&world));
+    assert_eq!(session.seats().collect::<Vec<_>>(), vec![me.0]);
+    assert_eq!(session.current_update(me.0).unwrap().view, old_view(&world));
     let mut reported = 0;
     for _ in 0..turns {
         let report = advance_for(&mut world, &rules, me);
         let transition = session.stage_round().unwrap().expect("the match is not over");
-        let update = only_update(transition.updates);
+        let update = only_update(transition.updates, me.0);
         session = transition.next;
         assert_eq!(update.view, old_view(&world), "turn {}", report.turn);
         let events: Vec<_> = update.events.into_iter().map(|e| e.event).collect();
@@ -66,6 +71,15 @@ fn a_watched_match_shows_seat_zero_as_the_observer_game_did() {
 #[test]
 fn a_watcher_who_sees_all_sees_what_the_observer_game_showed() {
     compare(Sight::All, 12, 30);
+}
+
+#[test]
+fn a_watcher_can_watch_through_any_civilization() {
+    compare(Sight::Civ(2), 13, 30);
+    assert!(matches!(
+        Session::watch(settings(13), "watch".into(), Sight::Civ(200)),
+        Err(SessionError::InvalidSettings(_))
+    ));
 }
 
 #[test]
@@ -92,7 +106,7 @@ fn a_watchers_updates_are_deltas_against_its_last_view() {
     let mut session = Session::watch(settings(5), "watch".into(), Sight::All).unwrap();
     for _ in 0..3 {
         let transition = session.stage_round().unwrap().unwrap();
-        let update = only_update(transition.updates);
+        let update = only_update(transition.updates, 0);
         let ServerMessage::Delta { removed, .. } = session.update_message(0, update).unwrap() else {
             panic!("a watcher's round is a delta");
         };
