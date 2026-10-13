@@ -29,6 +29,9 @@ pub struct Screens {
     armed: Option<Press>,
     /// Techs still to research toward the one clicked, in order.
     path: Vec<u32>,
+    /// The tech last sent to research, until the civ's options show it: options answered before the command
+    /// applied still name the old research, and would send it again.
+    sent: Option<u32>,
     stale: bool,
 }
 
@@ -242,8 +245,12 @@ fn follow_path(selection: Res<Selection>, view: Res<ViewState>, mut screens: Res
     }
     screens.path.retain(|t| !v.knowledge.technologies.contains(t));
     let researching = options.research.iter().find(|r| r.selected).map(|r| r.id);
+    if researching.is_some() && researching == screens.sent {
+        screens.sent = None;
+    }
     if let Some(next) = screens.path.iter().find(|t| options.research.iter().any(|r| r.id == **t)).copied() {
-        if researching != Some(next) && researching.is_none_or(|r| !screens.path.contains(&r)) {
+        if researching != Some(next) && screens.sent != Some(next) && researching.is_none_or(|r| !screens.path.contains(&r)) {
+            screens.sent = Some(next);
             outbox.submit(Action::SetResearch { technology: next });
         }
     }
@@ -789,14 +796,18 @@ fn on_press(
             }
             screens.path = path_to(&rules, &known, t);
             let available = selection.civ_options.as_ref().is_some_and(|o| o.research.iter().any(|r| r.id == t));
-            if available {
-                outbox.submit(Action::SetResearch { technology: t });
-            } else if let Some(first) = screens
-                .path
-                .iter()
-                .find(|p| selection.civ_options.as_ref().is_some_and(|o| o.research.iter().any(|r| r.id == **p)))
-            {
-                outbox.submit(Action::SetResearch { technology: *first });
+            let first = if available {
+                Some(t)
+            } else {
+                screens
+                    .path
+                    .iter()
+                    .find(|p| selection.civ_options.as_ref().is_some_and(|o| o.research.iter().any(|r| r.id == **p)))
+                    .copied()
+            };
+            if let Some(first) = first {
+                screens.sent = Some(first);
+                outbox.submit(Action::SetResearch { technology: first });
             }
         }
         Press::Policy(policy) => {
