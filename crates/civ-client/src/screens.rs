@@ -76,6 +76,8 @@ enum Item {
     Strategic(u32),
     OpenBorders,
     Embassy,
+    /// A city, by id and generation.
+    City(u32, u32),
 }
 
 #[derive(Component)]
@@ -526,7 +528,7 @@ fn civs(
                         card.spawn((
                             Node { column_gap: Val::Px(6.0), align_items: AlignItems::Center, ..default() },
                             children![
-                                text(&font, format!("You offered {}", terms(&offer.terms, &rules)), 11.0, DIM),
+                                text(&font, format!("You offered {}", terms(&offer.terms, &rules, v)), 11.0, DIM),
                                 button(&font, Press::Withdraw(offer.id.clone()), "Withdraw", TEXT),
                             ],
                         ));
@@ -563,10 +565,14 @@ fn civs(
     });
 }
 
-fn item_label(item: &TradeItem, rules: &Rules) -> String {
+fn item_label(item: &TradeItem, rules: &Rules, v: &civ_sim::PlayerView) -> String {
     let resource = |r: &u32| rules.resource(*r).map_or("?".to_string(), |x| x.0.to_string());
     match item {
-        TradeItem::City { .. } => "A city".into(),
+        TradeItem::City { city } => v
+            .cities
+            .iter()
+            .find(|c| (c.id, c.r#gen) == (city.id, city.r#gen))
+            .map_or("A city".into(), |c| c.name.clone()),
         TradeItem::Gold { amount } => format!("{amount} gold"),
         TradeItem::GoldPerTurn { amount } => format!("{amount} gold a turn"),
         TradeItem::Luxury { resource: r } => resource(r),
@@ -576,8 +582,8 @@ fn item_label(item: &TradeItem, rules: &Rules) -> String {
     }
 }
 
-fn terms(t: &AgreementTerms, rules: &Rules) -> String {
-    let list = |items: &[TradeItem]| items.iter().map(|i| item_label(i, rules)).collect::<Vec<_>>().join(", ");
+fn terms(t: &AgreementTerms, rules: &Rules, v: &civ_sim::PlayerView) -> String {
+    let list = |items: &[TradeItem]| items.iter().map(|i| item_label(i, rules, v)).collect::<Vec<_>>().join(", ");
     match t {
         AgreementTerms::Peace => "peace".into(),
         AgreementTerms::PeaceTreaty { give, get } => format!("a peace treaty (they give {}; you give {})", list(give), list(get)),
@@ -606,6 +612,7 @@ fn add(side: &mut Vec<TradeItem>, item: &Item) {
             }
             (TradeItem::Luxury { resource }, Item::Luxury(r)) if *resource == *r => return,
             (TradeItem::OpenBorders, Item::OpenBorders) | (TradeItem::Embassy, Item::Embassy) => return,
+            (TradeItem::City { city }, Item::City(id, r#gen)) if (city.id, city.r#gen) == (*id, *r#gen) => return,
             _ => {}
         }
     }
@@ -616,6 +623,7 @@ fn add(side: &mut Vec<TradeItem>, item: &Item) {
         Item::Strategic(r) => TradeItem::Strategic { resource: *r, amount: 1 },
         Item::OpenBorders => TradeItem::OpenBorders,
         Item::Embassy => TradeItem::Embassy,
+        Item::City(id, r#gen) => TradeItem::City { city: civ_sim::protocol::EntityRef { id: *id, r#gen: *r#gen } },
     });
 }
 
@@ -653,14 +661,50 @@ fn trade(
         }
         out.push((Item::OpenBorders, "Open borders".into()));
         out.push((Item::Embassy, "Embassy".into()));
+        // The engine refuses a capital, a city in resistance, and a last city.
+        for c in v.cities.iter().filter(|c| c.owner == v.me && c.own.as_ref().is_some_and(|o| !o.capital)) {
+            out.push((Item::City(c.id, c.r#gen), c.name.clone()));
+        }
         out
     };
-    let theirs = vec![
-        (Item::Gold, "+50 gold".to_string()),
-        (Item::GoldPerTurn, "+1 gold a turn".into()),
-        (Item::OpenBorders, "Open borders".into()),
-        (Item::Embassy, "Embassy".into()),
-    ];
+    // What they could give shows once you have an embassy with them (docs/ROOMS-SPEC.md, R7); without one,
+    // the offer is made blind and the engine refuses what they do not have.
+    let relation = v.relations.iter().find(|r| r.civ == draft.with);
+    let theirs: Vec<(Item, String)> = match relation.and_then(|r| r.tradable.as_ref()) {
+        Some(t) => {
+            let mut out = Vec::new();
+            if t.gold >= 50 {
+                out.push((Item::Gold, format!("+50 gold (has {})", t.gold)));
+            }
+            if t.gold_per_turn >= 1 {
+                out.push((Item::GoldPerTurn, format!("+1 gold a turn (up to {})", t.gold_per_turn)));
+            }
+            for s in &t.luxuries {
+                out.push((Item::Luxury(s.resource), format!("{} ({})", rules.resource(s.resource).map_or("?", |r| r.0), s.amount)));
+            }
+            for s in &t.strategics {
+                out.push((Item::Strategic(s.resource), format!("+1 {} (has {})", rules.resource(s.resource).map_or("?", |r| r.0), s.amount)));
+            }
+            for c in &t.cities {
+                let name = v.cities.iter().find(|x| (x.id, x.r#gen) == (c.id, c.r#gen)).map_or("A city", |x| x.name.as_str());
+                out.push((Item::City(c.id, c.r#gen), name.to_string()));
+            }
+            if t.open_borders {
+                out.push((Item::OpenBorders, "Open borders".into()));
+            }
+            if t.embassy {
+                out.push((Item::Embassy, "Embassy".into()));
+            }
+            out
+        }
+        None => vec![
+            (Item::Gold, "+50 gold".to_string()),
+            (Item::GoldPerTurn, "+1 gold a turn".into()),
+            (Item::OpenBorders, "Open borders".into()),
+            (Item::Embassy, "Embassy".into()),
+        ],
+    };
+    let blind = relation.is_none_or(|r| r.tradable.is_none());
     commands.entity(e).with_children(|w| {
         w.spawn((
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
@@ -670,8 +714,11 @@ fn trade(
             for (side, title, offers, table) in [(false, "You give", &mine, &draft.give), (true, "They give", &theirs, &draft.get)] {
                 cols.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(4.0), width: Val::Px(296.0), ..default() }).with_children(|col| {
                     col.spawn(text(&font, title, 13.0, DIM));
+                    if side && blind {
+                        col.spawn(text(&font, "What they have shows once you have an embassy with them.", 11.0, DIM));
+                    }
                     for (i, item) in table.iter().enumerate() {
-                        col.spawn(button(&font, Press::Drop(side, i), format!("{} ×", item_label(item, &rules)), TEXT));
+                        col.spawn(button(&font, Press::Drop(side, i), format!("{} ×", item_label(item, &rules, v)), TEXT));
                     }
                     col.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|add| {
                         for (item, label) in offers.iter() {
@@ -709,7 +756,7 @@ fn offers(
                 BorderColor::all(outer),
                 BackgroundColor(PANEL),
                 children![
-                    text(&font, format!("{from} offers {}", terms(&offer.terms, &rules)), 12.0, TEXT),
+                    text(&font, format!("{from} offers {}", terms(&offer.terms, &rules, &update.view)), 12.0, TEXT),
                     (
                         Node { column_gap: Val::Px(6.0), ..default() },
                         children![

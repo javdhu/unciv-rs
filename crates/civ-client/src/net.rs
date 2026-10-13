@@ -216,15 +216,27 @@ pub fn run_socket(server: Server, match_id: String, up: &ConcurrentQueue<Up>, do
     native::run_socket(&server, &match_id, up, down)
 }
 
+/// Keep guest tokens in `dir` from now on (tests: one directory per run).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn use_config_dir(dir: std::path::PathBuf) {
+    let _ = native::CONFIG_DIR.set(dir);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
+    pub(super) static CONFIG_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
     use super::*;
     use std::io::ErrorKind;
     use std::time::Duration;
     use tungstenite::Message;
 
-    /// Where guest tokens are kept: `CIV_CONFIG_DIR`, else the platform's per-user config directory.
+    /// Where guest tokens are kept: `use_config_dir`, `CIV_CONFIG_DIR`, else the platform's per-user config
+    /// directory.
     fn config_dir() -> std::path::PathBuf {
+        if let Some(dir) = CONFIG_DIR.get() {
+            return dir.clone();
+        }
         if let Ok(dir) = std::env::var("CIV_CONFIG_DIR") {
             return dir.into();
         }
