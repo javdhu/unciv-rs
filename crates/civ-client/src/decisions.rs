@@ -76,6 +76,8 @@ pub struct Decisions {
     /// Own units whose `unitOptions` offer promotions, from the last probe.
     promotable: HashSet<Key>,
     probe: u64,
+    /// What the last probe asked about: each veteran with its experience and promotions held.
+    probed: Vec<(Key, u16, usize)>,
 }
 
 impl Decisions {
@@ -120,22 +122,28 @@ pub fn plugin(app: &mut App) {
         );
 }
 
-/// Ask which own units can be promoted: those with experience, once per view change.
+/// Ask which own units can be promoted: those with experience, again only when a veteran's experience or
+/// promotions change (a room's updates come often).
 fn probe(link: Res<Link>, view: Res<ViewState>, mut changes: MessageReader<ViewChanged>, mut decisions: ResMut<Decisions>) {
     if changes.read().count() == 0 {
         return;
     }
     let Some(v) = view.view() else { return };
-    decisions.probe += 1;
-    let n = decisions.probe;
-    let veterans: Vec<Key> = v
+    let veterans: Vec<(Key, u16, usize)> = v
         .units
         .iter()
-        .filter(|u| u.owner == v.me && u.own.as_ref().is_some_and(|o| o.experience > 0))
-        .map(|u| (u.id, u.r#gen))
+        .filter(|u| u.owner == v.me)
+        .filter_map(|u| u.own.as_ref().filter(|o| o.experience > 0).map(|o| ((u.id, u.r#gen), o.experience, o.promotions.len())))
         .collect();
-    decisions.promotable.retain(|k| veterans.contains(k));
-    for k in veterans {
+    if veterans == decisions.probed {
+        return;
+    }
+    decisions.probed = veterans.clone();
+    decisions.probe += 1;
+    let n = decisions.probe;
+    let keys: Vec<Key> = veterans.iter().map(|v| v.0).collect();
+    decisions.promotable.retain(|k| keys.contains(k));
+    for k in keys {
         link.send(Up::Client(ClientMessage::Query {
             request_id: format!("promo-{}-{}:{n}", k.0, k.1),
             query: Ask::UnitOptions { unit: entity(k), nuclear_target: None },

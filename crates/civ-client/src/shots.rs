@@ -104,6 +104,20 @@ pub fn scene(name: &str) -> Option<Scene> {
                 room: false,
             });
         }
+        // M6a's review: a match played fast until the engine waits on a decision, then End turn leading to it,
+        // the city's queue, the log and the civilizations panel.
+        "decide" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: Settings { seed: 7, width: 24, height: 16, majors: 2, city_states: 1, ..Settings::default() },
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: Some(40.0),
+                play: true,
+                room: false,
+            });
+        }
         // M5's review: a room hosted here and joined from elsewhere (a browser on the invite link), then
         // its match with a deadline, seats and the waiting turn button.
         "room" => {
@@ -196,7 +210,10 @@ pub fn plugin(app: &mut App) {
         .add_systems(OnEnter(crate::app::AppState::Match), offscreen.after(crate::camera::spawn))
         .add_systems(
             Update,
-            (shoot, turn_script, tour_script, room_script).chain().after(crate::map::MapSet::Rebuild).in_set(crate::app::InMatch),
+            (shoot, turn_script, tour_script, room_script, decide_script)
+                .chain()
+                .after(crate::map::MapSet::Rebuild)
+                .in_set(crate::app::InMatch),
         );
 }
 
@@ -520,6 +537,114 @@ fn turn_script(
 /// The "tour" scene: found a city, end turns quickly until a neighbour is met (or turn 40), then show the tech
 /// tree, the policies, the city's tiles, the Civilizations panel and a trade window, four seconds each.
 #[allow(clippy::too_many_arguments)]
+/// The decide scene: found a city, end turns quickly (raiders come to the idle warrior) until a decision is
+/// pending, then show it through End turn, a city with a queue, the log and the civilizations panel.
+#[allow(clippy::too_many_arguments)]
+fn decide_script(
+    mut shots: Option<ResMut<Shots>>,
+    view: Res<ViewState>,
+    rules: Option<Res<crate::rules::Rules>>,
+    land: Option<Res<Land>>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut outbox: ResMut<crate::client::Outbox>,
+    mut screens: ResMut<crate::screens::Screens>,
+    mut decisions: ResMut<crate::decisions::Decisions>,
+    mut log: ResMut<crate::log::NoteLog>,
+    mut playback: ResMut<crate::present::Playback>,
+    mut cameras: Query<&mut MapCamera>,
+    mut phase: Local<Option<(u32, u32)>>,
+) {
+    use crate::play::{select_city, select_unit, unit_action};
+    use civ_sim::protocol::Action;
+    use civ_sim::queries::UnitActionKind;
+    let (Some(shots), Some(rules), Some(land), Some(v)) = (shots.as_deref_mut(), rules, land, view.view()) else { return };
+    if shots.scene.name != "decide" || shots.stage != Stage::Recording {
+        return;
+    }
+    let frame = shots.frames;
+    let (step, began) = *phase.get_or_insert((0, frame));
+    let since = frame - began;
+    let mut next = |phase: &mut Option<(u32, u32)>| *phase = Some((step + 1, frame));
+    let look = |cameras: &mut Query<&mut MapCamera>, tile: u16, d: f32| {
+        if let Ok(mut c) = cameras.single_mut() {
+            c.jump(land.0.grid.centre(tile), d);
+        }
+    };
+    match step {
+        0 if since >= 15 => {
+            let settler = v.units.iter().filter(|u| u.owner == v.me).find(|u| rules.tables.units.iter().any(|r| r.id == u.base && r.name == "Settler"));
+            if let Some(u) = settler {
+                select_unit(&mut selection, (u.id, u.r#gen));
+                if let Some(a) = unit_action(UnitActionKind::FoundCity, (u.id, u.r#gen), &view, &rules) {
+                    outbox.submit(a);
+                }
+            }
+            next(&mut phase);
+        }
+        1 => {
+            // Fast turns until the engine waits on something, or turn 80.
+            playback.skip = true;
+            selection.unit = None;
+            if !decisions.list.is_empty() || v.turn >= 80 {
+                playback.skip = false;
+                next(&mut phase);
+            } else if !outbox.busy() && since % 3 == 0 {
+                if v.civs.iter().find(|c| c.id == v.me).is_some_and(|c| c.researching.is_none()) {
+                    if let Some(t) = selection.civ_options.as_ref().and_then(|o| o.research.first()).map(|r| r.id) {
+                        outbox.submit(Action::SetResearch { technology: t });
+                    }
+                }
+                outbox.submit(Action::FinishTurn);
+            }
+        }
+        // End turn now names the decision; then it is opened as a click would.
+        2 if since >= 90 => {
+            if let Some(d) = decisions.next().cloned() {
+                crate::decisions::open(d, &mut decisions, &mut selection, &mut screens);
+                if let Some(t) = selection.unit.and_then(|k| v.units.iter().find(|u| (u.id, u.r#gen) == k)) {
+                    look(&mut cameras, t.tile, 12.0);
+                }
+            }
+            next(&mut phase);
+        }
+        3 if since >= 120 => {
+            decisions.open = None;
+            selection.unit = None;
+            selection.research_open = false;
+            screens.policies = false;
+            if let Some(city) = v.cities.iter().find(|c| c.owner == v.me) {
+                select_city(&mut selection, (city.id, city.r#gen));
+                look(&mut cameras, city.centre, 12.0);
+                // Three items queued, as the + buttons would.
+                if let Some(o) = &selection.city_options {
+                    let queue: Vec<_> = o.choices.iter().filter(|c| c.refusal.is_none()).map(|c| c.construction.clone()).take(3).collect();
+                    outbox.submit(Action::SetProduction { city: crate::play::entity((city.id, city.r#gen)), queue });
+                }
+            }
+            next(&mut phase);
+        }
+        4 if since >= 120 => {
+            selection.city = None;
+            log.open = true;
+            next(&mut phase);
+        }
+        5 if since >= 120 => {
+            log.open = false;
+            screens.civs = true;
+            next(&mut phase);
+        }
+        6 if since >= 120 => {
+            screens.civs = false;
+            next(&mut phase);
+        }
+        _ => {}
+    }
+    // Stop the recording once the scene is over.
+    if *phase == Some((7, frame)) {
+        shots.scene.record = Some(frame as f32 / RECORD_FPS);
+    }
+}
+
 /// The room scene's turns: found the capital, keep research going, and end each turn (the other seat's
 /// player may not, so rounds also close at the deadline).
 #[allow(clippy::too_many_arguments)]

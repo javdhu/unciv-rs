@@ -9,6 +9,7 @@ mod harness;
 mod hud;
 pub mod hex;
 mod inspect;
+pub mod log;
 pub mod link;
 mod map;
 pub mod net;
@@ -73,7 +74,7 @@ pub fn run() {
             harness::plugin,
             shots::plugin,
         ))
-        .add_plugins((roomui::plugin, rooms::plugin, decisions::plugin));
+        .add_plugins((roomui::plugin, rooms::plugin, decisions::plugin, log::plugin));
     if let Some(shots) = shots {
         // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
         // each capture takes.

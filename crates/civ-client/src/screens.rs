@@ -51,6 +51,8 @@ pub struct Trade {
 enum Press {
     OpenPolicies,
     OpenCivs,
+    /// Show or hide the notification log (`log.rs`).
+    Log,
     Close,
     Tech(u32),
     Policy(u32),
@@ -848,6 +850,7 @@ fn buttons(
     commands.entity(e).with_children(|b| {
         b.spawn(button(&font, Press::OpenPolicies, "Policies", TEXT));
         b.spawn(button(&font, Press::OpenCivs, "Civilizations", TEXT));
+        b.spawn(button(&font, Press::Log, "Log", TEXT));
     });
     screens.stale = false;
 }
@@ -871,6 +874,7 @@ fn on_press(
     mut outbox: ResMut<Outbox>,
     view: Res<ViewState>,
     rules: Option<Res<Rules>>,
+    mut log: ResMut<crate::log::NoteLog>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
     let press = press.clone();
@@ -888,7 +892,15 @@ fn on_press(
             screens.policies = !screens.policies;
             selection.research_open = false;
         }
-        Press::OpenCivs => screens.civs = !screens.civs,
+        Press::OpenCivs => {
+            screens.civs = !screens.civs;
+            log.open = false;
+        }
+        // The log and the civilizations panel share the left side.
+        Press::Log => {
+            log.open = !log.open;
+            screens.civs = false;
+        }
         Press::Close => {
             if screens.trade.is_some() {
                 screens.trade = None;
