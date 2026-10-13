@@ -1,23 +1,4 @@
 .DS_Store
-node_modules/
-web/dist
-# the smoke run's shots and report (web/tools/smoke)
-web/.smoke/
-# frames, words, music and cuts from web/tools/film
-web/.film/
 target
-__pycache__/
-# output of `bun --cwd web run art -- bake`
-assets/procgen/
-# `npm --prefix web run studio` images, the daemon's port and its log
-assets/studio/
-# paid Polyperfect sources for tools/animals.ts (converted output lives in web/src/art/pack)
-assets/pack/
-# wrangler local state
-.wrangler/
-# leader portrait media (61 MB); kept out of git until it gets a home (LFS or R2)
-content/leaders/**/*.png
-content/leaders/**/*.jpg
-content/leaders/**/*.mp4
-# agent worktrees (parallel lanes)
+*.sqlite3*
 .claude/worktrees/

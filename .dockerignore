@@ -1,7 +1,4 @@
 .git
 target
-web
-content
 docs
-tools
 *.sqlite3*
