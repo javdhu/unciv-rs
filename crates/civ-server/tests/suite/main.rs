@@ -2,6 +2,7 @@
 
 mod network;
 mod shutdown;
+mod static_files;
 
 /// A file added to this directory runs only once it is declared above.
 #[test]

@@ -6,13 +6,14 @@ use civ_sim::{
     protocol::{
         CommandReceipt, CommandRequest, CommandStatus, GameUpdate, Query, QueryReply, RejectionCode,
     },
+    rooms::ErrorCode,
     session::{Session, SessionError},
     Settings,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::sync::{broadcast, watch, Mutex, RwLock};
@@ -23,6 +24,9 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     pub secure_cookie: bool,
     pub disconnect_grace_ms: u64,
+    /// Serve this directory's files at every GET and HEAD path outside `/api` and `/health`, so a browser
+    /// client shares the API's origin. None serves no files.
+    pub static_dir: Option<PathBuf>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -38,6 +42,7 @@ impl Default for Config {
             ],
             secure_cookie: false,
             disconnect_grace_ms: 15_000,
+            static_dir: None,
         }
     }
 }
@@ -60,17 +65,20 @@ impl std::fmt::Display for HostError {
 }
 impl std::error::Error for HostError {}
 impl HostError {
-    pub(crate) fn code(&self) -> &'static str {
+    pub(crate) fn error_code(&self) -> ErrorCode {
         match self {
-            Self::Unauthorized => "unauthorized",
-            Self::Forbidden => "forbidden",
-            Self::NotFound => "notFound",
-            Self::Conflict => "conflict",
-            Self::Invalid => "invalidRequest",
-            Self::Capacity => "capacity",
-            Self::Fenced => "connectionReplaced",
-            Self::Internal => "unavailable",
+            Self::Unauthorized => ErrorCode::Unauthorized,
+            Self::Forbidden => ErrorCode::Forbidden,
+            Self::NotFound => ErrorCode::NotFound,
+            Self::Conflict => ErrorCode::Conflict,
+            Self::Invalid => ErrorCode::InvalidRequest,
+            Self::Capacity => ErrorCode::Capacity,
+            Self::Fenced => ErrorCode::ConnectionReplaced,
+            Self::Internal => ErrorCode::Unavailable,
         }
+    }
+    pub(crate) fn code(&self) -> &'static str {
+        self.error_code().as_str()
     }
 }
 impl From<rusqlite::Error> for HostError {

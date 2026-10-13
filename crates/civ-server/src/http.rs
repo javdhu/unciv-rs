@@ -14,10 +14,13 @@ use axum::{
 use civ_sim::{
     content,
     protocol::{ClientMessage, ServerMessage, PROTOCOL_VERSION},
+    rooms::{
+        ErrorBody, GuestResponse, JoinRequest, LeaveResponse, MemberView, NameRequest, RoomRequest, RoomResponse,
+        RoomSummary, RoomsResponse, RulesResponse, SeatRequest,
+    },
     Settings,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
 use std::{
     sync::{Arc, OnceLock},
     time::Duration,
@@ -28,7 +31,7 @@ const COOKIE: &str = "civ_guest";
 const MAX_MESSAGE: usize = 64 * 1024;
 
 pub fn router(host: Arc<Host>) -> Router {
-    Router::new()
+    let api = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/api/rules", get(rules))
         .route("/api/guest", post(guest))
@@ -42,7 +45,12 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/api/matches/{id}/ws", get(upgrade))
         .layer(DefaultBodyLimit::max(MAX_MESSAGE))
         .layer(middleware::from_fn_with_state(host.clone(), origin))
-        .with_state(host)
+        .with_state(host.clone());
+    match &host.config.static_dir {
+        // Outermost, so a file request never reaches the Origin check; every other request passes through.
+        Some(root) => api.layer(middleware::from_fn_with_state(Arc::new(root.clone()), crate::site::serve)),
+        None => api,
+    }
 }
 
 impl IntoResponse for HostError {
@@ -57,7 +65,7 @@ impl IntoResponse for HostError {
             Self::Fenced => StatusCode::CONFLICT,
             Self::Internal => StatusCode::SERVICE_UNAVAILABLE,
         };
-        (status, Json(serde_json::json!({"error":self.code()}))).into_response()
+        (status, Json(ErrorBody { error: self.error_code() })).into_response()
     }
 }
 
@@ -115,12 +123,8 @@ fn authenticate(host: &Host, headers: &HeaderMap) -> Result<String, HostError> {
 async fn guest(State(host): State<Arc<Host>>, headers: HeaderMap) -> Result<Response, HostError> {
     match authenticate(&host, &headers) {
         Ok(id) => {
-            let mut body = serde_json::json!({ "guestId": id });
-            // Present once the guest chose a display name.
-            if let Some(name) = host.store.name(&id)? {
-                body["name"] = name.into();
-            }
-            return Ok(Json(body).into_response());
+            let name = host.store.name(&id)?;
+            return Ok(Json(GuestResponse { guest_id: id, name }).into_response());
         }
         Err(HostError::Unauthorized) => {}
         Err(e) => return Err(e),
@@ -136,7 +140,7 @@ async fn guest(State(host): State<Arc<Host>>, headers: HeaderMap) -> Result<Resp
             ""
         }
     );
-    let mut response = Json(serde_json::json!({ "guestId": id })).into_response();
+    let mut response = Json(GuestResponse { guest_id: id, name: None }).into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie).map_err(|_| HostError::Internal)?,
@@ -144,96 +148,6 @@ async fn guest(State(host): State<Arc<Host>>, headers: HeaderMap) -> Result<Resp
     Ok(response)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
-struct RoomRequest {
-    width: u16,
-    height: u16,
-    majors: u8,
-    city_states: u8,
-    nation: Option<String>,
-    leader: Option<String>,
-    slice: Option<String>,
-    wrap_x: bool,
-    max_turns: Option<u32>,
-    speed: Option<String>,
-    ruleset: Option<String>,
-    victories: Option<Vec<String>>,
-    turn_seconds: u32,
-}
-impl Default for RoomRequest {
-    fn default() -> Self {
-        Self {
-            width: 32,
-            height: 20,
-            majors: 4,
-            city_states: 2,
-            nation: None,
-            leader: None,
-            slice: None,
-            wrap_x: false,
-            max_turns: None,
-            speed: None,
-            ruleset: None,
-            victories: None,
-            turn_seconds: 120,
-        }
-    }
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct JoinRequest {
-    invite: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RoomResponse {
-    room_id: String,
-    own_seat: u8,
-    occupied_seats: usize,
-    capacity: u8,
-    width: u16,
-    height: u16,
-    city_states: u8,
-    turn_seconds: u32,
-    is_owner: bool,
-    wrap_x: bool,
-    /// The effective limit: explicit, or the speed's length.
-    max_turns: u32,
-    speed: String,
-    ruleset: String,
-    victories: Option<Vec<String>>,
-    /// The Blitz slice, when the room plays one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    slice: Option<String>,
-    /// Each occupied seat's chosen nation and leader, if any.
-    seats: Vec<civ_sim::SeatChoice>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    invite: Option<String>,
-    match_id: Option<String>,
-    /// Every occupied seat: who holds it and whether they are there (in the
-    /// lobby, or connected once the match runs), and once the match runs,
-    /// whether they have finished the turn or left it to a bot.
-    members: Vec<MemberView>,
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemberView {
-    seat: u8,
-    name: Option<String>,
-    is_owner: bool,
-    /// Before the start, whether they read the room in the last few seconds;
-    /// once the match runs, whether the host holds a live socket for the seat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    connected: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ready: Option<bool>,
-    /// A person plays it; false while a bot has taken over.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    controlled: Option<bool>,
-    left: bool,
-}
 async fn room_response(host: &Host, room: Room, guest: &str) -> Result<Json<RoomResponse>, HostError> {
     let own_seat = room
         .seats
@@ -354,14 +268,6 @@ async fn room(
     let room = host.store.room(&id)?;
     room_response(&host, room, &guest).await
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SeatRequest {
-    #[serde(default)]
-    nation: Option<String>,
-    #[serde(default)]
-    leader: Option<String>,
-}
 async fn choose_seat(
     State(host): State<Arc<Host>>,
     headers: HeaderMap,
@@ -382,18 +288,13 @@ async fn start_room(
     let room = host.start(&guest, &id).await?;
     room_response(&host, room, &guest).await
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NameRequest {
-    name: String,
-}
 /// The name other members see: 1 to 32 characters once trimmed, no control
 /// characters.
 async fn name_guest(
     State(host): State<Arc<Host>>,
     headers: HeaderMap,
     request: Result<Json<NameRequest>, JsonRejection>,
-) -> Result<Json<serde_json::Value>, HostError> {
+) -> Result<Json<GuestResponse>, HostError> {
     let guest = authenticate(&host, &headers)?;
     let Json(request) = request.map_err(|_| HostError::Invalid)?;
     let name = request.name.trim();
@@ -401,21 +302,7 @@ async fn name_guest(
         return Err(HostError::Invalid);
     }
     host.rename(&guest, name).await?;
-    Ok(Json(serde_json::json!({"guestId":guest,"name":name})))
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RoomSummary {
-    room_id: String,
-    match_id: Option<String>,
-    own_seat: u8,
-    is_owner: bool,
-    occupied_seats: usize,
-    capacity: u8,
-    /// The match's turn, once it has started.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    turn: Option<u32>,
-    finished: bool,
+    Ok(Json(GuestResponse { guest_id: guest, name: Some(name.to_string()) }))
 }
 /// The rooms a returning guest holds a seat in, lobbies and matches alike,
 /// leaving out any it left.
@@ -445,16 +332,18 @@ async fn my_rooms(State(host): State<Arc<Host>>, headers: HeaderMap) -> Result<J
             finished,
         });
     }
-    Ok(Json(serde_json::json!({ "rooms": rooms })))
+    // Through a Value as before, so each summary's keys keep their sorted order on the wire.
+    let rooms = serde_json::to_value(RoomsResponse { rooms }).map_err(|_| HostError::Internal)?;
+    Ok(Json(rooms))
 }
 async fn leave_room(
     State(host): State<Arc<Host>>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, HostError> {
+) -> Result<Json<LeaveResponse>, HostError> {
     let guest = authenticate(&host, &headers)?;
     host.leave(&guest, &id).await?;
-    Ok(Json(serde_json::json!({"left":true})))
+    Ok(Json(LeaveResponse { left: true }))
 }
 async fn rules() -> Result<Json<serde_json::Value>, HostError> {
     static RULES: OnceLock<serde_json::Value> = OnceLock::new();
@@ -462,7 +351,9 @@ async fn rules() -> Result<Json<serde_json::Value>, HostError> {
         return Ok(Json(value.clone()));
     }
     let rules = content::load().map_err(|_| HostError::Internal)?;
-    let value = serde_json::json!({"contentHash":content::hash(),"tables":civ_sim::tables(&rules)});
+    // Cached as a Value as before, so the tables' keys keep their sorted order on the wire.
+    let value = serde_json::to_value(RulesResponse { content_hash: content::hash(), tables: civ_sim::tables(&rules) })
+        .map_err(|_| HostError::Internal)?;
     let _ = RULES.set(value.clone());
     Ok(Json(value))
 }
