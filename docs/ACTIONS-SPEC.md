@@ -1,6 +1,24 @@
 # Actions spec (M6)
 
-Status: draft, 2026-10-13. Choices A1-A6 are open; nothing here is built.
+Status: A1-A6 decided by Javed on 2026-10-13; M6a being built.
+
+| | Choice | Pick |
+|---|---|---|
+| A1 | How decisions reach the player | End turn leads: it names the next decision and opens its panel; a notification log lists events |
+| A2 | Great person progress | civ-sim adds the own civ's points per kind, the shared thresholds and points per turn to the view |
+| A3 | Solo saves | Autosave at every turn end, one slot per match; Continue and saved matches on Home |
+| A4 | Browser saves | IndexedDB |
+| A5 | Late game (air, nuclear, spaceship, spies, vote) | In M6 |
+| A6 | Milestone size | M6a then M6b, a debrief after each |
+
+M6a: every decision through End turn (captures, free technology, free great person, free policy, promotions,
+state faith, demands, the vote, wonder sites), notifications, the top bar, and the unit, city and diplomacy
+actions outside great people, religion and the late game: promote, upgrade, gift a unit, the production queue,
+conversion, bombard, capture status and its actions, peace treaties with terms, demands, city-state tribute,
+purchase and quests, and gift gold by amount. M6b: great people (with A2's view field), religion, saves (A3, A4),
+and the late game (air missions, nuclear strikes, spaceship parts, spies and coups, the vote's screen, victory).
+
+The options not picked stay below for the record.
 
 ## Problem
 
@@ -174,7 +192,7 @@ and the saves it writes.
 
 The client changes are additive. The A2 view field is optional in the protocol. Saves are files or browser entries the client can ignore.
 
-## Open choices
+## Choices (decided; see the table at the top)
 
 A1. How decisions reach the player.
 - (a) End turn becomes the next decision ("Choose a promotion", "Captured city: decide") and opens its panel, as Unciv's next-turn button does. A notification log lists events.
