@@ -1,8 +1,7 @@
 # Play spec: a turn you play (M3)
 
-Status: proposal for Javed's review, 2026-10-13. Builds on [VISUAL-SPEC.md](VISUAL-SPEC.md) (map, pieces, motion,
-HUD) and [CLIENT-BRIEF.md](CLIENT-BRIEF.md) (Link, ViewState, Outbox). Nothing here is built. P1-P3 at the end
-are open.
+Status: P1-P3 decided by Javed on 2026-10-13 (below). Builds on [VISUAL-SPEC.md](VISUAL-SPEC.md) (map, pieces, motion,
+HUD) and [CLIENT-BRIEF.md](CLIENT-BRIEF.md) (Link, ViewState, Outbox). Nothing here is built yet.
 
 ## What the screen has to say
 
@@ -52,7 +51,12 @@ The spectator controls (speed, one round, eyes) leave the top bar while you play
 Policies, diplomacy, great people, religion and city tile management (M4); rooms (M5); saves and the Outbox
 written to disk (with M5/M6, when there is a session to recover); the rest of the action catalogue (M6).
 
-## Open choices
+## Choices
+
+Taken by Javed on 2026-10-13: P1 (b) left-click a target after selecting, a second click confirming an attack;
+P2 (a) "Next unit" until no unit awaits orders, then "End turn"; P3 (a) side panels over the map.
+
+The options as they were put:
 
 P1. Orders by mouse. (a) Right-click on a reachable tile moves, on an enemy attacks (Civ V); left-click only
 selects. (b) Left-click a target after selecting: one button, works on a trackpad and a touchscreen; a second
