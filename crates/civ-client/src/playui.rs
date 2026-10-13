@@ -41,6 +41,8 @@ enum Order {
     /// A specialist kind, and whether one is added (or sent back to the tiles).
     Specialist(u32, bool),
     Sell(u32),
+    /// Leave a solo match for the home screen.
+    Home,
 }
 
 #[derive(Component)]
@@ -231,8 +233,10 @@ fn top_bar(
     left: Query<(Entity, Option<&Children>), With<TopLeft>>,
     centre: Query<(Entity, Option<&Children>), (With<TopCentre>, Without<TopLeft>)>,
     right: Query<(Entity, Option<&Children>), (With<TopRight>, Without<TopLeft>, Without<TopCentre>)>,
+    link: Option<Res<crate::link::Link>>,
 ) {
     let Some(v) = view.view() else { return };
+    let room = link.is_some_and(|l| l.is_remote());
     if !stale.0 {
         return;
     }
@@ -267,6 +271,10 @@ fn top_bar(
             r.spawn(text(&font, format!("Gold {treasury} ({})", signed(v.economy.gold)), 13.0, TEXT));
             r.spawn(text(&font, format!("Science {}", signed(v.economy.science)), 13.0, TEXT));
             r.spawn(button(&font, Order::Undo, "Undo", true));
+            // A room's match is left from its own panel (`roomui.rs`); a solo one is lost on leaving.
+            if !room {
+                r.spawn(button(&font, Order::Home, if selection.home_armed { "Leave? Click again" } else { "Home" }, true));
+            }
         });
     }
 }
@@ -654,6 +662,7 @@ fn press(
     land: Option<Res<crate::map::Land>>,
     mut stale: ResMut<Stale>,
     link: Option<Res<crate::link::Link>>,
+    mut next: ResMut<NextState<crate::app::AppState>>,
 ) {
     let Ok(order) = orders.get(event.entity) else { return };
     match order.clone() {
@@ -663,6 +672,11 @@ fn press(
         }
         Order::Undo => {
             outbox.submit(Action::Undo);
+        }
+        Order::Home if selection.home_armed => crate::app::leave(&mut next, crate::app::AppState::Home),
+        Order::Home => {
+            selection.home_armed = true;
+            stale.0 = true;
         }
         Order::Research => {
             selection.research_open = !selection.research_open;

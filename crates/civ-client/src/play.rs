@@ -53,6 +53,8 @@ pub struct Selection {
     pub armed_tile: Option<u16>,
     /// In a room, End turn clicked once: a second click ends it, since it cannot be taken back there.
     pub end_armed: bool,
+    /// Home clicked once in a solo match: a second click leaves it, and the match is lost.
+    pub home_armed: bool,
     /// The turn the skips belong to.
     turn: u32,
     /// Bumped with every new question, so older answers are dropped.

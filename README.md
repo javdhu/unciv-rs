@@ -50,6 +50,23 @@ crates/civ-client/web/build.sh                 # both measured wasm builds into 
 python3 crates/civ-client/web/serve.py         # http://127.0.0.1:5310, cross-origin isolated
 ```
 
+The client opens on home: play against bots, watch bots, or rooms. `CIV_SOLO=1` and `CIV_WATCH=1` (`civSolo`,
+`civWatch` on the page) go straight into a match.
+
+Rooms (docs/ROOMS-SPEC.md): civ-server serves the browser build beside its API when `CIV_STATIC_DIR` names it.
+
+```sh
+crates/civ-client/web/build.sh webgpu
+CIV_STATIC_DIR=crates/civ-client/web cargo run --release -p civ-server   # page and API on http://127.0.0.1:3001
+```
+
+The native client plays on `CIV_SERVER` (default `http://127.0.0.1:3001`) as a guest whose token it keeps in its
+config directory (`CIV_CONFIG_DIR`), per server and `CIV_PROFILE`: two clients on one machine need two profiles.
+`CIV_INVITE=<code>` (`?invite=` on the page) opens on the rooms and joins; `CIV_MATCH=<id>` (`?match=`) opens a
+room's match. `CIV_SHOTS=<dir> CIV_SCENE=room cargo client` hosts a room through the screens, shoots them, writes
+the invite to `<dir>/invite.txt`, starts once someone joins and records 40 s of the match. `CIV_REJOIN=<n> cargo
+client` opens and leaves n solo matches and exits non-zero if a match left entities behind.
+
 Review screenshots: `CIV_SHOTS=<dir> CIV_SCENE=<world|fog|seed2|seed3> cargo client` plays a watched match to a
 set turn, shoots fixed views into `<dir>` and quits; on the page, `?shots=<scene>` posts them to `serve.py`, which
 writes `crates/civ-client/web/shots/`. Mouse: wheel or pinch zooms toward the cursor, drag pans, a click pins a

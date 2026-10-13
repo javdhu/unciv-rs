@@ -1,6 +1,6 @@
 # Rooms spec (M5)
 
-Status: R1-R7 decided by Javed on 2026-10-13; nothing here is built yet.
+Status: R1-R7 decided by Javed on 2026-10-13; built the same day (How M5 is built, at the end).
 
 | | Choice | Pick |
 |---|---|---|
@@ -186,3 +186,55 @@ how many or how much gold; asking for more than they have is refused as today.
 Link::remote and the rooms screens are additive; solo and watch keep their paths. Server changes from R2 or R3
 are additive routes or headers behind configuration. The trade view field is optional in the protocol, so an
 older client ignores it.
+
+## How M5 is built
+
+- civ-sim: `rooms` holds every `/api` request and reply type, moved from civ-server with the JSON unchanged
+  (civ-server's own tests pass unmodified). `RelationView.tradable` (R7) is present for a met, living major at
+  peace in whose capital you hold an embassy (`our_embassy`): their gold, gold a turn up to the engine's cap
+  (`available_gold_per_turn`), luxuries and strategic resources from `available_stock`, cities `can_give` accepts
+  (not the capital, only cities you know), open borders and embassy. `embassy` is always false there, since the
+  gate already means you have one. Two engine paths disagree at the edges: `can_give` reads resource stock
+  cached at turn start and refuses any gold a turn while their treasury is negative, while accepting a trade
+  reads fresh stock and does not check gold a turn that way; the view follows the acceptance path.
+- civ-server: `site.rs` serves `CIV_STATIC_DIR` at every GET and HEAD outside `/api` and `/health`, with
+  COOP/COEP/CORP, `nosniff` and `no-cache`, and a `.br` twin when the request accepts it. Each path segment is
+  decoded and must be a plain name (no dot prefix, `..`, slashes, backslashes, colons or NUL); the file must
+  stay inside the canonical root and be a regular file; anything else is 404. Files are read whole per request.
+- Client, states (R1, `app.rs`): `Boot`, `Home`, `Rooms`, `Lobby`, `Match`. A match's systems run in the
+  `InMatch` set, its setup on `OnEnter(Match)`; leaving sweeps every top-level entity with a `Transform` or
+  `Node` not marked `Persist`, and each plugin resets its own resources on `OnExit(Match)`. Dropping the `Link`
+  stops its host thread. Solo and watched matches have a Home button (solo asks twice: the match is lost).
+- Client, network (R3, R6, `net.rs`, `link.rs`): natively, HTTP runs on a ureq thread and the match socket on a
+  tungstenite thread with a 20 ms read timeout so it can send between reads; the guest token comes from
+  `Set-Cookie` and lives in `<config>/guests.json` (0600) keyed by server origin and `CIV_PROFILE`, sent as
+  `Cookie` with the server's own `Origin`. In the browser, fetch and WebSocket run on the page's thread, the
+  socket driven once a frame. Lost sockets retry at 250 ms doubling to 10 s with jitter, 8 tries, the count
+  reset after 30 s up; `connectionReplaced` and `protocolVersion` stop for good. What the client sends while
+  the socket is down is dropped: after the welcome the Outbox resends its in-flight command with the same id
+  and the screens ask again. Rules come over the socket (`Query::Rules`), asked again after a welcome whose
+  content hash differs from the rules held; `/api/rules` only names the lobby's nations.
+- Client, screens (`rooms.rs`, `roomui.rs`, `api.rs`): home; rooms (your name, your rooms with Play, Open or
+  Leave, join by invite, create with map size, civilizations, city-states and turn time); lobby (settings, the
+  invite as read-only text to copy, members with nation and presence, your nation, Start for the owner, Leave).
+  Text typed in a field survives the screen's redraws. `?invite=` / `CIV_INVITE` opens on the rooms and joins;
+  the browser keeps `?match=` in its address while a match is open. In a match: a panel under the top bar with
+  the countdown (red under 15 s, server clock from the HTTP `Date`), the connection, the bot-control notice,
+  each human seat (colour, name, playing, finished, away, bot or left) and Back to rooms; End turn takes a
+  second click and then reads "Waiting for N players". The trade window lists what they can give from
+  `tradable`, says when an embassy is needed, and offers cities on both sides.
+- Verified: 1150 engine and server tests; 20 client tests, among them `tests/rooms.rs`, which runs civ-server
+  in-process behind a relay it can cut (two guests create, join and start a room and finish a round; an order
+  given while one connection is down is applied once after it returns; after the deadline an old turn token is
+  refused `staleTurn`; a second connection stops the first with `connectionReplaced`), passing five runs in a
+  row. `CIV_REJOIN=3`: the entity count at home is 465 before any match, 471 after the first and steady after
+  the next two. End to end on this Mac: civ-server serving the web build, the native client hosting through
+  `CIV_SCENE=room`, headless Chrome (WebGPU) joining from the invite link; the lobby showed the browser player
+  as here, and in the match its seat stayed connected while deadlines closed the rounds. Both wasm builds check.
+- Not verified: the browser's match as drawn (headless, not captured), its reconnects, and a refused browser
+  socket (browsers hide the upgrade's status, so it retries eight times and stops with "could not be
+  reached"); typing and clicking the rooms screens by hand; Safari; TLS (`https`, `wss`) natively; leaving a
+  started match from the client (the server's tests cover it).
+- Not built: the lobby's nation choice is one button per nation (about sixty); `build.sh` writes no `.br`
+  twins, so the page loads 74 MB of wasm uncompressed from civ-server; no chat or public room list (non-goals).
+

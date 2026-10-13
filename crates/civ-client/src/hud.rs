@@ -31,6 +31,8 @@ enum Control {
     Skip,
     Eyes,
     Follow,
+    /// Back to the home screen.
+    Home,
 }
 
 #[derive(Component)]
@@ -109,7 +111,11 @@ fn bar(mut commands: Commands, font: Res<UiFont>, link: Option<Res<Link>>) {
                     align_items: AlignItems::Center,
                     ..default()
                 },
-                children![button(&font, Control::Eyes, "All-seeing"), button(&font, Control::Follow, "Follow")],
+                children![
+                    button(&font, Control::Eyes, "All-seeing"),
+                    button(&font, Control::Follow, "Follow"),
+                    button(&font, Control::Home, "Home"),
+                ],
             ),
         ],
     ));
@@ -139,10 +145,12 @@ fn activate(
     rules: Option<Res<Rules>>,
     link: Res<Link>,
     mut commands: Commands,
+    mut next: ResMut<NextState<crate::app::AppState>>,
 ) {
     let Ok(control) = controls.get(event.entity) else { return };
     {
         match control {
+            Control::Home => crate::app::leave(&mut next, crate::app::AppState::Home),
             Control::Pause => playback.paused = !playback.paused,
             Control::Speed(s) => playback.speed = *s,
             Control::Step => playback.step = true,
@@ -198,7 +206,7 @@ fn show_controls(
             Control::Speed(s) => playback.speed == *s,
             Control::Skip => playback.skip,
             Control::Follow => playback.follow,
-            Control::Step | Control::Eyes => false,
+            Control::Step | Control::Eyes | Control::Home => false,
         };
         colour.0 = if on || hovered.get() { BUTTON_ON } else { BUTTON };
         let label = match control {
