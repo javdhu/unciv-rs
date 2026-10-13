@@ -94,6 +94,7 @@ fn pick(
     mut hover: ResMut<Hover>,
     mut pressed_at: Local<Option<Vec2>>,
     shots: Option<Res<crate::shots::Shots>>,
+    mode: Option<Res<crate::play::Mode>>,
 ) {
     // Review shots show the map alone, whatever the cursor rests on.
     if shots.is_some() {
@@ -112,7 +113,9 @@ fn pick(
     }
     if buttons.just_released(MouseButton::Left) {
         let click = matches!((*pressed_at, cursor), (Some(a), Some(b)) if a.distance(b) <= CLICK_SLOP);
-        if click && !map.dragging() {
+        // While you play, a click is an order (src/play.rs), not a pin.
+        let playing = mode.is_some_and(|m| *m == crate::play::Mode::Play);
+        if click && !map.dragging() && !playing {
             hover.pinned = if hover.pinned == hit { None } else { hit };
         }
     }

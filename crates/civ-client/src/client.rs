@@ -125,8 +125,11 @@ pub fn receive(
                     state.applied += 1;
                     state.awaiting_round = false;
                     changed.write(ViewChanged(c));
-                    if let Some(update) = view.update().filter(|u| !u.events.is_empty()) {
-                        rounds.write(RoundEvents(update.events.clone()));
+                    if let Some(update) = view.update() {
+                        let presented = presented(update);
+                        if !presented.is_empty() {
+                            rounds.write(RoundEvents(presented));
+                        }
                     }
                 }
                 Some(Applied::Stale) => state.stale += 1,
@@ -171,4 +174,25 @@ fn send(link: Res<Link>, view: Res<ViewState>, mut outbox: ResMut<Outbox>) {
     };
     link.send(Up::Client(ClientMessage::Command { request_id: id.clone(), command }));
     outbox.in_flight = Some(id);
+}
+
+/// What presentation plays for an update: the other civs' turns (replay batches, in order) and then this seat's
+/// own events. Battles this seat fought are in both (docs/CLIENT-PROTOCOL.md), so with a replay they come from it.
+fn presented(update: &civ_sim::protocol::GameUpdate) -> Vec<civ_sim::protocol::PresentedEvent> {
+    use civ_sim::protocol::PresentedEvent;
+    let mut out = Vec::new();
+    for (b, batch) in update.replay.iter().flatten().enumerate() {
+        for (i, event) in batch.events.iter().enumerate() {
+            out.push(PresentedEvent { id: format!("replay:{}:{b}:{i}", update.cursor.revision), event: event.clone() });
+        }
+    }
+    let replayed = !out.is_empty();
+    out.extend(
+        update
+            .events
+            .iter()
+            .filter(|e| !(replayed && matches!(e.event.event, civ_sim::PresentationEvent::Attacked { .. })))
+            .cloned(),
+    );
+    out
 }

@@ -252,6 +252,12 @@ impl Builder {
         }
     }
 
+    /// One triangle laid on the land (or the water surface), `lift` above it, for highlights.
+    pub(crate) fn fan(&mut self, relief: &Relief, a: Vec2, b: Vec2, c: Vec2, lift: f32, colour: LinearRgba) {
+        let v = [a, b, c].map(|p| self.vertex(hex::world(p, surface(relief, p) + lift), Vec3::Y, colour));
+        self.triangle(v[0], v[1], v[2]);
+    }
+
     /// A vertical cross of two quads, for posts and markers.
     fn post(&mut self, relief: &Relief, p: Vec2, width: f32, height: f32, colour: LinearRgba) {
         let y = surface(relief, p);

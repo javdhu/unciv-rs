@@ -10,6 +10,8 @@ pub mod link;
 mod map;
 mod paint;
 mod pieces;
+pub mod play;
+mod playui;
 mod present;
 mod relief;
 pub mod rules;
@@ -28,6 +30,8 @@ pub fn run() {
         return;
     }
     let shots = shots::Shots::requested();
+    // Shots and recordings watch; otherwise you play, unless CIV_WATCH (or civWatch on the page) asks to watch.
+    let mode = if shots.is_some() || watch_requested() { play::Mode::Watch } else { play::Mode::Play };
     let (settings, sight) = match &shots {
         Some(s) => (s.scene.settings.clone(), s.scene.sight),
         None => (settings(), sight()),
@@ -40,7 +44,11 @@ pub fn run() {
     }
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin { primary_window: Some(window), ..default() }))
-        .insert_resource(link::Link::watch(settings, sight))
+        .insert_resource(match mode {
+            play::Mode::Watch => link::Link::watch(settings, sight),
+            play::Mode::Play => link::Link::play(settings),
+        })
+        .insert_resource(mode)
         .insert_resource(hud::Eyes(sight))
         .add_plugins((
             client::plugin,
@@ -50,11 +58,17 @@ pub fn run() {
             pieces::plugin,
             present::plugin,
             hud::plugin,
+            play::plugin,
+            playui::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,
             shots::plugin,
         ));
+    if mode == play::Mode::Play {
+        // A played match's rounds close when you end your turn.
+        app.insert_resource(client::Pace::Paused);
+    }
     if let Some(shots) = shots {
         // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
         // each capture takes.
@@ -66,6 +80,13 @@ pub fn run() {
         app.insert_resource(shots);
     }
     app.run();
+}
+
+fn watch_requested() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return std::env::var("CIV_WATCH").is_ok();
+    #[cfg(target_arch = "wasm32")]
+    return js_sys::Reflect::get(&js_sys::global(), &"civWatch".into()).is_ok_and(|v| v.is_truthy());
 }
 
 /// Whose eyes a watched match is seen through: `CIV_SIGHT=seat` or a civ id natively, `civSight` on the page;

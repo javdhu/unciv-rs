@@ -22,7 +22,7 @@ pub use rules::{tables, RuleTables};
 pub use setup::{new_game, new_game_for, new_game_in, SeatChoice, Settings};
 pub use view::{advance, advance_for, player_view, reachable, PlayerView, TurnReport};
 // The view and event types a Rust client matches on; they already cross the wire inside `GameUpdate`.
-pub use view::{CityView, CivView, EventView, PresentationEvent, TileView, UnitView};
+pub use view::{CityView, CivView, EventView, PresentationEvent, Reach, TileView, UnitView};
 
 #[cfg(feature = "js")]
 use serde::Serialize;
