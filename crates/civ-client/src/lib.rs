@@ -5,7 +5,7 @@ pub mod app;
 pub mod camera;
 pub mod client;
 mod decisions;
-mod empire;
+pub mod empire;
 mod harness;
 mod hud;
 pub mod hex;

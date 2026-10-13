@@ -133,12 +133,15 @@ fn draw(
                 if spy.station.is_some() {
                     r.spawn(button(&font, Press::Withdraw(spy.id), "Withdraw", true));
                 }
-                r.spawn(button(&font, Press::Send(spy.id), "Send to…", true));
+                if spy.action != civ_sim::SpyActionView::Dead {
+                    r.spawn(button(&font, Press::Send(spy.id), "Send to…", true));
+                }
             });
             if empire.sending == Some(spy.id) {
                 p.spawn(row()).with_children(|r| {
-                    for c in v.cities.iter().filter(|c| c.owner != v.me).take(16) {
-                        r.spawn(button(&font, Press::Station(spy.id, (c.id, c.r#gen)), c.name.clone(), true));
+                    for c in stations(v, spy.id).into_iter().take(24) {
+                        let label = if c.owner == v.me { format!("{} (guard)", c.name) } else { c.name.clone() };
+                        r.spawn(button(&font, Press::Station(spy.id, (c.id, c.r#gen)), label, true));
                     }
                 });
             }
@@ -170,6 +173,18 @@ fn draw(
         }
         p.spawn(text(&font, format!("Score {} · the match ends after turn {}", end.score, end.max_turns), 12.0, DIM));
     });
+}
+
+/// Where a spy may be sent, as the engine allows (`espionage::assign`, `Command::AssignSpy`): own cities to
+/// guard them, and known cities of others, except those of a nation promised not to be spied on, and any
+/// another spy of ours holds.
+pub fn stations(v: &civ_sim::PlayerView, spy: usize) -> Vec<&civ_sim::CityView> {
+    let forbidden = v.spying_forbidden.clone().unwrap_or_default();
+    let held = |c: &civ_sim::CityView| v.spies.iter().any(|s| s.id != spy && s.station.as_ref().is_some_and(|k| (k.id, k.r#gen) == (c.id, c.r#gen)));
+    let mut out: Vec<_> = v.cities.iter().filter(|c| (c.owner == v.me || !forbidden.contains(&c.owner)) && !held(c)).collect();
+    // Own cities last: spies are mostly sent abroad.
+    out.sort_by_key(|c| c.owner == v.me);
+    out
 }
 
 /// The view's progress toward each great person, if the server sends it.
