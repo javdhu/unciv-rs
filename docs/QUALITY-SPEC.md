@@ -1,7 +1,7 @@
 # Play quality spec (M7)
 
-Status: K1-K6 decided by Javed on 2026-10-13; the HUD arrangement (K3) is written below for his check. Nothing
-is built.
+Status: K1-K6 decided by Javed on 2026-10-13, and the HUD arrangement below confirmed by him as written; M7
+being built.
 
 | | Choice | Pick |
 |---|---|---|
