@@ -1,7 +1,7 @@
 # Play quality spec (M7)
 
 Status: K1-K6 decided by Javed on 2026-10-13, and the HUD arrangement below confirmed by him as written; M7
-built (How M7 is built, at the end), the playtest loop next.
+built (How M7 is built, at the end); the playtest loop is on hold at Javed's call (2026-10-13).
 
 | | Choice | Pick |
 |---|---|---|
