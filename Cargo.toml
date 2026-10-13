@@ -1,7 +1,60 @@
 [workspace]
-members = ["crates/civ-core", "crates/civ-sim", "crates/civ-server"]
+members = ["crates/civ-core", "crates/civ-sim", "crates/civ-server", "crates/civ-client"]
+# Plain `cargo build` and `cargo test` stay on the engine and server; the client builds with `-p civ-client`
+# or `--workspace`.
+default-members = ["crates/civ-core", "crates/civ-sim", "crates/civ-server"]
 resolver = "2"
+
+# Day-to-day builds: dependencies and the engine are optimised once and then cached, so a watched match plays
+# at speed and Bevy renders at frame rate; only the crates being edited stay quick to rebuild.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.dev.package.civ-core]
+opt-level = 3
+
+[profile.dev.package.civ-sim]
+opt-level = 3
+
+[profile.dev.package.civ-client]
+opt-level = 1
 
 [profile.release]
 opt-level = "s"
 lto = true
+
+# The client's measured builds: Bevy wants opt-level 3, and fat LTO over Bevy is too slow to iterate on.
+[profile.client]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+
+# The threaded wasm build to measure and ship: std is rebuilt with panic_abort (crates/civ-client/web/build.sh).
+[profile.web]
+inherits = "client"
+panic = "abort"
+strip = true
+
+# Wasm iteration: no LTO and quick codegen for the client (`PROFILE=web-dev crates/civ-client/web/build.sh`).
+[profile.web-dev]
+inherits = "dev"
+panic = "abort"
+debug = false
+strip = true
+
+[profile.web-dev.package."*"]
+opt-level = 3
+
+[profile.web-dev.package.civ-core]
+opt-level = 3
+
+[profile.web-dev.package.civ-sim]
+opt-level = 3
+
+[profile.web-dev.package.civ-client]
+opt-level = 1

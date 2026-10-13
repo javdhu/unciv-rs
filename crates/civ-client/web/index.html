@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>civ</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1E2127; color: #EDEFF2; font: 14px system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #note { position: absolute; bottom: 8px; left: 12px; }
+</style>
+</head>
+<body>
+<canvas id="bevy"></canvas>
+<div id="note"></div>
+<script type="module">
+// Two builds (docs/VISUAL-SPEC.md, V5): WebGPU when the browser gives an adapter, WebGL2 otherwise.
+// ?gpu=webgl2 forces one; ?settings={...} passes civ-sim match settings.
+const params = new URLSearchParams(location.search);
+// Startup state and every error go to the local server too (serve.py), so a run can be read without devtools.
+const post = (record) => fetch('/stats', { method: 'POST', body: JSON.stringify({ ua: navigator.userAgent, ...record }) })
+  .catch(() => {});
+addEventListener('error', (e) => post({ error: String(e.message), at: `${e.filename}:${e.lineno}` }));
+addEventListener('unhandledrejection', (e) => post({ error: String(e.reason?.stack ?? e.reason) }));
+const consoleError = console.error.bind(console);
+console.error = (...args) => { post({ error: args.map(String).join(' ').slice(0, 2000) }); consoleError(...args); };
+async function hasWebGpu() {
+  try { return !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { return false; }
+}
+const flavor = params.get('gpu') ?? (await hasWebGpu() ? 'webgpu' : 'webgl2');
+const note = document.getElementById('note');
+note.textContent = `${flavor}${crossOriginIsolated ? '' : ' · not cross-origin isolated: no threads'}`;
+post({ boot: true, flavor, isolated: crossOriginIsolated, gpu: !!navigator.gpu });
+globalThis.civWorkerUrl = new URL(`./pkg/${flavor}/worker.js`, location.href).href;
+globalThis.civSettings = params.get('settings') ?? undefined;
+globalThis.civReport = (line) => post({ flavor, ...JSON.parse(line) });
+const pkg = await import(`./pkg/${flavor}/civ_client.js`);
+await pkg.default();
+</script>
+</body>
+</html>

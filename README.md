@@ -12,6 +12,8 @@ that commit. Private: the engine is a close port of Unciv's MPL-2.0 code.
   player views, deltas, saves and replay. Wire types in `civ_sim::protocol` (protocol 9).
 - `crates/civ-server`: the private-room host: guest cookies, rooms, authenticated WebSocket seats, SQLite,
   turn clocks, reconnect and bot takeover. API in [its README](crates/civ-server/README.md).
+- `crates/civ-client`: the Bevy 0.20 client, native and wasm, in progress: design in
+  [docs/CLIENT-BRIEF.md](docs/CLIENT-BRIEF.md), look in [docs/VISUAL-SPEC.md](docs/VISUAL-SPEC.md).
 
 The client contract is [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md); engine layout and persistence are
 in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (its client sections describe the removed web client).
@@ -33,3 +35,26 @@ cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --
 The determinism check is `crates/civ-core/tools/check_determinism.sh` (its Linux legs need Docker; on the
 Mac, Colima). `cargo run -p civ-sim --example export_protocol <dir>` writes the protocol's JSON schemas and
 TypeScript types.
+
+## The client
+
+Plain `cargo build` and `cargo test` cover the engine and server only; the client builds with `-p civ-client`.
+
+```sh
+cargo client                                   # native dev build, Bevy linked as a dylib (alias in .cargo/config.toml)
+CIV_SETTINGS='{"seed":3,"width":64,"height":40}' cargo client
+cargo test -p civ-client --features bevy/dynamic_linking
+cargo run -p civ-client --profile client       # optimised native build, for measuring
+PROFILE=web-dev crates/civ-client/web/build.sh webgpu   # quick wasm build of one flavour
+crates/civ-client/web/build.sh                 # both measured wasm builds into crates/civ-client/web/pkg
+python3 crates/civ-client/web/serve.py         # http://127.0.0.1:5310, cross-origin isolated
+```
+
+Dev builds optimise every dependency and the engine (`civ-core`, `civ-sim`) once, so the first build takes about
+six minutes on this Mac and later edits to the client rebuild in one to two seconds.
+
+The wasm builds run the engine on a second thread over shared memory, which needs the pinned nightly
+(`rustup toolchain install nightly-2026-10-08 --profile minimal --component rust-src --target
+wasm32-unknown-unknown`) and `wasm-bindgen-cli` at the version in `Cargo.lock`. The page must be served with
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `serve.py` does that
+and appends what the page reports to `web/stats.jsonl`.

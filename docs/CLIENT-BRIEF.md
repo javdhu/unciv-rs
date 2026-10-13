@@ -1,7 +1,7 @@
 # Bevy client: design brief
 
-Status: decisions D1-D9 taken by Javed on 2026-10-13 (D4 deferred). Next: the visual spec
-([VISUAL-SPEC.md](VISUAL-SPEC.md)) for review. Nothing is built.
+Status, 2026-10-13: decisions D1-D9 taken (D4 deferred), visual choices V1-V5 taken. S0 passed on native,
+Chromium (WebGPU and WebGL2); Safari's frame timing is still unmeasured. M0 built and verified. Next: M1.
 
 ## Problem
 
@@ -140,6 +140,10 @@ Taken by Javed on 2026-10-13. The options he did not pick and their trade-offs a
 - The wasm build needs a pinned nightly toolchain, `-C target-feature=+atomics,+bulk-memory`,
   `-Z build-std=std,panic_abort` and wasm-bindgen's `--target web`. Native stays on stable. As of the sources
   found on 2026-10-13, none of this is stable Rust.
+- Found in S0: on this nightly `+atomics` no longer makes the linker share memory. Without
+  `--shared-memory --import-memory` and the `__wasm_init_tls`, `__tls_size`, `__tls_align`, `__tls_base`
+  exports, wasm-bindgen emits an unshared memory and posting it to a worker fails with a DataCloneError.
+  `web/build.sh` passes them to the final link only.
 - The page that serves the wasm build must be cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin`
   and `Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). Every resource it loads must allow
   that.
@@ -164,6 +168,16 @@ Taken by Javed on 2026-10-13. The options he did not pick and their trade-offs a
 | M6 | The remaining actions, victory, saves | Every action reachable from a control |
 
 If S0 fails, D9 comes back to you with what broke; nothing after it starts.
+
+Results, 2026-10-13, 32x20 `base` match (seed 1), host thread closing rounds back to back:
+
+| Run | Frames while the host works | Rounds | Link |
+|---|---|---|---|
+| Native, dev build, M1 Pro (Metal) | 119.6 fps at 120 Hz, p99 9.3 ms, one 22 ms frame | to turn 203 (the end), about 28 ms apart | no resync |
+| Chromium 152 pane, WebGPU (S0 code) | 79 fps, p99 11.7 ms, in the one window it was shown | about 29 ms per round | n/a |
+| Headless Chrome, WebGPU (M0 code) | 60 fps (headless rate), p99 17.8 ms, max 18.1 ms | to turn 203, 35-76 ms apart | no resync, nothing stale |
+| Headless Chrome, WebGL2 (M0 code) | 60 fps, p99 17.4 ms, max 18.7 ms after start-up | to turn 203 | no resync, nothing stale |
+| Safari 27.0.1, WebGPU (S0 code) | not measured: the window was hidden, so WebKit drew 2 frames | 559 rounds over three matches on the host thread | n/a |
 
 ## Risks and unknowns
 

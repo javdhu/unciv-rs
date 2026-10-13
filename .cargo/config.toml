@@ -1,0 +1,3 @@
+[alias]
+# The native client with Bevy linked as a dylib: the fastest edit-and-run loop. Dev builds only.
+client = "run -p civ-client --features bevy/dynamic_linking"
