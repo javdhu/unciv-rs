@@ -389,6 +389,24 @@ Also additive; the protocol version stays 4. Every new field is optional in Type
   every kind with the same `pool` (the unit's great person group, `""` for none) and doubles at each birth in it.
   Combat kinds (`combat: true`, no `pool`, `perTurn` 0) are earned from fighting anyone but barbarians, each with
   its own threshold, 200 then 50 more a birth. The faith-born prophet is not listed. Absent for a city-state.
+- **Economy breakdown.** `EconomyView.breakdown?: YieldSourceView[]` says where this player's own `gold`, `science`,
+  `culture`, `faith` and `happiness` come from: `{ stat: YieldStat, source: string, amount: number }`, `YieldStat`
+  being `'food' | 'production' | 'gold' | 'science' | 'culture' | 'faith' | 'happiness'`. One entry per stat and
+  source, none zero, sorted by stat then source in civ-core's order; a stat's amounts sum exactly to its figure.
+  civ-core tallies exact parts and rounds the total once, so each amount is whole and rounded to make the sum
+  (the fraction goes to the parts that lost most to rounding). The first four merge every city's parts (see
+  `yieldBreakdown`) with the empire's own: `cityStates` (allied city-states' yields shared), `happinessConversion`,
+  `naturalWonders`, `transportUpkeep`, `unitUpkeep`, plus `empire` and `religion` flat yields. Happiness keys are
+  `difficulty`, `luxuries`, `cityStateLuxuries`, `tradedLuxuries`, `naturalWonders`, `cityHappiness`, `empire`,
+  `cities`, `population`, `occupiedCities`. `empire` is any unique the nation holds empire-wide (policy, wonder,
+  technology, nation, city-state friendship): civ-core does not record which. Never sent for another nation.
+- **City breakdown.** `CityStateView.yieldBreakdown?: YieldSourceView[]` (own cities only) says where a city's food,
+  production, gold, science, culture and faith come from, same shape and rounding. Food entries sum to
+  `foodPerTurn`, production to `productionPerTurn`; gold, science, culture and faith to the city's share of the
+  economy figures truncated toward zero (no per-city total is sent). Keys: `centre`, `tiles`, `population`,
+  `specialists`, `buildings`, `empire`, `religion`, `global` (the ruleset's global uniques), `goldenAge`, `puppet`,
+  `tradeRoutes`, `railroad`, `resistance`, `productionConversion`, `consumption`, `growth`, `celebration`,
+  `foodConversion`, `minimum`, `buildingUpkeep`. A percentage's gain is credited to the source of the percentage.
 - **Defender's owner.** `attacked.defenderOwner?: number` is the nation that owned the defending unit or city when
   the blow landed. Every `attacked` sent carries it, so a fight whose defender died still says whose it was.
 - **Attacker's owner.** `attacked.attackerOwner?: number` is the attacker's nation, present when this player

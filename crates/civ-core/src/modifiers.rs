@@ -17,7 +17,7 @@
 //! useful tooltip and "where did this 17 come from" is the question actually
 //! asked when a number looks wrong.
 
-use crate::stats::{Fixed, SCALE};
+use crate::stats::{Fixed, Stats, SCALE};
 
 /// Which stage of the calculation a contribution belongs to.
 ///
@@ -62,6 +62,112 @@ pub enum SourceKind {
 impl Source {
     pub fn new(kind: SourceKind, name: impl Into<String>) -> Source {
         Source { kind, name: name.into() }
+    }
+}
+
+/// What a share of a city's or a civ's yield is owed to, at the grain a stat
+/// tooltip lists: the categories the engine adds up, not each building or
+/// tile. The order is the order a tally reads in.
+///
+/// Uniques are told apart only by where the engine gathers them: a city's own
+/// buildings, its owner's index, its majority faith, the ruleset. The owner's
+/// index does not record which policy, wonder, technology, nation or
+/// city-state friendship put a unique there, so all of those are
+/// [`YieldSource::Empire`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum YieldSource {
+    /// The city's own tile, and what it is topped up by to reach the floor.
+    Centre,
+    /// The other tiles yielding to the city, with the improvement bonuses and
+    /// percentages that apply to tiles.
+    Tiles,
+    /// What each citizen yields whatever it works. As happiness, the
+    /// unhappiness of the citizens.
+    Population,
+    /// Specialists, and the bonuses paid per specialist.
+    Specialists,
+    /// The city's buildings: their stats, percentages and uniques.
+    Buildings,
+    /// Uniques the owner holds empire-wide (see above).
+    Empire,
+    /// Beliefs: the city's majority faith's, or those of the faith its owner
+    /// founded or adopted.
+    Religion,
+    /// The ruleset's global uniques, the unhappiness penalties among them.
+    Global,
+    GoldenAge,
+    /// A puppet's neglected science and culture.
+    Puppet,
+    TradeRoutes,
+    /// A railroad to the capital's extra production.
+    Railroad,
+    /// A city resisting its conqueror makes nothing but one production.
+    Resistance,
+    /// Production turned into gold or science, and the production so spent.
+    ProductionConversion,
+    /// The food the citizens eat.
+    Consumption,
+    /// Growth percentages on the surplus, unhappiness's among them.
+    Growth,
+    /// We Love the King Day's share of the surplus.
+    Celebration,
+    /// Surplus food a construction turns into production.
+    FoodConversion,
+    /// The one production every city makes at least.
+    Minimum,
+    BuildingUpkeep,
+    /// A share of what allied city-states make.
+    CityStates,
+    /// Happiness beyond zero turned into another yield.
+    HappinessConversion,
+    NaturalWonders,
+    /// Roads' and railroads' upkeep.
+    TransportUpkeep,
+    UnitUpkeep,
+    /// The difficulty's base happiness.
+    Difficulty,
+    /// Each distinct luxury held.
+    Luxuries,
+    /// Luxuries allied city-states also supply.
+    CityStateLuxuries,
+    /// Luxuries traded away whose happiness is kept.
+    TradedLuxuries,
+    /// What the cities make in happiness.
+    CityHappiness,
+    /// The unhappiness each city causes.
+    Cities,
+    /// The unhappiness of holding annexed cities.
+    OccupiedCities,
+}
+
+/// A tally by [`YieldSource`]: the parts, and by summing them, the whole.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct YieldParts(std::collections::BTreeMap<YieldSource, Stats>);
+
+impl YieldParts {
+    pub fn new() -> YieldParts {
+        YieldParts::default()
+    }
+
+    pub fn add(&mut self, source: YieldSource, stats: Stats) {
+        if !stats.is_zero() {
+            *self.0.entry(source).or_default() += stats;
+        }
+    }
+
+    pub fn merge(&mut self, other: &YieldParts) {
+        for (source, stats) in other.iter() {
+            self.add(source, stats);
+        }
+    }
+
+    /// In [`YieldSource`] order.
+    pub fn iter(&self) -> impl Iterator<Item = (YieldSource, Stats)> + '_ {
+        self.0.iter().map(|(source, stats)| (*source, *stats))
+    }
+
+    pub fn total(&self) -> Stats {
+        self.0.values().copied().sum()
     }
 }
 

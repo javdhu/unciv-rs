@@ -21,10 +21,10 @@
 //! unique-lookup path.
 
 use crate::arena::Id;
-use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind};
+use crate::modifiers::{Modifier, ModifierStack, Source, SourceKind, YieldParts, YieldSource};
 use crate::ruleset::Ruleset;
 use crate::ruleset::Technology;
-use crate::stats::{Fixed, Stats};
+use crate::stats::{Fixed, Stat, Stats};
 use crate::world::ai::UnitOrder;
 use crate::world::assignment::CityFocus;
 use crate::world::city::{City, GrowthEvent, GrowthModifiers};
@@ -92,6 +92,17 @@ pub struct TurnPlan {
     pub answers: Vec<(CivId, crate::world::diplomacy::Demand, bool)>,
     /// Demands to make: of whom, and what.
     pub demands: Vec<(CivId, crate::world::diplomacy::Demand)>,
+    /// Where each city's yields come from, against the planned assignment.
+    /// Its food parts sum to `food` before that is rounded down, its
+    /// production parts to `production` before rounding, and its other parts
+    /// to what the city adds to the civ's reserves, upkeep taken off.
+    pub city_yields: Vec<(Id<City>, YieldParts)>,
+    /// What the civ is owed or charged that no city makes. With every city's
+    /// parts, these sum to the reserves `science`, `culture`, `faith` and
+    /// `gold` are truncated from.
+    pub income: YieldParts,
+    /// The tally `happiness` sums.
+    pub happiness_parts: Vec<crate::world::happiness::Contribution>,
 }
 
 /// Something that happened, in the order it happened.
@@ -588,9 +599,13 @@ fn plan_civ(
         answers: Vec::new(),
         demands: Vec::new(),
         gift: None,
+        city_yields: Vec::new(),
+        income: YieldParts::new(),
+        happiness_parts: Vec::new(),
     };
     let Some(c) = world.civ(civ) else { return plan };
-    plan.happiness = crate::world::happiness::happiness(world, r, civ, difficulty);
+    plan.happiness_parts = crate::world::happiness::breakdown(world, r, civ, difficulty);
+    plan.happiness = plan.happiness_parts.iter().map(|(_, amount)| amount).sum();
 
     let wants = automated.then(|| crate::world::ai::Priorities::assess(world, r, civ));
     if automated {
@@ -686,16 +701,23 @@ fn plan_civ(
             crate::world::assignment::assign_idle_citizens_for(&world.grid, r, &mut hypothetical, focus, bonus, c);
         }
         let golden = crate::world::golden_age::is_golden(world, civ);
-        let base_output =
-            crate::world::city::city_yield_with_happiness(world, r, &hypothetical, golden, Some(plan.happiness));
-        let surplus =
-            (base_output.food - crate::world::city_effects::food_consumed(world, r, &hypothetical)).round() as i32;
-        let mut output = base_output + trade_gold(city_id);
+        // Each step below that changes a yield is also recorded as a part, so
+        // the parts sum to what the city banks (see `TurnPlan::city_yields`).
+        let mut parts = crate::world::city::city_output_parts(world, r, &hypothetical, golden, Some(plan.happiness));
+        let base_output = parts.total();
+        let consumed = crate::world::city_effects::food_consumed(world, r, &hypothetical);
+        let surplus = (base_output.food - consumed).round() as i32;
+        let trade = trade_gold(city_id);
+        let mut output = base_output + trade;
+        // A route's food reaches the reserves, which bank no food, and not
+        // the granary, which is filled from `surplus`.
+        parts.add(YieldSource::TradeRoutes, Stats { food: Fixed::ZERO, ..trade });
         // A railroad to the capital is worth a quarter more hammers. The
         // capital gets it for being the capital.
         let rail = crate::world::connections::railroad_production_bonus(world, r, civ, &connections, city_id);
         if !rail.is_zero() {
             if let Some(boosted) = (output.production * (Fixed::whole(100) + rail)).checked_div(Fixed::whole(100)) {
+                parts.add(YieldSource::Railroad, Stats::of(Stat::Production, boosted - output.production));
                 output.production = boosted;
             }
         }
@@ -705,8 +727,15 @@ fn plan_civ(
         // something moves (`CityStats`: "newFinalStatList.clear()").
         let surplus = if city.resistance > 0 {
             output = Stats { production: Fixed::ONE, ..Stats::ZERO };
+            let made = parts.total();
+            let mut resisted = Stats::ZERO;
+            for stat in Stat::ALL {
+                resisted[stat] = output[stat] - made[stat];
+            }
+            parts.add(YieldSource::Resistance, resisted);
             0
         } else {
+            parts.add(YieldSource::Consumption, Stats::of(Stat::Food, -consumed));
             surplus
         };
 
@@ -733,9 +762,12 @@ fn plan_civ(
         } else {
             growth.evaluate(Fixed::whole(surplus))
         };
+        parts.add(YieldSource::Growth, Stats::of(Stat::Food, grown - Fixed::whole(surplus)));
         // A celebrating city's surplus is a quarter larger, added after the
         // other growth modifiers rather than multiplied with them.
-        let mut effective = (grown + crate::world::wltkd::food_bonus(city, surplus, plan.happiness)).floor() as i32;
+        let celebration = crate::world::wltkd::food_bonus(city, surplus, plan.happiness);
+        parts.add(YieldSource::Celebration, Stats::of(Stat::Food, celebration));
+        let mut effective = (grown + celebration).floor() as i32;
 
         // A puppet's governor fills its queue for any owner (`CityConstructions`
         // automates puppets), a human's included.
@@ -776,20 +808,42 @@ fn plan_civ(
             .copied()
             .or_else(|| plan.construction.iter().find(|(id, _)| *id == city_id).map(|(_, what)| *what));
         if effective > 0 && current.is_some_and(|what| crate::world::construction::converts_food(r, what)) {
-            output.production += Fixed::whole(crate::world::construction::production_from_food(effective));
+            let converted = Fixed::whole(crate::world::construction::production_from_food(effective));
+            parts.add(
+                YieldSource::FoodConversion,
+                Stats { food: -parts.total().food, production: converted, ..Stats::ZERO },
+            );
+            output.production += converted;
             effective = 0;
         }
-        output.production = output.production.max(Fixed::ONE);
+        let floored = output.production.max(Fixed::ONE);
+        parts.add(YieldSource::Minimum, Stats::of(Stat::Production, floored - output.production));
+        output.production = floored;
         let upkeep = crate::world::city_effects::maintenance(world, r, &hypothetical);
+        parts.add(YieldSource::BuildingUpkeep, Stats::of(Stat::Gold, Fixed::whole(-upkeep)));
         plan.assignments.push((city_id, std::mem::take(&mut hypothetical.worked)));
         plan.specialists.push((city_id, std::mem::take(&mut hypothetical.specialists)));
         plan.food.push((city_id, effective));
-        plan.production
-            .push((city_id, if city.production_conversion.is_some() { 0 } else { output.production.round() as i32 }));
+        let banked = if city.production_conversion.is_some() {
+            // Spent on the conversion `city_output_parts` credited.
+            parts.add(YieldSource::ProductionConversion, Stats::of(Stat::Production, -output.production));
+            0
+        } else {
+            output.production.round() as i32
+        };
+        plan.production.push((city_id, banked));
         // Truncated, not rounded: `cultureStored += culture.toInt()`.
         plan.border_culture.push((city_id, output.culture.floor() as i32));
-        reserves += output;
-        reserves.gold -= Fixed::whole(upkeep);
+        let mut added = output;
+        added.gold -= Fixed::whole(upkeep);
+        reserves += added;
+        debug_assert!(
+            [Stat::Gold, Stat::Science, Stat::Culture, Stat::Faith]
+                .into_iter()
+                .all(|stat| parts.total()[stat] == added[stat]),
+            "a city's parts sum to what it adds to the reserves"
+        );
+        plan.city_yields.push((city_id, parts));
     }
     // Gold is spent on what the cities are already building, from what is
     // left once the gift is set aside.
@@ -800,19 +854,26 @@ fn plan_civ(
 
     // Flat yields the empire is owed that no tile produces: city-state
     // friendship, and any policy or belief that grants stats outright.
-    let owed = crate::world::city_states::civ_wide_yields_with_modifiers(world, r, civ, mods)
-        + crate::world::city_effects::happiness_conversion(world, r, civ, plan.happiness);
-    reserves += owed;
+    plan.income = crate::world::city_states::civ_wide_yield_parts(world, r, civ, mods);
+    plan.income.add(
+        YieldSource::HappinessConversion,
+        crate::world::city_effects::happiness_conversion(world, r, civ, plan.happiness),
+    );
+    reserves += plan.income.total();
     // Wonder happiness is already included by happiness(). Other per-wonder
     // reserves reach the empire here once, like other flat income.
     let wonders = crate::world::natural_wonders::known_stats(world, r, civ);
+    plan.income.add(YieldSource::NaturalWonders, wonders);
     reserves += wonders;
 
     // Roads and soldiers are charged to the empire, not to a city — a road
     // between two cities belongs to neither, and an army belongs to none.
-    reserves.gold -= crate::world::connections::transportation_upkeep(world, r, civ).gold;
-    reserves.gold -=
-        Fixed::whole(crate::world::economy::unit_maintenance(world, r, civ, costs.game_length, difficulty));
+    let roads = crate::world::connections::transportation_upkeep(world, r, civ).gold;
+    plan.income.add(YieldSource::TransportUpkeep, Stats::of(Stat::Gold, -roads));
+    reserves.gold -= roads;
+    let soldiers = Fixed::whole(crate::world::economy::unit_maintenance(world, r, civ, costs.game_length, difficulty));
+    plan.income.add(YieldSource::UnitUpkeep, Stats::of(Stat::Gold, -soldiers));
+    reserves.gold -= soldiers;
     let truncate = |value: Fixed| (value.raw() / 1000).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     plan.science = truncate(reserves.science);
     plan.culture = truncate(reserves.culture);
@@ -2306,6 +2367,9 @@ mod tests {
                 answers: Vec::new(),
                 demands: Vec::new(),
                 gift: None,
+                city_yields: Vec::new(),
+                income: YieldParts::new(),
+                happiness_parts: Vec::new(),
             }
         };
 
@@ -3074,6 +3138,9 @@ mod expansion {
                 answers: Vec::new(),
                 demands: Vec::new(),
                 gift: None,
+                city_yields: Vec::new(),
+                income: YieldParts::new(),
+                happiness_parts: Vec::new(),
             }
         };
         let events = apply_plan(&mut w, &r, &plan, TurnModifiers::default());

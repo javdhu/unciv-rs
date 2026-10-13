@@ -1,4 +1,5 @@
 //! Ruleset contributions evaluated with the city and its actual religion.
+use crate::modifiers::{YieldParts, YieldSource};
 use crate::params::Filter;
 use crate::ruleset::Ruleset;
 use crate::stats::{Fixed, Stat, Stats};
@@ -6,19 +7,24 @@ use crate::world::conditionals::{applies, GameContext, Verdict};
 use crate::world::{city::City, world::World};
 use crate::UniqueType;
 
-pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) -> (Stats, Stats) {
+/// The flat yields and the percentages the city's uniques grant it, each
+/// tallied by where the unique was gathered from.
+pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) -> (YieldParts, YieldParts) {
     let id = world.cities.iter().find(|(_, c)| c.centre == city.centre).map(|(id, _)| id);
     let mut ctx = GameContext::new(r).with_world(world).for_civ(city.owner);
     ctx.city = id;
     ctx.happiness = happiness;
-    let mut flat = Stats::ZERO;
-    let mut percent = Stats::ZERO;
+    let mut flat_parts = YieldParts::new();
+    let mut percent_parts = YieldParts::new();
     let tiles = crate::world::city::yield_tiles(&world.grid, r, city);
     let city_matches = |f: &Filter| crate::world::filters::matches_city(world, r, city, Some(city), f) == Verdict::True;
-    for u in crate::world::religion::city_uniques(world, r, city).into_iter().chain(r.global_uniques.iter()) {
+    let global = r.global_uniques.iter().map(|u| (YieldSource::Global, u));
+    for (origin, u) in crate::world::religion::city_uniques_by_origin(world, r, city).chain(global) {
         if applies(u, &ctx) != Verdict::True {
             continue;
         }
+        let mut flat = Stats::ZERO;
+        let mut percent = Stats::ZERO;
         let params = u.compiled(r);
         let p = |i: usize| params.filter(i);
         let stats = params.stats(0).unwrap_or_default();
@@ -135,17 +141,21 @@ pub fn bonuses(world: &World, r: &Ruleset, city: &City, happiness: Option<i32>) 
             }
             _ => {}
         }
+        flat_parts.add(origin, flat);
+        percent_parts.add(origin, percent);
     }
     if let Some(id) = id {
         let specialist_bonus = crate::world::specialists::bonus_per_specialist(world, r, id);
+        let mut flat = Stats::ZERO;
         for stat in Stat::ALL {
             flat[stat] += specialist_bonus[stat] * Fixed::whole(crate::world::specialists::count(city) as i32);
         }
+        flat_parts.add(YieldSource::Specialists, flat);
     }
     for tile in tiles {
-        flat += crate::world::improvements::conditional_yields(world, r, city.owner, tile);
+        flat_parts.add(YieldSource::Tiles, crate::world::improvements::conditional_yields(world, r, city.owner, tile));
     }
-    (flat, percent)
+    (flat_parts, percent_parts)
 }
 
 pub fn founder_yields(world: &World, r: &Ruleset, civ: crate::world::grid::CivId) -> Stats {

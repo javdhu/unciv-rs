@@ -7,7 +7,9 @@ use civ_core::world::assignment::CityFocus;
 use civ_core::world::construction::Construction;
 use civ_core::world::fog::{capture_observations, reachable_preview};
 use civ_core::world::grid::RoadLevel;
-use civ_core::world::turn::{advance_turn, TurnEvent, TurnModifiers};
+use civ_core::modifiers::{YieldParts, YieldSource};
+use civ_core::stats::{Fixed, Stat};
+use civ_core::world::turn::{advance_turn, TurnEvent, TurnModifiers, TurnPlan};
 use civ_core::world::{CivId, World};
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +138,175 @@ pub struct EconomyView {
     pub culture: i32,
     pub faith: i32,
     pub happiness: i32,
+    /// Where each of the five comes from, as civ-core tallies them: every city's parts merged with the empire's
+    /// own. The entries of a stat sum to its figure above. Sorted by stat, then source in civ-core's order.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breakdown: Option<Vec<YieldSourceView>>,
+}
+
+/// A yield a breakdown entry counts toward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum YieldStat {
+    Food,
+    Production,
+    Gold,
+    Science,
+    Culture,
+    Faith,
+    Happiness,
+}
+
+impl YieldStat {
+    fn of(stat: Stat) -> YieldStat {
+        match stat {
+            Stat::Food => YieldStat::Food,
+            Stat::Production => YieldStat::Production,
+            Stat::Gold => YieldStat::Gold,
+            Stat::Science => YieldStat::Science,
+            Stat::Culture => YieldStat::Culture,
+            Stat::Faith => YieldStat::Faith,
+            Stat::Happiness => YieldStat::Happiness,
+        }
+    }
+}
+
+/// One line of where a number comes from: `amount` of `stat` owed to `source`. Amounts are whole: civ-core's
+/// parts are exact, and each is rounded so the entries of a stat sum to the whole figure shown beside them, a
+/// fraction going to the parts that lost the most to rounding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct YieldSourceView {
+    pub stat: YieldStat,
+    /// A stable key for civ-core's `YieldSource`, e.g. `tiles`, `buildings`, `specialists`, `tradeRoutes`,
+    /// `buildingUpkeep`, `unitUpkeep`, `empire` (see `docs/CLIENT-PROTOCOL.md`).
+    pub source: String,
+    pub amount: i32,
+}
+
+/// The wire key of a source.
+fn source_key(source: YieldSource) -> &'static str {
+    match source {
+        YieldSource::Centre => "centre",
+        YieldSource::Tiles => "tiles",
+        YieldSource::Population => "population",
+        YieldSource::Specialists => "specialists",
+        YieldSource::Buildings => "buildings",
+        YieldSource::Empire => "empire",
+        YieldSource::Religion => "religion",
+        YieldSource::Global => "global",
+        YieldSource::GoldenAge => "goldenAge",
+        YieldSource::Puppet => "puppet",
+        YieldSource::TradeRoutes => "tradeRoutes",
+        YieldSource::Railroad => "railroad",
+        YieldSource::Resistance => "resistance",
+        YieldSource::ProductionConversion => "productionConversion",
+        YieldSource::Consumption => "consumption",
+        YieldSource::Growth => "growth",
+        YieldSource::Celebration => "celebration",
+        YieldSource::FoodConversion => "foodConversion",
+        YieldSource::Minimum => "minimum",
+        YieldSource::BuildingUpkeep => "buildingUpkeep",
+        YieldSource::CityStates => "cityStates",
+        YieldSource::HappinessConversion => "happinessConversion",
+        YieldSource::NaturalWonders => "naturalWonders",
+        YieldSource::TransportUpkeep => "transportUpkeep",
+        YieldSource::UnitUpkeep => "unitUpkeep",
+        YieldSource::Difficulty => "difficulty",
+        YieldSource::Luxuries => "luxuries",
+        YieldSource::CityStateLuxuries => "cityStateLuxuries",
+        YieldSource::TradedLuxuries => "tradedLuxuries",
+        YieldSource::CityHappiness => "cityHappiness",
+        YieldSource::Cities => "cities",
+        YieldSource::OccupiedCities => "occupiedCities",
+    }
+}
+
+/// Whole amounts for exact parts, summing to `total`: each part rounded down, then the units still owed handed out
+/// one at a time to the parts with the largest fractions (or, if the floors overshoot, taken from those with the
+/// smallest), the earlier part first on a tie.
+fn apportion(parts: &[(YieldSource, Fixed)], total: i32) -> Vec<(YieldSource, i32)> {
+    let mut whole: Vec<(YieldSource, i64)> = parts.iter().map(|(source, v)| (*source, v.floor())).collect();
+    let mut owed = i64::from(total) - whole.iter().map(|(_, v)| v).sum::<i64>();
+    let fraction = |i: usize| parts[i].1.raw().rem_euclid(civ_core::stats::SCALE);
+    let mut order: Vec<usize> = (0..parts.len()).collect();
+    if owed > 0 {
+        order.sort_by_key(|&i| (std::cmp::Reverse(fraction(i)), i));
+    } else {
+        order.sort_by_key(|&i| (fraction(i), i));
+    }
+    let step = owed.signum();
+    let mut next = 0;
+    while owed != 0 && !order.is_empty() {
+        whole[order[next % order.len()]].1 += step;
+        owed -= step;
+        next += 1;
+    }
+    whole.into_iter().map(|(source, v)| (source, v as i32)).collect()
+}
+
+/// The entries of the stats asked for, each made whole against its figure, sorted by stat then source.
+fn breakdown_of(parts: &YieldParts, totals: &[(Stat, i32)]) -> Vec<(Stat, YieldSource, i32)> {
+    let mut out = Vec::new();
+    for &(stat, total) in totals {
+        let exact: Vec<_> =
+            parts.iter().map(|(source, stats)| (source, stats[stat])).filter(|(_, v)| !v.is_zero()).collect();
+        out.extend(apportion(&exact, total).into_iter().map(|(source, amount)| (stat, source, amount)));
+    }
+    out
+}
+
+fn yield_source_views(mut lines: Vec<(Stat, YieldSource, i32)>) -> Vec<YieldSourceView> {
+    lines.retain(|(_, _, amount)| *amount != 0);
+    lines.sort();
+    lines
+        .into_iter()
+        .map(|(stat, source, amount)| YieldSourceView {
+            stat: YieldStat::of(stat),
+            source: source_key(source).to_owned(),
+            amount,
+        })
+        .collect()
+}
+
+/// `EconomyView.breakdown`: the cities' parts and the empire's, made whole against the totals the plan reports.
+fn economy_breakdown(plan: &TurnPlan) -> Vec<YieldSourceView> {
+    let mut parts = plan.income.clone();
+    for (_, city) in &plan.city_yields {
+        parts.merge(city);
+    }
+    let totals = [
+        (Stat::Gold, plan.gold),
+        (Stat::Science, plan.science),
+        (Stat::Culture, plan.culture),
+        (Stat::Faith, plan.faith),
+    ];
+    let mut lines = breakdown_of(&parts, &totals);
+    lines.extend(plan.happiness_parts.iter().map(|(source, amount)| (Stat::Happiness, *source, *amount)));
+    yield_source_views(lines)
+}
+
+/// `CityStateView.yieldBreakdown`: food and production made whole against what the city banks; gold, science,
+/// culture and faith against the city's share of the empire's figures, truncated toward zero as those are.
+fn city_breakdown(
+    plan: &TurnPlan,
+    city: Id<civ_core::world::city::City>,
+    food: i32,
+    production: i32,
+) -> Option<Vec<YieldSourceView>> {
+    let (_, parts) = plan.city_yields.iter().find(|(id, _)| *id == city)?;
+    let made = parts.total();
+    let share = |stat: Stat| (made[stat].raw() / civ_core::stats::SCALE) as i32;
+    let totals = [
+        (Stat::Food, food),
+        (Stat::Production, production),
+        (Stat::Gold, share(Stat::Gold)),
+        (Stat::Science, share(Stat::Science)),
+        (Stat::Culture, share(Stat::Culture)),
+        (Stat::Faith, share(Stat::Faith)),
+    ];
+    Some(yield_source_views(breakdown_of(parts, &totals)))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
@@ -717,6 +888,11 @@ pub struct CityStateView {
     pub production_conversion: Option<crate::protocol::ProductionConversion>,
     pub food_per_turn: i32,
     pub production_per_turn: i32,
+    /// Where its food, production, gold, science, culture and faith come from, by source; see
+    /// `YieldSourceView`. Food and production entries sum to `foodPerTurn` and `productionPerTurn`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yield_breakdown: Option<Vec<YieldSourceView>>,
     /// It holds its owner's palace.
     #[serde(default)]
     pub capital: bool,
@@ -923,6 +1099,9 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             observed_turn: c.observed_turn,
         })
         .collect();
+    let food_per_turn = |id| economy.food.iter().find(|(city, _)| *city == id).map_or(0, |(_, food)| *food);
+    let production_per_turn =
+        |id| economy.production.iter().find(|(city, _)| *city == id).map_or(0, |(_, production)| *production);
     for (id, c) in w.cities.iter().filter(|(_, c)| c.owner == me) {
         cities.retain(|known| known.centre != c.centre.0);
         cities.push(CityView {
@@ -1026,16 +1205,9 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
                     }
                     _ => None,
                 }),
-                food_per_turn: economy
-                    .food
-                    .iter()
-                    .find(|(city, _)| *city == id)
-                    .map_or(0, |(_, food)| *food),
-                production_per_turn: economy
-                    .production
-                    .iter()
-                    .find(|(city, _)| *city == id)
-                    .map_or(0, |(_, production)| *production),
+                food_per_turn: food_per_turn(id),
+                production_per_turn: production_per_turn(id),
+                yield_breakdown: city_breakdown(&economy, id, food_per_turn(id), production_per_turn(id)),
             }),
             food_stored: Some(c.food_stored),
             production_stored: Some(c.current_production()),
@@ -1173,6 +1345,7 @@ pub fn player_view(w: &World, r: &Ruleset, me: CivId) -> PlayerView {
             culture: economy.culture,
             faith: economy.faith,
             happiness: economy.happiness,
+            breakdown: Some(economy_breakdown(&economy)),
         },
         turn: w.turn,
         // the calendar reads the same speed modifier the turns use
