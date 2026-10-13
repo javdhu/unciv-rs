@@ -15,14 +15,14 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui_widgets::{observe, Activate, Button};
 use bevy::window::PrimaryWindow;
-use civ_sim::protocol::{Action, ConstructionRef, Currency};
+use civ_sim::protocol::{Action, CityFocus, ConstructionRef, Currency};
 use civ_sim::queries::{Availability, UnitActionKind};
 
-const PANEL: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.85);
-const TEXT: Color = Color::srgb(0.93, 0.94, 0.95);
-const DIM: Color = Color::srgb(0.6, 0.63, 0.67);
-const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
-const BUTTON_ON: Color = Color::srgba(1.0, 1.0, 1.0, 0.22);
+pub(crate) const PANEL: Color = Color::srgba(0x14 as f32 / 255.0, 0x16 as f32 / 255.0, 0x1B as f32 / 255.0, 0.85);
+pub(crate) const TEXT: Color = Color::srgb(0.93, 0.94, 0.95);
+pub(crate) const DIM: Color = Color::srgb(0.6, 0.63, 0.67);
+pub(crate) const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
+pub(crate) const BUTTON_ON: Color = Color::srgba(1.0, 1.0, 1.0, 0.22);
 const TOAST_SECONDS: f32 = 3.0;
 
 /// What a play button does.
@@ -31,12 +31,16 @@ enum Order {
     Turn,
     Undo,
     Research,
-    Pick(u32),
     Act(UnitActionKind),
     Build(u32),
     Produce(ConstructionRef),
     Buy(ConstructionRef),
     CloseCity,
+    Focus(CityFocus),
+    AvoidGrowth(bool),
+    /// A specialist kind, and whether one is added (or sent back to the tiles).
+    Specialist(u32, bool),
+    Sell(u32),
 }
 
 #[derive(Component)]
@@ -52,8 +56,6 @@ struct TurnButton;
 #[derive(Component)]
 struct CityPanel;
 #[derive(Component)]
-struct ResearchList;
-#[derive(Component)]
 struct PreviewCard;
 #[derive(Component)]
 struct ToastBox(f32);
@@ -67,14 +69,14 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, frame.run_if(playing))
         .add_systems(
             Update,
-            (mark, top_bar, unit_panel, turn_button, city_panel, research_list, preview_card, toasts, keys, shade)
+            (mark, top_bar, unit_panel, turn_button, city_panel, preview_card, toasts, keys, shade)
                 .chain()
                 .run_if(playing)
                 .after(crate::map::MapSet::Rebuild),
         );
 }
 
-fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color) -> impl Bundle {
+pub(crate) fn text(font: &UiFont, s: impl Into<String>, size: f32, colour: Color) -> impl Bundle {
     (
         Text::new(s),
         TextFont { font: font.regular.clone().into(), font_size: FontSize::Px(size), ..default() },
@@ -179,22 +181,6 @@ fn frame(mut commands: Commands) {
         }),
     ));
     commands.spawn((
-        ResearchList,
-        panel(Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(52.0),
-            left: Val::Percent(50.0),
-            width: Val::Px(420.0),
-            max_height: Val::Percent(75.0),
-            padding: UiRect::all(Val::Px(12.0)),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            overflow: Overflow::scroll_y(),
-            ..default()
-        }),
-        UiTransform { translation: Val2::percent(-50.0, 0.0), ..default() },
-    ));
-    commands.spawn((
         PreviewCard,
         panel(Node {
             position_type: PositionType::Absolute,
@@ -214,7 +200,7 @@ fn mark(mut changes: MessageReader<ViewChanged>, selection: Res<Selection>, mut 
     }
 }
 
-fn clear(commands: &mut Commands, children: Option<&Children>) {
+pub(crate) fn clear(commands: &mut Commands, children: Option<&Children>) {
     if let Some(children) = children {
         for c in children.iter() {
             commands.entity(c).despawn();
@@ -226,7 +212,7 @@ fn year(y: i32) -> String {
     if y < 0 { format!("{} BC", -y) } else { format!("AD {y}") }
 }
 
-fn turns(cost: i32, done: i32, per_turn: i32) -> String {
+pub(crate) fn turns(cost: i32, done: i32, per_turn: i32) -> String {
     let left = (cost - done).max(0);
     if per_turn <= 0 { "–".into() } else { format!("{}", (left + per_turn - 1) / per_turn) }
 }
@@ -384,6 +370,7 @@ fn city_panel(
     mut commands: Commands,
     stale: Res<Stale>,
     view: Res<ViewState>,
+    rules: Option<Res<Rules>>,
     selection: Res<Selection>,
     font: Res<UiFont>,
     mut panel: Query<(Entity, &mut Visibility, Option<&Children>), With<CityPanel>>,
@@ -409,6 +396,48 @@ fn city_panel(
         ));
         p.spawn(text(&font, format!("Food +{food} · Production +{production}"), 12.0, DIM));
         p.spawn(text(&font, format!("Building {building}"), 13.0, TEXT));
+        if let Some(own) = own {
+            p.spawn(text(&font, "Focus", 12.0, DIM));
+            p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|row| {
+                for (focus, label) in [
+                    (CityFocus::Balanced, "Balanced"),
+                    (CityFocus::Food, "Food"),
+                    (CityFocus::Production, "Production"),
+                    (CityFocus::Gold, "Gold"),
+                    (CityFocus::Science, "Science"),
+                    (CityFocus::Culture, "Culture"),
+                    (CityFocus::Faith, "Faith"),
+                    (CityFocus::GoldGrowth, "Gold and growth"),
+                    (CityFocus::ProductionGrowth, "Production and growth"),
+                ] {
+                    let label = if own.focus == focus { format!("▸ {label}") } else { label.to_string() };
+                    row.spawn(button(&font, Order::Focus(focus), label, true));
+                }
+            });
+            let avoid = if own.avoid_growth { "Avoiding growth (click to grow)" } else { "Growing (click to avoid growth)" };
+            p.spawn(button(&font, Order::AvoidGrowth(!own.avoid_growth), avoid, true));
+            if let (Some(options), Some(rules)) = (&selection.city_options, rules.as_ref()) {
+                if !options.specialist_slots.is_empty() {
+                    p.spawn(text(&font, "Specialists", 12.0, DIM));
+                }
+                for slot in &options.specialist_slots {
+                    let have = own.specialists.iter().find(|s| s.specialist == slot.specialist).map_or(0, |s| s.count);
+                    let name = rules.tables.specialists.iter().find(|r| r.id == slot.specialist).map_or("Specialist", |r| r.name.as_str());
+                    p.spawn((
+                        Node { column_gap: Val::Px(6.0), align_items: AlignItems::Center, ..default() },
+                        children![
+                            text(&font, format!("{name} {have} / {}", slot.slots), 12.0, TEXT),
+                            button(&font, Order::Specialist(slot.specialist, false), "−", have > 0),
+                            button(&font, Order::Specialist(slot.specialist, true), "+", have < slot.slots),
+                        ],
+                    ));
+                }
+                for sale in &options.sellable_buildings {
+                    let name = rules.tables.buildings.iter().find(|b| b.id == sale.building).map_or("Building", |b| b.name.as_str());
+                    p.spawn(button(&font, Order::Sell(sale.building), format!("Sell {name} (+{} gold)", sale.gold), true));
+                }
+            }
+        }
         p.spawn(text(&font, "Choose production", 12.0, DIM));
         if let Some(options) = &selection.city_options {
             for choice in &options.choices {
@@ -434,43 +463,6 @@ fn city_panel(
                         row.spawn(button(&font, Order::Buy(choice.construction.clone()), format!("{} gold", price.0), price.1));
                     }
                 });
-            }
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-fn research_list(
-    mut commands: Commands,
-    stale: Res<Stale>,
-    view: Res<ViewState>,
-    selection: Res<Selection>,
-    font: Res<UiFont>,
-    mut panel: Query<(Entity, &mut Visibility, Option<&Children>), With<ResearchList>>,
-) {
-    let (Some(v), Ok((e, mut visibility, children))) = (view.view(), panel.single_mut()) else { return };
-    if !stale.0 {
-        return;
-    }
-    clear(&mut commands, children);
-    if !selection.research_open {
-        *visibility = Visibility::Hidden;
-        return;
-    }
-    *visibility = Visibility::Inherited;
-    commands.entity(e).with_children(|p| {
-        p.spawn(text(&font, "Research", 16.0, TEXT));
-        if let Some(options) = &selection.civ_options {
-            for r in &options.research {
-                let label = format!(
-                    "{}{} · {} turns ({}/{})",
-                    if r.selected { "▸ " } else { "" },
-                    r.name,
-                    turns(r.science_cost, r.invested, v.economy.science),
-                    r.invested,
-                    r.science_cost
-                );
-                p.spawn(button(&font, Order::Pick(r.id), label, true));
             }
         }
     });
@@ -633,10 +625,7 @@ fn press(
         }
         Order::Research => {
             selection.research_open = !selection.research_open;
-        }
-        Order::Pick(technology) => {
-            outbox.submit(Action::SetResearch { technology });
-            selection.research_open = false;
+            stale.0 = true;
         }
         Order::Act(kind) => {
             if let (Some(unit), Some(rules)) = (selection.unit, rules) {
@@ -659,6 +648,32 @@ fn press(
             }
         }
         Order::CloseCity => selection.city = None,
+        Order::Focus(focus) => {
+            if let Some(city) = selection.city {
+                outbox.submit(Action::SetCityFocus { city: entity(city), focus });
+            }
+        }
+        Order::AvoidGrowth(avoid) => {
+            if let Some(city) = selection.city {
+                outbox.submit(Action::SetAvoidGrowth { city: entity(city), avoid });
+            }
+        }
+        Order::Specialist(kind, add) => {
+            let found = selection.city.and_then(|k| view.view().and_then(|v| v.cities.iter().find(|c| (c.id, c.r#gen) == k)).cloned());
+            if let (Some(city), Some(options)) = (found, selection.city_options.clone()) {
+                if let Some(own) = &city.own {
+                    let change = if add { crate::play::Change::AddSpecialist(kind) } else { crate::play::Change::RemoveSpecialist(kind) };
+                    if let Some((worked, specialists)) = crate::play::reassign(&city, own, &options, change) {
+                        outbox.submit(Action::AssignCitizens { city: entity((city.id, city.r#gen)), worked, specialists });
+                    }
+                }
+            }
+        }
+        Order::Sell(building) => {
+            if let Some(city) = selection.city {
+                outbox.submit(Action::SellBuilding { city: entity(city), building });
+            }
+        }
     }
     stale.0 = true;
 }

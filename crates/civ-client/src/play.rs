@@ -47,7 +47,10 @@ pub struct Selection {
     pub civ_options: Option<CivOptions>,
     /// Units told to wait this turn: they no longer count as awaiting orders.
     pub skipped: HashSet<Key>,
+    /// The tech tree is open.
     pub research_open: bool,
+    /// A tile for sale clicked once: a second click buys it.
+    pub armed_tile: Option<u16>,
     /// The turn the skips belong to.
     turn: u32,
     /// Bumped with every new question, so older answers are dropped.
@@ -61,6 +64,12 @@ pub struct Toast(pub String);
 
 #[derive(Component)]
 struct Highlight;
+
+/// A city tile's yields (or price), over the tile while the city panel is open.
+#[derive(Component)]
+struct TileLabel {
+    at: Vec3,
+}
 
 #[derive(Resource)]
 struct HighlightMaterial(Handle<StandardMaterial>);
@@ -78,7 +87,7 @@ pub fn plugin(app: &mut App) {
         })
         .add_systems(
             Update,
-            (refresh, answers, receipts, click, preview, highlight)
+            (refresh, answers, receipts, click, preview, highlight, tile_labels, place_labels)
                 .chain()
                 .run_if(playing)
                 .after(crate::map::MapSet::Rebuild),
@@ -236,6 +245,13 @@ fn click(
         return;
     }
     let (Some(v), Some(tile)) = (view.view(), hover.tile) else { return };
+    // While an own city's panel is open, clicks on its tiles manage the city (docs/PLAY-SPEC.md, M4, Q2).
+    if let Some(action) = city_tile_click(&mut selection, v, tile) {
+        if let Some(action) = action {
+            outbox.submit(action);
+        }
+        return;
+    }
     let mine: Vec<Key> = v.units.iter().filter(|u| u.owner == v.me && u.tile == tile).map(|u| (u.id, u.r#gen)).collect();
     let enemy_unit = v.units.iter().find(|u| u.owner != v.me && u.tile == tile).map(|u| (u.id, u.r#gen));
     let city = v.cities.iter().find(|c| c.centre == tile);
@@ -276,6 +292,105 @@ fn click(
     selection.unit = None;
     selection.city = None;
     selection.armed = None;
+}
+
+/// What a click on `tile` does while a city panel is open: `None` when the tile is not the city's to manage;
+/// `Some(None)` when it only arms a purchase.
+fn city_tile_click(selection: &mut Selection, v: &civ_sim::PlayerView, tile: u16) -> Option<Option<Action>> {
+    let key = selection.city?;
+    let options = selection.city_options.as_ref()?;
+    let city = v.cities.iter().find(|c| (c.id, c.r#gen) == key)?;
+    let own = city.own.as_ref()?;
+    if let Some(sale) = options.purchasable_tiles.iter().find(|t| t.tile == tile) {
+        if selection.armed_tile == Some(tile) && sale.affordable {
+            selection.armed_tile = None;
+            return Some(Some(Action::BuyTile { city: entity(key), tile }));
+        }
+        selection.armed_tile = Some(tile);
+        return Some(None);
+    }
+    let workable = options.workable_tiles.iter().find(|t| t.tile == tile)?;
+    selection.armed_tile = None;
+    if workable.worked {
+        let locked = own.locked_tiles.contains(&tile);
+        return Some(Some(Action::LockTile { city: entity(key), tile, locked: !locked }));
+    }
+    if workable.taken {
+        return Some(None);
+    }
+    Some(reassign(city, own, options, Change::Work(tile)).map(|(worked, specialists)| Action::AssignCitizens {
+        city: entity(key),
+        worked,
+        specialists,
+    }))
+}
+
+/// A change to who a city's citizens work.
+pub enum Change {
+    Work(u16),
+    AddSpecialist(u32),
+    RemoveSpecialist(u32),
+}
+
+/// The city's new worked tiles and specialists after `change`: a citizen comes from the weakest unpinned worked
+/// tile when none is free, and a specialist sent back works the best free tile.
+pub fn reassign(
+    city: &civ_sim::CityView,
+    own: &civ_sim::CityStateView,
+    options: &CityOptions,
+    change: Change,
+) -> Option<(Vec<u16>, Vec<civ_sim::protocol::SpecialistAssignment>)> {
+    let total = |t: &civ_sim::queries::WorkableTile| t.food + t.production + t.gold + t.science + t.culture + t.faith;
+    let yield_of = |tile: u16| options.workable_tiles.iter().find(|t| t.tile == tile).map_or(0, total);
+    let mut worked = own.worked.clone();
+    let mut specialists: Vec<civ_sim::protocol::SpecialistAssignment> = own
+        .specialists
+        .iter()
+        .map(|s| civ_sim::protocol::SpecialistAssignment { specialist: s.specialist, count: s.count })
+        .collect();
+    let employed = worked.len() as u32 + specialists.iter().map(|s| s.count).sum::<u32>();
+    let mut free = city.population.saturating_sub(employed);
+    let mut free_one = |worked: &mut Vec<u16>| -> bool {
+        if free > 0 {
+            free -= 1;
+            return true;
+        }
+        let weakest = worked.iter().copied().filter(|t| !own.locked_tiles.contains(t)).min_by_key(|t| yield_of(*t));
+        match weakest {
+            Some(t) => {
+                worked.retain(|w| *w != t);
+                true
+            }
+            None => false,
+        }
+    };
+    match change {
+        Change::Work(tile) => {
+            if !free_one(&mut worked) {
+                return None;
+            }
+            worked.push(tile);
+        }
+        Change::AddSpecialist(kind) => {
+            if !free_one(&mut worked) {
+                return None;
+            }
+            match specialists.iter_mut().find(|s| s.specialist == kind) {
+                Some(s) => s.count += 1,
+                None => specialists.push(civ_sim::protocol::SpecialistAssignment { specialist: kind, count: 1 }),
+            }
+        }
+        Change::RemoveSpecialist(kind) => {
+            let s = specialists.iter_mut().find(|s| s.specialist == kind && s.count > 0)?;
+            s.count -= 1;
+            let best = options.workable_tiles.iter().filter(|t| !t.worked && !t.taken && !worked.contains(&t.tile)).max_by_key(|t| total(t));
+            if let Some(t) = best {
+                worked.push(t.tile);
+            }
+        }
+    }
+    specialists.retain(|s| s.count > 0);
+    Some((worked, specialists))
 }
 
 /// Open an own city's panel; its options are asked on the next refresh.
@@ -338,7 +453,8 @@ fn highlight(
         .and_then(|k| view.view().and_then(|v| v.units.iter().find(|u| (u.id, u.r#gen) == k)))
         .map(|u| u.tile as u32)
         .unwrap_or(u32::MAX);
-    let key = (selection.unit, selection.reach.len(), selection.targets.len(), selection.armed, unit_tile);
+    let city_key = selection.city_options.as_ref().map(|o| o.workable_tiles.iter().filter(|t| t.worked).map(|t| t.tile as u32 + 1).sum::<u32>() + o.purchasable_tiles.len() as u32 * 7919);
+    let key = (selection.unit, selection.reach.len(), selection.targets.len(), selection.armed.or(selection.armed_tile), unit_tile ^ city_key.unwrap_or(0));
     if *last == Some(key) && !land.is_changed() {
         return;
     }
@@ -380,6 +496,24 @@ fn highlight(
         let strong = selection.armed == Some(*t);
         fill(&mut b, *t, LinearRgba::new(0.88, 0.29, 0.23, if strong { 0.4 } else { 0.25 }));
         outline(&mut b, *t, LinearRgba::new(0.88, 0.29, 0.23, 0.9), false);
+    }
+    // An open city's tiles: worked in gold, pinned brighter, for sale in green.
+    if let (Some(options), Some(city)) = (selection.city_options.as_ref(), selection.city.and_then(|k| view.view().and_then(|v| v.cities.iter().find(|c| (c.id, c.r#gen) == k)))) {
+        let locked: Vec<u16> = city.own.as_ref().map(|o| o.locked_tiles.clone()).unwrap_or_default();
+        for t in &options.workable_tiles {
+            if t.worked {
+                let alpha = if locked.contains(&t.tile) { 0.38 } else { 0.22 };
+                fill(&mut b, t.tile, LinearRgba::new(0.95, 0.78, 0.33, alpha));
+                outline(&mut b, t.tile, LinearRgba::new(0.95, 0.78, 0.33, 0.85), false);
+            } else if !t.taken {
+                outline(&mut b, t.tile, LinearRgba::new(1.0, 1.0, 1.0, 0.35), true);
+            }
+        }
+        for t in &options.purchasable_tiles {
+            let strong = selection.armed_tile == Some(t.tile);
+            fill(&mut b, t.tile, LinearRgba::new(0.45, 0.85, 0.5, if strong { 0.35 } else { 0.15 }));
+            outline(&mut b, t.tile, LinearRgba::new(0.45, 0.85, 0.5, 0.8), !strong);
+        }
     }
     if unit_tile != u32::MAX {
         let c = relief.grid.centre(unit_tile as u16);
@@ -435,4 +569,84 @@ pub fn unit_action(kind: UnitActionKind, unit: Key, view: &ViewState, rules: &Ru
         UnitActionKind::SetUp => Action::SetUp { unit },
         _ => return None,
     })
+}
+
+/// Yields over an open city's workable tiles (food, production, gold, science, culture, faith; zeros left out),
+/// and prices over the tiles for sale.
+#[allow(clippy::too_many_arguments)]
+fn tile_labels(
+    mut commands: Commands,
+    selection: Res<Selection>,
+    land: Option<Res<Land>>,
+    font: Res<crate::inspect::UiFont>,
+    existing: Query<Entity, With<TileLabel>>,
+) {
+    let Some(land) = land else { return };
+    if !selection.is_changed() {
+        return;
+    }
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+    let Some(options) = selection.city.and(selection.city_options.as_ref()) else { return };
+    let relief = &land.0;
+    let at = |tile: u16| {
+        let g = relief.grid.centre(tile);
+        hex::world(g, relief.height(g).unwrap_or(0.0).max(0.0) + 0.25)
+    };
+    let span = |s: String, c: Color| (TextSpan::new(s), TextFont { font: font.semibold.clone().into(), font_size: FontSize::Px(12.0), ..default() }, TextColor(c));
+    for t in &options.workable_tiles {
+        let parts = [
+            (t.food, "F", Color::srgb(0.55, 0.85, 0.4)),
+            (t.production, "P", Color::srgb(0.95, 0.6, 0.3)),
+            (t.gold, "G", Color::srgb(0.98, 0.85, 0.35)),
+            (t.science, "S", Color::srgb(0.45, 0.7, 1.0)),
+            (t.culture, "C", Color::srgb(0.8, 0.55, 0.95)),
+            (t.faith, "Fa", Color::srgb(0.95, 0.95, 0.95)),
+        ];
+        let mut label = commands.spawn((
+            TileLabel { at: at(t.tile) },
+            Text::default(),
+            TextFont { font: font.semibold.clone().into(), font_size: FontSize::Px(12.0), ..default() },
+            Node { position_type: PositionType::Absolute, ..default() },
+            TextShadow::default(),
+            Visibility::Hidden,
+        ));
+        label.with_children(|l| {
+            for (n, letter, colour) in parts {
+                if n != 0 {
+                    l.spawn(span(format!("{n}{letter} "), colour));
+                }
+            }
+        });
+    }
+    for t in &options.purchasable_tiles {
+        commands.spawn((
+            TileLabel { at: at(t.tile) + Vec3::Y * 0.15 },
+            Text::new(format!("{} gold", t.gold)),
+            TextFont { font: font.semibold.clone().into(), font_size: FontSize::Px(12.0), ..default() },
+            TextColor(if t.affordable { Color::srgb(0.6, 0.95, 0.6) } else { Color::srgb(0.6, 0.65, 0.6) }),
+            TextShadow::default(),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+        ));
+    }
+}
+
+fn place_labels(
+    cameras: Query<(&Camera, &GlobalTransform), With<MapCamera>>,
+    mut labels: Query<(&TileLabel, &mut Node, &mut Visibility, &ComputedNode)>,
+) {
+    let Ok((camera, at)) = cameras.single() else { return };
+    for (label, mut node, mut visibility, computed) in &mut labels {
+        match camera.world_to_viewport(at, label.at) {
+            Ok(s) => {
+                let size = computed.size() * computed.inverse_scale_factor();
+                node.left = Val::Px(s.x - size.x / 2.0);
+                node.top = Val::Px(s.y - size.y / 2.0);
+                *visibility = Visibility::Inherited;
+            }
+            Err(_) => *visibility = Visibility::Hidden,
+        }
+    }
 }

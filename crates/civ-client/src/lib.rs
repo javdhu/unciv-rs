@@ -12,6 +12,7 @@ mod paint;
 mod pieces;
 pub mod play;
 mod playui;
+mod screens;
 mod present;
 mod relief;
 pub mod rules;
@@ -65,6 +66,7 @@ pub fn run() {
             hud::plugin,
             play::plugin,
             playui::plugin,
+            screens::plugin,
             camera::plugin,
             inspect::plugin,
             harness::plugin,
