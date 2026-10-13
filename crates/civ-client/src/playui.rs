@@ -188,7 +188,8 @@ fn frame(mut commands: Commands) {
         BackgroundColor(PANEL),
         GlobalZIndex(21),
         children![
-            (TopLeft, Node { width: Val::Px(260.0), ..default() }),
+            // Room for the screen buttons beside the turn (`screens.rs`, absolute at 280 px).
+            (TopLeft, Node { width: Val::Px(560.0), ..default() }),
             (TopCentre, Node { column_gap: Val::Px(6.0), ..default() }),
             (
                 TopRight,

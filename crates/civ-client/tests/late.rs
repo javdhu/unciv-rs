@@ -117,3 +117,26 @@ fn use_what_comes(seat: &mut Seat, used: &mut std::collections::BTreeSet<String>
         }
     }
 }
+
+/// `CIV_WRITE_SAVE=<file> cargo test -p civ-client --test late -- --ignored`: a developed match for the
+/// review scenes (`CIV_SAVE`), seat 0 played by a bot for 140 rounds and then handed back.
+#[test]
+#[ignore]
+fn write_a_developed_save() {
+    let path = std::env::var("CIV_WRITE_SAVE").expect("CIV_WRITE_SAVE names the file");
+    let settings = Settings { seed: 11, width: 40, height: 25, majors: 4, city_states: 3, ..Settings::default() };
+    let mut session = Session::new(settings, "late".into(), vec![0]).unwrap();
+    session = session.stage_controller(0, false).unwrap().next;
+    for _ in 0..140 {
+        let turn = session.turn();
+        let Some(t) = session.stage_timeout(turn).unwrap() else { break };
+        if t.next.finished() {
+            break;
+        }
+        session = t.next;
+    }
+    session = session.stage_controller(0, true).unwrap().next;
+    let turn = session.turn();
+    session = session.stage_timeout(turn).unwrap().expect("a round").next;
+    std::fs::write(path, session.save().unwrap()).unwrap();
+}

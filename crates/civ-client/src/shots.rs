@@ -118,6 +118,33 @@ pub fn scene(name: &str) -> Option<Scene> {
                 room: false,
             });
         }
+        // M6b's review: a developed match opened from a save (`CIV_SAVE`), its empire panel, a great person and a
+        // city's faith, then a turn ended so it autosaves.
+        "empire" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(3),
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: Some(30.0),
+                play: true,
+                room: false,
+            });
+        }
+        // Home with its saved games, shot once they are listed.
+        "home" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(3),
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: None,
+                play: false,
+                room: false,
+            });
+        }
         // M5's review: a room hosted here and joined from elsewhere (a browser on the invite link), then
         // its match with a deadline, seats and the waiting turn button.
         "room" => {
@@ -207,10 +234,11 @@ impl Shots {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Captured>()
         .add_systems(PostStartup, menu_offscreen)
+        .add_systems(Update, home_shot.run_if(in_state(crate::app::AppState::Home)))
         .add_systems(OnEnter(crate::app::AppState::Match), offscreen.after(crate::camera::spawn))
         .add_systems(
             Update,
-            (shoot, turn_script, tour_script, room_script, decide_script)
+            (shoot, turn_script, tour_script, room_script, decide_script, empire_script)
                 .chain()
                 .after(crate::map::MapSet::Rebuild)
                 .in_set(crate::app::InMatch),
@@ -537,6 +565,94 @@ fn turn_script(
 /// The "tour" scene: found a city, end turns quickly until a neighbour is met (or turn 40), then show the tech
 /// tree, the policies, the city's tiles, the Civilizations panel and a trade window, four seconds each.
 #[allow(clippy::too_many_arguments)]
+/// The home scene: shoot Home once its saved games are listed, then quit.
+fn home_shot(mut commands: Commands, shots: Option<Res<Shots>>, saves: Res<crate::saves::Saves>, mut frames: Local<u32>) {
+    let Some(shots) = shots.filter(|s| s.scene.name == "home") else { return };
+    *frames += 1;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if *frames == 60 {
+            shots.shoot_menu(&mut commands, "menu");
+        }
+        if *frames == 90 {
+            println!("home lists {} saves", saves.list.len());
+            std::process::exit(0);
+        }
+    }
+    let _ = (&mut commands, &saves, &shots);
+}
+
+/// The empire scene: the empire panel, a great person's abilities, a city's faith and purchases, the log, and a
+/// turn ended so the match autosaves.
+#[allow(clippy::too_many_arguments)]
+fn empire_script(
+    mut shots: Option<ResMut<Shots>>,
+    view: Res<ViewState>,
+    rules: Option<Res<crate::rules::Rules>>,
+    land: Option<Res<Land>>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut outbox: ResMut<crate::client::Outbox>,
+    mut empire: ResMut<crate::empire::Empire>,
+    mut log: ResMut<crate::log::NoteLog>,
+    mut cameras: Query<&mut MapCamera>,
+    mut phase: Local<Option<(u32, u32)>>,
+) {
+    use crate::play::{select_city, select_unit};
+    let (Some(shots), Some(rules), Some(land), Some(v)) = (shots.as_deref_mut(), rules, land, view.view()) else { return };
+    if shots.scene.name != "empire" || shots.stage != Stage::Recording {
+        return;
+    }
+    let frame = shots.frames;
+    let (step, began) = *phase.get_or_insert((0, frame));
+    let since = frame - began;
+    let next = |phase: &mut Option<(u32, u32)>| *phase = Some((step + 1, frame));
+    let look = |cameras: &mut Query<&mut MapCamera>, tile: u16| {
+        if let Ok(mut c) = cameras.single_mut() {
+            c.jump(land.0.grid.centre(tile), 14.0);
+        }
+    };
+    match step {
+        0 if since >= 30 => {
+            empire.open = true;
+            next(&mut phase);
+        }
+        1 if since >= 150 => {
+            empire.open = false;
+            // A great person if there is one, else any unit.
+            let great = v.units.iter().filter(|u| u.owner == v.me).find(|u| {
+                matches!(crate::pieces::Class::of(&rules, u.base), crate::pieces::Class::Great)
+            });
+            if let Some(u) = great.or_else(|| v.units.iter().find(|u| u.owner == v.me)) {
+                select_unit(&mut selection, (u.id, u.r#gen));
+                look(&mut cameras, u.tile);
+            }
+            next(&mut phase);
+        }
+        2 if since >= 150 => {
+            selection.unit = None;
+            if let Some(c) = v.cities.iter().find(|c| c.owner == v.me) {
+                select_city(&mut selection, (c.id, c.r#gen));
+                look(&mut cameras, c.centre);
+            }
+            next(&mut phase);
+        }
+        3 if since >= 150 => {
+            selection.city = None;
+            log.open = true;
+            next(&mut phase);
+        }
+        4 if since >= 120 => {
+            log.open = false;
+            outbox.submit(civ_sim::protocol::Action::FinishTurn);
+            next(&mut phase);
+        }
+        _ => {}
+    }
+    if *phase == Some((5, frame)) {
+        shots.scene.record = Some((frame + 150) as f32 / RECORD_FPS);
+    }
+}
+
 /// The decide scene: found a city, end turns quickly (raiders come to the idle warrior) until a decision is
 /// pending, then show it through End turn, a city with a queue, the log and the civilizations panel.
 #[allow(clippy::too_many_arguments)]

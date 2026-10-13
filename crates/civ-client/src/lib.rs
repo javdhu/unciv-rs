@@ -44,7 +44,8 @@ pub fn run() {
     // Shots and recordings go straight to their match, as do CIV_SOLO, CIV_WATCH and CIV_MATCH (civSolo,
     // civWatch and ?match= on the page); otherwise the app opens on the rooms screens.
     let launch = match &shots {
-        Some(s) if s.scene.room => None,
+        _ if saved().is_some() => saved(),
+        Some(s) if s.scene.room || s.scene.name == "home" => None,
         Some(s) if s.scene.play => Some(app::Start::Solo(s.scene.settings.clone())),
         Some(s) => Some(app::Start::Watch(s.scene.settings.clone(), s.scene.sight)),
         None if flag("CIV_WATCH", "civWatch") => Some(app::Start::Watch(settings(), sight())),
@@ -89,6 +90,19 @@ pub fn run() {
         app.insert_resource(shots);
     }
     app.run();
+}
+
+/// `CIV_SAVE=<file>`: play on from a save file, natively.
+fn saved() -> Option<app::Start> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let path = std::path::PathBuf::from(std::env::var("CIV_SAVE").ok()?);
+        let save = std::fs::read(&path).ok()?;
+        let id = path.file_stem()?.to_string_lossy().to_string();
+        Some(app::Start::Resume { id, save })
+    }
+    #[cfg(target_arch = "wasm32")]
+    None
 }
 
 /// An environment variable natively, a page global in the browser.

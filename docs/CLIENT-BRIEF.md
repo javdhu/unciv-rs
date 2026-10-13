@@ -4,7 +4,7 @@ Status, 2026-10-13: decisions D1-D9 taken (D4 with M5's R3), visual choices V1-V
 Chromium (WebGPU and WebGL2); Safari's frame timing is still unmeasured. M0 built and verified. M1 built and
 reviewed; its polish (terrain painted by a shader from per-tile data) done. M2 (spectator) built and approved;
 civ-sim watches through any chosen civ. M3 (a turn you play) and M4 (cities, research, policies, diplomacy
-and trade) built and approved; M5 (rooms) built and approved; M6 being specified.
+and trade) built and approved; M5 (rooms) built and approved; M6a (decisions, log, actions) approved; M6b (great people, religion, saves, late game) built, awaiting review.
 
 ## Problem
 

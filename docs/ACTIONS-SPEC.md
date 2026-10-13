@@ -1,6 +1,6 @@
 # Actions spec (M6)
 
-Status: A1-A6 decided by Javed on 2026-10-13; M6a built and approved (How M6a is built, at the end); M6b being built. Javed also decided that civ-sim's `attacked` event carries the defender's owner, so the log stops reading the engine's sentence.
+Status: A1-A6 decided by Javed on 2026-10-13; M6a built and approved, M6b built (How M6b is built, at the end). Javed also decided that civ-sim's `attacked` event carries the defender's owner.
 
 | | Choice | Pick |
 |---|---|---|
@@ -275,4 +275,45 @@ A6. Milestone size.
   - When the defending unit died, whether a fight was this player's is read from the engine's own line (it says "your"). The event does not carry the defender's owner; civ-sim could add it.
   - Purchases do not say what was bought, and a razed city cannot be named.
   - Gifts are still offered to a city-state you are at war with.
+
+## How M6b is built
+
+- **civ-sim** (additive, no protocol bump):
+  - `knowledge.greatPeople` lists, for the own civ only, each great person kind it can earn: `{ unit, points, perTurn, threshold, pool?, combat }`. These are the civilian kinds fed by buildings and specialists, which share one pool in `base`, and the combat-born Marshal and Admiral. The Sage is left out: faith buys it.
+  - `attacked` carries `defenderOwner` always, and `attackerOwner` when the viewer could see the attacker.
+  - civ-core now exposes the three rules the view needs (`great_people::pool_key`, `combat_threshold`, `birth_speed`), so the view and the turn share one definition.
+- **Saves** (A3, A4; `saves.rs`, `link.rs`):
+  - The solo host saves when a round closes (`Down::Saved`); `Link::resume` restores and welcomes.
+  - Each match keeps one slot: natively `<config>/saves/<id>.civsave` plus a `.json` with turn, year, nation and map; in the browser the IndexedDB `civ` database, stores `saves` and `meta`.
+  - Home shows Continue for the newest, up to eight more with Open and Delete, and why a save or a match would not open (a match stopping before its first view returns home, or to the rooms for a room, with the reason). `CIV_SAVE=<file>` opens a save natively.
+  - New games from Home get their own seed. The default seed had made every new game the same map.
+- **Command ids:** the Outbox's ids now carry a prefix of its own (clock and count). A resumed save or a room rejoined after a reload holds receipts for an earlier client's `c1`, `c2`… and refused new orders as reused; this affected rooms since M5.
+- **Great people:**
+  - The unit panel lists every ability with what it would bring (science, production, gold) or why not, and sends `greatPerson`.
+  - The empire panel shows progress per kind: points of threshold, per turn, and turns to go.
+- **Religion:**
+  - Missionaries and Sages spread their faith to the cities `unitOptions` lists, and a Sage can build a holy site (`religious`).
+  - Cities show their faiths: followers, majority, holy city.
+  - Faith prices sit beside gold prices (`purchase` with faith).
+  - The empire panel shows the state faith, faith stored and per turn, and the faiths that may be adopted.
+- **Late game:**
+  - Rebase, air sweep, paradrop and nuclear strike are aimed at the tiles `unitOptions.targets` lists. A strike's first click asks `unitOptions` with `nuclearTarget` and shows the blast and interception chance; the second click strikes.
+  - Spaceship parts are added from the unit panel.
+  - Spies are listed with rank, station, task and turns, and can be withdrawn or sent where the engine allows: own cities to guard, others' known cities except those of a nation promised not to be spied on, never by a dead spy.
+  - City-states offer a coup with its chance.
+  - The empire panel shows each victory's progress, spaceship parts, the world vote (the vote itself is a decision from M6a) and the score.
+- **The log** reads whose fight it was from `defenderOwner`, not from the engine's sentence.
+- **Verified:**
+  - 1,153 workspace tests (civ-sim's new ones check great person progress against civ-core over 100 rounds, and battle owners over 169 fights) and 34 client tests, among them:
+    - A save made at a turn's end resumes at that turn and plays on, and a save from elsewhere is refused with why.
+    - A developed civ (seat 0 played by a bot for 140 rounds, then handed back) used a great person's improvement, sent a spy and adopted a state faith, each taken by the engine.
+    - A second client for a room's seat gives orders that are not taken as reused.
+  - A 25 s recording (`CIV_SCENE=empire` on a save of that developed civ) shows the empire panel, a unit with an upgrade, a puppet city's faiths and Annex, the log, and a turn ended. Its autosave then appears on Home as "Continue: Mali · turn 142" (`CIV_SCENE=home`). Both wasm builds check.
+- **Not verified:**
+  - Saves in a browser (IndexedDB) at run time.
+  - Faith purchases, missionaries spreading, holy sites, air missions, nuclear strikes, spaceship parts and coups against the engine: none came up in 174 turns of the developed civ.
+  - Delete and Open from Home by hand.
+- **Gaps:**
+  - Great people are drawn as civilians on the map. `pieces::Class` knows them by a "Great " name prefix that `base` does not use.
+  - The empire panel offers up to 24 spy stations, unordered by distance.
 
