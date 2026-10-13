@@ -17,9 +17,15 @@ postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 sha2 = "0.10"
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 schemars = "1.2.2"
-wasm-bindgen = "=0.2.126"
-serde-wasm-bindgen = "0.6"
-console_error_panic_hook = "0.1"
+# The browser bindings (`HostedGame`, `ruleTables`), behind `js`.
+wasm-bindgen = { version = "0.2.126", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+default = ["js"]
+# wasm-bindgen exports for a JavaScript host. A Rust client that links this crate turns it off.
+js = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]
 
 [dev-dependencies]
 # Tests audit live sight against its plain recomputation (`civ_core::world::fog::audit`).
