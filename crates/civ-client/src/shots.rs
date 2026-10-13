@@ -36,6 +36,9 @@ pub struct Scene {
     pub record: Option<f32>,
     /// Played on seat 0 by a script (`turn_script`) rather than watched.
     pub play: bool,
+    /// Hosted in a civ-server room (`CIV_SERVER`) by a script through the rooms screens (`rooms::drive`):
+    /// the screens are shot on the way, and the match recorded once another player has joined.
+    pub room: bool,
 }
 
 /// Frames a second in a recording; the clock steps exactly this much per frame while recording.
@@ -72,6 +75,7 @@ pub fn scene(name: &str) -> Option<Scene> {
                 views: Vec::new(),
                 record: Some(45.0),
                 play: false,
+                room: false,
             });
         }
         // M3's review: one played turn from the start, driven by a script, then the other civs' turns.
@@ -84,6 +88,7 @@ pub fn scene(name: &str) -> Option<Scene> {
                 views: Vec::new(),
                 record: Some(32.0),
                 play: true,
+                room: false,
             });
         }
         // M4's review: a played match fast-forwarded until neighbours are met, then each new screen in turn.
@@ -96,11 +101,26 @@ pub fn scene(name: &str) -> Option<Scene> {
                 views: Vec::new(),
                 record: Some(36.0),
                 play: true,
+                room: false,
+            });
+        }
+        // M5's review: a room hosted here and joined from elsewhere (a browser on the invite link), then
+        // its match with a deadline, seats and the waiting turn button.
+        "room" => {
+            return Some(Scene {
+                name: name.into(),
+                settings: seed(3),
+                sight: Sight::Seat,
+                turn: 0,
+                views: Vec::new(),
+                record: Some(40.0),
+                play: true,
+                room: true,
             });
         }
         _ => return None,
     };
-    Some(Scene { name: name.into(), settings, sight, turn, views, record: None, play: false })
+    Some(Scene { name: name.into(), settings, sight, turn, views, record: None, play: false, room: false })
 }
 
 pub enum Out {
@@ -115,6 +135,8 @@ pub struct Shots {
     pub scene: Scene,
     out: Out,
     target: Option<Handle<Image>>,
+    /// Where the rooms screens' camera draws while shooting.
+    menu: Option<Handle<Image>>,
     stage: Stage,
     frames: u32,
     index: usize,
@@ -149,14 +171,48 @@ impl Shots {
             (name, Out::Page)
         };
         let scene = scene(&name)?;
-        Some(Shots { scene, out, target: None, stage: Stage::Advancing, frames: 0, index: 0 })
+        Some(Shots { scene, out, target: None, menu: None, stage: Stage::Advancing, frames: 0, index: 0 })
+    }
+
+    /// Shoot what the rooms screens show, as `<scene>-<name>.png`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn shoot_menu(&self, commands: &mut Commands, name: &str) {
+        let (Some(target), Out::Dir(dir)) = (self.menu.clone(), &self.out) else { return };
+        let path = dir.join(format!("{}-{name}.png", self.scene.name));
+        commands.spawn(Screenshot::image(target)).observe(bevy::render::view::screenshot::save_to_disk(path));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn dir(&self) -> Option<&std::path::Path> {
+        match &self.out {
+            Out::Dir(dir) => Some(dir),
+        }
     }
 }
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Captured>()
+        .add_systems(PostStartup, menu_offscreen)
         .add_systems(OnEnter(crate::app::AppState::Match), offscreen.after(crate::camera::spawn))
-        .add_systems(Update, (shoot, turn_script, tour_script).chain().after(crate::map::MapSet::Rebuild).in_set(crate::app::InMatch));
+        .add_systems(
+            Update,
+            (shoot, turn_script, tour_script, room_script).chain().after(crate::map::MapSet::Rebuild).in_set(crate::app::InMatch),
+        );
+}
+
+/// Point the rooms screens' camera at an image of the review size too.
+fn menu_offscreen(
+    mut commands: Commands,
+    shots: Option<ResMut<Shots>>,
+    cameras: Query<Entity, With<crate::app::MenuCamera>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let (Some(mut shots), Ok(camera)) = (shots, cameras.single()) else { return };
+    let mut image = Image::new_target_texture(1600, 1000, TextureFormat::Rgba8UnormSrgb, None);
+    image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
+    let handle = images.add(image);
+    commands.entity(camera).insert(RenderTarget::Image(ImageRenderTarget::from(handle.clone())));
+    shots.menu = Some(handle);
 }
 
 /// Point the map camera at an image of the review size.
@@ -464,6 +520,52 @@ fn turn_script(
 /// The "tour" scene: found a city, end turns quickly until a neighbour is met (or turn 40), then show the tech
 /// tree, the policies, the city's tiles, the Civilizations panel and a trade window, four seconds each.
 #[allow(clippy::too_many_arguments)]
+/// The room scene's turns: found the capital, keep research going, and end each turn (the other seat's
+/// player may not, so rounds also close at the deadline).
+#[allow(clippy::too_many_arguments)]
+fn room_script(
+    shots: Option<Res<Shots>>,
+    view: Res<ViewState>,
+    rules: Option<Res<crate::rules::Rules>>,
+    land: Option<Res<Land>>,
+    mut selection: ResMut<crate::play::Selection>,
+    mut outbox: ResMut<crate::client::Outbox>,
+    mut cameras: Query<&mut MapCamera>,
+    mut founded: Local<bool>,
+) {
+    use crate::play::{select_unit, unit_action};
+    use civ_sim::protocol::Action;
+    use civ_sim::queries::UnitActionKind;
+    let (Some(shots), Some(rules), Some(land), Some(update)) = (shots, rules, land, view.update()) else { return };
+    if !shots.scene.room || shots.stage != Stage::Recording {
+        return;
+    }
+    let v = &update.view;
+    if !*founded && shots.frames >= 20 {
+        *founded = true;
+        let settler = v.units.iter().filter(|u| u.owner == v.me).find(|u| rules.tables.units.iter().any(|r| r.id == u.base && r.name == "Settler"));
+        if let Some(u) = settler {
+            select_unit(&mut selection, (u.id, u.r#gen));
+            if let Ok(mut c) = cameras.single_mut() {
+                c.jump(land.0.grid.centre(u.tile), 18.0);
+            }
+            if let Some(a) = unit_action(UnitActionKind::FoundCity, (u.id, u.r#gen), &view, &rules) {
+                outbox.submit(a);
+            }
+        }
+        return;
+    }
+    if *founded && !update.ready && !outbox.busy() && shots.frames % 90 == 0 {
+        if v.civs.iter().find(|c| c.id == v.me).is_some_and(|c| c.researching.is_none()) {
+            if let Some(t) = selection.civ_options.as_ref().and_then(|o| o.research.first()).map(|r| r.id) {
+                outbox.submit(Action::SetResearch { technology: t });
+            }
+        }
+        selection.unit = None;
+        outbox.submit(Action::FinishTurn);
+    }
+}
+
 fn tour_script(
     mut shots: Option<ResMut<Shots>>,
     view: Res<ViewState>,

@@ -31,7 +31,7 @@ pub struct Persist;
 
 /// The camera the rooms screens draw with; the match brings its own.
 #[derive(Component)]
-struct MenuCamera;
+pub(crate) struct MenuCamera;
 
 /// Where the app goes once started: straight into a match (shots, `CIV_WATCH`, `?match=`), or home.
 #[derive(Resource, Default)]
@@ -126,6 +126,8 @@ pub fn open(world: &mut World, start: Start) {
 fn launch(mut commands: Commands, mut launch: ResMut<Launch>, mut next: ResMut<NextState<AppState>>) {
     match launch.0.take() {
         Some(start) => enter(&mut commands, &mut next, start),
+        // An invite link opens on the rooms, which join it.
+        None if crate::rooms::invited().is_some() => next.set(AppState::Rooms),
         None => next.set(AppState::Home),
     }
 }
@@ -158,13 +160,19 @@ fn sweep(
 }
 
 fn menu_camera(mut commands: Commands) {
-    commands.spawn((Camera2d, MenuCamera, Persist));
+    commands.spawn((Camera2d, MenuCamera, IsDefaultUiCamera, Persist));
 }
 
-fn menu_camera_on(on: bool) -> impl FnMut(Query<&mut Camera, With<MenuCamera>>) {
-    move |mut cameras| {
-        for mut camera in &mut cameras {
+/// The rooms screens' camera draws, and takes the UI, only outside a match.
+fn menu_camera_on(on: bool) -> impl FnMut(Commands, Query<(Entity, &mut Camera), With<MenuCamera>>) {
+    move |mut commands, mut cameras| {
+        for (e, mut camera) in &mut cameras {
             camera.is_active = on;
+            if on {
+                commands.entity(e).insert(IsDefaultUiCamera);
+            } else {
+                commands.entity(e).remove::<IsDefaultUiCamera>();
+            }
         }
     }
 }

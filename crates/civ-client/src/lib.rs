@@ -39,6 +39,7 @@ pub fn run() {
     // Shots and recordings go straight to their match, as do CIV_SOLO, CIV_WATCH and CIV_MATCH (civSolo,
     // civWatch and ?match= on the page); otherwise the app opens on the rooms screens.
     let launch = match &shots {
+        Some(s) if s.scene.room => None,
         Some(s) if s.scene.play => Some(app::Start::Solo(s.scene.settings.clone())),
         Some(s) => Some(app::Start::Watch(s.scene.settings.clone(), s.scene.sight)),
         None if flag("CIV_WATCH", "civWatch") => Some(app::Start::Watch(settings(), sight())),

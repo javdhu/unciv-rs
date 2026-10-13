@@ -128,16 +128,17 @@ fn lines(
 ) {
     let Ok((e, children)) = slot.single() else { return };
     let Some(update) = view.update() else { return };
-    let mut rows: Vec<(String, Color)> = Vec::new();
+    // A row's text, and the colour of the mark before it (its civ), if any.
+    let mut rows: Vec<(String, Color, Option<Color>)> = Vec::new();
     match (&link.stopped, link.connection) {
-        (Some(reason), _) => rows.push((format!("Disconnected: {}", stopped(reason)), URGENT)),
-        (None, Status::Retrying(n)) => rows.push((format!("Reconnecting ({n} of {})", Retry::TRIES), URGENT)),
+        (Some(reason), _) => rows.push((format!("Disconnected: {}", stopped(reason)), URGENT, None)),
+        (None, Status::Retrying(n)) => rows.push((format!("Reconnecting ({n} of {})", Retry::TRIES), URGENT, None)),
         (None, Status::Live) => {}
     }
     match (update.controlled, update.pending_control) {
-        (true, Some(false)) => rows.push(("A bot plays your seat from next turn".into(), DIM)),
-        (false, Some(true)) => rows.push(("You take your seat back next turn".into(), DIM)),
-        (false, _) => rows.push(("A bot is playing your seat".into(), DIM)),
+        (true, Some(false)) => rows.push(("A bot plays your seat from next turn".into(), DIM, None)),
+        (false, Some(true)) => rows.push(("You take your seat back next turn".into(), DIM, None)),
+        (false, _) => rows.push(("A bot is playing your seat".into(), DIM, None)),
         _ => {}
     }
     for seat in update.seats.iter().flatten() {
@@ -156,18 +157,26 @@ fn lines(
             "playing"
         };
         let me = if seat.seat == update.view.me { " (you)" } else { "" };
-        let colour = nation.map_or(TEXT, |n| n.1);
-        rows.push((format!("■ {name}{me} · {state}"), colour));
+        let colour = if state == "playing" || state == "finished" { TEXT } else { DIM };
+        rows.push((format!("{name}{me} · {state}"), colour, Some(nation.map_or(DIM, |n| n.1))));
     }
-    let key = rows.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>().join("\n");
+    let key = rows.iter().map(|(s, ..)| s.as_str()).collect::<Vec<_>>().join("\n");
     if shown.as_deref() == Some(key.as_str()) {
         return;
     }
     *shown = Some(key);
     clear(&mut commands, children);
     commands.entity(e).with_children(|c| {
-        for (row, colour) in rows {
-            c.spawn(text(&font, row, 13.0, colour));
+        for (row, colour, mark) in rows {
+            c.spawn(Node { column_gap: Val::Px(6.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+                if let Some(mark) = mark {
+                    r.spawn((
+                        Node { width: Val::Px(10.0), height: Val::Px(10.0), border_radius: BorderRadius::all(Val::Px(2.0)), ..default() },
+                        BackgroundColor(mark),
+                    ));
+                }
+                r.spawn(text(&font, row, 13.0, colour));
+            });
         }
     });
 }

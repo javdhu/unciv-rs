@@ -113,6 +113,8 @@ enum Press {
 }
 
 pub fn plugin(app: &mut App) {
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_systems(Update, drive.after(receive));
     app.add_systems(OnEnter(AppState::Home), home)
         .add_systems(OnEnter(AppState::Rooms), (open_rooms, frame).chain())
         .add_systems(OnEnter(AppState::Lobby), (open_lobby, frame).chain())
@@ -126,7 +128,7 @@ pub fn plugin(app: &mut App) {
 }
 
 /// An invite to join at once: `?invite=` on the page, `CIV_INVITE` natively.
-fn invited() -> Option<String> {
+pub(crate) fn invited() -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
     let invite = std::env::var("CIV_INVITE").ok();
     #[cfg(target_arch = "wasm32")]
@@ -415,7 +417,7 @@ fn draw_rooms(c: &mut ChildSpawnerCommands, lobby: &Lobby, font: &UiFont, typed:
     };
     c.spawn(row()).with_children(|r| {
         r.spawn(text(font, "Your name", 14.0, DIM));
-        let name = typed.name.as_deref().or(guest.name.as_deref()).unwrap_or("");
+        let name = typed.name.as_deref().filter(|n| !n.is_empty()).or(guest.name.as_deref()).unwrap_or("");
         r.spawn((NameField, field(font, name, 220.0, 32)));
         r.spawn(button(font, Press::SaveName, "Save"));
     });
@@ -654,5 +656,90 @@ fn on_press(
 fn shade(mut buttons: Query<(&Hovered, &mut BackgroundColor, Has<Chosen>), (With<Press>, Changed<Hovered>)>) {
     for (hovered, mut colour, chosen) in &mut buttons {
         colour.0 = if hovered.get() || chosen { BUTTON_ON } else { BUTTON };
+    }
+}
+
+/// The room scene's host (`CIV_SCENE=room`): through these screens as a player would, shooting each, and
+/// starting the match once someone has joined with the invite (written to `invite.txt` beside the shots).
+#[cfg(not(target_arch = "wasm32"))]
+fn drive(
+    mut commands: Commands,
+    shots: Option<Res<crate::shots::Shots>>,
+    lobby: Option<ResMut<Lobby>>,
+    state: Res<State<AppState>>,
+    mut next: ResMut<NextState<AppState>>,
+    mut step: Local<(u32, u32)>,
+) {
+    let Some(shots) = shots.filter(|s| s.scene.room) else { return };
+    if state.is_changed() {
+        step.1 = 0;
+    }
+    step.1 += 1;
+    let frames = step.1;
+    match (step.0, state.get()) {
+        (0, AppState::Home) if frames == 30 => shots.shoot_menu(&mut commands, "home"),
+        (0, AppState::Home) if frames == 45 => {
+            next.set(AppState::Rooms);
+            *step = (1, 0);
+        }
+        (1, AppState::Rooms) => {
+            let Some(mut lobby) = lobby else { return };
+            if lobby.guest.is_none() || lobby.nations.is_empty() {
+                step.1 = 0;
+                return;
+            }
+            match frames {
+                1 => {
+                    lobby.call(Call::Rename("Host".into()));
+                    lobby.settings =
+                        RoomRequest { width: 24, height: 16, majors: 2, city_states: 2, turn_seconds: 20, ..RoomRequest::default() };
+                    lobby.dirty = true;
+                }
+                40 => shots.shoot_menu(&mut commands, "rooms"),
+                55 => {
+                    let settings = lobby.settings.clone();
+                    lobby.call(Call::Create(settings));
+                    *step = (2, 0);
+                }
+                _ => {}
+            }
+        }
+        (2, AppState::Lobby) => {
+            let Some(mut lobby) = lobby else { return };
+            let Some(room) = lobby.room.clone() else {
+                step.1 = 0;
+                return;
+            };
+            if frames == 1 {
+                let invite = room.invite.clone().unwrap_or_default();
+                if let Some(dir) = shots.dir() {
+                    let _ = std::fs::write(dir.join("invite.txt"), &invite);
+                }
+                println!("room invite: {invite}");
+                if let Some((nation, _)) = lobby.nations.first().cloned() {
+                    lobby.call(Call::Seat(room.room_id.clone(), SeatRequest { nation: Some(nation), leader: None }));
+                }
+            }
+            if frames == 40 {
+                shots.shoot_menu(&mut commands, "lobby");
+            }
+            if frames >= 40 && room.occupied_seats >= 2 {
+                *step = (3, 0);
+            }
+        }
+        (3, AppState::Lobby) => {
+            let Some(mut lobby) = lobby else { return };
+            // Two lobby reads, so the joiner shows as here.
+            if frames == 150 {
+                shots.shoot_menu(&mut commands, "lobby-full");
+            }
+            if frames == 170 {
+                if let Some(id) = lobby.open.clone() {
+                    lobby.call(Call::Start(id));
+                }
+                *step = (4, 0);
+            }
+        }
+        _ => {}
     }
 }
