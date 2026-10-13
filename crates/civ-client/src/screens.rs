@@ -500,10 +500,16 @@ fn civs(
             Node { justify_content: JustifyContent::SpaceBetween, ..default() },
             children![text(&font, "Civilizations", 16.0, TEXT), button(&font, Press::Close, "Close", TEXT)],
         ));
-        if v.relations.is_empty() && v.city_states.is_empty() {
+        // Major civs only: city-states have their own list below, and raiders take no diplomacy.
+        let major = |civ: u8| {
+            v.civs.iter().find(|c| c.id == civ).is_some_and(|c| {
+                !c.city_state && !rules.tables.nations.iter().any(|n| n.id == c.nation && n.barbarian == Some(true))
+            })
+        };
+        if !v.relations.iter().any(|r| major(r.civ)) && v.city_states.is_empty() {
             panel.spawn(text(&font, "You have met no one yet.", 12.0, DIM));
         }
-        for r in &v.relations {
+        for r in v.relations.iter().filter(|r| major(r.civ)) {
             let (name, outer, _) = nation(&rules, v, r.civ);
             let mut status = vec![if r.at_war { "At war".to_string() } else { "At peace".to_string() }];
             status.push(format!("attitude {}", r.attitude.to_lowercase()));
@@ -549,7 +555,9 @@ fn civs(
                             row.spawn(button(&font, Press::Trade(r.civ), "Trade…", TEXT));
                             row.spawn(button(&font, Press::Demands(r.civ), "Demand…", TEXT));
                         }
-                        gifts(row, &font, r.civ, treasury);
+                        if !r.at_war {
+                            gifts(row, &font, r.civ, treasury);
+                        }
                     });
                     if screens.demands == Some(r.civ) && !r.at_war {
                         card.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), ..default() }).with_children(|row| {

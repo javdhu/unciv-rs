@@ -615,32 +615,35 @@ fn decide_script(
             if let Some(city) = v.cities.iter().find(|c| c.owner == v.me) {
                 select_city(&mut selection, (city.id, city.r#gen));
                 look(&mut cameras, city.centre, 12.0);
-                // Three items queued, as the + buttons would.
-                if let Some(o) = &selection.city_options {
-                    let queue: Vec<_> = o.choices.iter().filter(|c| c.refusal.is_none()).map(|c| c.construction.clone()).take(3).collect();
-                    outbox.submit(Action::SetProduction { city: crate::play::entity((city.id, city.r#gen)), queue });
-                }
             }
             next(&mut phase);
         }
-        4 if since >= 120 => {
+        // Three items queued once the city's options are in, as the + buttons would.
+        4 if since >= 30 => {
+            if let (Some(key), Some(o)) = (selection.city, &selection.city_options) {
+                let queue: Vec<_> = o.choices.iter().filter(|c| c.refusal.is_none()).map(|c| c.construction.clone()).take(3).collect();
+                outbox.submit(Action::SetProduction { city: crate::play::entity(key), queue });
+            }
+            next(&mut phase);
+        }
+        5 if since >= 120 => {
             selection.city = None;
             log.open = true;
             next(&mut phase);
         }
-        5 if since >= 120 => {
+        6 if since >= 120 => {
             log.open = false;
             screens.civs = true;
             next(&mut phase);
         }
-        6 if since >= 120 => {
+        7 if since >= 120 => {
             screens.civs = false;
             next(&mut phase);
         }
         _ => {}
     }
     // Stop the recording once the scene is over.
-    if *phase == Some((7, frame)) {
+    if *phase == Some((8, frame)) {
         shots.scene.record = Some(frame as f32 / RECORD_FPS);
     }
 }

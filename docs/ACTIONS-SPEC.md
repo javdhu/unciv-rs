@@ -1,6 +1,6 @@
 # Actions spec (M6)
 
-Status: A1-A6 decided by Javed on 2026-10-13; M6a being built.
+Status: A1-A6 decided by Javed on 2026-10-13; M6a built (How M6a is built, at the end), M6b not started.
 
 | | Choice | Pick |
 |---|---|---|
@@ -220,3 +220,59 @@ A5. Late-game features: air missions, nuclear strikes, spaceship parts, spies an
 A6. Milestone size.
 - (a) One M6.
 - (b) M6a: decisions, notifications, unit and city actions, top bar. M6b: great people, religion, saves, and the late game per A5.
+
+## How M6a is built
+
+- **Decisions** (`decisions.rs`):
+  - `pending()` derives them from the view and the civ's options, in the order captures, free technology, free great person, free policy, demands, the vote, state faith, promotions.
+  - Promotions come from a `unitOptions` query per own unit with experience, asked again only when a veteran's experience or promotions change.
+  - End turn names the first decision not put off and opens it:
+    - the tech tree, where any technology the free one may take is claimed with a click;
+    - the policies screen, whose header then says how many are free;
+    - the unit, for promotions;
+    - a card for captures, great people, the state faith, demands and the vote.
+  - Later puts a decision off until the next turn; Enter does what End turn does.
+  - Wonder sites are not a decision, since the engine picks the best one. The city panel offers "Choose where it stands", and a click on a marked tile sends `chooseSite`.
+- **Notifications** (`notes.rs`, `log.rs`):
+  - Every one of the 66 event kinds is matched by type, the payload enums too, which civ-sim now re-exports. A kind the engine adds fails to compile.
+  - Moves, fortifying, other nations' promotions and fights between others give no line, since the map shows them.
+  - The log opens from the top bar, newest first, keeps 300 lines, and jumps to a line's place on click. Decisions and losses also show as toasts.
+- **Top bar:** culture, faith (stored and per turn), happiness (red below zero). Undo is disabled when the update says so.
+- **Unit panel:** experience and promotions held, Promote, Upgrade with its cost, gift to a city-state.
+- **City panel:**
+  - Status (puppet, being razed, in resistance), with Annex, Raze, Stop razing and Liberate as the view allows.
+  - The queue, with ↑ and × per item and + beside each choice.
+  - Turning production into gold or science.
+  - Bombarding the units `cityOptions` lists: the first click on one aims, the second fires.
+- **Diplomacy:**
+  - The civilizations panel lists major civs only. Raiders and city-states had been listed among them since M4; fixed.
+  - Peace treaty… opens the trade window as a treaty (`offerPeaceTreaty`).
+  - Demand… offers the four demands.
+  - City-states: tribute in gold or a worker, marriage where the view allows it, and their quests.
+  - Gift gold in the amounts the treasury covers, not to civs you are at war with.
+- **civ-sim:** re-exports `CaptureChoice`, `GreatPersonOutcome`, `NoticeKind` and `ReligiousEventKind`. Nothing on the wire changed.
+- **Fixed on the way:** click-to-attack (6fada96).
+- **Verified:**
+  - 30 client tests, among them:
+    - The decision order on a real view with decisions written into its JSON.
+    - Aimed attacks the engine takes, and a promotion earned in them, taken by the engine.
+    - Queue append, raise and remove kept as sent.
+    - The notes module's six tests, one of which plays three seeds for 60 rounds and checks that every event reads cleanly; 17 of the 66 kinds came up.
+  - civ-sim's 142 tests.
+  - A 24 s recording (`CIV_SCENE=decide`) plays until the engine waits on a state faith, then shows:
+    - End turn leading to it, and the card;
+    - a three-item queue;
+    - the log;
+    - the civilizations panel.
+- **Not verified:**
+  - Captures, free technologies, great people and policies, demands and the vote in a live match. Only their derivation is tested.
+  - Bombard and site clicks.
+  - Upgrade, gift, tribute, marriage, treaty and demand against the engine.
+  - Conversion.
+  - Mouse paths by hand.
+  - Decisions in a room.
+- **Gaps:**
+  - When the defending unit died, whether a fight was this player's is read from the engine's own line (it says "your"). The event does not carry the defender's owner; civ-sim could add it.
+  - Purchases do not say what was bought, and a razed city cannot be named.
+  - Gifts are still offered to a city-state you are at war with.
+
