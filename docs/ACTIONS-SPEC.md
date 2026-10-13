@@ -1,6 +1,6 @@
 # Actions spec (M6)
 
-Status: A1-A6 decided by Javed on 2026-10-13; M6a built and approved, M6b built (How M6b is built, at the end). Javed also decided that civ-sim's `attacked` event carries the defender's owner.
+Status: A1-A6 decided by Javed on 2026-10-13; M6a and M6b built and approved (How M6a/M6b is built, at the end). Javed also decided that civ-sim's `attacked` event carries the defender's owner.
 
 | | Choice | Pick |
 |---|---|---|
