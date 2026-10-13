@@ -22,6 +22,7 @@ mod screens;
 mod present;
 mod relief;
 mod rooms;
+pub mod saves;
 mod roomui;
 pub mod rules;
 mod shots;
@@ -75,7 +76,7 @@ pub fn run() {
             harness::plugin,
             shots::plugin,
         ))
-        .add_plugins((roomui::plugin, rooms::plugin, decisions::plugin, log::plugin));
+        .add_plugins((roomui::plugin, rooms::plugin, decisions::plugin, log::plugin, saves::plugin));
     if let Some(shots) = shots {
         // A recording steps the clock by exactly one frame's time, so it plays at true speed however long
         // each capture takes.

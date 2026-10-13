@@ -1,7 +1,8 @@
 //! Rooms against a real civ-server on a free port, behind a TCP relay the test can cut (docs/ROOMS-SPEC.md, How
 //! it will be verified): two guests make and join a room, start it and finish a round together through
 //! `Link::remote`; a command given while the connection is down is applied once it comes back; after the
-//! deadline an old turn's command is refused `staleTurn`; a newer connection for a seat stops the older one.
+//! deadline an old turn's command is refused `staleTurn`; a newer connection for a seat stops the older one, and
+//! its own orders are not taken for the old client's.
 
 use bevy::prelude::*;
 use civ_client::api::{Answer, Call};
@@ -207,4 +208,11 @@ fn two_guests_play_a_room_through_cuts_deadlines_and_a_second_connection() {
         pump(&mut [&mut again]);
         turn(&again)
     });
+    // A new client for the seat (a reload, a restart) gives orders under ids of its own, not the old client's.
+    let order = again.world_mut().resource_mut::<Outbox>().submit(Action::FinishTurn);
+    let status = wait("the new client's order", || {
+        pump(&mut [&mut again]);
+        receipt(&again, &order)
+    });
+    assert_ne!(status, CommandStatus::Rejected { code: RejectionCode::CommandIdReused });
 }

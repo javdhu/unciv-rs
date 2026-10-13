@@ -41,6 +41,8 @@ pub struct Launch(pub Option<Start>);
 #[derive(Clone, Debug)]
 pub enum Start {
     Solo(Settings),
+    /// Play on from a solo save.
+    Resume { id: String, save: Vec<u8> },
     Watch(Settings, Sight),
     Room { server: crate::net::Server, match_id: String },
 }
@@ -111,14 +113,25 @@ pub fn enter(commands: &mut Commands, next: &mut NextState<AppState>, start: Sta
 /// The match's resources, before any `OnEnter(AppState::Match)` system runs.
 pub fn open(world: &mut World, start: Start) {
     use crate::play::Mode;
+    let mut current = None;
     let (link, mode, sight) = match start {
-        Start::Solo(settings) => (Link::play(settings), Mode::Play, Sight::All),
+        Start::Solo(settings) => {
+            current = Some(crate::saves::new_id(settings.seed));
+            (Link::play(settings), Mode::Play, Sight::All)
+        }
+        Start::Resume { id, save } => {
+            current = Some(id);
+            (Link::resume(save), Mode::Play, Sight::All)
+        }
         Start::Watch(settings, sight) => (Link::watch(settings, sight), Mode::Watch, sight),
         Start::Room { server, match_id } => {
             address(Some(&match_id));
             (Link::remote(server, match_id), Mode::Play, Sight::Seat)
         }
     };
+    if let Some(mut saves) = world.get_resource_mut::<crate::saves::Saves>() {
+        saves.current = current;
+    }
     world.insert_resource(link);
     world.insert_resource(mode);
     world.insert_resource(crate::hud::Eyes(sight));

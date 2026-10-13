@@ -152,3 +152,41 @@ fn working_a_tile_moves_a_citizen_there() {
         a.world().resource::<ViewState>().view().unwrap().cities.iter().find(|c| c.name == "Workburg").and_then(|c| c.own.as_ref()).is_some_and(|o| o.worked.contains(&tile))
     });
 }
+
+/// The solo host saves when a round closes; a host resumed from that save welcomes at the same turn and
+/// plays on. A save it cannot read stops the host with why.
+#[test]
+fn a_turns_autosave_resumes_where_it_left_off() {
+    use civ_client::client::{Autosaved, LinkState};
+    #[derive(Resource, Default)]
+    struct Saved(Vec<Vec<u8>>);
+    fn keep(mut saved: MessageReader<Autosaved>, mut out: ResMut<Saved>) {
+        out.0.extend(saved.read().map(|s| s.0.clone()));
+    }
+    let mut first = app();
+    first.init_resource::<Saved>().add_systems(Update, keep);
+    pump_until(&mut first, "the welcome", |a| a.world().resource::<ViewState>().view().is_some());
+    first.world_mut().resource_mut::<Outbox>().submit(Action::FinishTurn);
+    pump_until(&mut first, "the autosave", |a| !a.world().resource::<Saved>().0.is_empty());
+    let turn = first.world().resource::<ViewState>().view().unwrap().turn;
+    let save = first.world().resource::<Saved>().0[0].clone();
+
+    let mut resumed = App::new();
+    resumed
+        .add_plugins(MinimalPlugins)
+        .add_plugins(client::plugin)
+        .init_resource::<Seen>()
+        .add_systems(Update, collect)
+        .insert_resource(Link::resume(save));
+    pump_until(&mut resumed, "the resumed welcome", |a| a.world().resource::<ViewState>().view().is_some());
+    assert_eq!(resumed.world().resource::<ViewState>().view().unwrap().turn, turn);
+    let finish = resumed.world_mut().resource_mut::<Outbox>().submit(Action::FinishTurn);
+    pump_until(&mut resumed, "a turn after resuming", |a| receipt(a, &finish).is_some());
+    assert_eq!(receipt(&resumed, &finish), Some(CommandStatus::Applied));
+
+    let mut broken = App::new();
+    broken.add_plugins(MinimalPlugins).add_plugins(client::plugin).insert_resource(Link::resume(b"not a save".to_vec()));
+    pump_until(&mut broken, "the refusal", |a| a.world().resource::<LinkState>().stopped.is_some());
+    let why = broken.world().resource::<LinkState>().stopped.clone().unwrap();
+    assert!(why.contains("cannot be opened"), "{why}");
+}

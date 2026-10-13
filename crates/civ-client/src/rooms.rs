@@ -68,6 +68,12 @@ impl Lobby {
         }
     }
 
+    /// Say why something failed, on the rooms screens.
+    pub(crate) fn set_error(&mut self, why: String) {
+        self.error = Some(why);
+        self.dirty = true;
+    }
+
     fn call(&mut self, call: Call) {
         self.next += 1;
         call.send(&self.http, self.next);
@@ -87,6 +93,8 @@ struct Content;
 struct NameField;
 #[derive(Component)]
 struct InviteField;
+#[derive(Component)]
+struct HomeSaves;
 /// The option currently chosen among several.
 #[derive(Component)]
 struct Chosen;
@@ -110,6 +118,8 @@ enum Press {
     Nation(Option<String>),
     Start,
     Back,
+    Load(String),
+    Delete(String),
 }
 
 pub fn plugin(app: &mut App) {
@@ -124,7 +134,7 @@ pub fn plugin(app: &mut App) {
                 .chain()
                 .run_if(|s: Res<State<AppState>>| matches!(s.get(), AppState::Rooms | AppState::Lobby)),
         )
-        .add_systems(Update, shade.run_if(in_state(AppState::Home)));
+        .add_systems(Update, (home_saves, shade).run_if(in_state(AppState::Home)));
 }
 
 /// An invite to join at once: `?invite=` on the page, `CIV_INVITE` natively.
@@ -206,10 +216,50 @@ fn home(mut commands: Commands, font: Res<UiFont>) {
     commands.spawn(root(AppState::Home)).with_children(|r| {
         r.spawn(column()).with_children(|c| {
             c.spawn(text(&font, "civ", 40.0, TEXT));
-            c.spawn(button(&font, Press::Solo, "Play against bots"));
+            c.spawn((HomeSaves, Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(8.0), ..default() }));
+            c.spawn(button(&font, Press::Solo, "New game against bots"));
             c.spawn(button(&font, Press::Watch, "Watch bots play"));
             c.spawn(button(&font, Press::Rooms, "Rooms"));
         });
+    });
+}
+
+/// Home's saved matches: Continue for the newest, then each with Open and Delete, and what went wrong last.
+fn home_saves(
+    mut commands: Commands,
+    mut saves: ResMut<crate::saves::Saves>,
+    font: Res<UiFont>,
+    slot: Query<(Entity, Option<&Children>), With<HomeSaves>>,
+    mut next: ResMut<NextState<AppState>>,
+    mut drawn: Local<Option<usize>>,
+) {
+    for (id, save) in saves.receive() {
+        enter(&mut commands, &mut next, Start::Resume { id, save });
+    }
+    let Ok((e, children)) = slot.single() else { return };
+    let key = saves.list.len() * 1000 + saves.notice.as_ref().map_or(0, |n| n.len());
+    if !saves.is_changed() && children.is_some() && *drawn == Some(key) {
+        return;
+    }
+    *drawn = Some(key);
+    clear(&mut commands, children);
+    commands.entity(e).with_children(|c| {
+        if let Some(notice) = &saves.notice {
+            c.spawn(text(&font, notice.clone(), 13.0, ERROR));
+        }
+        if let Some(latest) = saves.list.first() {
+            c.spawn(button(&font, Press::Load(latest.id.clone()), format!("Continue: {} · turn {}", latest.nation, latest.turn)));
+        }
+        if saves.list.len() > 1 {
+            c.spawn(text(&font, "Saved games", 14.0, DIM));
+        }
+        for m in saves.list.iter().skip(1).take(8) {
+            c.spawn(row()).with_children(|r| {
+                r.spawn(text(&font, format!("{} · turn {} · {}×{}", m.nation, m.turn, m.width, m.height), 13.0, TEXT));
+                r.spawn(button(&font, Press::Load(m.id.clone()), "Open"));
+                r.spawn(button(&font, Press::Delete(m.id.clone()), "Delete"));
+            });
+        }
     });
 }
 
@@ -587,10 +637,16 @@ fn on_press(
     mut next: ResMut<NextState<AppState>>,
     names: Query<&EditableText, With<NameField>>,
     invites: Query<&EditableText, With<InviteField>>,
+    mut saves: ResMut<crate::saves::Saves>,
 ) {
     let Ok(press) = presses.get(event.entity) else { return };
-    let solo = civ_sim::Settings::default();
+    // Each new game gets its own map.
+    let seed = (now_secs() * 1000.0) as u64 % 1_000_000_007;
+    let solo = civ_sim::Settings { seed, ..civ_sim::Settings::default() };
+    saves.notice = None;
     match press {
+        Press::Load(id) => return saves.request_load(id),
+        Press::Delete(id) => return saves.delete(&id.clone()),
         Press::Solo => return enter(&mut commands, &mut next, Start::Solo(solo)),
         Press::Watch => return enter(&mut commands, &mut next, Start::Watch(solo, civ_sim::session::Sight::All)),
         Press::Rooms => return next.set(AppState::Rooms),
@@ -649,7 +705,7 @@ fn on_press(
             }
         }
         Press::Back => next.set(AppState::Rooms),
-        Press::Solo | Press::Watch | Press::Rooms | Press::Home => {}
+        Press::Solo | Press::Watch | Press::Rooms | Press::Home | Press::Load(_) | Press::Delete(_) => {}
     }
 }
 

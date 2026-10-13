@@ -216,6 +216,12 @@ pub fn run_socket(server: Server, match_id: String, up: &ConcurrentQueue<Up>, do
     native::run_socket(&server, &match_id, up, down)
 }
 
+/// This user's directory for guest tokens and saves.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn config_dir() -> std::path::PathBuf {
+    native::config_dir()
+}
+
 /// Keep guest tokens in `dir` from now on (tests: one directory per run).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn use_config_dir(dir: std::path::PathBuf) {
@@ -233,7 +239,7 @@ mod native {
 
     /// Where guest tokens are kept: `use_config_dir`, `CIV_CONFIG_DIR`, else the platform's per-user config
     /// directory.
-    fn config_dir() -> std::path::PathBuf {
+    pub(super) fn config_dir() -> std::path::PathBuf {
         if let Some(dir) = CONFIG_DIR.get() {
             return dir.clone();
         }

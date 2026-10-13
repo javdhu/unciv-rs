@@ -27,15 +27,22 @@ pub struct ReceiptArrived {
     pub receipt: CommandReceipt,
 }
 
+/// The solo host's save at a turn's end, for `saves.rs` to keep.
+#[derive(Message, Debug, Clone)]
+pub struct Autosaved(pub Vec<u8>);
+
 /// A host error that answers no particular request.
 #[derive(Message, Debug, Clone)]
 pub struct HostError(pub String);
 
 /// Commands waiting to go, sent one at a time in order (docs/CLIENT-PROTOCOL.md, Commands and retries): the next
 /// leaves when the last one's receipt is in, so finishing the turn cannot overtake a move. Each carries a
-/// command id stable across retries.
-#[derive(Resource, Default)]
+/// command id stable across retries and unique to this Outbox: a resumed save or a rejoined room already holds
+/// receipts for another client's ids, and refuses a reused one.
+#[derive(Resource)]
 pub struct Outbox {
+    /// This Outbox's own id prefix: the clock in milliseconds, and a count for two made in the same one.
+    prefix: String,
     queue: std::collections::VecDeque<(String, Action)>,
     /// Sent, its receipt not yet in: sent again exactly as it was after every welcome (a reconnect), so the
     /// server applies it once and answers with the receipt it stored.
@@ -43,11 +50,23 @@ pub struct Outbox {
     next: u64,
 }
 
+impl Default for Outbox {
+    fn default() -> Self {
+        static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        #[cfg(not(target_arch = "wasm32"))]
+        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        #[cfg(target_arch = "wasm32")]
+        let ms = js_sys::Date::now() as u64;
+        Outbox { prefix: format!("{ms:x}{made:x}"), queue: Default::default(), in_flight: None, next: 0 }
+    }
+}
+
 impl Outbox {
     /// Queue an action; returns its request id (also its command id).
     pub fn submit(&mut self, action: Action) -> String {
         self.next += 1;
-        let id = format!("c{}", self.next);
+        let id = format!("c{}-{}", self.prefix, self.next);
         self.queue.push_back((id.clone(), action));
         id
     }
@@ -93,6 +112,7 @@ pub fn plugin(app: &mut App) {
         .add_message::<RoundEvents>()
         .add_message::<ReceiptArrived>()
         .add_message::<HostError>()
+        .add_message::<Autosaved>()
         .init_resource::<Outbox>()
         .add_systems(PreUpdate, (pump, receive, pace, send).chain().in_set(crate::app::InMatch))
         .add_systems(
@@ -116,6 +136,7 @@ pub fn receive(
     mut rounds: MessageWriter<RoundEvents>,
     mut receipts: MessageWriter<ReceiptArrived>,
     mut errors: MessageWriter<HostError>,
+    mut saves: MessageWriter<Autosaved>,
     mut outbox: ResMut<Outbox>,
 ) {
     while let Some(down) = link.receive() {
@@ -162,6 +183,9 @@ pub fn receive(
                 (_, None) => {}
             },
             Down::Status(status) => state.connection = status,
+            Down::Saved(save) => {
+                saves.write(Autosaved(save));
+            }
             Down::Stopped(reason) => state.stopped = Some(reason),
         }
     }

@@ -30,6 +30,8 @@ pub enum Down {
     Message(ServerMessage),
     /// A remote host's connection came up or was lost.
     Status(Status),
+    /// The solo host saved the match at a turn's end (`Session::save`).
+    Saved(Vec<u8>),
     /// The host stopped and sends nothing more: the match is over, the host failed, or the server will not
     /// take this client back.
     Stopped(String),
@@ -109,11 +111,20 @@ impl Link {
     /// Play a match against bots in-process, on seat 0. The host stages each command and answers with its
     /// receipt and the updates it caused; finishing the turn closes the round.
     pub fn play(settings: Settings) -> Link {
+        Link::solo(Solo::New(settings))
+    }
+
+    /// Play on from a saved solo match. A save from another build is refused, and the host stops with why.
+    pub fn resume(save: Vec<u8>) -> Link {
+        Link::solo(Solo::Resume(save))
+    }
+
+    fn solo(start: Solo) -> Link {
         let link = Link::new(None);
         let (up, down, host) = (link.up.clone(), link.down.clone(), link.host.clone());
         thread::spawn("host", move || {
             let _ = host.set(std::thread::current());
-            let reason = match play(settings, &up, &down) {
+            let reason = match play(start, &up, &down) {
                 Ok(()) => "finished".to_string(),
                 Err(e) => e,
             };
@@ -213,9 +224,20 @@ fn watch(settings: Settings, sight: Sight, up: &ConcurrentQueue<Up>, down: &Conc
     }
 }
 
-fn play(settings: Settings, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Down>) -> Result<(), String> {
-    let epoch = format!("play-{}", settings.seed);
-    let mut session = Session::new(settings, epoch, vec![0]).map_err(|e| e.to_string())?;
+/// How a solo match begins.
+enum Solo {
+    New(Settings),
+    Resume(Vec<u8>),
+}
+
+fn play(start: Solo, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Down>) -> Result<(), String> {
+    let mut session = match start {
+        Solo::New(settings) => {
+            let epoch = format!("play-{}", settings.seed);
+            Session::new(settings, epoch, vec![0]).map_err(|e| e.to_string())?
+        }
+        Solo::Resume(save) => Session::restore(&save).map_err(|e| format!("this save cannot be opened by this build ({e})"))?,
+    };
     let send = |message| {
         let _ = down.push(Down::Message(message));
     };
@@ -241,7 +263,14 @@ fn play(settings: Settings, up: &ConcurrentQueue<Up>, down: &ConcurrentQueue<Dow
                             send(session.update_message(0, update).map_err(|e| e.to_string())?);
                         }
                     }
+                    let turn = session.turn();
                     session = transition.next;
+                    // Autosave when a round closes (docs/ACTIONS-SPEC.md, A3).
+                    if session.turn() > turn {
+                        if let Ok(save) = session.save() {
+                            let _ = down.push(Down::Saved(save));
+                        }
+                    }
                 }
                 Err(e) => send(ServerMessage::Error { code: e.to_string() }),
             },
