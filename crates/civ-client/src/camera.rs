@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The map camera and the light (docs/VISUAL-SPEC.md, Camera; Light and image).
 //!
 //! Fixed pitch and yaw, north up. The wheel and pinch zoom toward the cursor, easing with a 0.08 s

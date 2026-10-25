@@ -1,6 +1,6 @@
 # Content
 
-What the game contains beyond the nations ([ROSTER.md](ROSTER.md)): eras, victories, techs, policies, religion, great people, wonders, buildings, units, city-states and names. Agreed 2026-09-23 in one design pass so the pieces fit together, and built on 2026-09-24 as the `base` ruleset (`crates/civ-core/rules/base`); [REBUILD.md](REBUILD.md) tracks how, and what followed.
+What the game contains beyond the nations ([ROSTER.md](ROSTER.md)): eras, victories, techs, policies, religion, great people, wonders, buildings, units, city-states and names. Agreed 2026-09-23 in one design pass so the pieces fit together, and built on 2026-09-24 as the `base` ruleset (`crates/civ-core/rules/base`); REBUILD.md tracks how, and what followed.
 
 ## Lenses
 

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The ruleset and the map meeting: a grid built from real terrain, with real
 //! sight radii, at the size Civ actually plays at.
 

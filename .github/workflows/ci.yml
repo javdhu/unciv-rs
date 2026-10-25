@@ -1,61 +1,37 @@
 name: ci
 on: { push: { branches: [main] }, pull_request: {}, workflow_dispatch: {} }
 concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
-# CI's release builds skip fat LTO (which linked every test binary on one core: 28 of the rust job's 35 minutes)
-# and optimise for speed rather than size. They are for tests and checks only; nothing built here ships.
+permissions: { contents: read }
+# CI's release builds skip fat LTO (which links every test binary on one core) and optimise for speed rather
+# than size. They are for tests and checks only; nothing built here ships.
 env:
+  CARGO_TERM_COLOR: always
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_OPT_LEVEL: "3"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-# Most pushes touch only the client. A job whose every input (sources, lockfile, toolchain, this file) matches a
-# tree that already passed skips its work: the `passed` cache is written only after success, keyed by those inputs.
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - id: toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - id: passed
-        uses: actions/cache/restore@v4
-        with:
-          path: .passed
-          key: rust-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**', '.github/workflows/ci.yml') }}
-          lookup-only: true
-      - if: steps.passed.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@v2
-      - if: steps.passed.outputs.cache-hit != 'true'
-        run: cargo test --workspace --release --locked   # full-game tests are slow unoptimised
-      - if: steps.passed.outputs.cache-hit != 'true'
-        run: mkdir .passed
-      - if: steps.passed.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with: { path: .passed, key: "${{ steps.passed.outputs.cache-primary-key }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      # The Bevy client links against these on Linux.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: Swatinem/rust-cache@v2
+      # The Unciv rulesets the tests use as fixtures are fetched, not vendored (NOTICE).
+      - run: crates/civ-core/tools/fetch_unciv_rulesets.sh
+      - run: cargo test --workspace --release --locked   # full-game tests are slow unoptimised
   determinism:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - id: toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-unknown-unknown }
-      - id: passed
-        uses: actions/cache/restore@v4
-        with:
-          path: .passed
-          key: determinism-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**', '.github/workflows/ci.yml') }}
-          lookup-only: true
-      - if: steps.passed.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@v2
-      - if: steps.passed.outputs.cache-hit != 'true'
-        uses: oven-sh/setup-bun@v2   # the check reads the wasm fingerprint with Bun
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2   # the check reads the wasm fingerprint with Bun
         with: { bun-version: 1.3.11 }
+      - run: crates/civ-core/tools/fetch_unciv_rulesets.sh
       # Native and wasm32 must agree bit for bit. The runner is already linux/amd64
       # with glibc, so the script's Docker legs would only repeat the native one.
-      - if: steps.passed.outputs.cache-hit != 'true'
-        run: crates/civ-core/tools/check_determinism.sh
+      - run: crates/civ-core/tools/check_determinism.sh
         env: { CHECK_DETERMINISM_DOCKER: "0" }
-      - if: steps.passed.outputs.cache-hit != 'true'
-        run: mkdir .passed
-      - if: steps.passed.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with: { path: .passed, key: "${{ steps.passed.outputs.cache-primary-key }}" }

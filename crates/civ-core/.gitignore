@@ -1,2 +1,6 @@
 # Build output. 1.8 GB at the time of writing, including four target triples.
 /target/
+
+# Unciv fixture rulesets, fetched by tools/fetch_unciv_rulesets.sh (not redistributed)
+/rules/gods-and-kings/
+/rules/vanilla/

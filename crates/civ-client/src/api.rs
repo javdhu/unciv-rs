@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! civ-server's rooms API, typed with `civ_sim::rooms` (docs/ROOMS-SPEC.md, component 1): what each call
 //! sends and how its reply reads. The transport is `net::Http`; calls return at once and answers arrive later.
 

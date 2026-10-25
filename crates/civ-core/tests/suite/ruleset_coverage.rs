@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The gate that makes the port mechanical rather than hopeful:
 //! every unique string in the shipped rulesets must resolve against the
 //! generated algebra. A regression here means a rule silently stopped existing.

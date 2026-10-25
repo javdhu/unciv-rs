@@ -1,7 +1,7 @@
 # Playable: what a player can do, and what is left
 
-Status 2026-09-25, from the code at the start of phase 3 of the UI rebuild ([UI-REBUILD.md](UI-REBUILD.md)). The
-whole game plays in the glass interface ([BRAND.md](BRAND.md)): every engine action a shipped ruleset offers has
+Status 2026-09-25, from the code at the start of phase 3 of the UI rebuild (UI-REBUILD.md). The
+whole game plays in the glass interface (BRAND.md): every engine action a shipped ruleset offers has
 a control. [GAPS.md](GAPS.md) keeps the audit of what stands between this build and a finished game.
 
 ## Goal

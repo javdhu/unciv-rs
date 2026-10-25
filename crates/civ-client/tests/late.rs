@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! M6b's actions against the engine on a developed civ: seat 0 is handed to a bot for a couple of hundred
 //! rounds, taken back, and then every great person ability, religious action, faith purchase, state faith
 //! and spy station the engine offers is used, as the client's panels send them. A round can also be saved

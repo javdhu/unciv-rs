@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Cross-check the shipped rulesets against the packed atlases.
 //!
 //! Unciv names sprites after ruleset objects, so an object with no reachable

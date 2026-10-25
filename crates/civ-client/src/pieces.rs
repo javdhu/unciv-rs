@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Units and cities drawn from the view (docs/VISUAL-SPEC.md, Cities; Units).
 //!
 //! One entity per unit and per city, keyed by (id, generation) and kept in step with `ViewState` through the

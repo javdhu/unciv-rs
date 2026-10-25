@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 """Generate ruleset structs from the shipped json.
 
 The ruleset is data, not code — its schema is inferable from what actually
@@ -7,9 +11,16 @@ invented. Numbers become fixed-point: the rules layer must not touch floats.
 """
 import json, re, pathlib, collections
 
-ROOT = pathlib.Path("../Unciv")
+import os, sys
+CRATE = pathlib.Path(__file__).resolve().parent.parent
+if "UNCIV_DIR" not in os.environ:
+    sys.exit("set UNCIV_DIR to an Unciv checkout (https://github.com/yairm210/Unciv)")
+ROOT = pathlib.Path(os.environ["UNCIV_DIR"])
+MPL = ("// This Source Code Form is subject to the terms of the Mozilla Public\n"
+       "// License, v. 2.0. If a copy of the MPL was not distributed with this\n"
+       "// file, You can obtain one at https://mozilla.org/MPL/2.0/.\n\n")
 RS   = ROOT/"android/assets/jsons"
-OUT  = ROOT/"civ-core-rs/src/ruleset"
+OUT  = CRATE/"src/ruleset"
 OUT.mkdir(parents=True, exist_ok=True)
 
 def relax(t):
@@ -249,7 +260,7 @@ for struct, note, n, fields in structs:
     for fname, _, _ in DERIVED.get(struct, []):
         L.append(f"            {fname}: Default::default(), // set by ruleset/load.rs")
     L += ["        })", "    }", "}", ""]
-(OUT/"generated.rs").write_text("\n".join(L) + "\n")
+(OUT/"generated.rs").write_text(MPL + "\n".join(L) + "\n")
 
 print(f"structs  {len(structs)}")
 for s, note, n, f in structs: print(f"   {s:<18} {len(f):>2} fields  ({n} objects)")

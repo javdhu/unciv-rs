@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The Bevy side of a match: drain the `Link` into `ViewState`, announce what changed, ask for a resync when a
 //! delta does not fit, and pace a watched match's rounds.
 

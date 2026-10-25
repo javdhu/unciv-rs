@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Deciding whether a unique applies right now.
 //!
 //! The algebra parses 638 unique types and every one of the 1,158 conditionals

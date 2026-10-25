@@ -4,7 +4,7 @@ Status: exploration, 2026-09-23. Nothing here is decided. It proposes changes to
 text the engine inherited from Unciv's Gods & Kings rules (`crates/civ-core/rules/gods-and-kings/`), for two
 goals that one rewrite pass can serve together:
 
-1. **Originality.** [PLATFORM.md](PLATFORM.md) §5 already commits to keeping the mechanics and rewriting
+1. **Originality.** PLATFORM.md §5 already commits to keeping the mechanics and rewriting
    "every civ, unique ability, name and line of text". Today almost every name is Civ V's: ability names,
    unique units, policy trees, wonders and city-states.
 2. **Historical accuracy and breadth.** Long-running Civ community discussion (forums, reviews, the
@@ -29,7 +29,7 @@ the launch list, gather sourced examples for the ones we act on.
 
 A from-scratch alternative that ignores these selections is in [ROSTER.md](ROSTER.md).
 
-Current 8 ([roster options v3](../content/leaders/roster-options.v3.json)): Egypt–Cleopatra VII,
+Current 8 (roster options v3 (not published)): Egypt–Cleopatra VII,
 Rome–Marcus Aurelius, England–Elizabeth I, China–Wu Zetian, Mongolia–Genghis Khan, Persia–Cyrus the Great,
 India–Ashoka, Greece–Alexander the Great.
 
@@ -139,7 +139,7 @@ Not required for launch, but they come straight from the complaints above:
    history moving without Civ VII's civ switching, which is what split players.
 2. **Sources on the card.** Every leader and wonder card gets a one-line "What we know" with the
    attested / reconstructed / invented split the leader bibles already record
-   ([PLATFORM.md](PLATFORM.md) §7). No mainstream 4X does this, and it is ready-made from our pipeline.
+   (PLATFORM.md §7). No mainstream 4X does this, and it is ready-made from our pipeline.
 3. **Abilities from institutions.** Each civ's ability names a real institution or practice (khipu
    accounting, the House of Wisdom, the Great Law of Peace, Polynesian wayfinding) and does what it did.
 4. **The leader's language by default**, English subtitles on. It pairs with the phone-call premise.

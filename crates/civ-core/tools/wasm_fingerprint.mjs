@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 // Loads the wasm build and prints its fingerprint, for comparison with the
 // native one. The whole determinism claim of this crate reduces to these two
 // numbers matching.

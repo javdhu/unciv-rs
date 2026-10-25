@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Headless all-AI self-play for balance work (ENGINE-BRIEF B1).
 //!
 //! Plays whole games with every seat on the AI, through the same `finish_round`

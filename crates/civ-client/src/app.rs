@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Where the app is: the rooms screens or a match (docs/ROOMS-SPEC.md, R1).
 //!
 //! A match lives from entering `AppState::Match` to leaving it, and the next one starts clean in the same

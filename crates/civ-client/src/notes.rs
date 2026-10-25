@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The notification log's lines (docs/ACTIONS-SPEC.md, A1): each presentation event in the player's words, with
 //! the tile to look at and how much it matters. Names come from the view and the rule tables; what neither
 //! resolves reads as a plain noun ("a city", "a nation", "a unit"), never an id.

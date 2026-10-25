@@ -2,6 +2,8 @@
 name = "civ-core"
 version = "0.1.0"
 edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/javdhu/unciv-rs"
 
 # The core is deliberately dependency-free: rules must be deterministic and
 # portable to wasm32 without dragging a runtime along.

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! One number that summarises a whole simulation.
 //!
 //! The crate's central claim is that it computes the same answers on a native
@@ -27,6 +31,7 @@ use crate::world::yields::tile_yield;
 
 const RULESET: &str = "rules/gods-and-kings/";
 
+#[cfg(unciv_rulesets)]
 macro_rules! embed {
     ($($f:literal),* $(,)?) => {
         &[$(($f, include_str!(concat!("../rules/gods-and-kings/", $f)))),*]
@@ -34,6 +39,11 @@ macro_rules! embed {
 }
 
 /// The ruleset files the scenario needs, carried into the binary.
+///
+/// They are Unciv's Gods & Kings files, fetched by
+/// `tools/fetch_unciv_rulesets.sh` rather than kept in the repository; the
+/// build script enables `cfg(unciv_rulesets)` when they are present.
+#[cfg(unciv_rulesets)]
 pub fn embedded_sources() -> Vec<(String, String)> {
     let files: &[(&str, &str)] = embed![
         "Buildings.json",
@@ -53,6 +63,15 @@ pub fn embedded_sources() -> Vec<(String, String)> {
         "UnitPromotions.json",
     ];
     files.iter().map(|(n, c)| (n.to_string(), c.to_string())).collect()
+}
+
+/// Built without the Unciv rulesets: there is nothing to embed.
+#[cfg(not(unciv_rulesets))]
+pub fn embedded_sources() -> Vec<(String, String)> {
+    panic!(
+        "civ-core was built without rules/gods-and-kings; run \
+         crates/civ-core/tools/fetch_unciv_rulesets.sh and rebuild"
+    )
 }
 
 /// Accumulates values into one number, order-sensitively.

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Tooltips (docs/QUALITY-SPEC.md, K1): any panel node with a `Tip` says what it is after the pointer rests on
 //! it for 0.4 s. The card sits below what is hovered, or above it when there is no room, never over it, and
 //! always inside the window.

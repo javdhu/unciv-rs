@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 # The crate's central claim, as a check: the same simulation must produce the
 # same number everywhere it runs.
 #
@@ -64,7 +68,7 @@ elif docker info >/dev/null 2>&1; then
     [ "$platform" = "$native_platform" ] && limit=900 || limit=600
     echo "$platform"
     value=$(with_limit "$limit" docker run --rm --platform "$platform" \
-      -v "$PWD/..:/work" -w /work/civ-core-rs \
+      -v "$PWD/../..:/work" -w /work/crates/civ-core \
       -e CARGO_TARGET_DIR="/tmp/target-${platform//\//-}" \
       rust:latest \
       cargo test --release --quiet --lib the_scenario_actually_runs -- --nocapture \

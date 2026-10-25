@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Hex geometry for civ-core's grid (docs/VISUAL-SPEC.md, World geometry).
 //!
 //! Pointy-top hexes of circumradius 1 m, odd rows shifted east (odd-r), `id = row * width + col`, row 0 at

@@ -1,0 +1,33 @@
+unciv-rs
+Copyright 2026 Javed
+
+This project is licensed under the Mozilla Public License, v. 2.0 (see LICENSE).
+
+It is an unofficial Rust port of the rules engine of Unciv
+(https://github.com/yairm210/Unciv), an open-source remake of Civilization V
+by Yair Morgenstern and the Unciv contributors, licensed under the Mozilla
+Public License, v. 2.0. crates/civ-core reimplements Unciv's rules with
+Unciv's Kotlin source as the reference, and parts of it are close ports; it is
+treated as a Modification of Unciv's Covered Software under MPL-2.0. The following are mechanical transforms of Unciv source or
+output and carry the same terms:
+
+  crates/civ-core/src/unique_type.rs        from UniqueType.kt
+  crates/civ-core/src/generated/api.rs      from logic/multiplayer/apiv2/*.kt
+  crates/civ-core/src/generated/assets.rs   sprite names from Unciv's atlases
+  crates/civ-core/src/ruleset/generated.rs  from Unciv's ruleset JSON schema
+  crates/civ-core/tests/data/unciv_*.json   values computed by Unciv
+
+Unciv's Civ V rulesets ("Civ V - Gods & Kings", "Civ V - Vanilla") are used
+as test fixtures but are not included in this repository: their names and
+texts derive from Civilization V. crates/civ-core/tools/fetch_unciv_rulesets.sh
+downloads them from Unciv at a pinned commit. The rulesets this project ships,
+crates/civ-core/rules/base and crates/civ-core/rules/blitz, are its own.
+
+This project is not affiliated with or endorsed by the Unciv project,
+Firaxis Games or 2K. "Civilization" is a trademark of Take-Two Interactive
+Software, Inc.
+
+Third-party files:
+
+  crates/civ-client/assets/fonts/Inter-*.ttf  Inter, SIL Open Font License 1.1
+                                              (crates/civ-client/assets/fonts/Inter-LICENSE.txt)

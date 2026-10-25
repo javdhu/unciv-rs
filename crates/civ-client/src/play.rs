@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! A turn you play (docs/PLAY-SPEC.md): selection, the queries that answer what a unit can do and where it can
 //! go, orders by left-click (a second click confirms an attack), and the reach and target highlights.
 //!

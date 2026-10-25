@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! `CIV_STATIC_DIR`: the browser client's files on the API's origin, and nothing outside the directory.
 use civ_server::{router, Config, Host};
 use serde_json::{json, Value};

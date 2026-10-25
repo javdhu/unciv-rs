@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Every tile-filter word in the shipped rules names something: a misspelled
 //! building in `<within [2] tiles of a [X]>` would otherwise never be
 //! decided, and an undecidable condition applies everywhere.

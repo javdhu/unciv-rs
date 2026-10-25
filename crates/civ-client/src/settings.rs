@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Settings (docs/QUALITY-SPEC.md): the UI scale (K5: automatic from the window, with an adjustment), panning
 //! at the window's edge, and camera speed. Kept per player: `<config>/settings.json` natively, localStorage in
 //! the browser. Opened from Home and from the launch bar.

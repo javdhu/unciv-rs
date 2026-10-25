@@ -2,7 +2,9 @@
 name = "civ-sim"
 version = "0.1.0"
 edition = "2021"
-description = "civ.game engine facade: game setup, player views and turns over civ-core, for wasm and native"
+license = "MPL-2.0"
+repository = "https://github.com/javdhu/unciv-rs"
+description = "Engine facade: game setup, player views and turns over civ-core, for wasm and native"
 publish = false
 
 [lib]

@@ -6,8 +6,10 @@ disagree about the rules.
 
 ## Gameplay scope
 
-The supported match rules are the bundled **Civ V: Gods & Kings** content.
-Unciv editor tools and arbitrary mod-only rules are outside this scope. AI is
+The reference match rules are Unciv's **Civ V: Gods & Kings** ruleset, which
+this repository does not include: `tools/fetch_unciv_rulesets.sh` downloads it
+(and `vanilla`) from Unciv at a pinned commit for the tests. The project's own
+rulesets are `rules/base` and `rules/blitz`. Unciv editor tools and arbitrary mod-only rules are outside this scope. AI is
 an authored deterministic policy, not a port of Unciv's strategic decisions.
 
 Player actions enter through `world::commands`; mutually accepted agreements
@@ -16,7 +18,7 @@ Air and naval movement, carrier cargo, setup and fortification, nuclear attacks,
 city administration, explicit belief selection, spies, city-state quests and
 gifts, alliances, and victory actions participate in that same world state.
 The optional save feature stores and validates their durable state. The
-`civ.game` facade projects player-specific information and generates the shared
+`civ-sim` facade projects player-specific information and generates the shared
 native-server / browser-Wasm protocol from Rust.
 
 ## Design notes
@@ -147,8 +149,8 @@ The library has **zero runtime dependencies** by default — the rules layer mus
 stay deterministic and wasm-portable. `serde` is opt-in; `serde_json` is a
 dev-dependency used only to read fixtures.
 
-The legacy `civ-web` generated index is reference data. The live client
-contract is generated and checked in `civ.game/web/src/engine/generated`.
+The legacy `civ-web` generated index is reference data. The TypeScript client
+it served is not part of this repository.
 
 ## The reference index
 
@@ -519,10 +521,13 @@ Reading two implementations and concluding they agree is how subtle ports go
 wrong. This reads Unciv's own answers instead.
 
 ```
-cd ../Unciv
+cd "$UNCIV_DIR"                                          # an Unciv checkout with the dump harness
 ./gradlew :tests:test --tests '*DifferentialDump*'      # writes the reference
-cd civ-core-rs && cargo test --test suite differential::
+cd - && cargo test -p civ-core --release --test suite differential::
 ```
+
+The dump harness is not part of upstream Unciv or of this repository; the
+committed `tests/data/unciv_*.json` files are the reference the suite checks.
 
 `tests/src/com/unciv/testing/DifferentialDump.kt` runs inside Unciv and dumps
 what its own engine computes; `tests/suite/differential.rs` compares value by value

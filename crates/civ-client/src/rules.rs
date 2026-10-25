@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The static rule tables, asked of the host once per match (docs/CLIENT-PROTOCOL.md: rules travel once with a
 //! content hash), and the lookups the map draws from: what each terrain id is, resource kinds, names, nation
 //! colours.

@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 """Serve the wasm client cross-origin isolated (SharedArrayBuffer needs COOP and COEP), append what the page
 reports to POST /stats to stats.jsonl beside this file, and write review shots posted to /shot?name=... into
 shots/. Local development only."""

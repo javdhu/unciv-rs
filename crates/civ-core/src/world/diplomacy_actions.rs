@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! War and peace transitions shared by player commands, AI and nuclear combat.
 use super::{city_states, grid::CivId, turn::TurnEvent, World};
 use crate::{ruleset::Ruleset, stats::Fixed};

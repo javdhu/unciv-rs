@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! How often each thing is on the map: self-play exposure counts, used to rank art by value.
 //!
 //!     cargo run --release -p civ-sim --example exposure -- [games] [turns]

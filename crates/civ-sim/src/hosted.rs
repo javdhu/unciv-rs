@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Wasm adapter for the shared session; IndexedDB commit stays in its Worker host.
 use crate::{js, protocol, session, tables};
 use serde::Serialize;

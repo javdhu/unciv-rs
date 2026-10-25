@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The spectator HUD (docs/VISUAL-SPEC.md, Picking and the spectator HUD): a 40 px top bar with the turn and
 //! year, playback (pause, speed, one round, skip) and whose eyes and following; a 220 px panel of the civs.
 

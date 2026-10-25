@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Transport-independent authoritative session. Prepare on a clone, persist, then publish the replacement.
 use crate::protocol::*;
 use crate::view::report_for;

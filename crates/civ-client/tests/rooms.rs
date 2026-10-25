@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Rooms against a real civ-server on a free port, behind a TCP relay the test can cut (docs/ROOMS-SPEC.md, How
 //! it will be verified): two guests make and join a room, start it and finish a round together through
 //! `Link::remote`; a command given while the connection is down is applied once it comes back; after the

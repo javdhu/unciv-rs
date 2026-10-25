@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The frame-time harness (S0, docs/CLIENT-BRIEF.md): a record of frame times, round times and link health while
 //! the host thread closes a watched match's rounds, reported every five seconds (stdout natively,
 //! `globalThis.civReport` on the page).

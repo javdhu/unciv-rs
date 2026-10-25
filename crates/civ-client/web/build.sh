@@ -1,4 +1,8 @@
 #!/bin/sh
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 # The threaded wasm client, one build per graphics backend (docs/CLIENT-BRIEF.md, D9; docs/VISUAL-SPEC.md, V5).
 # Usage: [PROFILE=web-dev] crates/civ-client/web/build.sh [webgpu] [webgl2]   (both when none is named)
 # PROFILE defaults to web (thin LTO, measured and shipped); web-dev skips LTO for faster iteration.

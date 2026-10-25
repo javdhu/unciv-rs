@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Advisory options derived from owned state and public rules. Queries do not
 //! probe hidden world-wide uniqueness or resource conditions to explain why an
 //! action might fail; execution remains authoritative.

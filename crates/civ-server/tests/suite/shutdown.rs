@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The deployed binary stops on SIGTERM (Fly.io, Docker) as it does on Ctrl-C: drains within a
 //! bound even with a match socket open, flushes the store, and exits 0.
 #![cfg(unix)]

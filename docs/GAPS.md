@@ -2,7 +2,7 @@
 
 First written 2026-09-23 from four read-only code audits (UI coverage, gameplay and AI, game feel, UX) and a
 playtest to turn 33 on a laptop and a 375×812 phone. Checked again against the code on 2026-09-25, at the start of
-phase 3 of the UI rebuild ([UI-REBUILD.md](UI-REBUILD.md)), after the old HUD was replaced by the glass interface.
+phase 3 of the UI rebuild (UI-REBUILD.md), after the old HUD was replaced by the glass interface.
 [PLAYABLE.md](PLAYABLE.md) says what a player can do today.
 
 Tags: **[blocks]** a full game or a new player cannot get past it · **[friction]** noticeable every

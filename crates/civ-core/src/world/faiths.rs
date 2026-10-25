@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Real faiths that arise in their era (docs/CONTENT.md, Religion).
 //!
 //! In `rules/base` nobody founds a religion. Each faith in `Religions.json`

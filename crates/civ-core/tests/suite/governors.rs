@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! What the engine keeps running for a human player between their own
 //! choices: a puppet's governor, and the record of the eras they reached.
 use civ_core::arena::Id;

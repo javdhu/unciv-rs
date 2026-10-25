@@ -153,7 +153,7 @@ console and for the smoke run (`web/tools/smoke`).
 
 ### The interface
 
-`web/src/ui/` is the glass interface of [BRAND.md](BRAND.md). [UI-REBUILD.md](UI-REBUILD.md) is its plan, its
+`web/src/ui/` is the glass interface of BRAND.md. UI-REBUILD.md is its plan, its
 contracts and its decisions.
 
 ```
@@ -209,14 +209,14 @@ shader (`world/troupe.ts`), walking routes found through the world's streets, ga
 (`world/way.ts`). An `attacked` event names both sides, and `world/combat.ts` acts fights out from it. Fog is a
 linen haze (`world/veil.ts`), light a warm tabletop grade (`world/light.ts`, with an optional day and night in
 `world/daynight.ts`), and outlines a thin ink pass
-(`world/ink.ts`); [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) has the look. The map's marks (counters, city labels,
+(`world/ink.ts`); DESIGN-SYSTEM.md has the look. The map's marks (counters, city labels,
 route stops, yields, floating numbers) follow the interface's grammar in `world/world.css`. Quality follows the
 device and steps down when frames run slow (`world/perf.ts`).
 
 ### Sound
 
 `audio/audio.ts` is the one import the rest of the game uses. `audio/bind.ts` listens to the session's and the
-interface's stores and plays the cues; [SOUND.md](SOUND.md) has the triggers.
+interface's stores and plays the cues; SOUND.md has the triggers.
 
 ## Local validation
 

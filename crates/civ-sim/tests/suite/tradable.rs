@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! What another major could give, in the view (R7 in docs/ROOMS-SPEC.md): shown only while the viewer holds an
 //! embassy in their capital and the two are at peace, and then exactly what the engine's own trade rules accept
 //! from them.

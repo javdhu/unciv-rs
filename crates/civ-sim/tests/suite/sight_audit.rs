@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The shadow check for live sight (`civ_core::world::fog::audit`): AI games in which every sight update and
 //! capture, after every step of every move, is also recomputed plainly on a copy of the world and must agree.
 

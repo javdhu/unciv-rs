@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Compare this engine's answers against Unciv's, value by value.
 //!
 //! Reading both implementations and concluding they agree is how subtle ports
@@ -6,7 +10,7 @@
 //! The reference file is produced by the Kotlin side:
 //!
 //! ```text
-//! cd ../Unciv
+//! cd "$UNCIV_DIR"   # an Unciv checkout with the dump harness (not included)
 //! ./gradlew :tests:test --tests '*DifferentialDump*'
 //! ```
 //!

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The client's applied view equals the host's full view for its seat, every round of seeded bot games, with
 //! all-seeing and fogged sight (docs/CLIENT-BRIEF.md, component 2). Run optimised: `cargo test -p civ-client
 //! --profile client`.

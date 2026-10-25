@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The one path between the Bevy world and a match host (docs/CLIENT-BRIEF.md, component 1).
 //!
 //! Messages are civ-sim's own wire types, so a room's remote host (`Link::remote`, `net.rs`) sits behind the

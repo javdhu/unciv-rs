@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The empire panel (docs/ACTIONS-SPEC.md, M6b): the player's own nation at a glance, opened from the top bar.
 //! Great people toward their next birth, the state faith and its choice, spies and where they work, and how
 //! far each victory, the spaceship and the world vote have come.

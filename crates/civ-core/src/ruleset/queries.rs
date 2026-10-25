@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Questions asked of the ruleset alone, with no game in progress.
 //!
 //! This is where systems accumulate. Each one reads the registries and the

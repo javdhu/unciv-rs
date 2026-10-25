@@ -1,6 +1,17 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 import re, json, pathlib
-ROOT = pathlib.Path("../Unciv")
-OUT  = pathlib.Path(__file__).resolve().parent.parent
+import os, sys
+CRATE = pathlib.Path(__file__).resolve().parent.parent
+if "UNCIV_DIR" not in os.environ:
+    sys.exit("set UNCIV_DIR to an Unciv checkout (https://github.com/yairm210/Unciv)")
+ROOT = pathlib.Path(os.environ["UNCIV_DIR"])
+MPL = ("// This Source Code Form is subject to the terms of the Mozilla Public\n"
+       "// License, v. 2.0. If a copy of the MPL was not distributed with this\n"
+       "// file, You can obtain one at https://mozilla.org/MPL/2.0/.\n\n")
+OUT  = CRATE
 (OUT/"src").mkdir(parents=True, exist_ok=True)
 (OUT/"tests").mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +84,7 @@ L.append("        match self {")
 for n,_,ts in entries:
     L.append(f"            UniqueType::{n} => &[{', '.join('UniqueTarget::'+t for t in ts)}],")
 L.append("        }\n    }\n}")
-(OUT/"src/unique_type.rs").write_text('\n'.join(L) + '\n')
+(OUT/"src/unique_type.rs").write_text(MPL + '\n'.join(L) + '\n')
 
 print(f"generated {len(entries)} UniqueType variants, {len(targets)} targets")
 print(f"placeholder collisions: {len(dupes)}")

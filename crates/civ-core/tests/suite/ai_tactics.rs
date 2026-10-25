@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! ENGINE-BRIEF B7: the AI heals and retreats instead of throwing hurt units
 //! away, only attacks what it would survive, races for wonders it can win,
 //! and rates beliefs. Each is compared with the old AI (`Civilization::legacy_ai`).

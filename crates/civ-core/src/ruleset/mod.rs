@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The ruleset: what a game is played with, as opposed to what is happening in it.
 //!
 //! Immutable once loaded, shared by every system, and identical on server and

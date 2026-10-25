@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Solo saves (docs/ACTIONS-SPEC.md, A3, A4): the solo host saves at every turn's end (`Down::Saved`), one slot
 //! per match, kept as files natively (`<config>/saves/<id>.civsave` and `<id>.json`) and in IndexedDB in the
 //! browser (stores `saves` and `meta` of the `civ` database). Home lists them, newest first, with Continue.

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Every key the client answers (docs/QUALITY-SPEC.md, K2: a small set of its own), in one table that the input
 //! systems read and the key map lists, so the map cannot leave a key out.
 

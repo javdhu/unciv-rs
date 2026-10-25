@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! A reader for the json dialect Unciv's rulesets are actually written in.
 //!
 //! Two reasons this is here rather than a dependency. The files use libGDX's

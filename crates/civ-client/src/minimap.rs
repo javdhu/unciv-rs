@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The minimap (docs/QUALITY-SPEC.md, K3): the known world drawn small in the bottom-left corner, as in
 //! Civilization VI. Terrain by ground, tinted by owner, remembered tiles dimmed, unknown ones left dark; the
 //! camera's view is outlined, and a click or drag looks there. Buttons along its top fit the map in view and

@@ -11,7 +11,7 @@ Competitive formats build on that working match. Match length, scoring and balan
 decisions; accepting this architecture does not settle them.
 
 This document owns the selected communication design. [ARCHITECTURE.md](ARCHITECTURE.md) describes the
-existing application; [PLATFORM.md](PLATFORM.md) contains broader product proposals.
+existing application; PLATFORM.md contains broader product proposals.
 
 ## Selected design
 

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! M4's screens (docs/PLAY-SPEC.md, M4): the full-screen tech tree, the policy branches, the Civilizations panel
 //! and its trade window, and the offers other civs make you.
 //!

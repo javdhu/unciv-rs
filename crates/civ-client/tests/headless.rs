@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The Bevy side end to end, without a window: an in-process watched match streams through the `Link` into
 //! `ViewState`, round after round, with no resync and nothing stale.
 

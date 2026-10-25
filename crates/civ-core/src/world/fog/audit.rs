@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The shadow check for live sight: the plain recomputation that [`update_visibility_in`] and
 //! [`capture_observations`] replace, run beside them on a copy of the world, which must come out the same.
 //!

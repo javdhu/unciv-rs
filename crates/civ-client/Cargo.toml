@@ -2,6 +2,8 @@
 name = "civ-client"
 version = "0.1.0"
 edition = "2024"
+license = "MPL-2.0"
+repository = "https://github.com/javdhu/unciv-rs"
 publish = false
 description = "The Bevy client: draws a seat's view of a match and sends its orders"
 

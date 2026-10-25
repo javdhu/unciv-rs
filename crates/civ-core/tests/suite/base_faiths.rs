@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The faith data `rules/base` ships (docs/CONTENT.md, Religion) holds
 //! together: the eleven faiths in their eras, homelands on the roster, and
 //! one follower and one state trait each, every one a rule the engine knows.

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 // The map's one material (src/paint.rs): ground, objects on it, and water, told apart by `params.kind`.
 //
 // Shape comes from the meshes. What lies on the land (fields, roads, river water, a mine's pit floor), the

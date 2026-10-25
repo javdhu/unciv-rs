@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! How the game's own words read to a player (docs/CONTENT.md, Names).
 //!
 //! Unique patterns are the engine's keys and keep Civ's wording ("Great

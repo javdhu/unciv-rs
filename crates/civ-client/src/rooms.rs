@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The screens outside a match (docs/ROOMS-SPEC.md, R1, component 7): home (solo, watch, rooms), the rooms
 //! this guest is in on a server (join by invite, create), and a room's lobby (members, nation, start).
 //!

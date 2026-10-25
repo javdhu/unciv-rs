@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! What the engine waits on the player for (docs/ACTIONS-SPEC.md, A1): captured cities, free technologies,
 //! great people and policies, promotions, the state faith, demands and the vote.
 //!

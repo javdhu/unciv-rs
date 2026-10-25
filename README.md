@@ -1,44 +1,66 @@
 # unciv-rs
 
-The Rust port of Unciv's rules engine and the match server built on it, restored from civ.game
-(`the private civ.game repository` main `20416e0`, 2026-09-30, the build deployed to Fly as `civ-game`). The web client,
-site, art, marketing and client design docs were removed on 2026-10-13; they stay in git history before
-that commit. Private: the engine is a close port of Unciv's MPL-2.0 code.
+An unofficial Rust port of the rules engine of [Unciv](https://github.com/yairm210/Unciv), the open-source
+Civilization V remake, with a private-room match server and a Bevy client built on it. Not affiliated with the
+Unciv project, Firaxis or 2K.
 
-- `crates/civ-core`: rules engine, map generation and AI. Rulesets in `crates/civ-core/rules/`: `base` and
-  `blitz` (civ.game's own content, [docs/CONTENT.md](docs/CONTENT.md), [docs/BLITZ.md](docs/BLITZ.md)), and
-  Unciv's `vanilla` and `gods-and-kings`.
-- `crates/civ-sim`: the session every client plays through: commands, queries, receipts, fog-filtered
-  player views, deltas, saves and replay. Wire types in `civ_sim::protocol` (protocol 9).
-- `crates/civ-server`: the private-room host: guest cookies, rooms, authenticated WebSocket seats, SQLite,
-  turn clocks, reconnect and bot takeover. API in [its README](crates/civ-server/README.md).
-- `crates/civ-client`: the Bevy 0.20 client, native and wasm, in progress: design in
-  [docs/CLIENT-BRIEF.md](docs/CLIENT-BRIEF.md), look in [docs/VISUAL-SPEC.md](docs/VISUAL-SPEC.md).
+The engine is deterministic: rules arithmetic is fixed-point, and a fingerprint of a fixed scenario must be
+bit-identical on native and `wasm32`, so a server and a browser client cannot disagree about the rules. Its
+answers are checked value by value against Unciv's own (`crates/civ-core/tests/suite/differential.rs`, 1,811
+values, 0 differences against the committed Unciv dump).
 
-The client contract is [docs/CLIENT-PROTOCOL.md](docs/CLIENT-PROTOCOL.md); engine layout and persistence are
-in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (its client sections describe the removed web client).
+## Status
 
-## Run it
+| Part | State |
+| --- | --- |
+| `crates/civ-core` | Rules engine, map generation and AI. Complete for the rulesets below. |
+| `crates/civ-sim` | Session layer: commands, queries, receipts, fog-filtered player views, deltas, saves and replay. Wire types in `civ_sim::protocol` (protocol 9). |
+| `crates/civ-server` | Private-room host: guest cookies, rooms, authenticated WebSocket seats, SQLite, turn clocks, reconnect and bot takeover. API in [its README](crates/civ-server/README.md). |
+| `crates/civ-client` | Bevy 0.20 client, native and wasm. In progress. |
+
+Design notes live in [docs/](docs/README.md). Several were written for an earlier web client that is not part of
+this repository; the docs index says which.
+
+## Rulesets
+
+`crates/civ-core/rules/` holds the project's own rulesets, `base` and `blitz`
+([docs/CONTENT.md](docs/CONTENT.md), [docs/BLITZ.md](docs/BLITZ.md)). These are what the server and client play.
+
+The test suite and the determinism fingerprint also use Unciv's `Civ V - Gods & Kings` and `Civ V - Vanilla`
+rulesets as fixtures. Their names and texts derive from Civilization V, so this repository does not include them;
+`crates/civ-core/tools/fetch_unciv_rulesets.sh` downloads them from Unciv at a pinned commit and verifies each
+file. The library and server build without them; the tests need them.
+
+## Build and test
+
+Requires stable Rust (the client's wasm builds need the nightly noted below), `git` and `curl`.
 
 ```sh
-cargo run --release -p civ-server        # 127.0.0.1:3001, civ-server.sqlite3 in the working directory
-cargo test --workspace --release --locked
+crates/civ-core/tools/fetch_unciv_rulesets.sh             # once: Unciv fixture rulesets for the tests
+cargo build --release --locked                            # engine, session layer and server
+cargo test --workspace --release --locked                 # all crates, including the client
+cargo run --release -p civ-server                         # 127.0.0.1:3001, civ-server.sqlite3 in the working directory
 ```
 
-The complete-match persistence gate plays three seeded bot matches, restores every 25 turns and checks that
-replaying the commands gives the same game:
+Plain `cargo build` and `cargo test` cover the engine and server only (the workspace's default members); the
+client builds with `-p civ-client` or `--workspace`. On Linux the client needs `libasound2-dev libudev-dev
+libwayland-dev libxkbcommon-dev`.
+
+The complete-match persistence gate (ignored by default; slow) plays three seeded bot matches, restores every 25
+turns and checks that replaying the commands gives the same game:
 
 ```sh
 cargo test --release -p civ-sim complete_matches_save_and_replay -- --ignored --nocapture
 ```
 
-The determinism check is `crates/civ-core/tools/check_determinism.sh` (its Linux legs need Docker; on the
-Mac, Colima). `cargo run -p civ-sim --example export_protocol <dir>` writes the protocol's JSON schemas and
+The determinism check is `crates/civ-core/tools/check_determinism.sh`. It compares the fingerprint on native and
+`wasm32` (needs the `wasm32-unknown-unknown` target and [Bun](https://bun.sh)) and, with Docker available, in
+Linux containers. `cargo run -p civ-sim --example export_protocol <dir>` writes the protocol's JSON schemas and
 TypeScript types.
 
-## The client
+The generators in `crates/civ-core/tools/generate_*.py` read an Unciv checkout named by `UNCIV_DIR`.
 
-Plain `cargo build` and `cargo test` cover the engine and server only; the client builds with `-p civ-client`.
+## The client
 
 ```sh
 cargo client                                   # native dev build, Bevy linked as a dylib (alias in .cargo/config.toml)
@@ -57,7 +79,8 @@ tech tree, policies, civilizations, empire, units and log, G shows the hex grid,
 The client opens on home: play against bots, watch bots, or rooms. `CIV_SOLO=1` and `CIV_WATCH=1` (`civSolo`,
 `civWatch` on the page) go straight into a match.
 
-Rooms (docs/ROOMS-SPEC.md): civ-server serves the browser build beside its API when `CIV_STATIC_DIR` names it.
+Rooms ([docs/ROOMS-SPEC.md](docs/ROOMS-SPEC.md)): civ-server serves the browser build beside its API when
+`CIV_STATIC_DIR` names it.
 
 ```sh
 crates/civ-client/web/build.sh webgpu
@@ -67,22 +90,22 @@ CIV_STATIC_DIR=crates/civ-client/web cargo run --release -p civ-server   # page 
 The native client plays on `CIV_SERVER` (default `http://127.0.0.1:3001`) as a guest whose token it keeps in its
 config directory (`CIV_CONFIG_DIR`), per server and `CIV_PROFILE`: two clients on one machine need two profiles.
 `CIV_INVITE=<code>` (`?invite=` on the page) opens on the rooms and joins; `CIV_MATCH=<id>` (`?match=`) opens a
-room's match. `CIV_SHOTS=<dir> CIV_SCENE=room cargo client` hosts a room through the screens, shoots them, writes
-the invite to `<dir>/invite.txt`, starts once someone joins and records 40 s of the match. `CIV_REJOIN=<n> cargo
-client` opens and leaves n solo matches and exits non-zero if a match left entities behind.
+room's match.
 
 Review screenshots: `CIV_SHOTS=<dir> CIV_SCENE=<world|fog|seed2|seed3> cargo client` plays a watched match to a
-set turn, shoots fixed views into `<dir>` and quits; on the page, `?shots=<scene>` posts them to `serve.py`, which
-writes `crates/civ-client/web/shots/`. Mouse: wheel or pinch zooms toward the cursor, drag pans, a click pins a
-tile in the inspector; WASD or arrows pan; F3 shows frame and round timings. `CIV_SCENE=watch` records 45 s of
-play from turn 30 as numbered PNGs at a fixed 30 frames a second (`ffmpeg -framerate 30 -i watch-%05d.png ...`).
-Playback keys: space pauses, 1 to 4 pick 1x to 8x, full stop plays one round, K skips animations, F follows.
+set turn, shoots fixed views into `<dir>` and quits. Mouse: wheel or pinch zooms toward the cursor, drag pans, a
+click pins a tile in the inspector; F3 shows frame and round timings.
 
-Dev builds optimise every dependency and the engine (`civ-core`, `civ-sim`) once, so the first build takes about
-six minutes on this Mac and later edits to the client rebuild in one to two seconds.
+Dev builds optimise every dependency and the engine (`civ-core`, `civ-sim`) once, so the first build is slow and
+later edits to the client rebuild in seconds.
 
 The wasm builds run the engine on a second thread over shared memory, which needs the pinned nightly
 (`rustup toolchain install nightly-2026-10-08 --profile minimal --component rust-src --target
 wasm32-unknown-unknown`) and `wasm-bindgen-cli` at the version in `Cargo.lock`. The page must be served with
-`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `serve.py` does that
-and appends what the page reports to `web/stats.jsonl`.
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `serve.py` does that.
+
+## Licence
+
+[Mozilla Public License 2.0](LICENSE), the same licence as Unciv, for the whole workspace. `crates/civ-core` is
+a port of Unciv's rules and is a Modification of Unciv's MPL-2.0 code; [NOTICE](NOTICE) has the attribution and
+the third-party files (the Inter font, under the SIL Open Font License).

@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The key map (docs/QUALITY-SPEC.md, K2), drawn from `keys::KEYS` so it lists every key, and the keys that
 //! open screens, cycle units and close panels.
 

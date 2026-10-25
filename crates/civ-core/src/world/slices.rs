@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Blitz slices (docs/CONTENT.md, Spine): a game that plays only some of the
 //! eras. It starts in the slice's first era, as Unciv starts a game in a
 //! later era (every earlier tech known, that era's starting units, gold and

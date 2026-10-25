@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The map drawn from the view (docs/VISUAL-SPEC.md): the land's shape, water, trees, and an overlay of
 //! borders, in chunks of 8x8 tiles, shaded by the map material (src/paint.rs), which paints what lies on the
 //! land, the owner's tint and the fog from per-tile data. A chunk rebuilds only when a tile's shape changes in

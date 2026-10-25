@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The land as functions of ground position (docs/VISUAL-SPEC.md, Terrain surface, Water, Fog).
 //!
 //! Every height and colour is a pure function of a ground point and the known tiles around it, so two chunks

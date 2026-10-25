@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The notification log (docs/ACTIONS-SPEC.md, A1): every presented event the player should read, as a line of
 //! text (`notes.rs`), kept for the match. The turn's decisions and notes that matter also stack above End Turn.
 //! The log opens from the launch bar; clicking a line with a place looks at it.

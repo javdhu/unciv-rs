@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! The screenshot script for review (docs/CLIENT-BRIEF.md, M1): play a watched match to a set turn, pause,
 //! let the map settle, then shoot fixed views of it and quit. The camera renders into a 1600x1000 image rather
 //! than the window, so a shot never depends on whether the window is on screen.

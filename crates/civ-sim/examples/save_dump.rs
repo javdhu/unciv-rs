@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! A save as JSON, and back again after editing it:
 //! `cargo run --release -p civ-sim --example save_dump -- SAVE > save.json`, then
 //! `... --example save_dump -- --pack save.json > SAVE`.

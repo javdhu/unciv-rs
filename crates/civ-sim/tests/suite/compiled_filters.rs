@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! Compiled rule parameters answer exactly as the string code they replaced.
 //!
 //! `civ_core::params` reads every unique parameter once — numbers, yields,

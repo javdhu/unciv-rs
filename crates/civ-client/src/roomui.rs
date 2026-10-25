@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! What a match in a room adds to the play UI (docs/ROOMS-SPEC.md, component 6): the deadline, every human
 //! seat's state, the connection, a notice when a bot is about to play your seat or give it back, and the way
 //! back to the rooms. Shown only while the link is remote; the turn button's waiting state is in `playui.rs`.

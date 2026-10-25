@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 //! A played turn through the Outbox and the in-process host, headless: found a city, set research, end the
 //! turn; a retried command id gets the original receipt and a reused one with other content is refused.
 
